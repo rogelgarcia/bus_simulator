@@ -5,12 +5,13 @@ import { createLandscapeShaderPayload } from '../../shaders/materials/landscape/
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { withLandscapeMorphedPositions } from './LandscapeTileEdges.js';
 import { createLandscapeAppearanceUniforms } from './LandscapeAppearanceUniforms.js';
+import { createLandscapeDiagnosticUniforms } from './LandscapeTerrainDiagnostics.js';
 
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
-/** @param {any} buffers @param {Float32Array} sourceHeights @returns {any} */
-export function createLandscapeMesh(buffers, sourceHeights) {
+/** @param {any} buffers @param {Float32Array} sourceHeights @param {{coverageSlots:number}} options view-wide compile-time coverage slot count @returns {any} */
+export function createLandscapeMesh(buffers, sourceHeights, options) {
     const { descriptor } = buffers;
     const { bounds } = descriptor;
     const sharedUniforms = {
@@ -19,13 +20,14 @@ export function createLandscapeMesh(buffers, sourceHeights) {
         uEdgeMorph: { value: new THREE.Vector4(1, 1, 1, 1) },
         uBounds: { value: new THREE.Vector4(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ) }
     };
-    const terrainPayload = createLandscapeShaderPayload('terrain');
+    const coverageSlots = options?.coverageSlots;
+    const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots });
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
         vertexColors: true,
-        uniforms: { ...sharedUniforms, ...createLandscapeAppearanceUniforms(), uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
-            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) } }
+        uniforms: { ...sharedUniforms, ...createLandscapeAppearanceUniforms(coverageSlots), uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
+            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms() }
     });
     attachShaderMetadata(material, terrainPayload);
     const geometry = new THREE.BufferGeometry();
@@ -76,7 +78,10 @@ export function createLandscapeMesh(buffers, sourceHeights) {
         chunkId: descriptor.id,
         get morph() { return sharedUniforms.uMorph.value; },
         setMorph(value) { sharedUniforms.uMorph.value = value; },
-        setAppearance(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
+        setAppearance(uniforms) {
+            if (uniforms.uMaskMeta.value.length !== coverageSlots) throw new Error(`[Landscape] Appearance uniforms declare ${uniforms.uMaskMeta.value.length} coverage slots; terrain ${descriptor.id} is compiled for ${coverageSlots}`);
+            Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true;
+        },
         setPlanning(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
         setEdges(edges, morph = [1, 1, 1, 1]) { sharedUniforms.uEdges.value.set(...edges); sharedUniforms.uEdgeMorph.value.set(...morph); },
         setLodColors(enabled) { material.uniforms.uLodColor.value = enabled ? .78 : 0; },

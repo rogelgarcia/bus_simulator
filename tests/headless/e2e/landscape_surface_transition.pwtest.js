@@ -10,10 +10,14 @@ const root = path.resolve('.'), source = path.join(root, 'assets/public/landscap
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
 if (phase !== null && !['before', 'after'].includes(phase)) throw new Error('LANDSCAPE_SURFACE_PHASE must be before or after');
 const deliverable = process.env.LANDSCAPE_SURFACE_DELIVERABLE ?? 'd1';
-if (!['d1', 'd1a'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1 or d1a');
-const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}`;
+if (!['d1', 'd1a', 'd2'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a or d2');
+const profile = process.env.LANDSCAPE_SURFACE_PROFILE ?? 'default';
+const budgetProfiles = { default: { cpuMiB: 128, gpuMiB: 64 }, quality: { cpuMiB: 256, gpuMiB: 128 }, realism: { cpuMiB: 384, gpuMiB: 192 } };
+if (!budgetProfiles[profile]) throw new Error('LANDSCAPE_SURFACE_PROFILE must be default, quality or realism');
+const { cpuMiB, gpuMiB } = budgetProfiles[profile];
+const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}${profile === 'default' ? '' : `/${profile}`}`;
 const artifacts = path.join(root, artifactPrefix.slice(1), phase ?? 'unselected');
-const deliveryLabel = deliverable === 'd1a' ? 'D1a · Homogeneous materials and height transitions' : 'D1 · Visual surface transitions';
+const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages' }[deliverable];
 const manifestText = await readFile(path.join(source, 'manifest.json'), 'utf8'), manifest = JSON.parse(manifestText);
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, MiB = 1024 * 1024;
 const lightingDescription = 'Terrain shader illuminate(): fixed GGX sun direction [-0.44,0.87,-0.22], RGB [2.7,2.6,2.3], hemisphere ambient factor 0.68. LandscapeView fixed hemisphere 0xdceef4/0x536047 intensity 2.3 and directional 0xfff4dd intensity 2.2 at [-2000,4000,-1000].';
@@ -55,7 +59,7 @@ async function implementationFingerprint() {
 }
 
 async function assertImmutableBaseline(before) {
-    if (deliverable !== 'd1a') return;
+    if (deliverable === 'd1') return;
     const directory = path.join(artifacts, '../before');
     const seal = JSON.parse(await readFile(path.join(directory, 'immutable-baseline.json'), 'utf8'));
     expect(seal.gitRevision).toBe(before.gitRevision);
@@ -95,7 +99,7 @@ async function writeComparisons(browser, baseURL, before, after) {
             const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>AI577 ${deliverable.toUpperCase()} ${stop.label}</title>
 <link rel="stylesheet" href="comparison.css"></head>
-<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · Fixed camera and lighting</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
+<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · ${cpuMiB}/${gpuMiB} MiB · Fixed camera and lighting</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
 <section><header><div>AFTER · AI577 ${deliverable.toUpperCase()} (working tree)</div><h1>${stop.label}</h1><p>AI577 ${deliveryLabel} · Original renders shown at native pixel dimensions</p></header><img src="../after/${stop.id}.png" width="1920" height="1080" alt="After: ${stop.label}"></section></main></body></html>`;
             await writeFile(path.join(directory, `${stop.id}.html`), html);
             resources.set(`${prefix}/comparisons/${stop.id}.html`, { contentType: 'text/html', body: html });
@@ -174,9 +178,9 @@ test('Landscape surface: four native coastal transitions retain identical captur
     test.setTimeout(5 * 60 * 1000);
     const baseURL = String(testInfo.project.use.baseURL);
     expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
-    if (phase === 'before' && deliverable === 'd1a') {
+    if (phase === 'before' && deliverable !== 'd1') {
         const previous = await readFile(path.join(artifacts, 'report.json'), 'utf8').catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
-        expect(previous && JSON.parse(previous).complete, 'The completed D1a baseline must never be overwritten').not.toBe(true);
+        expect(previous && JSON.parse(previous).complete, `The completed ${deliverable.toUpperCase()} baseline must never be overwritten`).not.toBe(true);
     }
     await mkdir(artifacts, { recursive: true });
     const descriptor = manifest.chunks.find(chunk => chunk.id === anchor.chunkId), cover = await readFile(path.join(source, descriptor.channels.landCover.url));
@@ -188,7 +192,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
         dataset: { id: manifest.id, revision: manifest.revision, manifestSha256: createHash('sha256').update(manifestText).digest('hex'), sourceSha256: manifest.provenance.sourceSha256,
             nativeSpacingMeters: manifest.grid.spacingX, anchor, sourceBoundaryCoverIds: [1, 2], anchorCoverSha256: descriptor.channels.landCover.sha256 },
         viewport: { ...viewport, dpr: 1 }, route, warmupFrames, sampleFrames,
-        captureConditions: { water: true, mode: 'shaded', helpers: false, overlays: false, ui: false, cpuMiB: 128, gpuMiB: 64,
+        captureConditions: { water: true, mode: 'shaded', helpers: false, overlays: false, ui: false, cpuMiB, gpuMiB,
             lighting: lightingDescription,
             timing: 'Fresh browser context; each pose settles, discards 30 frames, samples 120 frames, and drains four query-tail frames. GPU uses completed unique timer queries matched to sampled submissions.' },
         stops: [], errors: [], warnings: [], materialQualityFailures: [], materialInputs: await materialInputs() };
@@ -232,7 +236,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
         }
     });
     try {
-        await page.goto('/screens/landscape_fabrication.html?landscapeCpuMiB=128&landscapeGpuMiB=64');
+        await page.goto(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpuMiB}&landscapeGpuMiB=${gpuMiB}`);
         await page.waitForFunction(() => {
             const state = window.__landscapeTestHooks?.snapshot();
             if (window.__landscapeCaptureError) throw new Error(window.__landscapeCaptureError);
@@ -270,7 +274,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
                 expect(summary.triangles.median, 'Matched material evidence requires identical geometry').toBe(previous.triangles.median);
                 expect(summary.drawCalls.median, 'Matched material evidence requires identical draw calls').toBe(previous.drawCalls.median);
                 const identity = state => materialQuality(state).map(({ resolution, desiredResolution, ...material }) => material);
-                if (deliverable === 'd1') {
+                if (deliverable !== 'd1a') {
                     expect(measured.state.appearance.materialTiling).toEqual(previous.state.appearance.materialTiling);
                     expect(identity(measured.state)).toEqual(identity(previous.state));
                 } else entry.materialIdentityChanges = { before: identity(previous.state), after: identity(measured.state),

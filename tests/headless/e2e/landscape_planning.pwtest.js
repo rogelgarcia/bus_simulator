@@ -2,10 +2,19 @@
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { LANDSCAPE_SURFACE_SOIL_COLORS, landscapeColorBytes } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainDiagnostics.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd6'}/planning`);
 const source = path.resolve('assets/public/landscape/coastal-city/manifest.json');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
+const canvasGrid = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
+    const canvas = document.getElementById('game-canvas'), gl = canvas.getContext('webgl2'), pixel = new Uint8Array(4), samples = [];
+    for (let row = 1; row < 10; row++) for (let column = 1; column < 16; column++) {
+        gl.readPixels(Math.floor(canvas.width * column / 16), Math.floor(canvas.height * row / 10), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        samples.push([...pixel.slice(0, 3)]);
+    }
+    resolve(samples);
+})));
 async function settle(page) {
     await expect.poll(async () => { const state = await snapshot(page); return state.streaming?.settled && state.appearance?.settled && state.planning?.settled; }, { timeout: 45000 }).toBe(true);
     return snapshot(page);
@@ -30,12 +39,18 @@ test('Landscape D6: retained references, diagnostic modes, native report, persis
     expect(planned.planning.features.some(feature => feature.id === 'point/bus-stop-reservation')).toBe(true);
     expect(planned.planning.features.filter(feature => feature.kind === 'road').every(feature => Number.isFinite(feature.firstPoint.y))).toBe(true);
     await page.screenshot({ path: path.join(artifacts, '01-coastal-planning-overview.png') });
-    for (const diagnostic of ['elevation', 'slope', 'water']) {
+    for (const diagnostic of ['elevation', 'slope', 'water', 'surface-level', 'surface-coverage']) {
         await page.evaluate(diagnostic => window.__landscapeTestHooks.setPlanning({ diagnostic }), diagnostic);
         const state = await settle(page); expect(state.planning.diagnostic).toBe(diagnostic);
         captures.push({ phase: diagnostic, state });
         await page.screenshot({ path: path.join(artifacts, `02-diagnostic-${diagnostic}.png`) });
     }
+    await expect(page.locator('[data-field="diagnostic-legend"]')).toContainText('before height competition');
+    const palette = Object.entries(LANDSCAPE_SURFACE_SOIL_COLORS).map(([soilId, color]) => ({ soilId, bytes: landscapeColorBytes(color.hex) }));
+    await page.evaluate(() => window.__landscapeTestHooks.setWater(false));
+    const exactSoils = new Set((await canvasGrid(page)).flatMap(rgb => palette.filter(entry => entry.bytes.every((byte, channel) => byte === rgb[channel])).map(entry => entry.soilId)));
+    await page.evaluate(() => window.__landscapeTestHooks.setWater(true));
+    expect(exactSoils.size, `Pure coverage regions without the translucent water reference reproduce review colors exactly: ${[...exactSoils].join(', ')}`).toBeGreaterThanOrEqual(3);
     await page.evaluate(() => window.__landscapeTestHooks.setPlanning({ diagnostic: 'none' }));
     await page.evaluate(() => window.__landscapeTestHooks.focusReference('point/bus-stop-reservation'));
     await settle(page);

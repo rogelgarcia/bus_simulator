@@ -37,7 +37,8 @@ test('Landscape D2: rendering precision does not move soil queries outside fract
     const encodedX = await page.evaluate(async ({ manifest, descriptor, heights, landCover }) => {
         const { createLandscapeMesh } = await import('/src/graphics/engine3d/landscape/LandscapeMesh.js');
         const { buildLandscapeMeshBuffers } = await import('/src/graphics/engine3d/landscape/LandscapeMeshBuffers.js');
-        const model = createLandscapeMesh(buildLandscapeMeshBuffers({ chunk: { descriptor, heights: new Float32Array(heights), landCover: new Uint8Array(landCover) }, manifest }));
+        const coverageSlots = window.__landscapeTestHooks.snapshot().appearance.coverageSlots.total;
+        const model = createLandscapeMesh(buildLandscapeMeshBuffers({ chunk: { descriptor, heights: new Float32Array(heights), landCover: new Uint8Array(landCover) }, manifest }), new Float32Array(heights), { coverageSlots });
         const value = model.mesh.geometry.attributes.position.getX(0);
         model.dispose();
         window.__landscapeTestHooks.dispose();

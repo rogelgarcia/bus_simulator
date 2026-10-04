@@ -1,7 +1,9 @@
 // Builds isolated material measurements with the unchanged production landscape shaders and uniforms.
 import * as T from 'three';
 import { createLandscapeShaderPayload } from '/src/graphics/shaders/materials/landscape/LandscapeShaderLoader.js';
-import { createLandscapeAppearanceUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { landscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
+import { LANDSCAPE_SOIL_CATALOG } from '/src/app/landscape/LandscapeCatalog.js';
 import { LandscapeMaskPages } from '/src/graphics/engine3d/landscape/LandscapeMaskPages.js';
 import { buildLandscapeContourCoverage } from '/src/graphics/engine3d/landscape/LandscapeContourCoverage.js';
 
@@ -12,7 +14,8 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
     renderer.toneMappingExposure = 1.2;
     renderer.outputColorSpace = toneMapping ? T.SRGBColorSpace : T.LinearSRGBColorSpace;
     const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
-    const uniforms = createLandscapeAppearanceUniforms(), payload = createLandscapeShaderPayload('terrain');
+    const coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
+    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots });
     const geometry = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).translate(1024, 0, 1024);
     geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4), 1));
     geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
@@ -60,8 +63,9 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
         const coordinate = 1024 / 2 ** (present.length - 1); center = [coordinate, coordinate];
     }
 
+    // clumps: null keeps the relief competition alone; { seed } enables catalog clump relief for soils with relief flags
     function setSynthetic({ heights = Array(6).fill(128), enabled = true, flags = Array(6).fill(1), resolution = 512,
-        period = 4, transition = null } = {}) {
+        period = 4, transition = null, clumps = null } = {}) {
         uniforms.uSurfaceBlendEnabled.value = enabled ? 1 : 0;
         for (let soil = 0; soil < 6; soil++) {
             surfaces[soil].image.data[7] = heights[soil]; surfaces[soil].needsUpdate = true;
@@ -75,6 +79,13 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
         uniforms.uBlendResolution.value = transition?.resolution ?? resolution;
         targetSurface.image.data[7] = transition?.height ?? 128; targetSurface.needsUpdate = true;
         uniforms.uBlendBase.value = bases[transition?.soil ?? 0]; uniforms.uBlendSurface.value = targetSurface;
+        setClumps(clumps, flags);
+    }
+
+    function setClumps(clumps, flags = Array(6).fill(1)) {
+        if (clumps !== null && !Number.isSafeInteger(clumps?.seed)) throw new Error('Probe clumps need an integer seed');
+        const clumpUniforms = landscapeMaterialClumpUniforms({ seed: clumps?.seed ?? 0, soils: LANDSCAPE_SOIL_CATALOG.map((soil, index) => ({ soilId: soil.id, enabled: !!flags[index] })) });
+        setLandscapeMaterialClumpUniforms(uniforms, clumpUniforms, clumps !== null);
     }
 
     function setColors(colors) {
@@ -131,7 +142,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false }
     }
 
     setCoverage([0, 0, 1, 0, 0, 0]); setSynthetic();
-    return { size, renderer, uniforms, material, texture, setCoverage, setSynthetic, setColors, draw, measureWeights, setBoundary, setPatternedHeights,
+    return { size, renderer, uniforms, material, texture, setCoverage, setSynthetic, setClumps, setColors, draw, measureWeights, setBoundary, setPatternedHeights,
         setCenter(value) { center = value; },
         snapshot: () => renderer.domElement.toDataURL('image/png'),
         rendererName: gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER),

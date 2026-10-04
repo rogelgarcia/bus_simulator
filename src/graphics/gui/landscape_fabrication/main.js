@@ -1,5 +1,5 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
-import { LandscapeView } from './LandscapeView.js';
+import { LandscapeView, LANDSCAPE_SURFACE_DETAIL_MODES } from './LandscapeView.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -12,7 +12,9 @@ for (const [parameter, key] of [['landscapeCpuMiB', 'cpuBytes'], ['landscapeGpuM
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > LANDSCAPE_STREAMING_BUDGETS[key]) throw new Error(`${parameter} must be a positive byte-exact MiB value no greater than the shipped budget`);
     budgets[key] = bytes;
 }
-const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets });
+const surfaceDetail = parameters.get('landscapeSurfaceDetail') ?? '25cm';
+if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`landscapeSurfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
+const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -27,6 +29,9 @@ window.__landscapeTestHooks = Object.freeze({
     reportSelection: () => view.reportSelection(),
     appearanceSample: (x, z) => view.appearance?.sample(x, z) ?? null,
     coverageSample: (x, z, options) => view.appearance?.coverageSample(x, z, options) ?? null,
+    detailSample: (x, z) => view.detailSample(x, z),
+    setSurfaceWarp: enabled => view.setSurfaceWarp(enabled),
+    setMaterialClumps: enabled => view.setMaterialClumps(enabled),
     setBudgets: options => view.setBudgets(options),
     beginPerformanceCapture: options => view.beginPerformanceCapture(options),
     endPerformanceCapture: () => view.endPerformanceCapture(),

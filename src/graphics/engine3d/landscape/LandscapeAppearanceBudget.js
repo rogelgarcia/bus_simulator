@@ -19,7 +19,7 @@ export class LandscapeAppearanceBudget {
         const limits = shared.snapshot().limits;
         this.floor = { cpuBytes: Math.floor(Math.min(12 * MIB, limits.cpuBytes * 3 / 32)), gpuBytes: Math.floor(Math.min(8 * MIB, limits.gpuBytes / 8)) };
         this.baseFloor = { ...this.floor };
-        this.limits = { cpuBytes: Math.floor(Math.min(40 * MIB, limits.cpuBytes / 2)), gpuBytes: Math.floor(Math.min(28 * MIB, limits.gpuBytes / 2)) };
+        this.limits = { cpuBytes: Math.floor(limits.cpuBytes / 2), gpuBytes: Math.floor(limits.gpuBytes / 2) };
         this.key = `${prefix}/appearance-headroom`;
         const admission = shared.reserve(this.key, { ...this.floor, kind: 'appearance-unused-reservation', pinned: true });
         if (!admission.admitted) throw new Error(`Appearance allowance cannot fit: ${admission.reason}`);

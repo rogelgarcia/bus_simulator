@@ -4,20 +4,28 @@ import * as THREE from 'three';
 import { LANDSCAPE_PLANNING_ROLES, loadLandscapePlanningReferences } from '../../../app/landscape/LandscapePlanningReferences.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 import { buildLandscapePlanningPositions, landscapePlanningVertexCount } from './LandscapePlanningGeometry.js';
+import { createLandscapeDiagnosticUniforms, landscapeSurfaceSoilColorValues, LANDSCAPE_DIAGNOSTICS } from './LandscapeTerrainDiagnostics.js';
 
 const LAYERS = Object.freeze({ districts: { kind: 'district', color: 0xe0c984 }, roads: { kind: 'road', color: 0xe7d4bc },
     shoreline: { kind: 'shoreline', color: 0x75dce6 }, points: { kind: 'point', color: 0xffb37b }, corridors: { kind: 'view-corridor', color: 0xb5c980 } });
-export const LANDSCAPE_DIAGNOSTICS = Object.freeze(['none', 'elevation', 'slope', 'water']);
+export { LANDSCAPE_DIAGNOSTICS };
 
 export class LandscapePlanningOverlay {
     constructor({ loaded, scene, budget, visibility = {}, diagnostic = 'none' }) {
         this.loaded = loaded; this.scene = scene; this.budget = budget; this.key = `planning/${crypto.randomUUID()}`;
         this.abort = new AbortController(); this.records = new Map(); this.features = []; this.errors = [];
         this.visible = Object.fromEntries(Object.keys(LAYERS).map(key => [key, visibility[key] ?? false]));
-        this.diagnostic = diagnostic; this.ready = false; this.disposed = false; this.uploadedBytes = 0; this.peakUploadedBytes = 0;
+        this.ready = false; this.disposed = false; this.uploadedBytes = 0; this.peakUploadedBytes = 0;
         const root = loaded.chunk.descriptor;
-        this.uniforms = { uDiagnostic: { value: LANDSCAPE_DIAGNOSTICS.indexOf(diagnostic) },
-            uDiagnosticRange: { value: new THREE.Vector3(root.minHeight, root.maxHeight, loaded.manifest.coordinates.seaLevel) } };
+        this.uniforms = { uDiagnostic: { value: 0 },
+            uDiagnosticRange: { value: new THREE.Vector3(root.minHeight, root.maxHeight, loaded.manifest.coordinates.seaLevel) }, ...createLandscapeDiagnosticUniforms() };
+        this.applyDiagnostic(diagnostic);
+    }
+
+    applyDiagnostic(diagnostic) {
+        if (!LANDSCAPE_DIAGNOSTICS.includes(diagnostic)) throw new Error('Unknown landscape diagnostic');
+        if (diagnostic === 'surface-coverage') this.uniforms.uSurfaceSoilColors.value.set(landscapeSurfaceSoilColorValues(this.loaded.manifest.soil.catalog));
+        this.diagnostic = diagnostic; this.uniforms.uDiagnostic.value = LANDSCAPE_DIAGNOSTICS.indexOf(diagnostic);
     }
 
     async initialize() {
@@ -41,10 +49,7 @@ export class LandscapePlanningOverlay {
     }
 
     set(options) {
-        if (options.diagnostic !== undefined) {
-            if (!LANDSCAPE_DIAGNOSTICS.includes(options.diagnostic)) throw new Error('Unknown landscape diagnostic');
-            this.diagnostic = options.diagnostic; this.uniforms.uDiagnostic.value = LANDSCAPE_DIAGNOSTICS.indexOf(options.diagnostic);
-        }
+        if (options.diagnostic !== undefined) this.applyDiagnostic(options.diagnostic);
         for (const [name, layer] of Object.entries(LAYERS)) {
             if (options[name] === undefined) continue;
             if (typeof options[name] !== 'boolean') throw new Error(`Planning layer ${name} must be boolean`);
@@ -89,6 +94,7 @@ export class LandscapePlanningOverlay {
                 classification: feature.classification, bounds: feature.bounds, metadata: feature.metadata, firstPoint: feature.geometry.points[0], source: feature.source })),
             visible: { ...this.visible }, diagnostic: this.diagnostic, errors: [...this.errors],
             accuracy: { guides: 'retained-source-XZ / overview-draped-height', diagnostics: 'displayed-terrain-LOD / approximate',
+                surfaceDiagnostics: 'resident-appearance-coverage / weights-after-hierarchy-availability-before-height-competition',
                 overviewSpacingMeters: this.loaded.manifest.grid.spacingX * this.loaded.chunk.descriptor.sampleStride, contourIntervalMeters: 5 },
             cpuBytes: entries.reduce((sum, entry) => sum + entry.cpuBytes, 0), gpuBytes: entries.reduce((sum, entry) => sum + entry.gpuBytes, 0),
             uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadedBytes, dependency: this.dependency ?? [] };

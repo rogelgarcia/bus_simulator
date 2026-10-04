@@ -123,3 +123,60 @@ export function landscapeRegionsEqual(first, second) {
     if (first.type === 'point') return first.x === second.x && first.z === second.z;
     return ['minX', 'maxX', 'minZ', 'maxZ'].every(key => first[key] === second[key]);
 }
+
+function segmentDistanceSquared(a, b, x, z) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+    const ex = x - a.x - t * dx, ez = z - a.z - t * dz;
+    return ex * ex + ez * ez;
+}
+
+/** Exact Euclidean signed distance in meters, positive inside; boundaries count as inside like containment. @param {LandscapeRegion} region @param {number} x @param {number} z @returns {number} */
+export function landscapeRegionSignedDistance(region, x, z) {
+    if (region.type === 'point') { const dx = x - region.x, dz = z - region.z; return 0 - Math.sqrt(dx * dx + dz * dz); }
+    if (region.type === 'circle') { const dx = x - region.center.x, dz = z - region.center.z; return region.radius - Math.sqrt(dx * dx + dz * dz); }
+    if (region.type === 'polygon') {
+        let nearest = Infinity;
+        for (let i = 0, j = region.points.length - 1; i < region.points.length; j = i++) nearest = Math.min(nearest, segmentDistanceSquared(region.points[j], region.points[i], x, z));
+        const distance = Math.sqrt(nearest);
+        return landscapeRegionContains(region, x, z) ? distance : 0 - distance;
+    }
+    const outsideX = Math.max(region.minX - x, x - region.maxX), outsideZ = Math.max(region.minZ - z, z - region.maxZ);
+    if (outsideX <= 0 && outsideZ <= 0) return Math.min(0 - outsideX, 0 - outsideZ);
+    const ox = Math.max(outsideX, 0), oz = Math.max(outsideZ, 0);
+    return 0 - Math.sqrt(ox * ox + oz * oz);
+}
+
+/**
+ * Nearest point of a region's boundary to (x, z), written into out as [x, z] and returned. Distance ties resolve in a
+ * fixed order (rectangle edges minX, maxX, minZ, maxZ; polygon edges from the closing edge onward); a circle center maps
+ * to the +X point. @param {LandscapeRegion} region @param {number} x @param {number} z @param {Float64Array|number[]} out
+ */
+export function landscapeRegionNearestBoundaryPoint(region, x, z, out) {
+    if (region.type === 'point') { out[0] = region.x; out[1] = region.z; return out; }
+    if (region.type === 'circle') {
+        const dx = x - region.center.x, dz = z - region.center.z, length = Math.sqrt(dx * dx + dz * dz);
+        if (length > 0) { out[0] = region.center.x + dx / length * region.radius; out[1] = region.center.z + dz / length * region.radius; }
+        else { out[0] = region.center.x + region.radius; out[1] = region.center.z; }
+        return out;
+    }
+    if (region.type === 'polygon') {
+        let nearest = Infinity;
+        for (let i = 0, j = region.points.length - 1; i < region.points.length; j = i++) {
+            const a = region.points[j], b = region.points[i], dx = b.x - a.x, dz = b.z - a.z;
+            const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+            const ex = x - a.x - t * dx, ez = z - a.z - t * dz, distance = ex * ex + ez * ez;
+            if (distance < nearest) { nearest = distance; out[0] = a.x + t * dx; out[1] = a.z + t * dz; }
+        }
+        return out;
+    }
+    const outsideX = Math.max(region.minX - x, x - region.maxX), outsideZ = Math.max(region.minZ - z, z - region.maxZ);
+    if (outsideX > 0 || outsideZ > 0) { out[0] = Math.max(region.minX, Math.min(region.maxX, x)); out[1] = Math.max(region.minZ, Math.min(region.maxZ, z)); return out; }
+    const toMinX = x - region.minX, toMaxX = region.maxX - x, toMinZ = z - region.minZ, toMaxZ = region.maxZ - z, nearest = Math.min(toMinX, toMaxX, toMinZ, toMaxZ);
+    out[0] = x; out[1] = z;
+    if (nearest === toMinX) out[0] = region.minX;
+    else if (nearest === toMaxX) out[0] = region.maxX;
+    else if (nearest === toMinZ) out[1] = region.minZ;
+    else out[1] = region.maxZ;
+    return out;
+}

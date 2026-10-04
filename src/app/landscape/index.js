@@ -6,7 +6,9 @@ export { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CHUNK_BYTE_LIMIT, encodeLandsc
 export { landscapeGridToWorld, landscapeWorldToGrid, landscapeCityTileToWorld, landscapeWorldToCityTile } from './LandscapeCoordinates.js';
 export { sampleLandscapeChunk, createLandscapeSelectionContext } from './LandscapeSampling.js';
 export { resolveLandscapeSoil } from './LandscapeSoil.js';
-export { LANDSCAPE_MAX_POLYGON_VERTICES, validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight, landscapeRegionsEqual } from './LandscapeRegions.js';
+export { LANDSCAPE_MAX_POLYGON_VERTICES, validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight, landscapeRegionsEqual, landscapeRegionSignedDistance, landscapeRegionNearestBoundaryPoint } from './LandscapeRegions.js';
+export { LANDSCAPE_SURFACE_DETAIL_FORMAT, LANDSCAPE_SURFACE_DETAIL_MAX_LEVELS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_METERS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_SLOPE, validateLandscapeSurfaceDetailRecipe, createLandscapeSurfaceDetailIndex,
+    landscapeSurfaceDetailSupport, landscapeSurfaceDetailInputs, landscapeSurfaceDetailKey, landscapeSurfaceDetailRecipeHash, landscapeSurfaceDetailSeed, landscapeSurfaceDetailSearchRadius } from './LandscapeSurfaceDetail.js';
 export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
 export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams } from './LandscapeAcquisition.js';
 export { LANDSCAPE_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatch } from './LandscapeEditing.js';
@@ -14,7 +16,7 @@ export { LANDSCAPE_STREAMED_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatchStre
 export { createLandscapeViewPlanner, planLandscapeView, landscapeResourceKey } from './LandscapeStreaming.js';
 export { LANDSCAPE_STREAMING_BUDGETS, LandscapeResidencyBudget } from './LandscapeResidencyBudget.js';
 export { LANDSCAPE_APPEARANCE_TIERS, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, LandscapeAppearanceBindingError, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';
-export { loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask, rasterizeLandscapeSoilMask } from './LandscapeAppearancePayload.js';
+export { loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask, loadLandscapeCoverChannel, rasterizeLandscapeSoilMask } from './LandscapeAppearancePayload.js';
 export { createLandscapeAppearancePlanner } from './LandscapeAppearancePlanner.js';
 export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
 export { cityTileLandscapeCoverage } from './LandscapeCityCoverage.js';

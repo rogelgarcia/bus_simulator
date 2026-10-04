@@ -69,6 +69,11 @@ blending is insufficient for the near-camera boundary. Source height is a surfac
 appearance input, not terrain elevation, collision or a new measured height field.
 Read relief from the retained displacement map; diffuse brightness is not height.
 
+Since AI577 D2, generated fine coverage pages supply irregular natural boundaries and
+profile-specific band widths, and world-anchored per-material clump relief interleaves the
+materials in tussocks, patches and boulders before texture relief resolves blade and grain
+edges (see [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md)).
+
 Use one normalized result for base color, normals, roughness, metalness and AO.
 Zero-coverage layers remain absent, single-material interiors remain unchanged,
 and degenerate/equal-height combinations must retain a valid base. Height-driven

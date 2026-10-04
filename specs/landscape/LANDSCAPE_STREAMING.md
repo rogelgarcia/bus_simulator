@@ -68,10 +68,11 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 
 | Resource or work limit | Default |
 | --- | ---: |
-| Controlled terrain CPU buffers and reservations | 128 MiB |
-| Estimated terrain GPU buffers and reservations | 64 MiB |
+| Controlled terrain CPU buffers and reservations | 384 MiB (128 MiB before AI577 D2) |
+| Estimated terrain GPU buffers and reservations | 192 MiB (64 MiB before AI577 D2) |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
 | Concurrent independent appearance worker | 1 |
+| Concurrent surface-detail generation workers (AI577 D2) | 2 |
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Geometric screen error goal | 1.5 pixels |
@@ -150,7 +151,7 @@ Browser integration additionally verifies actual requests, uploads, atomic
 transitions, inspected geometry, source reload and teardown. Generated receipts
 and captures belong in `tests/artifacts/screens/landscape/ai576/d3/`.
 
-The D3 browser gate uses a 1920×1080 viewport on the real coastal dataset. It
+The D3 browser gate uses a 1920×1080 viewport on the real coastal dataset. Its numbers below are historical measurements under the former 128/64 MiB default. It
 exercises a close view, LOD/boundary inspection, combined wireframe, fixed-position
 perspective FOV change, orthographic zoom, two repeated full routes and teardown.
 Its historical geometry-only controlled-buffer observations are:

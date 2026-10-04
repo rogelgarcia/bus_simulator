@@ -16,13 +16,14 @@ The test runs serially, owns one browser context at a time, disposes the viewer,
 
 ## Fixed conditions
 
-The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000 meters, 2,049 × 2,049 native vertex samples, 1.953125-meter spacing, 64 native 257 × 257 tiles within the 85-node hierarchy. Each receipt records the canonical manifest SHA-256, revision, and original source SHA-256. Both profiles use the same source and route.
+The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000 meters, 2,049 × 2,049 native vertex samples, 1.953125-meter spacing, 64 native 257 × 257 tiles within the 85-node hierarchy. Each receipt records the canonical manifest SHA-256, revision, and original source SHA-256. All profiles use the same source and route.
 
 | Setting | Value |
 | --- | --- |
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
-| Standard controlled CPU / estimated GPU budgets | 128 / 64 MiB |
+| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 384 / 192 MiB since AI577 D2 |
+| Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |
 | Inspection/planning | Wireframe, grid, axes, LOD tint, boundaries, reference guides, and diagnostics disabled |
@@ -33,9 +34,15 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | GPU query completion tail | Four additional frames; unmatched pending queries are reported, never copied from another frame |
 | Optional measurement buffers | 4,096 frame/GPU slots, 458,752 controlled CPU bytes (448 KiB); no GPU allocation |
 
-Initial budget overrides are applied before `LandscapeView.load()` using `landscapeCpuMiB` and `landscapeGpuMiB` URL parameters. Values must represent positive safe integer byte counts and cannot exceed the respective shipped default. A constrained startup never first loads at the standard profile. Ordinary viewer usage has no active capture buffer.
+Profiles run in the order standard, historical, constrained. Results recorded below this section are historical AI 576 D7 measurements under the former 128/64 MiB standard; the AI577 D2 three-profile receipt is `tests/artifacts/screens/landscape/ai577/d2/prerequisites/performance/`. In that run the shipped profile reaches requested detail at every route stop (peak 166.19 MiB CPU / 111.68 MiB GPU), the historical profile is GPU-limited at the approach and orthographic-in stops, and the constrained profile peaks at 40.31 / 23.54 MiB. Initial budget overrides are applied before `LandscapeView.load()` using `landscapeCpuMiB` and `landscapeGpuMiB` URL parameters. Values must represent positive safe integer byte counts and cannot exceed the respective shipped default. A constrained startup never first loads at the standard profile. Ordinary viewer usage has no active capture buffer.
 
 The route contains 11 stops: distant overview; a 30-frame approach to the highest-error level-2 coastal tile; a 30-frame traversal to another high-error tile at least 1,500 meters away; a fixed-position perspective view with FOV 100 → 5 → 100 degrees; a fixed-position orthographic view with 12,000-meter span and zoom 1 → 70; a 2,000-meter span at zoom 100 to exercise 20-meter appearance detail; orthographic zoom-out; and return to the initial distant overview. Exact positions, targets, projection settings, and interpolation counts are saved in the receipt. Frame-stepped movement and settled holds are deterministic; this is not a timed driving simulation.
+
+AI577 D2 adds generated fine coverage pages, the shared native warp and material clump relief.
+Its matched four-pose measurements (fine detail off / 50 cm / 25 cm GPU, residency, memory and
+cold-load times) are recorded in [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md)
+"Measured results" and in the AI 577 completion record; the user's realism-first direction
+defers reductions to D6.
 
 ## Cold and warm meanings
 
@@ -73,7 +80,7 @@ The separate analytic inventory is exact for its stated layouts:
 - A single float32 XYZ position array and uint32 triangle-list index array require `2049² × 12 + 8,388,608 × 3 × 4 = 151,044,108` bytes before normals, materials, textures, or temporary overlap. This is a specified indexed-reference layout, not a universal lower bound across all possible compression/topology schemes.
 - Summing `estimateLandscapeMeshBuffers()` across all 64 native tiles gives the current adapter's full native geometry inventory, including skirts, normals, parent attributes, colors and indices; the measured receipt reports that arithmetic separately.
 
-Even the stated position/index-only reference exceeds both 64 and 24 MiB GPU profiles. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
+Even the stated position/index-only reference (144.05 MiB) exceeds the historical 64 MiB and constrained 24 MiB GPU profiles; it fits the shipped 192 MiB profile, while the full native adapter inventory (224.41 MiB) exceeds every profile. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
 
 ## Recorded results
 

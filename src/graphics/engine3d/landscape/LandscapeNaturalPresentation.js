@@ -49,17 +49,39 @@ export function createLandscapeNaturalPresentation(manifest, root) {
         columns, rows, spacingX: (bounds.maxX - bounds.minX) / (columns - 1), spacingZ: (bounds.maxZ - bounds.minZ) / (rows - 1), ...landscapeNaturalPresentationBytes(root.descriptor) });
     const overrides = manifest.soil.overrides.map(override => ({ region: override.region, soil: soilIds.indexOf(override.soilId) }));
 
-    function sample(x, z, cover) {
+    function semanticOf(cover) {
         const semantic = soilByCover.get(cover);
         if (semantic === undefined) throw new Error(`Unknown natural presentation cover ${cover}`);
-        for (let i = overrides.length - 1; i >= 0; i--) if (landscapeRegionContains(overrides[i].region, x, z)) return overrides[i].soil * 17;
-        if (!planning.has(cover)) return semantic * 17;
-        const column = Math.max(0, Math.min(columns - 1, Math.round((x - bounds.minX) / (bounds.maxX - bounds.minX) * (columns - 1))));
-        const row = Math.max(0, Math.min(rows - 1, Math.round((bounds.maxZ - z) / (bounds.maxZ - bounds.minZ) * (rows - 1))));
-        return semantic | labels[row * columns + column] << 4;
+        return semantic;
     }
 
-    return Object.freeze({ sample, reference });
+    function infill(x, z) {
+        const column = Math.max(0, Math.min(columns - 1, Math.round((x - bounds.minX) / (bounds.maxX - bounds.minX) * (columns - 1))));
+        const row = Math.max(0, Math.min(rows - 1, Math.round((bounds.maxZ - z) / (bounds.maxZ - bounds.minZ) * (rows - 1))));
+        return labels[row * columns + column];
+    }
+
+    function sample(x, z, cover) {
+        const semantic = semanticOf(cover);
+        for (let i = overrides.length - 1; i >= 0; i--) if (landscapeRegionContains(overrides[i].region, x, z)) return overrides[i].soil * 17;
+        if (!planning.has(cover)) return semantic * 17;
+        return semantic | infill(x, z) << 4;
+    }
+
+    /** Packed semantic|display<<4 soil from cover and natural infill only, without authored overrides. */
+    function sampleBase(x, z, cover) {
+        const semantic = semanticOf(cover);
+        return planning.has(cover) ? semantic | infill(x, z) << 4 : semantic * 17;
+    }
+
+    /** Semantic soil index after exact ordered override containment. */
+    function semanticSoil(x, z, cover) {
+        const semantic = semanticOf(cover);
+        for (let i = overrides.length - 1; i >= 0; i--) if (landscapeRegionContains(overrides[i].region, x, z)) return overrides[i].soil;
+        return semantic;
+    }
+
+    return Object.freeze({ sample, sampleBase, semanticSoil, reference });
 }
 
 /** @param {ReturnType<typeof createLandscapeNaturalPresentation>} presentation @param {any} descriptor @param {Uint8Array} landCover */

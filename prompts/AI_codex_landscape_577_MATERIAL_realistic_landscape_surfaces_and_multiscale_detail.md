@@ -33,7 +33,8 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. Leave D2–D7 pending for later passes; D2 is next.
+  corrective D1a step are complete. D2 is complete. Leave D3–D7 pending for later
+  passes; D3 is next.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -51,6 +52,12 @@ visually verified improvement at each step rather than postponing verification.
   other materials or claim the entire coastal source package is CC0.
 - Keep this work compatible with later asphalt, roads, buildings, vegetation and
   props. Do not place city objects or implement city construction in this AI.
+- User direction, 2026-10-03 (during D2): achieve realism first; memory and
+  performance requirements are flexible until D6 optimizes them. The shipped
+  landscape budget becomes 384 MiB controlled CPU / 192 MiB estimated GPU with the
+  unchanged 8 MiB per-frame upload cap. Allocations stay accounted and measured;
+  before/after comparisons match budgets within each profile, and the historical
+  128/64 MiB profile is retained for continuity.
 
 ## Deliverables and dependencies
 
@@ -123,21 +130,25 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D2. Local surface detail pages and material height blending
 
-- [ ] Add independently addressed fine surface coverage/detail pages where D1's
+- [x] Add independently addressed fine surface coverage/detail pages where D1's
   analytic reconstruction is source-limited. Evaluate a 25–50 cm near-camera
   coverage target, while retaining coarser coverage elsewhere and bounded residency.
-- [ ] Retain reproducible authored/procedural boundary inputs, revisions and seeds;
+- [x] Retain reproducible authored/procedural boundary inputs, revisions and seeds;
   distinguish generated detail from original imported measurements. Raster
   upsampling alone must not be presented as new source fidelity.
-- [ ] Integrate D1a's material micro-height competition with fine coverage pages,
+- [x] Integrate D1a's material micro-height competition with fine coverage pages,
   producing soil in rock gaps, irregular grass edges and plausible sand transitions.
   Normalize weights robustly, preserve a valid base layer and coherent
   normal/roughness response across independently arriving surface pages.
-- [ ] Provide filtered hierarchy levels and neighborhood context sufficient for
+- [x] Provide filtered hierarchy levels and neighborhood context sufficient for
   seamless borders; edits invalidate only affected pages and their dependencies.
   Fine surface streaming must remain independent of geometry/source query leases.
-- [ ] Validate before/after edge quality, narrow features, all LOD/zoom transitions,
+- [x] Validate before/after edge quality, narrow features, all LOD/zoom transitions,
   cold loading, failures, repeated travel, editing and memory/upload bounds.
+- [x] Apply the realism-first direction: ship the 384/192 MiB profile and size fine
+  page capacity for quality. Report measured memory, frame cost and geometry-LOD
+  differences for the realism and historical 128/64 MiB profiles, and leave
+  reductions to D6.
 
 ### D3. Non-repeating material sampling
 
@@ -432,6 +443,117 @@ integrates a locally planar score margin; combined maximum selection, support an
 normalization make the multi-material result approximate rather than an exact
 area integral. Source relief is a material appearance input, not measured terrain
 elevation or collision. This completes D1a, not the entire AI.
+
+### D2 completed — 2026-10-04
+
+This step uses D1a commit `f4a84b6` as its rendering baseline; the separate infrastructure
+commit `f873ae9` only lets the worktree server serve the shared junctioned asset store. D1 and
+D1a remain completed history; D3–D7 remain pending and D3 is the next implementation step.
+
+- Added generated fine coverage pages below the native level: L4/L5/L6 at 0.98, 0.49 and
+  0.24 m (250/125/62.5 m pages), addressed on demand, in the unchanged D1 page format and in
+  extra layers of the existing mask array, so the shader keeps fifteen samplers. The slot
+  count is a compile-time define chosen from device uniform capacity (81 here: 17 native +
+  64 fine). The canonical contract is `specs/landscape/LANDSCAPE_SURFACE_DETAIL.md`.
+- Recipe `landscape-surface-detail-v3` (family seed 1207276911) builds canonical native
+  support windows and smoothed vector boundaries (multi-label marching squares with a
+  turning-limited quadratic fit), which turn staircases into lines while keeping one-cell
+  strips, tapering strips and single-sample islands. It adds a shared world-anchored warp
+  (48–6 m, mean about 0.81 m, at most 3 m, no folding), band-limited ridged breakup,
+  exact authored override geometry, and data-driven pair widths of 0.8–2.0 m.
+- The same warp runs in the terrain shader for native and coarser levels, so aerial views
+  meander like the fine pages and the native-to-fine hand-off does not jump.
+- Physical interleaving: `landscape-material-clumps-v1` reweights each transition with
+  world-anchored per-material clump relief before the D1a height competition. Grass now thins
+  into sand in tussocks and tufts, soil shows between rock relief, and forest soil and sand
+  interleave in patches. Coverage normalization, absent materials, single-material interiors
+  and tier-arrival stability are preserved.
+- Fixed a D1 shader shortcut that skipped fitted contours when the 6×6 label support was
+  uniform. CPU and GPU now match for wide generated bands; native coverage is unchanged.
+- Runtime: two detail workers, a 64-slot fine pool, uniform-page resolution, and a
+  content-addressed view cache of 48 pages that survives reload. Leases are independent
+  of geometry and native queries; failures retain the parent and retry once.
+- Inspection: snapshot, coverage and generator-sample hooks, `surface-level` and
+  `surface-coverage` diagnostics, and `landscapeSurfaceDetail=off|50cm|25cm`.
+- Following the user's realism-first direction, the shipped budget is 384 MiB CPU / 192 MiB
+  GPU (appearance ceilings half of each total). At the historical 128/64 MiB the terrain
+  geometry was GPU-degraded in every capture view; at 256/128 and above it meets its
+  1.5-pixel target.
+
+Verification: all 247 landscape Node tests pass. Browser suites run sequentially on port 8002 pass 37 tests: surface detail 8, surface seams 2, appearance 6, streaming 6, lifecycle 2, appearance binding 1, nature 1, material height blend 2, fabrication 2, navigation 2, planning 1, authoring 2, city binding 1 and the three-profile performance gate 1. `landscape_large_editing` stops during setup at the pre-existing stale city pin noted below. The production-shader height probe keeps the D1a legacy result of 40,116 changed boundary pixels. Its 15 clump parity cases stay within a 0.0058 GPU/JS weight error. The production-shader seam
+probe shows no edge jump beyond its tolerances at adjacent L6 pages, mixed L5/L6 corners,
+native↔L4 edges, uniform neighbors and warped native borders, and GPU and JavaScript warps
+agree within 0.69 bytes. A soil edit on an isolated copy regenerated only the 2 pages it
+touched; 6 came from the cache. Routing one native cover payload to HTTP 500 failed only
+its 6 dependent L4 pages, each after two attempts, while native coverage stayed intact.
+Repeated travel reuses cached pages with identical CPU/GPU bytes after each return, the
+16/8 MiB profile has zero fine capacity, and disposal returns controlled bytes to zero.
+The generator's 324 tested adjacent page pairs share bit-identical border texels.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d2/`.
+
+- Matched four-view comparisons, realism profile (384/192 MiB):
+  `realism/comparisons/01-game-pov-comparison.png`, `02-oblique-comparison.png`,
+  `03-top-down-comparison.png` and `04-medium-distance-comparison.png`; the historical
+  128/64 MiB pairs are in `comparisons/`, and the 256/128 MiB baseline is in `quality/before/`.
+  All baselines were captured before rendering code changed and are sealed by
+  `immutable-baseline.json`.
+- Fifteen close-up before/after pairs at five boundary types (HEAD runtime served from an
+  isolated export): `closeups/comparisons/`.
+- The 50 cm/25 cm/off evaluation is in `evaluation/`, the generator review images in
+  `generator/`, and the surface diagnostics in `diagnostics/`. Integration and clump tuning
+  evidence is in `integration/` and `clumps/`, and the final regression logs are in
+  `final/logs/` and `final/results.csv`.
+
+Measured on Windows 10.0.26200 x64, Ryzen 5 9600X, about 32 GiB RAM, RTX 3060 through
+ANGLE/D3D11, Chromium 151.0.7922.34. Cameras, projection, 1920×1080 at DPR 1, antialiasing,
+lighting, water, material tiers and budgets match within each profile. Each pose has 30
+warm-up and 120 sampled frames, with completed GPU timer queries. The frame interval moved
+from 16.70 to about 17.5 ms between the morning baselines and the after captures. This is
+environmental: in the same session, the unchanged HEAD runtime also paced at 17.4 ms.
+
+Realism profile (384/192 MiB), before → after:
+
+| View | GPU median, ms | GPU p95, ms | CPU median, ms | Draws | Triangles | CPU MiB | GPU MiB | Peak upload, bytes/frame | Settle, ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Game POV | 4.793 → 6.948 | 5.683 → 7.131 | 0.70 → 1.20 | 17 | 1,996,804 | 148.8 → 166.9 | 105.2 → 121.8 | 4,466,784 → 8,143,487 | 3289 → 3385 |
+| Oblique | 5.019 → 11.181 | 5.647 → 11.893 | 0.60 → 1.30 | 19 | 2,263,044 | 148.8 → 170.0 | 105.2 → 121.8 | 272,484 → 544,968 | 1000 → 2520 |
+| Top-down | 2.536 → 3.410 | 4.133 → 3.507 | 0.50 → 0.50 | 6 | 532,484 | 94.7 → 125.3 | 65.6 → 82.2 | 3,676,703 → 3,676,703 | 1192 → 1672 |
+| Medium distance | 6.436 → 16.549 | 6.865 → 17.004 | 0.70 → 1.20 | 19 | 2,263,044 | 164.8 → 187.6 | 115.7 → 132.3 | 4,194,300 → 4,766,639 | 1986 → 2418 |
+
+Resident fine pages (resident/capacity, uniform): 53/64 with 33 uniform, 64/64 with 34,
+6/64 with 0, and 64/64 with 24. Lifetime peaks were 238.6 MiB CPU and 142.8 MiB GPU.
+
+Historical profile (128/64 MiB), before → after: GPU medians 5.189 → 4.525, 5.400 → 6.363,
+1.885 → 3.055 and 5.097 → 7.712 ms. Draws and triangles are identical (9/931,844,
+9/931,844, 6/532,484 and 11/1,198,084). Fine capacity is 12 (12/12, 12/12, 6/12 and 12/12
+resident). Peaks are 108.4 MiB CPU and 62.7 MiB GPU.
+
+Fine-detail evaluation at 384/192 MiB with the warp and clumps on (GPU median, ms, for
+off / 50 cm / 25 cm; fine pages resident at 50/25 cm):
+
+| View | Off | 50 cm | 25 cm | Fine pages |
+| --- | --- | --- | --- | --- |
+| Game POV | 4.82 | 5.94 | 6.91 | 26 / 53 |
+| Oblique | 7.12 | 9.24 | 11.15 | 31 / 64 |
+| Top-down | 3.02 | 3.21 | 3.40 | 2 / 6 |
+| Medium distance | 10.43 | 14.61 | 17.44 | 41 / 64 |
+
+At the game POV, 50 cm and 25 cm pages look nearly identical because shader clumps provide
+most near-field interleaving. The 25 cm target stays the realism default; 50 cm is the
+measured D6 optimization candidate. Generation takes about 13–20 ms median per page in Node,
+with a 29.4 ms mean and 72.5 ms p95 in the browser workers.
+
+Limitations: GPU cost grows with fine coverage. The medium view goes from 6.4 to 16.5 ms
+and the oblique and medium views fill all 64 slots; D6 owns these reductions. Fine detail
+refines the source's designed macro shapes and planning-infill areas rather than
+re-inferring them. Sand remains blurry at extreme close range (texel density, D4), and some
+forest|sand pockets look smooth there. Effective band widths vary about 0.61–1.39× along a
+boundary because of the warp. Breakup can interrupt strips narrower than about 1 m, and an
+override over soil that changes along one edge can lose that boundary within about 0.4 m.
+Two pre-existing issues remain: `landscape_large_editing` stops at a stale city revision pin
+from the D1a material publication, and the top-down pose did not settle at an unusual
+80/56 MiB profile on HEAD either. This completes D2, not the entire AI.
 
 ## On completion
 

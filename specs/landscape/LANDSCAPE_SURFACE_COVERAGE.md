@@ -148,6 +148,17 @@ PBR soil is shaded once using the final normalized weight. The physical material
 tile periods, near/macro texture blend, catalog calibration and material-page
 tiers are not changed by this reconstruction.
 
+## Generated fine levels and the shared warp
+
+AI577 D2 adds generated fine pages below the native level in up to 64 extra layers of the
+same array (a separate 17,438,976-byte ledger entry at 64 slots) and evaluates native and
+coarser coverage at the warped position `world + landscapeSurfaceWarp(world)`, selecting
+native pages by containment of that position. The fitted pair contour is now applied even
+when the 6×6 label support is uniform, matching the CPU reference; native fits never reach
+uniform support, so native coverage is unchanged. Details are in
+[LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md); the production-shader seam
+verification includes the D2 fine-level probe.
+
 ## Hierarchy transitions and scheduling
 
 Each level defines one availability field from the minimum of the surrounding
@@ -167,8 +178,8 @@ The Windows shader uses fixed vector weights, avoiding dynamically written
 struct-member arrays that the D3D shader backend cannot address reliably.
 
 View planning and demand admission run before geometry admission. The protected
-credit is bounded by existing appearance ceilings and the unchanged shared total
-budget. It includes intended material tiers and one sequential decode allowance;
+credit is bounded by the appearance ceilings (half of each total since AI577 D2) and the shared total
+budget (384/192 MiB shipped since AI577 D2). It includes intended material tiers and one sequential decode allowance;
 resident or pending resources replace the credit instead of being double-counted.
 This removes a race where longer halo I/O let geometry consume intended material
 capacity first. Decreasing demand releases unused credit promptly. The base
@@ -197,6 +208,7 @@ native classification constraints, rejected narrow features, and actual coastal
 long-step reduction. Uniform-support tests check all 36 veto positions, retained
 source bytes and exact one-hot equivalence across near and minified footprints;
 the production-shader probe additionally compares complete rendered frames with
-the marker enabled and disabled. Availability tests include a four-tile corner with unequal
+the marker enabled and disabled; since AI577 D2 it compiles the device-chosen
+`LANDSCAPE_COVERAGE_SLOTS` count and reproduces the historical 17-slot samples exactly. Availability tests include a four-tile corner with unequal
 arrival progress and a missing-child edge. Budget tests delay appearance work
 while geometry attempts admission, then verify exact credit replacement/release.

@@ -5,9 +5,25 @@ import { LandscapeResidencyBudget } from '../../../src/app/landscape/LandscapeRe
 import { LandscapeAppearanceBudget, landscapeTextureBytes } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js';
 
 const MIB = 1024 * 1024;
+const HISTORICAL_PROFILE = Object.freeze({ cpuBytes: 128 * MIB, gpuBytes: 64 * MIB });
+
+test('Appearance budget: ceilings are half of each total and profiles up to the former caps keep their limits', () => {
+    const limits = profile => {
+        const shared = new LandscapeResidencyBudget(profile), appearance = new LandscapeAppearanceBudget(shared, 'ceiling');
+        const value = { limits: appearance.limits, reserved: appearance.snapshot().reserved };
+        appearance.dispose();
+        assert.equal(shared.snapshot().entries.length, 0);
+        return value;
+    };
+    assert.deepEqual(limits(undefined), { limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
+    assert.deepEqual(limits(HISTORICAL_PROFILE), { limits: { cpuBytes: 64 * MIB, gpuBytes: 32 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
+    assert.deepEqual(limits({ cpuBytes: 80 * MIB, gpuBytes: 56 * MIB }), { limits: { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }, reserved: { cpuBytes: 7.5 * MIB, gpuBytes: 7 * MIB } });
+    assert.deepEqual(limits({ cpuBytes: 48 * MIB, gpuBytes: 24 * MIB }), { limits: { cpuBytes: 24 * MIB, gpuBytes: 12 * MIB }, reserved: { cpuBytes: 4.5 * MIB, gpuBytes: 3 * MIB } });
+    assert.deepEqual(limits({ cpuBytes: 16 * MIB, gpuBytes: 8 * MIB }), { limits: { cpuBytes: 8 * MIB, gpuBytes: 4 * MIB }, reserved: { cpuBytes: 1.5 * MIB, gpuBytes: MIB } });
+});
 
 test('Appearance budget: denied growth restores protected credit and leaves no phantom entry', () => {
-    const shared = new LandscapeResidencyBudget();
+    const shared = new LandscapeResidencyBudget(HISTORICAL_PROFILE);
     const appearance = new LandscapeAppearanceBudget(shared, 'test');
     assert.equal(shared.reserve('geometry', { cpuBytes: 64 * MIB, gpuBytes: 56 * MIB, kind: 'geometry' }).admitted, true);
     const before = shared.snapshot();
@@ -63,7 +79,7 @@ test('Appearance textures: mip accounting includes every real level and shared m
 });
 
 test('Appearance budget: early view demand protects delayed pages from geometry and drops credit without double counting', () => {
-    const shared = new LandscapeResidencyBudget(), appearance = new LandscapeAppearanceBudget(shared, 'delayed');
+    const shared = new LandscapeResidencyBudget(HISTORICAL_PROFILE), appearance = new LandscapeAppearanceBudget(shared, 'delayed');
     assert.equal(appearance.protectDemand({ cpuBytes: 28 * MIB, gpuBytes: 25 * MIB }).admitted, true);
     assert.equal(shared.reserve('geometry-too-fine', { cpuBytes: 50 * MIB, gpuBytes: 40 * MIB, kind: 'geometry' }).admitted, false);
     assert.equal(shared.reserve('geometry-coarse', { cpuBytes: 30 * MIB, gpuBytes: 35 * MIB, kind: 'geometry' }).admitted, true);

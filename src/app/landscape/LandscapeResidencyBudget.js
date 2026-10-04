@@ -1,6 +1,6 @@
 // Accounts terrain working sets and protects resources held by independent consumers.
 // @ts-check
-export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 128 * 1024 * 1024, gpuBytes: 64 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
+export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 384 * 1024 * 1024, gpuBytes: 192 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
 
 function bytes(value, label) {
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`[LandscapeResidency] ${label} must be a nonnegative safe byte count`);

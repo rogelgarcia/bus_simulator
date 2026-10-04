@@ -1,3 +1,6 @@
+#ifndef LANDSCAPE_COVERAGE_SLOTS
+#error LANDSCAPE_COVERAGE_SLOTS must be defined by LandscapeShaderLoader
+#endif
 precision highp sampler2DArray;
 uniform vec3 uTint;
 uniform float uLodColor;
@@ -10,10 +13,11 @@ uniform vec4 uCoverageSettings;
 uniform vec4 uCoverageFilter;
 uniform float uCoveragePositiveClamp;
 uniform float uContourDistanceRange;
-uniform vec4 uMaskBounds[17];
-uniform vec4 uMaskMeta[17];
-uniform vec4 uMaskNeighbors0[17];
-uniform vec4 uMaskNeighbors1[17];
+uniform vec4 uMaskBounds[LANDSCAPE_COVERAGE_SLOTS];
+uniform vec4 uMaskMeta[LANDSCAPE_COVERAGE_SLOTS];
+uniform vec4 uMaskNeighbors0[LANDSCAPE_COVERAGE_SLOTS];
+uniform vec4 uMaskNeighbors1[LANDSCAPE_COVERAGE_SLOTS];
+uniform vec3 uMaskSlotRanges;
 uniform sampler2D uSoilBase0;
 uniform sampler2DArray uSoilSurface0;
 uniform sampler2D uSoilBase1;
@@ -40,9 +44,15 @@ uniform vec4 uSurfaceBlendSettings;
 uniform float uSoilHeightEnabled[6];
 uniform float uSoilResolution[6];
 uniform float uBlendResolution;
+uniform vec3 uSurfaceLevelColors[8];
+uniform vec3 uSurfaceSoilColors[6];
+uniform float uSurfaceWarpEnabled;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
 varying vec3 vLandscapeWorld;
+
+#include <shaderlib:landscape/surface_warp>
+#include <shaderlib:landscape/material_clumps>
 
 struct SoilSurface {
     vec3 albedo;
@@ -58,17 +68,32 @@ SoilSurface emptySurface() {
     return SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.5, 0.0);
 }
 
-int maskAt(vec2 world) {
-    int slot = 0;
+bool detailSlot(int slot) {
+    return uMaskMeta[slot].w > 1.5;
+}
+
+int maskAt(vec2 world, bool detail) {
+    int slot = detail ? -1 : 0;
     float level = -1.0;
-    for (int i = 0; i < 17; i++) {
-        vec4 bounds = uMaskBounds[i];
-        if (uMaskMeta[i].w > 0.5 && uMaskMeta[i].x > level && world.x >= bounds.x && world.x <= bounds.y && world.y >= bounds.z && world.y <= bounds.w) {
-            slot = i;
-            level = uMaskMeta[i].x;
+    int first = detail ? int(uMaskSlotRanges.y) : 0;
+    int end = int(detail ? uMaskSlotRanges.z : uMaskSlotRanges.x);
+    int layers = textureSize(uMaskPages, 0).z;
+    for (int i = 0; i < LANDSCAPE_COVERAGE_SLOTS; i++) {
+        if (i >= layers) break;
+        int index = first + i;
+        if (index >= end || index >= layers) break;
+        vec4 bounds = uMaskBounds[index];
+        if (uMaskMeta[index].w > 0.5 && detailSlot(index) == detail && uMaskMeta[index].x > level && world.x >= bounds.x && world.x <= bounds.y && world.y >= bounds.z && world.y <= bounds.w) {
+            slot = index;
+            level = uMaskMeta[index].x;
         }
     }
     return slot;
+}
+
+int coarserSlot(int slot, int nativeStart) {
+    int parent = int(uMaskMeta[slot].z);
+    return detailSlot(slot) && !detailSlot(parent) ? nativeStart : parent;
 }
 
 int displaySoil(int slot, ivec2 sampleIndex) {
@@ -346,6 +371,8 @@ Coverage maskCoverage(int slot, vec2 world, vec2 dx, vec2 dy) {
     }
     float nearTotal = coverageTotal(near);
     near.low /= nearTotal; near.high /= nearTotal;
+    }
+    // contour ramps of wide generated transitions reach cells whose label support is already uniform
     if (minification < 1.0) near = fittedContourCoverage(slot, grid, spacing, dx, dy, near);
     if (minification > 0.0) {
         float filteredTotal = coverageTotal(filtered);
@@ -353,24 +380,30 @@ Coverage maskCoverage(int slot, vec2 world, vec2 dx, vec2 dy) {
         near = mixCoverage(near, filtered, minification);
     }
     }
-    }
     return near;
 }
 
-Coverage filteredMaskCoverage(int slot, vec2 world, vec2 dx, vec2 dy) {
+Coverage frameCoverage(int slot, vec2 world, vec2 dx, vec2 dy, vec2 warped, vec2 warpedDx, vec2 warpedDy) {
+    bool detail = detailSlot(slot);
+    return maskCoverage(slot, detail ? world : warped, detail ? dx : warpedDx, detail ? dy : warpedDy);
+}
+
+Coverage filteredMaskCoverage(int slot, int nativeStart, vec2 world, vec2 dx, vec2 dy, vec2 warped, vec2 warpedDx, vec2 warpedDy) {
     int current = slot;
+    int next = slot;
     float coarser = 0.0;
-    for (int depth = 0; depth < 17; depth++) {
+    for (int depth = 0; depth < LANDSCAPE_COVERAGE_SLOTS; depth++) {
         vec4 bounds = uMaskBounds[current];
         vec2 spacing = vec2(bounds.y - bounds.x, bounds.w - bounds.z) / (uMaskDimensions - 1.0);
-        vec2 extent = (abs(dx) + abs(dy)) / spacing;
-        int parent = int(uMaskMeta[current].z);
-        coarser = parent == current ? 0.0 : smoothstep(uCoverageFilter.x, uCoverageFilter.y, max(extent.x, extent.y));
+        bool detail = detailSlot(current);
+        vec2 extent = (abs(detail ? dx : warpedDx) + abs(detail ? dy : warpedDy)) / spacing;
+        next = coarserSlot(current, nativeStart);
+        coarser = next == current ? 0.0 : smoothstep(uCoverageFilter.x, uCoverageFilter.y, max(extent.x, extent.y));
         if (coarser < 1.0) break;
-        current = parent;
+        current = next;
     }
-    Coverage result = maskCoverage(current, world, dx, dy);
-    if (coarser > 0.0) result = mixCoverage(result, maskCoverage(int(uMaskMeta[current].z), world, dx, dy), coarser);
+    Coverage result = frameCoverage(current, world, dx, dy, warped, warpedDx, warpedDy);
+    if (coarser > 0.0) result = mixCoverage(result, frameCoverage(next, world, dx, dy, warped, warpedDx, warpedDy), coarser);
     return result;
 }
 
@@ -410,6 +443,36 @@ float coverageAvailability(int slot, vec2 world) {
     return result;
 }
 
+// floored log-space relief (clump plus texture relief) of every present material in a transition; interiors and
+// disabled soils keep zero relief
+Coverage materialClumpRelief(Coverage coverage, Coverage heights, Coverage details, vec2 world, float footprint) {
+    Coverage relief = emptyCoverage();
+    float maximumWeight = max(max(max(coverage.low.x, coverage.low.y), coverage.low.z), max(max(coverage.high.x, coverage.high.y), coverage.high.z));
+    if (uSurfaceBlendEnabled < 0.5 || uClumpSettings.w < 0.5 || maximumWeight >= coverageTotal(coverage)) return relief;
+    for (int soil = 0; soil < 6; soil++) {
+        vec4 clump = uSoilClumps[soil];
+        if (coverageWeight(coverage, soil) <= 0.0 || clump.y <= 0.0) continue;
+        float clumpDetail;
+        float value = uClumpSettings.x * clump.y * landscapeMaterialClump(soil, world, footprint, clumpDetail);
+        float textureDetail = coverageWeight(details, soil);
+        value = max(0.0, uClumpConfidence.z * max(clumpDetail, textureDetail) + value + clump.z * textureDetail * (coverageWeight(heights, soil) - 0.5));
+        Coverage identity = coverageIdentity(soil);
+        relief.low += identity.low * value; relief.high += identity.high * value;
+    }
+    return relief;
+}
+
+// each material's relief acts only on its confident coverage, so reconstruction tails can lose weight but never gain it
+Coverage clumpedCoverage(Coverage coverage, Coverage relief) {
+    if (all(equal(relief.low, vec3(0.0))) && all(equal(relief.high, vec3(0.0)))) return coverage;
+    vec3 lowExponent = smoothstep(vec3(uClumpConfidence.x), vec3(uClumpConfidence.y), coverage.low) * relief.low;
+    vec3 highExponent = smoothstep(vec3(uClumpConfidence.x), vec3(uClumpConfidence.y), coverage.high) * relief.high;
+    float maximum = max(max(max(lowExponent.x, lowExponent.y), lowExponent.z), max(max(highExponent.x, highExponent.y), highExponent.z));
+    Coverage weighted = Coverage(coverage.low * exp(lowExponent - maximum), coverage.high * exp(highExponent - maximum));
+    float total = coverageTotal(weighted);
+    return Coverage(weighted.low / total, weighted.high / total);
+}
+
 Coverage materialHeightCoverage(Coverage coverage, Coverage heights, float detail) {
     if (uSurfaceBlendEnabled < 0.5) return coverage;
     Coverage scores = Coverage(coverage.low * (1.0 + uSurfaceBlendSettings.x * (2.0 * heights.low - 1.0)),
@@ -443,21 +506,46 @@ void addSurface(inout SoilSurface result, SoilSurface part, float weight) {
     result.ao += part.ao * weight;
 }
 
-SoilSurface appearanceSurface(vec2 world, vec2 dx, vec2 dy, vec3 normal) {
-    int current = maskAt(world);
+// generated fine pages carry the warp in their samples: walk them at the unwarped position, then hand the remaining
+// weight to the native hierarchy evaluated entirely at the warped position
+Coverage hierarchyCoverage(vec2 world, vec2 dx, vec2 dy, vec2 warped, vec2 warpedDx, vec2 warpedDy) {
+    int nativeStart = maskAt(warped, false);
+    int current = maskAt(world, true);
+    if (current < 0) current = nativeStart;
     Coverage coverage = emptyCoverage();
     float remaining = 1.0;
-    for (int depth = 0; depth < 17; depth++) {
-        float activation = coverageAvailability(current, world);
+    for (int depth = 0; depth < LANDSCAPE_COVERAGE_SLOTS; depth++) {
+        float activation = coverageAvailability(current, detailSlot(current) ? world : warped);
         if (activation > 0.0) {
-            Coverage part = filteredMaskCoverage(current, world, dx, dy);
+            Coverage part = filteredMaskCoverage(current, nativeStart, world, dx, dy, warped, warpedDx, warpedDy);
             coverage.low += part.low * remaining * activation;
             coverage.high += part.high * remaining * activation;
         }
         remaining *= 1.0 - activation;
         if (remaining <= 0.0) break;
-        current = int(uMaskMeta[current].z);
+        current = coarserSlot(current, nativeStart);
     }
+    return coverage;
+}
+
+vec3 surfaceLevelColor(vec2 world, vec2 warped) {
+    int nativeStart = maskAt(warped, false);
+    int current = maskAt(world, true);
+    if (current < 0) current = nativeStart;
+    for (int depth = 0; depth < LANDSCAPE_COVERAGE_SLOTS; depth++) {
+        int parent = coarserSlot(current, nativeStart);
+        if (parent == current || coverageAvailability(current, detailSlot(current) ? world : warped) > 0.0) break;
+        current = parent;
+    }
+    return uSurfaceLevelColors[clamp(int(uMaskMeta[current].x + 0.5), 0, 7)];
+}
+
+vec3 surfaceCoverageColor(Coverage coverage) {
+    return uSurfaceSoilColors[0] * coverage.low.x + uSurfaceSoilColors[1] * coverage.low.y + uSurfaceSoilColors[2] * coverage.low.z
+        + uSurfaceSoilColors[3] * coverage.high.x + uSurfaceSoilColors[4] * coverage.high.y + uSurfaceSoilColors[5] * coverage.high.z;
+}
+
+SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal) {
     SoilSurface a = emptySurface(), b = emptySurface(), c = emptySurface(), d = emptySurface(), e = emptySurface(), f = emptySurface();
     if (coverage.low.x > 0.0) a = soilSurface(0, world, dx, dy, normal);
     if (coverage.low.y > 0.0) b = soilSurface(1, world, dx, dy, normal);
@@ -465,8 +553,11 @@ SoilSurface appearanceSurface(vec2 world, vec2 dx, vec2 dy, vec3 normal) {
     if (coverage.high.x > 0.0) d = soilSurface(3, world, dx, dy, normal);
     if (coverage.high.y > 0.0) e = soilSurface(4, world, dx, dy, normal);
     if (coverage.high.z > 0.0) f = soilSurface(5, world, dx, dy, normal);
-    float detail = dot(coverage.low, vec3(a.heightDetail, b.heightDetail, c.heightDetail)) + dot(coverage.high, vec3(d.heightDetail, e.heightDetail, f.heightDetail));
-    coverage = materialHeightCoverage(coverage, Coverage(vec3(a.height, b.height, c.height), vec3(d.height, e.height, f.height)), detail);
+    Coverage heights = Coverage(vec3(a.height, b.height, c.height), vec3(d.height, e.height, f.height));
+    Coverage details = Coverage(vec3(a.heightDetail, b.heightDetail, c.heightDetail), vec3(d.heightDetail, e.heightDetail, f.heightDetail));
+    coverage = clumpedCoverage(coverage, materialClumpRelief(coverage, heights, details, world, max(length(dx), length(dy))));
+    float detail = dot(coverage.low, details.low) + dot(coverage.high, details.high);
+    coverage = materialHeightCoverage(coverage, heights, detail);
     SoilSurface surface = emptySurface();
     addSurface(surface, a, coverage.low.x); addSurface(surface, b, coverage.low.y); addSurface(surface, c, coverage.low.z);
     addSurface(surface, d, coverage.high.x); addSurface(surface, e, coverage.high.y); addSurface(surface, f, coverage.high.z);
@@ -495,6 +586,8 @@ void main() {
     vec3 normal = normalize(vLandscapeNormal);
     vec2 world = vLandscapeWorld.xz;
     vec2 dx = dFdx(world), dy = dFdy(world);
+    vec2 warped = uSurfaceWarpEnabled > 0.5 ? world + landscapeSurfaceWarp(world) : world;
+    vec2 warpedDx = dFdx(warped), warpedDy = dFdy(warped);
     vec3 color;
     if (uDiagnostic == 1) {
         float elevation = clamp((vLandscapeWorld.y - uDiagnosticRange.x) / max(0.001, uDiagnosticRange.y - uDiagnosticRange.x), 0.0, 1.0);
@@ -513,9 +606,14 @@ void main() {
         float depth = max(0.0, uDiagnosticRange.z - vLandscapeWorld.y);
         color = depth > 0.0 ? mix(vec3(0.18, 0.63, 0.72), vec3(0.04, 0.12, 0.33), clamp(depth / 10.0, 0.0, 1.0)) : vec3(0.46, 0.48, 0.37);
     } else if (uAppearanceReady > 0.5) {
-        SoilSurface surface = appearanceSurface(world, dx, dy, normal);
-        surface.albedo = mix(surface.albedo, uTint, uLodColor);
-        color = illuminate(surface);
+        Coverage coverage = hierarchyCoverage(world, dx, dy, warped, warpedDx, warpedDy);
+        if (uDiagnostic == 5) color = surfaceCoverageColor(coverage);
+        else {
+            SoilSurface surface = appearanceSurface(coverage, world, dx, dy, normal);
+            surface.albedo = mix(surface.albedo, uTint, uLodColor);
+            if (uDiagnostic == 4) surface.albedo = mix(surface.albedo, surfaceLevelColor(world, warped), 0.5);
+            color = illuminate(surface);
+        }
     } else {
         float diffuse = max(0.0, dot(normal, normalize(vec3(-0.44, 0.87, -0.22))));
         vec3 hemisphere = mix(vec3(0.32, 0.37, 0.28), vec3(0.65, 0.78, 0.83), normal.y * 0.5 + 0.5);
@@ -524,4 +622,5 @@ void main() {
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+    if (uDiagnostic == 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 1.0);
 }

@@ -30,10 +30,13 @@ material resource. Texture changes cannot change a soil ID or imported cover ID.
 
 ## Acquisition, identity and storage
 
-One appearance module worker joins the two geometry workers. It performs cover
+One appearance module worker joins the two geometry workers; AI577 D2 adds two surface-detail
+workers for generated fine pages (see [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md)). It performs cover
 fetch/hash verification, ordered soil-override rasterization and raw RGBA page
-fetch/hash verification. There are at most three active worker jobs overall,
-with at most one appearance job running. No image decoder or soil-region scan
+fetch/hash verification. There are at most five active worker jobs overall:
+two geometry, one appearance and two surface-detail jobs. New controlled ledger kinds are
+`appearance-surface-detail-array`, `-worker-context`, `-generation`, `-upload-pending`,
+`-resident-slot`, `-inspection` and `-cache`. No image decoder or soil-region scan
 runs in the render loop. The original full-resolution PBR imagery is not fetched.
 
 Cover masks load their own `landCover` channel without a height request. Each
@@ -71,6 +74,23 @@ texture gradients, mip chain and old/new material-tier transition as the other
 surface channels. The existing RGBA allocation and fifteen-sampler count stay
 unchanged. The material snapshot exposes the active blend recipe and each
 material's height declaration for inspection.
+
+AI577 D2 sizes the per-slot coverage uniform arrays (`uMaskBounds`, `uMaskMeta`,
+`uMaskNeighbors0/1`) with the compile-time `LANDSCAPE_COVERAGE_SLOTS` define instead of a
+hardcoded seventeen. `chooseLandscapeCoverageSlots(renderer)` picks the count once per view
+and renderer: `min(81, floor((maxFragmentUniforms - fixed) / 4))`, where the fixed vector count
+is parsed from the actual shader source plus the vectors Three.js adds (125 since the AI577 D2
+warp and clump uniforms). Seventeen native mask slots are always required; the remainder (at
+most 64) is the fine-page capacity of [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md).
+The RTX 3060 / ANGLE D3D11 test machine reports 1,024 vectors and compiles 81 slots; the WebGL2
+minimum of 224 yields 24 slots (7 fine); a device that cannot fit seventeen slots fails with an
+explicit `[Landscape]` error.
+The geometry streamer's materials and the appearance uniforms receive the same count, and
+`setAppearance` rejects arrays of another length. The finest-page search loop is bounded by
+the mask array depth, so unused slots cost no fragment work. `snapshot().appearance.coverageSlots`
+reports `{total,native,detail,detailMax,maxFragmentUniforms,fixedUniformVectors,slotUniformVectors}`.
+The terrain shader still uses fifteen samplers. Pure slot arithmetic is tested in
+`tests/node/unit/landscape_coverage_slots.test.js`.
 
 Worker cancellation terminates obsolete active work and removes queued work.
 Completed stale records are rejected by abort and record-identity checks. Source
@@ -147,7 +167,12 @@ those derivatives are evaluated before any nonuniform return. Raised detail thus
 survives the transition while lower areas admit the adjacent material, without
 introducing a zero-coverage layer. All PBR properties use the same final weights.
 
-Competition detail fades between 0.04 and 0.20 meters per effective sample. The
+Since AI577 D2 the competition first reweights coverage with world-anchored per-material clump
+relief (`landscape-material-clumps-v1`; model, parameters and invariants in
+[LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md) "Physical interleaving"), so
+transitions interleave in tussocks, patches and boulders at 0.3–1.5 m before blade-scale
+relief resolves the edges; `setMaterialClumps` and `snapshot().appearance.materialClumps`
+expose it. Texture competition detail fades between 0.04 and 0.20 meters per effective sample. The
 effective sample size is the larger of projected world footprint and the active
 physical texture period divided by resident tier resolution. Detail readiness
 blends continuously between old and incoming tiers and is coverage weighted across
@@ -194,8 +219,10 @@ source semantics, so referenced fine pages are admitted and released correctly.
 
 ## Shared memory and frame-work limits
 
-The default total remains **128 MiB controlled CPU buffers / 64 MiB estimated GPU
-buffers**. Geometry, native queries, appearance and the water reference use the
+The default total is **384 MiB controlled CPU buffers / 192 MiB estimated GPU
+buffers** since AI577 D2, following the user's realism-first direction (until then
+it was 128/64 MiB; that historical profile left terrain geometry GPU-degraded in every
+AI577 capture view). Geometry, native queries, appearance and the water reference use the
 same ledger. Appearance protects a small default allowance of 12 MiB CPU / 8 MiB
 GPU before geometry begins view refinement. Real appearance resources replace
 that credit; the unused part is separately labeled `appearance-unused-reservation`.
@@ -206,12 +233,15 @@ let geometry consume a material's planned capacity merely by finishing first.
 The provisional source-soil set is cached once during initialization, and the
 plan/reservation work remains included in appearance frame timing. Demand credit
 shrinks promptly when the plan shrinks and disappears at disposal. Its lower bound
-is the base allowance above; its upper bounds remain the appearance ceilings of
-40 MiB CPU and 28 MiB GPU. These ceilings are not additional memory above the shared limit.
+is the base allowance above; its upper bounds are the appearance ceilings, which are
+half of each total budget (192 MiB CPU / 96 MiB GPU for the shipped profile). The
+former fixed 40 MiB CPU / 28 MiB GPU caps were removed in AI577 D2; every profile up to
+80/56 MiB keeps exactly its previous ceilings. These ceilings are not additional memory
+above the shared limit.
 
 For smaller profiles, the protected CPU/GPU allowances are respectively
 `min(12 MiB, totalCPU * 3/32)` and `min(8 MiB, totalGPU / 8)`. Appearance ceilings
-are bounded by half the corresponding total budget. A 16/8 MiB test profile
+are half of the corresponding total budget. A 16/8 MiB test profile
 therefore protects 1.5/1 MiB and uses five mask slots. An appearance failure frees
 its allocations and allowance and leaves the valid terrain palette available.
 A profile too small for the terrain root still rejects minimum coverage.
@@ -285,6 +315,16 @@ spacings, root policy/hash, halo dependencies and exact controlled storage costs
 It is an appearance inspection value; authoritative editing still uses native
 terrain queries. `setWater(boolean)` and `snapshot().water` expose the separate
 reference surface for deterministic verification.
+
+Two terrain diagnostics (AI577 D2) support transition review. **Surface detail level**
+(`surface-level`) keeps the shaded surface and tints albedo 50% toward the level color of
+the finest page that actually contributes at the fragment (non-zero availability): L0 blue,
+L1 cyan, L2 green, L3 yellow (coastal native), L4 orange, L5 red, L6 violet, L7 white.
+**Surface coverage weights** (`surface-coverage`) writes unlit false colors of the normalized
+coverage after hierarchy availability and before height competition, after tone mapping so
+pure regions reproduce exact bytes: unknown 210,60,210 · seabed 96,124,138 · sand 217,197,143 ·
+loam 118,160,78 · forest 104,76,48 · rock 186,183,176. These are the same colors as the
+generator review images. Both branches run only when selected; the default path is unchanged.
 
 Pure budget transaction/mip tests live in
 `tests/node/unit/landscape_appearance_budget.test.js`. The browser acceptance suite

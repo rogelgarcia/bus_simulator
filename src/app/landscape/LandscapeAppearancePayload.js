@@ -54,6 +54,23 @@ export function rasterizeLandscapeSoilMask(manifest, descriptor, landCover, soil
     return result;
 }
 
+/**
+ * Authenticated raw land-cover bytes of one chunk, without soil rasterization or a height request. The manifest must be
+ * the caller's already validated manifest; size and SHA-256 are verified against its descriptor.
+ * @param {any} manifest @param {string} chunkId @param {{manifestUrl:string|URL,fetchImpl?:typeof fetch,signal?:AbortSignal}} options
+ */
+export async function loadLandscapeCoverChannel(manifest, chunkId, { manifestUrl, fetchImpl = globalThis.fetch, signal }) {
+    const descriptor = manifest?.chunks?.find(chunk => chunk.id === chunkId);
+    requireCondition(!!descriptor, `unknown landscape cover ${chunkId}`);
+    const channel = descriptor.channels.landCover;
+    requireCondition(channel.encoding === 'uint8' && channel.byteLength === descriptor.columns * descriptor.rows && channel.decodedByteLength === channel.byteLength, `landscape cover ${chunkId} must hold one raw byte per sample`);
+    signal?.throwIfAborted();
+    const response = await fetchImpl(new URL(channel.url, resolveLandscapeUrl(manifestUrl)).href, { signal });
+    const landCover = await readBoundedResponse(response, channel.byteLength, true, `landscape cover ${chunkId}`);
+    await verifyLandscapeHash(landCover, channel.sha256, `landscape cover ${chunkId}`); signal?.throwIfAborted();
+    return Object.freeze({ descriptor, landCover });
+}
+
 /** @param {any} input @param {string} chunkId @param {{manifestUrl:string|URL,fetchImpl?:typeof fetch,signal?:AbortSignal,maxDecodedBytes?:number}} options */
 export async function loadLandscapeCoverMask(input, chunkId, { manifestUrl, fetchImpl = globalThis.fetch, signal, maxDecodedBytes = 2 * 257 * 257 }) {
     const manifest = validateLandscapeManifest(input), descriptor = manifest.chunks.find(chunk => chunk.id === chunkId);

@@ -7,6 +7,7 @@ import { createLandscapeMesh } from './LandscapeMesh.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { computeLandscapeTileEdges } from './LandscapeTileEdges.js';
 import { landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
+import { assertLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
@@ -31,8 +32,9 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 }
 
 export class LandscapeStreamer {
-    /** @param {{loaded:any,budget:any,renderer:any,scene:any,mode?:string,lodColors?:boolean,boundaries?:boolean,targetErrorPixels?:number}} options */
-    constructor({ loaded, budget, renderer, scene, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5 }) {
+    /** @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,mode?:string,lodColors?:boolean,boundaries?:boolean,targetErrorPixels?:number}} options */
+    constructor({ loaded, budget, renderer, scene, coverageSlots, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5 }) {
+        this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
         this.loaded = loaded;
         this.manifest = loaded.manifest;
         this.budget = budget;
@@ -131,7 +133,7 @@ export class LandscapeStreamer {
 
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;
-        record.model = createLandscapeMesh(record.buffers, record.chunk.heights);
+        record.model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots });
         if (this.appearance) record.model.setAppearance(this.appearance.uniforms);
         if (this.planning) record.model.setPlanning(this.planning.uniforms);
         record.model.setMode(this.mode);

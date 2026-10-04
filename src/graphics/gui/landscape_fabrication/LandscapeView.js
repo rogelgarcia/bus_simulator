@@ -12,16 +12,27 @@ import { LandscapeAppearanceStreamer } from '../../engine3d/landscape/LandscapeA
 import { createLandscapeWaterReference } from '../../engine3d/landscape/LandscapeWaterReference.js';
 import { LandscapePlanningOverlay } from '../../engine3d/landscape/LandscapePlanningOverlay.js';
 import { landscapePlanningHeight } from '../../engine3d/landscape/LandscapePlanningGeometry.js';
+import { chooseLandscapeCoverageSlots } from '../../engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { LANDSCAPE_SURFACE_LEVEL_COLORS, LANDSCAPE_SURFACE_SOIL_COLORS } from '../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { LandscapeSurfaceDetailCache, landscapeSurfaceDetailCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceDetailCache.js';
+import { landscapeCoverageMaskLayout } from '../../engine3d/landscape/LandscapeSurfaceCoverage.js';
 import { LandscapeBookmarks } from './LandscapeBookmarks.js';
 import { LandscapePerformanceCapture } from './LandscapePerformanceCapture.js';
 import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
+/** Generated surface-detail modes: levels below the native cover grid (25 cm reaches 0.244 m samples on the coast). */
+export const LANDSCAPE_SURFACE_DETAIL_MODES = Object.freeze({ off: 0, '50cm': 2, '25cm': 3 });
+
 export class LandscapeView {
-    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number}}} options */
-    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {} } = {}) {
+    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm'}} options */
+    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm' } = {}) {
+        if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         this.canvas = canvas;
+        this.surfaceDetail = surfaceDetail;
+        this.surfaceDetailLevels = LANDSCAPE_SURFACE_DETAIL_MODES[surfaceDetail];
+        this.detailCache = null;
         this.source = new URL(source, location.href).href;
         this.mode = 'shaded';
         this.projection = 'perspective';
@@ -47,6 +58,7 @@ export class LandscapeView {
         this.abort = new AbortController();
         this.perfBar = ensureGlobalPerfBar();
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+        this.coverageSlots = chooseLandscapeCoverageSlots(this.renderer);
         this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -118,7 +130,7 @@ export class LandscapeView {
         try {
             const loaded = await loadLandscapeOverview(this.source, { signal: this.loadAbort.signal });
             if (this.disposed || sequence !== this.loadSequence) return;
-            const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
+            const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
             this.loadingStream = stream;
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
@@ -133,7 +145,8 @@ export class LandscapeView {
             this.stream = stream;
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
-            const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer });
+            const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer, coverageSlots: this.coverageSlots,
+                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded) });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
             this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, visible: this.waterVisible });
@@ -168,6 +181,39 @@ export class LandscapeView {
             this.budget.release(loadKey);
             if (sequence === this.loadSequence) this.reloading = false;
         }
+    }
+
+    // the content-addressed fine-page cache outlives appearance instances so reloads and edits reuse unaffected pages
+    ensureDetailCache(loaded) {
+        const pageBytes = landscapeCoverageMaskLayout(loaded.chunk.descriptor).pageBytes;
+        if (this.detailCache && this.detailCachePageBytes === pageBytes) return this.detailCache;
+        this.disposeDetailCache();
+        const capacityBytes = landscapeSurfaceDetailCacheCapacity({ limits: this.budget.snapshot().limits, pageBytes, levels: this.surfaceDetailLevels });
+        this.detailCache = capacityBytes ? new LandscapeSurfaceDetailCache({ budget: this.budget, key: `surface-detail-cache/${crypto.randomUUID()}`, capacityBytes }) : null;
+        this.detailCachePageBytes = pageBytes;
+        return this.detailCache;
+    }
+
+    disposeDetailCache() { this.detailCache?.dispose(); this.detailCache = null; this.detailCachePageBytes = null; }
+
+    /** Generator-internal surface-detail inspection at a world position (async, through a detail worker). @param {number} x @param {number} z */
+    detailSample(x, z) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before inspecting generated surface detail');
+        return this.appearance.detailSample(x, z);
+    }
+
+    /** @param {boolean} enabled */
+    setSurfaceWarp(enabled) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing the surface warp');
+        this.appearance.setSurfaceWarp(enabled);
+        return this.appearance.snapshot().surfaceWarp;
+    }
+
+    /** @param {boolean} enabled */
+    setMaterialClumps(enabled) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing material clump relief');
+        this.appearance.setMaterialClumps(enabled);
+        return this.appearance.snapshot().materialClumps;
     }
 
     resize() {
@@ -241,10 +287,14 @@ export class LandscapeView {
         this.panel.root.querySelector('[data-field="diagnostic"]').value = planning.diagnostic;
         this.panel.text('planning-status', planning.errors.length ? `References unavailable or limited: ${planning.errors.join('; ')}`
             : `${planning.features.length} retained source references · Informational/advisory only`);
-        const legend = { none: 'Material surface. Optional guides preserve source XZ and drape on the coarse overview.',
-            elevation: 'Elevation: blue-green low → tan high. Contours every 5 m.', slope: 'Slope: green 0° → yellow 15° → red 35°+.',
-            water: `Depth below sea level ${this.loaded.manifest.coordinates.seaLevel} m: cyan 0 → blue 10 m+. Gray-green is dry.` };
-        this.panel.text('diagnostic-legend', `${legend[planning.diagnostic]}\nApproximate displayed terrain LOD; use Inspect area for native samples. Guides use ${planning.accuracy.overviewSpacingMeters.toFixed(3)} m overview spacing.`);
+        const legend = { none: () => 'Material surface. Optional guides preserve source XZ and drape on the coarse overview.',
+            elevation: () => 'Elevation: blue-green low → tan high. Contours every 5 m.', slope: () => 'Slope: green 0° → yellow 15° → red 35°+.',
+            water: () => `Depth below sea level ${this.loaded.manifest.coordinates.seaLevel} m: cyan 0 → blue 10 m+. Gray-green is dry.`,
+            'surface-level': () => `Surface detail level: shaded surface with a 50% tint of the finest contributing coverage page. ${LANDSCAPE_SURFACE_LEVEL_COLORS.map(entry => `L${entry.level} ${entry.name}`).join(' · ')}. Native level ${this.loaded.manifest.grid.maxLevel}; finer levels are generated.`,
+            'surface-coverage': () => `Surface coverage: unlit false colors of normalized weights after hierarchy availability, before height competition. ${this.loaded.manifest.soil.catalog.map(soil => `${soil.id} ${LANDSCAPE_SURFACE_SOIL_COLORS[soil.id].name}`).join(' · ')}.` };
+        const accuracy = planning.diagnostic.startsWith('surface-') ? 'Resident appearance coverage pages, independent of geometry LOD; generated levels are visual detail, not measured data.'
+            : `Approximate displayed terrain LOD; use Inspect area for native samples. Guides use ${planning.accuracy.overviewSpacingMeters.toFixed(3)} m overview spacing.`;
+        this.panel.text('diagnostic-legend', `${legend[planning.diagnostic]()}\n${accuracy}`);
     }
 
     referenceInfo(id = this.panel.root.querySelector('[data-field="reference-list"]').value) {
@@ -351,6 +401,7 @@ export class LandscapeView {
         this.stream?.dispose();
         this.stream = null;
         this.loaded = null;
+        this.disposeDetailCache();
         this.budget.dispose();
         this.budget = new LandscapeResidencyBudget(budgets);
         return this.load();
@@ -595,6 +646,7 @@ export class LandscapeView {
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
+            surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
@@ -602,6 +654,12 @@ export class LandscapeView {
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
         };
+    }
+
+    surfaceDetailLine(detail) {
+        if (!detail.enabled) return `Generated surface detail ${this.surfaceDetail}: inactive (${detail.reason})`;
+        const levels = Object.keys(detail.residentByLevel).map(level => `L${level} ${detail.residentByLevel[level]}/${detail.wantedByLevel[level]}`).join(' · ');
+        return `Generated surface detail ${this.surfaceDetail}: ${levels} resident/wanted · ${detail.residentIds.length}/${detail.capacity} slots · ${detail.uniformIds.length} uniform · ${detail.pending} pending · cache ${detail.cache.hits} hits / ${detail.cache.misses} misses${detail.degradationReason ? ` · ${detail.degradationReason}` : ''}`;
     }
 
     /** @param {{maxFrames?:number}} [options] */
@@ -659,6 +717,7 @@ export class LandscapeView {
                 this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`);
                 const appearance = this.appearance?.snapshot();
                 if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}`).join(' / ')} px · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
+                if (appearance) this.panel.text('surface-detail', this.surfaceDetailLine(appearance.detail));
                 if (this.selection) {
                     const x = this.selection.position.x, z = this.selection.position.z;
                     const chunk = this.stream.renderedChunkAt(x, z);
@@ -701,6 +760,7 @@ export class LandscapeView {
         this.loadingAppearance?.dispose();
         this.appearance?.dispose();
         this.appearance = null;
+        this.disposeDetailCache();
         this.water?.dispose();
         this.water = null;
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;

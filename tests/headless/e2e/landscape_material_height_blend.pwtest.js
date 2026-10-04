@@ -1,12 +1,13 @@
-// Measures relative-relief dominance and derivative stability through the unchanged production landscape shader.
+// Measures relative-relief dominance, clump relief parity and derivative stability through the unchanged production landscape shader.
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { landscapeMaterialHeightDetail, sampleLandscapeMaterialBlend } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
+import { landscapeClumpedCoverage, landscapeMaterialClumpRelief, landscapeMaterialHeightDetail, sampleLandscapeMaterialBlend } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
+import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
 
-const artifacts = path.resolve('tests/artifacts/screens/landscape/ai577/d1a/height-probe');
-const two = [0, 0, .5, .5, 0, 0], highThird = [255, 255, 0, 255, 255, 255];
+const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai577/d1a', 'height-probe');
+const two = [0, 0, .5, .5, 0, 0], highThird = [255, 255, 0, 255, 255, 255], clumps = { seed: 4005984422 };
 const cases = [
     { id: 'legacy-disabled', weights: two, heights: highThird, enabled: false },
     { id: 'missing-height-metadata', weights: two, heights: highThird, flags: [0, 0, 0, 0, 0, 0] },
@@ -20,19 +21,40 @@ const cases = [
     { id: 'far-pixel-footprint', weights: two, heights: highThird, span: 102.4 },
     { id: 'coarse-height-detail', weights: two, heights: highThird, resolution: 32 },
     ...Array.from({ length: 11 }, (_, step) => ({ id: `tier-arrival-${step}`, weights: two, heights: highThird, resolution: 32,
-        transition: { soil: 3, progress: step / 10, resolution: 512, height: 255 } }))
+        transition: { soil: 3, progress: step / 10, resolution: 512, height: 255 } })),
+    // clump relief: resolution 16 removes texture relief detail so the rendered weights are the clumped coverage itself
+    ...[[300.37, 412.81], [512.5, 610.25], [700.11, 205.73], [250.9, 777.4], [640.2, 455.6], [455.55, 333.3]].map((center, index) => ({
+        id: `clumps-coverage-${index}`, weights: two, resolution: 16, clumps, center })),
+    ...[[120.4, 377.7], [301.9, 160.2], [410.6, 420.3]].map((center, index) => ({ id: `clumps-junction-${index}`, weights: [0, 0, 1 / 3, 1 / 3, 1 / 3, 0], resolution: 16, clumps, center })),
+    { id: 'clumps-tail', weights: [0, 0, .99, .01, 0, 0], heights: [128, 128, 0, 255, 128, 128], clumps, center: [512.5, 610.25] },
+    { id: 'clumps-without-relief-metadata', weights: two, flags: [0, 0, 0, 0, 0, 0], clumps, center: [512.5, 610.25] },
+    { id: 'clumps-far-footprint', weights: two, resolution: 16, clumps, center: [700.11, 205.73], span: 102.4 },
+    ...[[300.37, 412.81], [455.55, 333.3]].map((center, index) => ({ id: `clumps-relief-${index}`, weights: two, heights: highThird, clumps, center }))
 ];
 
-function expectedWeights(value) {
-    if (value.enabled === false) return value.weights;
-    const heights = value.heights ?? Array(6).fill(128), flags = value.flags ?? Array(6).fill(1);
+// clump relief and clumped relief scores at a world position; the sampled pixel sits half a pixel right (+x) and up (-z) of the camera center
+function expectedInputs(value, x, z) {
+    const heights = value.heights ?? Array(6).fill(128), flags = value.flags ?? Array(6).fill(1), metersPerPixel = (value.span ?? 4) / 512;
     const sampled = heights.map((height, soil) => !flags[soil] ? .5 : value.transition?.soil === soil
         ? (height * (1 - value.transition.progress) + value.transition.height * value.transition.progress) / 255 : height / 255);
     const details = flags.map((enabled, soil) => landscapeMaterialHeightDetail({ periodMeters: value.period ?? 4,
-        resolution: value.resolution ?? 512, metersPerPixel: (value.span ?? 4) / 512, enabled: !!enabled,
+        resolution: value.resolution ?? 512, metersPerPixel, enabled: !!enabled,
         targetResolution: value.transition?.soil === soil ? value.transition.resolution : value.resolution ?? 512,
         transition: value.transition?.soil === soil ? value.transition.progress : 0 }));
-    return sampleLandscapeMaterialBlend({ weights: value.weights, heights: sampled, details }).weights;
+    const clumpRelief = value.weights.map((weight, soil) => !value.clumps || !weight ? 0 : landscapeMaterialClumpRelief({ soilId: LANDSCAPE_SOIL_CATALOG[soil].id,
+        seed: value.clumps.seed, x, z, metersPerPixel, height: sampled[soil], heightDetail: details[soil], enabled: !!flags[soil] }));
+    const scores = landscapeClumpedCoverage(value.weights, clumpRelief).map((weight, soil) => weight * (1 + .7 * (2 * sampled[soil] - 1)));
+    return { sampled, details, clumpRelief, scores, metersPerPixel };
+}
+
+function expectedWeights(value) {
+    if (value.enabled === false) return value.weights;
+    const metersPerPixel = (value.span ?? 4) / 512, [x, z] = value.center ? [value.center[0] + metersPerPixel / 2, value.center[1] - metersPerPixel / 2] : [0, 0];
+    const { sampled, details, clumpRelief, scores } = expectedInputs(value, x, z);
+    if (!value.clumps) return sampleLandscapeMaterialBlend({ weights: value.weights, heights: sampled, details }).weights;
+    const right = expectedInputs(value, x + metersPerPixel, z).scores, up = expectedInputs(value, x, z - metersPerPixel).scores;
+    return sampleLandscapeMaterialBlend({ weights: value.weights, heights: sampled, details, clumpRelief,
+        scoreDx: right.map((score, soil) => score - scores[soil]), scoreDy: up.map((score, soil) => score - scores[soil]) }).weights;
 }
 
 test.use({ viewport: { width: 512, height: 512 }, deviceScaleFactor: 1, trace: 'off', video: 'off' });
@@ -62,12 +84,13 @@ test('Landscape materials: production shader resolves height dominance, supporte
             return request.fulfill({ contentType: file.endsWith('.js') ? 'text/javascript' : 'text/html', body: await readFile(`tests/headless/e2e/fixtures/${file}`, 'utf8') });
         });
         await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
-        const result = await page.evaluate(async cases => {
+        const result = await page.evaluate(async ([cases, clumpSeed]) => {
             const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const probe = createLandscapeMaterialProbe(), measurements = [];
             try {
                 for (const value of cases) {
                     probe.setCoverage(value.weights); probe.setSynthetic(value);
+                    if (value.center) probe.setCenter(value.center);
                     measurements.push({ id: value.id, ...probe.measureWeights({ span: value.span ?? 4 }) });
                 }
                 probe.setSynthetic({ enabled: false }); probe.setBoundary(); probe.setPatternedHeights();
@@ -91,10 +114,30 @@ test('Landscape materials: production shader resolves height dominance, supporte
                     }
                 }
                 shiftedDifferences.sort((a, b) => a - b);
+                probe.setClumps(clumpSeed);
+                const clumped = probe.draw().slice(); snapshots.push({ id: '03-clump-relief', dataUrl: probe.snapshot() });
+                const clumpedShifted = probe.draw({ offsetX: 4 / probe.size }).slice();
+                probe.setClumps(null);
+                let clumpChangedPixels = 0, clumpOutsideDifferenceBytes = 0, clumpMinimumRgbSum = Infinity, clumpMaximumShiftDifferenceBytes = 0;
+                const clumpShiftDifferences = [];
+                for (let row = 0; row < probe.size; row++) for (let column = 0; column < probe.size; column++) {
+                    const offset = (row * probe.size + column) * 4, worldOffset = (column + .5 - probe.size / 2) * 4 / probe.size;
+                    if (Math.max(...[0, 1, 2].map(channel => Math.abs(clumped[offset + channel] - height[offset + channel]))) > 2) clumpChangedPixels++;
+                    if (Math.abs(worldOffset) > .6) clumpOutsideDifferenceBytes = Math.max(clumpOutsideDifferenceBytes, ...[0, 1, 2].map(channel => Math.abs(clumped[offset + channel] - legacy[offset + channel])));
+                    clumpMinimumRgbSum = Math.min(clumpMinimumRgbSum, clumped[offset] + clumped[offset + 1] + clumped[offset + 2]);
+                    if (column < probe.size - 1) {
+                        const delta = Math.max(...[0, 1, 2].map(channel => Math.abs(clumpedShifted[offset + channel] - clumped[offset + 4 + channel])));
+                        clumpShiftDifferences.push(delta); clumpMaximumShiftDifferenceBytes = Math.max(clumpMaximumShiftDifferenceBytes, delta);
+                    }
+                }
+                clumpShiftDifferences.sort((a, b) => a - b);
                 return { renderer: probe.rendererName, measurements, snapshots, boundary: { changedPixels, outsideDifferenceBytes, minimumRgbSum,
-                    maximumShiftDifferenceBytes, p99ShiftDifferenceBytes: shiftedDifferences[Math.floor(shiftedDifferences.length * .99)], comparedPixels: shiftedDifferences.length } };
+                    maximumShiftDifferenceBytes, p99ShiftDifferenceBytes: shiftedDifferences[Math.floor(shiftedDifferences.length * .99)], comparedPixels: shiftedDifferences.length },
+                    clumpBoundary: { changedPixels: clumpChangedPixels, outsideDifferenceBytes: clumpOutsideDifferenceBytes, minimumRgbSum: clumpMinimumRgbSum,
+                        maximumShiftDifferenceBytes: clumpMaximumShiftDifferenceBytes, p99ShiftDifferenceBytes: clumpShiftDifferences[Math.floor(clumpShiftDifferences.length * .99)],
+                        shiftPixelsOverTwelveBytes: clumpShiftDifferences.filter(delta => delta > 12).length, comparedPixels: clumpShiftDifferences.length } };
             } finally { probe.dispose(); }
-        }, cases);
+        }, [cases, clumps]);
         const { snapshots, ...measurements } = result; Object.assign(report, measurements);
         for (const snapshot of snapshots) await writeFile(path.join(artifacts, `${snapshot.id}.png`), Buffer.from(snapshot.dataUrl.split(',')[1], 'base64'));
         for (const value of cases) {
@@ -120,6 +163,15 @@ test('Landscape materials: production shader resolves height dominance, supporte
         expect(report.boundary.minimumRgbSum, 'A junction must retain finite lit material coverage').toBeGreaterThan(60);
         expect(report.boundary.p99ShiftDifferenceBytes, 'One-pixel translation should retain the same resolved boundary').toBeLessThanOrEqual(3);
         expect(report.boundary.maximumShiftDifferenceBytes).toBeLessThanOrEqual(12);
+        const reweighted = report.measurements.filter(value => value.id.startsWith('clumps-coverage-')).filter(value => Math.abs(value.weights[3] - .5) > .1);
+        expect(reweighted.length, 'Clump relief reweights balanced coverage at most sampled positions').toBeGreaterThanOrEqual(3);
+        expect(at('clumps-tail')[3], 'A coverage tail below the confidence range cannot gain weight').toBeLessThanOrEqual(.016);
+        expect(report.clumpBoundary.changedPixels, 'Clump relief must visibly interleave the contour response').toBeGreaterThan(1000);
+        expect(report.clumpBoundary.outsideDifferenceBytes, 'Clump relief cannot introduce support outside the coverage band').toBe(0);
+        expect(report.clumpBoundary.minimumRgbSum, 'Clumped junctions retain finite lit material coverage').toBeGreaterThan(60);
+        expect(report.clumpBoundary.p99ShiftDifferenceBytes, 'World-anchored clumps keep a one-pixel translation stable').toBeLessThanOrEqual(3);
+        expect(report.clumpBoundary.shiftPixelsOverTwelveBytes / report.clumpBoundary.comparedPixels, 'Only isolated clump edge pixels may change their derivative footprint with the quad alignment').toBeLessThanOrEqual(.001);
+        expect(report.clumpBoundary.maximumShiftDifferenceBytes).toBeLessThanOrEqual(64);
         expect(report.errors).toEqual([]);
         report.complete = true;
     } finally { await context.close(); await writeFile(path.join(artifacts, 'report.json'), JSON.stringify(report, null, 2)); }
@@ -137,13 +189,13 @@ test('Landscape materials: repeated material bindings retain separate allocation
             const { LandscapeMaterialPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialPages.js');
             const { LandscapeResidencyBudget } = await import('/src/app/landscape/LandscapeResidencyBudget.js');
             const { LandscapeAppearanceBudget } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js');
-            const { createLandscapeAppearanceUniforms } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
+            const { createLandscapeAppearanceUniforms, LANDSCAPE_MASK_SLOTS } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
             const shared = new LandscapeResidencyBudget(), budget = new LandscapeAppearanceBudget(shared, 'duplicate-binding');
             const tier = { resolution: 32, channels: { baseColor: { sha256: 'a'.repeat(64) }, normal: { sha256: 'b'.repeat(64) }, orm: { sha256: 'c'.repeat(64) } } };
             const appearance = { materials: ['seabed', 'sand'].map(soilId => ({ soilId, materialId: 'pbr.aerial_beach_01', tiers: [tier] })) };
             const pool = { request: async () => ({ baseColor: new Uint8Array(32 * 32 * 4), surface: new Uint8Array(32 * 32 * 8) }) };
             const renderer = { capabilities: { getMaxAnisotropy: () => 4 }, initTexture() {} };
-            const pages = new LandscapeMaterialPages({ appearance, budget, pool, renderer, uniforms: createLandscapeAppearanceUniforms(), prefix: 'duplicate-binding' });
+            const pages = new LandscapeMaterialPages({ appearance, budget, pool, renderer, uniforms: createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS), prefix: 'duplicate-binding' });
             const upload = async material => {
                 material.refs.add(`mask-${material.index}`);
                 if (!pages.request(material, 32)) throw new Error('Fixture material reservation unexpectedly denied');

@@ -28,11 +28,17 @@ test('Appearance demand: a 16/8 profile protects attainable 128 tiers and still 
     assert.equal(shared.snapshot().gpuBytes, 0);
 });
 
-test('Appearance demand: the full profile keeps all five requested 512 tiers and exact previous credit costs', () => {
-    const demand = planLandscapeAppearanceDemand(coastal(17, { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }));
-    assert.deepEqual(Object.values(demand.desiredTiers), ['32', '512', '512', '512', '512', '512']);
-    assert.equal(demand.cpuBytes, 23976618);
-    assert.equal(demand.gpuBytes, 25702008);
+test('Appearance demand: the shipped and former full profiles keep all five requested 512 tiers and exact previous credit costs', () => {
+    const shared = new LandscapeResidencyBudget(), appearance = new LandscapeAppearanceBudget(shared, 'shipped');
+    assert.deepEqual(appearance.limits, { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB });
+    for (const limits of [appearance.limits, { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }]) {
+        const demand = planLandscapeAppearanceDemand(coastal(17, limits));
+        assert.deepEqual(Object.values(demand.desiredTiers), ['32', '512', '512', '512', '512', '512']);
+        assert.equal(demand.cpuBytes, 23976618);
+        assert.equal(demand.gpuBytes, 25702008);
+    }
+    appearance.dispose();
+    assert.equal(shared.snapshot().entries.length, 0);
 });
 
 test('Appearance demand: competing attainable tiers follow material interest priority and count fallback/peak decode once', () => {
