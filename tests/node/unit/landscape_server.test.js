@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createLandscapeServer, SELECTION_FILE } from '../../../tools/landscape_server/Server.mjs';
 
@@ -48,5 +48,34 @@ test('Landscape handoff: saves valid context and rejects stale or foreign reques
         assert.equal(path.dirname(path.resolve(root)), path.resolve(tmpdir()));
         assert.ok(path.basename(root).startsWith('landscape-handoff-'));
         await rm(root, { recursive: true, force: true });
+    }
+});
+
+test('Landscape server: serves a junctioned shared asset store but rejects links escaping it', async () => {
+    const base = await mkdtemp(path.join(tmpdir(), 'landscape-junction-'));
+    const root = path.join(base, 'worktree'), store = path.join(base, 'shared-assets'), outside = path.join(base, 'outside');
+    await mkdir(path.join(store, 'public/landscape/coastal-city'), { recursive: true });
+    await mkdir(path.join(store, 'public/pbr/sand'), { recursive: true });
+    await mkdir(path.join(root, 'src'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(path.join(store, 'public/landscape/coastal-city/manifest.json'), JSON.stringify({ id: 'coastal', revision: 'r1' }));
+    await writeFile(path.join(store, 'public/pbr/_catalog_index.js'), 'export const PBR_MATERIAL_CATALOG = [];');
+    await writeFile(path.join(outside, 'secret.json'), '{"secret":true}');
+    await symlink(store, path.join(root, 'assets'), 'junction');
+    await symlink(outside, path.join(store, 'public/landscape/coastal-city/escape'), 'junction');
+    await symlink(outside, path.join(root, 'src/escape'), 'junction');
+    const server = createLandscapeServer({ root });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    try {
+        assert.equal((await fetch(`${origin}/assets/public/landscape/coastal-city/manifest.json`)).status, 200);
+        assert.equal((await fetch(`${origin}/assets/public/pbr/_catalog_index.js`)).status, 200);
+        assert.equal((await fetch(`${origin}/assets/public/landscape/coastal-city/escape/secret.json`)).status, 403);
+        assert.equal((await fetch(`${origin}/src/escape/secret.json`)).status, 403);
+    } finally {
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+        assert.ok(path.basename(base).startsWith('landscape-junction-'));
+        await rm(base, { recursive: true, force: true });
     }
 });

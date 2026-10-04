@@ -29,11 +29,30 @@ async function readJson(request) {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+// Worktrees may link the shared asset store as a junction; only these declared roots are trusted by real path.
+const LINKED_ROOTS = ['.', 'assets'];
+
+async function realRoots(workspace) {
+    const roots = [];
+    for (const logical of LINKED_ROOTS) {
+        try { roots.push({ logical, real: await realpath(path.join(workspace, logical)) }); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    return roots.sort((a, b) => b.real.length - a.real.length);
+}
+
+function logicalPath(roots, resolved) {
+    const root = roots.find(value => resolved === value.real || resolved.startsWith(value.real + path.sep));
+    return root ? path.join(root.logical, path.relative(root.real, resolved)).split(path.sep).join('/') : null;
+}
+
 /** @param {{root: string,landscapeDirectory?:string}} options */
 export function createLandscapeServer({ root, landscapeDirectory }) {
     const workspace = path.resolve(root);
     const landscape = path.resolve(landscapeDirectory ?? path.join(workspace, path.dirname(MANIFEST)));
     const authoring = createLandscapeAuthoringApi({ directory: landscape, readJson, reply });
+    const trusted = Promise.all([realRoots(workspace), realpath(landscape)]);
+    trusted.catch(() => {});
     let pendingWrite = Promise.resolve();
     const server = http.createServer(async (request, response) => {
         try {
@@ -85,9 +104,8 @@ export function createLandscapeServer({ root, landscapeDirectory }) {
             const staticRoot = sourceRequest ? landscape : workspace;
             const candidate = path.resolve(staticRoot, sourceRequest ? relative.slice(sourcePrefix.length) : relative);
             if (!candidate.startsWith(staticRoot + path.sep)) return reply(response, 403, { error: 'Invalid path' });
-            const resolved = await realpath(candidate);
-            if (!resolved.startsWith(staticRoot + path.sep)) return reply(response, 403, { error: 'Invalid source location' });
-            if (!sourceRequest && !isPublicPath(path.relative(workspace, resolved).split(path.sep).join('/'))) return reply(response, 403, { error: 'Invalid source location' });
+            const resolved = await realpath(candidate), [roots, realLandscape] = await trusted;
+            if (sourceRequest ? !resolved.startsWith(realLandscape + path.sep) : !isPublicPath(logicalPath(roots, resolved) ?? '')) return reply(response, 403, { error: 'Invalid source location' });
             const info = await stat(resolved);
             if (!info.isFile()) return reply(response, 404, { error: 'Not found' });
             const etag = `"${info.size}-${info.mtimeMs}"`;
