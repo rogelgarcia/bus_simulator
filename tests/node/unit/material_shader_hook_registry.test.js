@@ -3,11 +3,44 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+    createSharedUniformMaterialVariant,
     getMaterialShaderHookRegistrySnapshot,
     registerMaterialShaderHook,
     removeMaterialShaderHook,
     updateMaterialShaderHook
 } from '../../../src/graphics/shaders/core/MaterialShaderHookRegistry.js';
+
+test('MaterialShaderHookRegistry: rendered variants own their registry but share declared runtime uniforms', () => {
+    class Material {
+        userData = {};
+        copy(other) { this.userData = JSON.parse(JSON.stringify(other.userData)); return this; }
+        onBeforeCompile() {}
+        onBeforeRender() {}
+        customProgramCacheKey() { return 'fixture'; }
+    }
+    const source = new Material(), texture = { isTexture: true }, uniforms = { atlas: { value: texture } };
+    source.userData.circular = source; // Must not JSON-copy borrowed metadata or textures.
+    source.defines = { SOURCE: 1 };
+    let renderedOwner;
+    source.onBeforeRender = function() { renderedOwner = this; };
+    registerMaterialShaderHook(source, { id: 'base', uniforms, apply(shader) { Object.assign(shader.uniforms, uniforms); } });
+    const variant = createSharedUniformMaterialVariant(source);
+    variant.defines.VARIANT = 1;
+    registerMaterialShaderHook(variant, { id: 'variant', apply() {} });
+    assert.equal(source.defines.VARIANT, undefined);
+    assert.notEqual(variant.userData, source.userData);
+    assert.equal(variant.userData.circular, source);
+    assert.equal(getMaterialShaderHookRegistrySnapshot(source).hooks.length, 1);
+    assert.equal(getMaterialShaderHookRegistrySnapshot(variant).hooks.length, 2);
+    assert.notEqual(source.customProgramCacheKey(), variant.customProgramCacheKey());
+    const shader = { uniforms: {} }; variant.onBeforeCompile(shader, null);
+    assert.equal(shader.uniforms.atlas, uniforms.atlas);
+    const properties = { uniforms: {}, uniformsList: ['stale'] };
+    variant.onBeforeRender({ properties: { get: material => { assert.equal(material, variant); return properties; } } });
+    assert.equal(renderedOwner, variant);
+    assert.equal(properties.uniforms.atlas, uniforms.atlas);
+    assert.equal(properties.uniformsList, null);
+});
 
 function createMaterial({ ownCallbacks = true } = {}) {
     const calls = [];

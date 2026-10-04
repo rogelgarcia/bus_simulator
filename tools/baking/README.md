@@ -66,6 +66,7 @@ The first implementation executes sequentially, including Blender and browser jo
 | `materials/<material>` | Eight procedural PBR sets from the existing bank, Bradbury and AI491 recipes; albedo, normal, packed AO/roughness/metalness | 1024px, deterministic recipes; stage and validate |
 | `materials/grass` | Grass V2 far maps and separate blade/clump atlases, including their AO maps | Existing calibrated 1024px recipe; validated proposal, existing gameplay review retained |
 | `materials/grass/lod4-layout` | Two compatible optimized periodic 2 m source layouts for the LOD4 debug canopy | Explicit browser-only job; preserve shared leaf/shadow boundaries, verify ordinary loading, optionally publish positions; texture maps still bake at scene startup |
+| `materials/grass/lod4-maps` | Final All-layer canopy maps with full BC3 / BC1 mip chains | Explicit desktop experiment; validate hashes, dimensions and fresh loading without runtime canopy baking before optional publication; visual acceptance remains separate |
 | `materials/dry_litter` | Repair the known truncated user-supplied ORM map | Explicit maintenance leaf; preserve complete roughness rows and intact AO, reconstruct only the missing band; strict pixel validation before optional publication |
 | `lighting/source` | Current BigCity2 resolved source, ready textures and repeated deterministic BSIB export | Always refresh; once for the requested tree |
 | `lighting/city-inputs` | Exact slab and receiver coplanar ownership plans from live inputs | Explicit CPU precomputation leaf; independent Node recomputation and fresh-game source/geometry parity before optional publication; [workflow](../bake_lighting/city_inputs/README.md) |
@@ -117,6 +118,12 @@ It uses only `browserExecutable` from the shared configuration, runs the existin
 material/rendered pattern searches offline, and validates a fresh scene loading
 the resulting asset without optimizer imports. This explicit debug asset leaf
 is outside the default production material tree. See [the layout contract](../bake_materials/grass/lod4_layout/README.md).
+
+Export the optional compressed maps with `node tools/bake.mjs --target materials/grass/lod4-maps --publish`.
+It reuses the shared browser and Python configuration, the compiled source pair,
+and the existing 8192² shadow bake. The BC3 experiment is not the game default:
+its current packed material channels show visible compression error. See
+[the map workflow and limitations](../bake_materials/grass/lod4_maps/README.md).
 
 The following are deliberately not production jobs:
 

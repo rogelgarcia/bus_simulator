@@ -26,7 +26,7 @@ test('Flat LOD4 shader decomposition and geometry control on hardware', async ({
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_transition_scene.html?configuration=lod4-flat&revision=lod4-decomposition-1#front');
+    await page.goto('/debug_tools/grass_transition_scene.html?transition=0&experiment=baseline&configuration=lod4-flat&revision=lod4-decomposition-1#front');
     await page.waitForFunction(() => !!window.__grassTransitionReadiness);
     await page.evaluate(() => window.__grassTransitionReadiness);
     await expect(page.locator('#transition-configuration')).toHaveValue('lod4-flat');
@@ -42,7 +42,7 @@ test('Flat LOD4 shader decomposition and geometry control on hardware', async ({
             if (!mesh.userData.grassCanopy) return;
             meshes.push(mesh); originals.set(mesh, { material: mesh.material, geometry: mesh.geometry });
             if (!diagnosticSets.has(mesh.material)) diagnosticSets.set(mesh.material,
-                Object.fromEntries(Object.keys(GRASS_CANOPY_DIAGNOSTICS).map(id => [id, createGrassDebugV2CanopyDiagnostic(mesh.material, id)])));
+                Object.fromEntries(Object.keys(GRASS_CANOPY_DIAGNOSTICS).map(id => [id, createGrassDebugV2CanopyDiagnostic(mesh.material, id, { renderer: s.renderer })])));
         });
         const geometry = new THREE.PlaneGeometry(1, 1, 4, 4);
         geometry.rotateX(-Math.PI / 2); geometry.translate(0, meshes[0].geometry.attributes.position.getY(0), 0);

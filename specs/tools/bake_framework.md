@@ -327,6 +327,18 @@ fail visibly instead of falling back to a runtime search. The grass V2 gameplay
 review gate remains separate and unchanged. See the
 [layout compiler README](../../tools/bake_materials/grass/lod4_layout/README.md).
 
+`materials/grass/lod4-maps` is another explicit leaf outside the default material
+tree. It captures the final All-layer pair using the compiled layout and existing
+8192² shadow bake, then encodes linear packed material maps as BC3 and visibility
+as BC1 with full mip chains. Shared browser/Python configuration and owned process
+lifecycle apply. Staged map hashes, dimensions, channels and fresh-browser loading
+without runtime canopy baking must pass before input-stability verification and
+atomic publication. The optional runtime loader validates layout/map hashes and
+requires S3TC; it never silently falls back to runtime baking. This integrity gate
+does not certify visual quality: the initial BC3 packed-channel candidate has
+visible color errors and remains opt-in. See the
+[map baker README](../../tools/bake_materials/grass/lod4_maps/README.md).
+
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine
 paths. Jobs without this declaration retain the existing Blender configuration

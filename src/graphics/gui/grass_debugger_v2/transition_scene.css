@@ -1,5 +1,10 @@
 /* Compact controls for the distance-transition field lab. */
 #scene-panel { max-width: min(1180px, calc(100vw - 64px)); }
+.transition-panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.transition-panel-heading h1 { margin: 0; }
+#transition-panel-toggle { flex: none; }
+#transition-panel-body[hidden] { display: none; }
+#scene-panel.is-collapsed h1 span { display: none; }
 input[type="number"] { width: 56px; color: inherit; background: #26382a; border: 1px solid #637966; border-radius: 4px; padding: 5px; font: inherit; }
 details { margin-top: 10px; font-size: 13px; }
 summary { cursor: pointer; }
@@ -8,6 +13,7 @@ summary { cursor: pointer; }
 #transition-legend span { border-left: 10px solid currentColor; padding-left: 5px; }
 .lod0 { color: #35e5dd; } .lod1 { color: #629cfa; } .lod2 { color: #e9df65; } .lod3 { color: #ff9a56; } .lod4 { color: #c287ed; }
 #transition-counts { color: #b9cbbb; }
+#transition-band-ranges { color: #b9cbbb; font-size: 12px; }
 #scene-performance { max-width: calc(100vw - 56px); }
 .transition-distances { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; font-size: 13px; }
 .transition-distances legend { padding: 0; margin-bottom: 6px; color: #b9cbbb; }

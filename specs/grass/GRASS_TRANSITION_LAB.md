@@ -1,8 +1,21 @@
 # Grass distance-transition lab
 
 Entry point: `debug_tools/grass_transition_scene.html`. This separate lab reuses
-the authored field's grass, litter, lighting and 1K LOD4 canopy maps. The existing
+the authored field's grass, litter and 1K LOD4 canopy maps. Lighting resolves from
+the same live settings as the game, rather than the geometry export. The existing
 single-field lab links to it and retains its manual LOD comparisons.
+The transition lab now defaults to 4× canopy anisotropic filtering and simple
+edge/corner strips. The previous 8×/edge-grid baseline remains selectable; see the
+adoption measurements below. Whole-field batching is unchanged.
+
+Startup goes through `GrassDebugV2TransitionEntry.js`, which dynamically imports
+the scene and exposes its readiness promise before loading the module graph.
+Module-link and shader-source failures display a visible error instead of leaving
+the loading message indefinitely. The page import map versions the shared shader
+hook registry for every consumer; versioning only the blend import would create
+two registries and lose access to the source materials' hooks. Cache regression
+tests supply the old registry without the rendered-variant export and verify that
+the scene bypasses it, while deliberate missing-export failures remain visible.
 
 ## Scene and selection
 
@@ -13,21 +26,154 @@ LOD0 uses the current smart geometric LOD0, not the older full reference mesh.
 LOD3 uses the current compact geometric leaves. LOD4 uses the paired opaque
 canopy albedo, normal and roughness maps at 1024².
 
-The user-confirmed starting bands are:
+The user-confirmed nominal switches (updated 2026-10-03) are below. The default
+50% transition band now mixes adjacent levels over the latter half of each range.
 
 | Level | Full distances | Half distances |
 |---|---|---|
 | LOD0 | 0–1 m | 0–0.5 m |
-| LOD1 | 1–3 m | 0.5–1.5 m |
-| LOD2 | 3–6 m | 1.5–3 m |
-| LOD3 | 6–25 m | 3–12.5 m |
-| LOD4 | ≥25 m | ≥12.5 m |
+| LOD1 | 1–2 m | 0.5–1 m |
+| LOD2 | 2–5 m | 1–2.5 m |
+| LOD3 | 5–18 m | 2.5–9 m |
+| LOD4 | ≥18 m | ≥9 m |
+
+The original transition-lab benchmark tables later in this document predate this
+distance edit and retain their specified 1 / 3 / 6 / 25 m switches. The newer
+lighting, boundary and band comparisons explicitly use 1 / 2 / 5 / 18 m.
+The independent side-leaf cutoff remains 35 m.
 
 Distances are horizontal, from the camera's ground projection to each cell's
 center. This lets the 4.5 m-high gameplay bus camera exercise near bands.
-At an exact threshold the cell selects the more distant level. A 1 m cell
-introduces up to approximately 0.71 m of spatial quantization. Switching is
-abrupt: no opacity fade, dither or overlapping LOD draws are used.
+At the outer threshold every cell selects the more distant level. A 1 m cell
+introduces up to approximately 0.71 m of spatial quantization. The default pixel
+blend replaces each patch progressively. The previous whole-patch switching
+method remains available in the Method control.
+
+## Transition band ranges
+
+The `Transition band` control defaults to 50% of each preceding LOD range.
+For a range from `previous` to `end`, the band starts at
+`end - (end - previous) * fraction`. The first range starts at zero.
+
+| Transition | Full distances | Half distances |
+|---|---|---|
+| LOD0 → LOD1 | 0.5–1 m | 0.25–0.5 m |
+| LOD1 → LOD2 | 1.5–2 m | 0.75–1 m |
+| LOD2 → LOD3 | 3.5–5 m | 1.75–2.5 m |
+| LOD3 → LOD4 | 11.5–18 m | 5.75–9 m |
+
+## Blending inside each patch
+
+Pixel blend is the default. Both adjacent LODs are submitted only inside a band
+and its cached movement margin. A smoothstep coverage value follows the current
+camera every rendered frame, independently of CPU batch updates. Complementary
+8 x 8 screen-door samples discard before material sampling/lighting, preserve
+opaque depth, and need no extra texture, transparency sorting or frame noise.
+Vertices compute the horizontal distance from their shared instance center.
+Outside the candidate bands, ordinary materials remain unchanged.
+
+The litter floor remains opaque under mixed LOD3/4 cells. Its projected edges
+do not coincide with the raised canopy at oblique angles; fading both floors
+caused dark pinholes. The canopy replaces the floor through normal depth testing.
+This adds ground overdraw locally inside the band, not across distant fields.
+Canopy edge profiles use the candidate support envelope, placing geometry changes
+outside the visible fade. Texture resolution and cached scene shadows are unchanged.
+
+The selector still uses squared distances, borrowed arrays, 50 ms / 0.2 m gates.
+Candidate support extends by movement threshold + interval times the maximum lab
+speed (25 m/s including Shift), currently 1.45 m. This avoids missing LODs between
+scans; a teleport beyond that support forces an immediate safety update. The
+conservative margin increases vertex work, especially in the tiny near ranges.
+Dominant-LOD counts/colors do not include both submitted candidates; the triangle
+counter includes all submitted geometry. `transition=0` restores abrupt switching;
+`transitionMode=patches` selects the earlier spatial method. Both full/half presets
+scale band ends and starts. Helper rings remain dashed at starts, solid at ends.
+
+Eight bearings at the bus height/tilt and front/rear 6 m drives are captured in
+`tests/artifacts/screens/grass_debug_v2/transition_lab/blending/`. At 24 checkpoints
+per drive the same camera pose is rendered before/after a forced batch rebuild.
+Pixels changing by more than 3/255 fell from 244,865 to 2,126 (front) and 238,968
+to 2,118 (rear), about 99%. These are summed update discontinuities, not a claim
+that all camera-motion aliasing disappears. A rendered coverage probe checks all
+four LOD pairs at five fractions in both draw orders, with no missing samples.
+Fine stippling is visible at intermediate coverage; LOD4 still has less parallax.
+
+Paired RTX 3060 timings at 1920 x 1080, six rounds of 30 samples per variant and
+matched soil, rotating/reversed order with pre-uploaded actual batches and cached
+shadows, in GPU milliseconds **above soil-only**:
+
+| Pose | Abrupt | Previous patches | Pixel blend | Added vs patches, 95% CI |
+|---|---|---|---|---|
+| Front | 1.299 | 1.048 | 1.701 | 0.652 +/- 0.053 |
+| Rear | 1.150 | 0.942 | 1.597 | 0.655 +/- 0.081 |
+| Border | 1.218 | 0.890 | 1.642 | 0.752 +/- 0.030 |
+
+Three real 60-frame movement runs average 0.382 ms/frame for selection plus batch
+updates with blending, versus 0.260 ms/frame for patches. Stationary measured
+blocks perform no scans, instance uploads or shadow regenerations. No new texture
+maps are allocated; additional material variants and instance buffers are cached.
+Run visual/perf `grass_transition_blending.pwtest.js`, then
+`node tests/headless/visual/grass_transition_blending_report.mjs` for the comparison.
+
+## Previous spatial patch method and measurements
+
+These measurements predate per-pixel blending and apply to `transitionMode=patches`.
+
+A deterministic world-coordinate rank assigns each patch a switch distance
+inside its band. Inverse smoothstep distributes the ranks so the proportion of
+the farther LOD changes gently near both ends. Ranks and squared thresholds are
+precomputed; scans retain squared-distance comparisons and reuse their arrays.
+The selection storage adds approximately 160 KiB for 4,096 cells. Camera rotation,
+returning to a previous position and changing batch order never reshuffle ranks.
+
+`transition=0` in the URL, or 0% in the control, restores the abrupt reference.
+Values through 100% are supported; full/half presets scale both ends. Helpers use
+dashed start rings, solid end rings and the actual patch colors. This is a spatial
+mixture, not a temporal fade: 1 m patch changes and reduced LOD4 parallax remain
+visible from some angles. The earlier LOD4 coverage trades geometric detail for
+lower rendering cost. Texture maps, materials, shaders and terrain coverage are
+unchanged, with one opaque LOD and one ground surface per patch.
+
+Eight bus bearings and front/rear 6 m drives were captured. Each 120-frame drive
+performs 24 scans at 3 m/s with the 50 ms / 0.2 m gates. The largest side-connected
+group of simultaneously changed cells decreases from five to three; the average
+largest group per scan falls from 2.75 to 1.96 / 2.00. This measures grouping, not
+perceptual invisibility. All 16 static captures retain exactly one LOD and one
+ground surface per cell, with no WebGL errors or moving shadow regeneration.
+
+Paired RTX 3060 measurements, 1920 × 1080 / DPR 1, 1 / 2 / 5 / 18 m switches,
+game lighting, 4× filtering and cached edge/corner strips, in GPU milliseconds
+**above the same pose's soil-only cost**:
+
+| Pose | Abrupt | 50% band | Paired saving, 95% CI | Draw calls |
+|---|---|---|---|---|
+| Front | 1.295 | 1.102 | 0.193 ± 0.051 | 70 → 90 |
+| Rear | 1.210 | 1.024 | 0.186 ± 0.124 | 70 → 91 |
+| Border | 1.362 | 1.063 | 0.299 ± 0.178 | 57 → 77 |
+
+Six rounds of 30 hardware samples interleave pre-uploaded actual grass batches
+and matched soil batches in each RAF, with rotating/reversed order and cached
+shadows. Helpers are excluded. More canopy edge shapes increase calls, while
+earlier LOD4 selection reduces submitted triangles. Active textures remain
+78.29 MB. Existing shape caches retain geometry and instance buffers as different
+arrangements are encountered; this is not an allocation-free transition mode.
+
+Three 60-frame, 3 m CPU drives averaged:
+
+| Configuration | Scans | Selection total | Batch total | Combined per frame |
+|---|---|---|---|---|
+| Abrupt, 100 ms / 0.25 m | 10 | 0.70 ms | 13.87 ms | 0.243 ms |
+| Abrupt, 50 ms / 0.2 m | 12 | 0.73 ms | 14.90 ms | 0.261 ms |
+| 50% band, 50 ms / 0.2 m | 12 | 0.60 ms | 13.77 ms | 0.239 ms |
+
+Stationary blocks perform no scans, uploads or shadow regenerations. These CPU
+samples are short diagnostic measurements, not proof of a CPU speedup.
+Run the selected visual/perf `grass_transition_bands.pwtest.js` suites and then
+`node tests/headless/visual/grass_transition_bands_report.mjs` to rebuild the
+slider, motion playback and raw evidence in
+`tests/artifacts/screens/grass_debug_v2/transition_lab/bands/`.
+
+## Camera and panel
 
 The bus front, rear and field-border presets use the same gameplay height,
 pitch and 55° vertical field of view. An overhead preset exposes the assignment
@@ -38,16 +184,138 @@ preserving horizontal position and heading. It does not trigger while editing
 controls. Reset view still returns to the entire selected preset. Speed and
 forward driving help inspect moving borders.
 
+The top-right Collapse/Expand button hides the edit controls while retaining a
+compact heading and the reopening control. It exposes `aria-expanded` and
+`aria-controls`, supports keyboard activation, and leaves error/status messages
+available while collapsed.
+
+## Material continuity and game daylight
+
+The transition lab uses `GrassDebugV2Lighting` and the game's lighting/atmosphere
+resolvers, including saved overrides. The source manifest is geometry metadata;
+its old extra hemisphere intensity of 12 must not overwrite the game lighting.
+The calibrated defaults are sun azimuth 45°, elevation 55°, intensity
+162.714329883607, linear RGB `[1, 0.8587931781765412, 0.6757006518788592]`,
+exposure 0.0511001705221839, hemisphere intensity 0, and environment
+`ibl.calibrated.clear_afternoon_55`. The visible sky, sun effects, live directional
+light and tile self-shadow capture all read that resolved sun. Compiled tile
+layout and compressed-map sun compatibility checks remain enforced.
+
+Geometric LODs share a material response. Existing distant diffuse filtering
+and tip compression now start at the LOD3 switch and finish at the LOD4 switch,
+instead of continuing until 30 m after switching to LOD4 at 18 m. Editing either
+range or choosing half distances updates the existing uniforms once; there is
+no new per-frame CPU calculation. As before, material filtering uses view-space
+range while cell selection uses horizontal distance. Finishing filtering slightly
+before the horizontal switch avoids carrying full leaf contrast into the boundary.
+
+`GRASS_TRANSITION_CANOPY_COVERAGE` scales the existing oblique coverage exponent
+by `0.6 + 0.55 * viewElevation`, matching the shortened leaf volume. It is enabled
+only in this lab and does not change the underlying tile maps or the single-field
+reference. This appearance calibration alone adds no texture fetch, pass, draw, allocation,
+LOD fade or dither. The optional transition method is described separately above. The geometric filter strength (.85) and maximum tip compression
+(.3 above the rooted lower 4 cm) remain unchanged.
+The existing leaf-only base-color multiplier is `[1.04, 1.03, 1.02]`, calibrated
+from linear diffuse radiance divided by rendered grass coverage, with litter
+removed from the probe. Litter's material color is unchanged. This removes the
+small mean grass energy bias without adding shader operations.
+
+The visual check `tests/headless/visual/specs/grass_transition_lighting.pwtest.js`
+compares identical patches at 14 / 18 / 24 m across 32 bearings at the gameplay
+bus height/tilt. It renders separate grass masks and isolated leaf diffuse
+radiance, with litter excluded. Sixteen intermediate bearings are holdouts.
+At the 18 m switch the mean contrast gap falls from 5.29 to 2.03 display-luminance
+levels (62%); absolute green coverage mismatch falls from 2.85 to 0.48 percentage
+points. Patch-mean RGB RMS gap is 1.54/255, down from 1.91. Mean leaf-only linear
+RGB ratios (LOD4/LOD3) are `[1.0002, 1.0010, 0.9985]`; per-angle mean absolute
+channel deviation is 2.67%, and every tested channel is within 8.5%. These metrics do not
+establish identical silhouettes: flat LOD4 still lacks leaf parallax.
+
+Paired hardware timing at 1920×1080 / DPR 1 on RTX 3060, with the current
+1 / 2 / 5 / 18 m ranges and game lighting, measures GPU cost **above soil-only**:
+
+| Pose | Previous response | Updated response | Paired saving, 95% CI |
+|---|---|---|---|
+| Front | 1.433 ms | 1.345 ms | 0.087 ± 0.168 ms |
+| Rear | 1.133 ms | 1.120 ms | 0.013 ± 0.043 ms |
+| Border | 1.302 ms | 1.194 ms | 0.109 ± 0.071 ms |
+
+Front/rear differences are inconclusive; no reliable regression was measured.
+The benchmark uses six rounds of 30 samples with old/new/soil interleaved per
+RAF and matched cached shadows. No shadow regeneration or instance uploads occur
+inside timed blocks. Texture residency is unchanged. Captures, raw measurements,
+timings and the before/after slider are under the ignored
+`tests/artifacts/screens/grass_debug_v2/transition_lab/lighting/`; rebuild the
+report with `node tests/headless/visual/grass_transition_lighting_report.mjs`.
+
+## Watertight canopy corners (2026-10-03)
+
+The remaining dotted dark line at the geometric/canopy boundary included real
+holes. Four-neighbor ramps could drop one tile to the 5 mm litter floor while a
+diagonally adjacent canopy tile kept its corner at 100 mm. The resulting 95 mm
+height disagreement left narrow triangular gaps. Removing the ramp enlarged the
+open seam; widening it enlarged the triangular gaps. Disabling shadows retained
+them. Those ablations are captured under the `boundary/` artifacts below.
+
+Recommended edge strips now account for diagonal geometric cells as well as the
+four edge neighbors. `GrassDebugV2TransitionCanopy` builds matching corner/edge
+positions once per profile and caches the instanced meshes. Physical field edges
+still meet soil at zero; internal boundaries meet litter at 5 mm. The existing
+world-space maps and canopy lighting normals are retained. No leaf recoloring,
+texture rebake, shader edits, extra texture fetches or blending logic are used.
+The repaired strips use the existing flat-canopy material with authored vertex
+heights, so they no longer need per-instance ramp attributes or vertex deformation.
+The historical grid configuration remains unchanged for comparison.
+
+The transition HTML import map pins the floor-material module to the version
+that exposes the leaf-color uniform. This also covers imports inside older cached
+canopy modules. Without the pin, the new asset loader could dereference a missing
+`grassFloorLeafColorScale.value` and prevent startup. The entry and field module
+URLs are revised with the corner repair. The cache regression E2E serves the old
+unversioned floor module and verifies that the lab requests the compatible module,
+finishes loading, and retains the calibrated leaf color.
+
+The boundary visual test checks eight bus-height bearings, all shared canopy
+edges, and both sides' edge subdivision positions. Previously 22–86 shared edges
+per view disagreed; all repaired edges agree within 0.01 mm. It also checks a
+120-frame drive and zero stationary uploads. Coverage, chunk/filter restoration
+and the original transition E2E tests remain applicable. The flat canopy still
+has less leaf parallax; eliminating geometric cracks does not eliminate every
+visual difference at an abrupt LOD switch.
+
+RTX 3060 GPU time above matched soil-only, 1920×1080 / DPR 1, same game lighting,
+1 / 2 / 5 / 18 m ranges, six paired rounds of 30 samples:
+
+| Pose | Previous strips | Repaired corners | Paired saving, 95% CI | Draw calls |
+|---|---|---|---|---|
+| Front | 1.413 ms | 1.410 ms | 0.003 ± 0.196 ms | 69 → 70 |
+| Rear | 1.182 ms | 1.135 ms | 0.047 ± 0.028 ms | 69 → 70 |
+| Border | 1.264 ms | 1.216 ms | 0.047 ± 0.050 ms | 55 → 57 |
+
+No regression is demonstrated; front/border differences remain within uncertainty.
+The timing harness reconstructs the previous simple-strip batches with their
+original geometry/material/instance attributes and freezes both versions before
+interleaved timing. No uploads or shadow regeneration occur in measured blocks.
+Texture allocation remains unchanged at 78.29 MB for the active maps.
+
+Run `tests/headless/visual/specs/grass_transition_boundary.pwtest.js` and the opt-in
+`tests/headless/perf/specs/grass_transition_boundary.pwtest.js` with the selected
+test runner. Generate the report with
+`node tests/headless/visual/grass_transition_boundary_report.mjs`. Evidence lives
+in `tests/artifacts/screens/grass_debug_v2/transition_lab/boundary/`.
+
 ## CPU and draw-call policy
 
 Selection compares squared distances and reuses typed arrays. With the default
-settings, it scans only after at least 0.25 m of horizontal movement and at
-least 100 ms since the last scan. Stationary and rotation-only frames perform
+settings, it scans only after at least 0.2 m of horizontal movement and at
+least 50 ms since the last scan (at most 20 scans/second). Stationary and rotation-only frames perform
 no cell scan. Editing limits or choosing a preset forces an immediate refresh.
 Both gates can be edited, including zero for a per-moving-frame comparison.
 
-Per-field, per-LOD and per-template instancing uses 80 original main batches,
-plus four flat interior LOD4 batches (one per field). Instance buffers upload
+Per-field, per-LOD and per-template instancing retains 80 original main batches,
+plus four flat interior LOD4 batches (one per field) and lazily allocated batches
+for the selected edge masks. The default uses strips instead of border grids.
+Instance buffers upload
 only when batch membership changes. Whole-field
 batch bounds support normal frustum culling; this first version does not cull
 individual instances on the CPU each frame. Snapshots expose selection scan
@@ -403,3 +671,155 @@ Each 3 m camera drive required eight selection scans over 60 frames. Mean
 selection plus batch-update cost was 0.129 / 0.120 / 0.118 ms per rendered frame
 for original / shadow-only / optimized, respectively. These CPU measurements
 are a cache/regression check, not evidence of a CPU speedup.
+
+## Isolated filtering, edge, lighting, compression and batch experiments
+
+The Experiment selector under “Selection cost and helpers” exposes the independent
+`baseline`, `aniso4`, `strips`, `simple_ibl`, `compressed`, `chunks4` and `chunks8`
+options (`?experiment=<id>`). These isolated options retain the pre-adoption
+baseline; `recommended` is now the default combined option. Isolated options do
+not stack; their individual savings must not be added as a combined prediction.
+The original/shadow/optimized version selector remains available separately.
+
+- Filtering applies 4× instead of 8× to all canopy material/visibility samplers.
+  Render-target textures need real GPU copies, not `Texture.clone()` with empty
+  render-target storage. Diagnostic sampler overrides are owned by the shader
+  hook registry so pre-render uniform refresh cannot silently undo the experiment.
+- Edge strips lazily allocate the necessary inset geometry for exposed edge masks.
+  A single edge uses four triangles, adjacent corner edges eight, and flat interiors
+  two. World UVs, heights and per-instance exposed-edge flags remain continuous.
+  All-LOD4 canopy geometry drops from 23,072 to 9,248 triangles before culling.
+- Environment lighting replaces canopy PMREM lookups with six precomputed rough
+  directional lobes (72 bytes of uniforms). Other scene lighting is unchanged.
+- Compression exports only All-layer maps through the registered offline leaf
+  `materials/grass/lod4-maps`. `?assets=compressed` bypasses runtime canopy baking;
+  the normal `compressed` experiment retains both versions for comparison. The
+  loader authenticates layout/map hashes and requires S3TC. See the map baker
+  README for publication and loading gates. This candidate fails visual acceptance
+  and is deliberately not a default.
+- 4 m / 8 m chunks partition all selected grass LODs, field litter/soil and fringe
+  instances for tighter frustum culling. Paths, sky and postprocessing are unchanged.
+  Membership and bounds rebuild only after changed assignments; idle frames do not
+  repack or upload. The prototype retains original reference batch staging, so its
+  measured CPU includes that plus chunk repacking. Buffer/geometry allocations and
+  uploads are exposed in the field snapshot. Returning to baseline detaches chunks.
+
+Select `tests/headless/perf/specs/grass_transition_experiments.pwtest.js` with the
+standard test runner and set `GRASS_TRANSITION_BENCHMARK=1` plus one of
+`GRASS_EXPERIMENT=filtering|edges|environment|compression|chunks|adoption`. Each experiment
+runs independently against the interior-quad/shadow-fix baseline. Six paired rounds
+use 30 samples per variant and a common camera-matched soil scene. Preparation uses
+90 frames per pose/variant, 120 warmup cycles before round one, and six before later
+rounds. Shadows are enabled and cached. Timed GPU blocks perform no LOD scans,
+instance uploads or shadow regeneration. CPU motion uses three real 60-frame
+3 m diagonal drives at half distances. All samples, intervals and three-pose image
+comparisons live in `transition_lab/experiments/` under the standard artifact root.
+
+Measured 2026-10-02 on RTX 3060, 1920 × 1080, DPR 1. These are paired **GPU savings**
+against each experiment's baseline, in milliseconds; all scene costs in the reports
+also include the requested soil-only subtraction:
+
+| Change | Front | Rear | Border | Assessment |
+|---|---:|---:|---:|---|
+| 4× filtering | 0.569* | 0.205 | 0.130 | Small softness; rear/border saving supported |
+| Edge strips/corners | 0.085 | 0.061 | 0.045 | Nearly identical images; all three savings supported |
+| Approximate environment | 0.150* | -0.029* | 0.015* | No reliable performance improvement |
+| BC3 / BC1 maps | 0.126 | 0.125 | 0.087 | Faster but visible color/lighting damage |
+
+An asterisk means the 95% confidence interval crosses zero. Desktop load and GPU
+clocks were not locked; in particular, a front filtering block has large variation.
+No samples are discarded. The earlier decomposition filtering diagnostic predates
+the sampler/target-copy fix, so its anisotropy numbers are not the validated result.
+Other earlier diagnostic results remain historical measurements.
+
+Edge strips submit 39,877 versus 52,997 triangles in the front view, while draws
+increase from 50 to 59; the border pose drops from 35 to 32 draws. Full-frame mean
+RGB difference stays below 0.003 of 255 in all three views, with 99th percentile
+zero. Filtering has approximately 0.9–1.0 mean RGB error; the environment candidate
+stays below 0.09. Full-frame metrics include unchanged soil and sky and are not a
+substitute for inspecting grass. Compression has obvious shifts despite lower cost.
+
+Active All-layer map allocation including mips drops from **78,293,666 bytes**
+(78.29 MB / 74.67 MiB) to **30,758,416 bytes** (30.76 MB / 29.33 MiB), 60.7% less.
+This is format-derived logical GPU allocation, not measured process VRAM residency.
+Each of two tiles uses three 1024² RGBA packed maps plus one 4096² visibility map.
+BC3 preserves alpha as a data channel; BC1 stores visibility. Lossy errors in packed
+normal and litter contributions cause the unacceptable appearance. Keep the offline
+pipeline but evaluate a better encoder/format or uncompressed sensitive channels
+before adopting compressed maps. Debug alternatives, bake targets, other scene
+textures and shadow maps are excluded from the active-set comparison.
+
+Whole-scene grass batching results, GPU milliseconds above the **same whole-field
+soil-only baseline**, including additional draw overhead:
+
+| Range / view | 32 m baseline | 4 m chunks | 8 m chunks |
+|---|---:|---:|---:|
+| Full / front | 1.904 | 1.655 | 1.697 |
+| Full / rear | 1.737 | 1.446 | 1.447 |
+| Full / border | 2.017 | 1.517 | 1.540 |
+| Half / front | 1.029 | 0.955 | 1.071 |
+| Half / rear | 0.896 | 0.809 | 0.782 |
+| Half / border | 0.907 | 0.961 | 1.240 |
+
+Full-range savings are significant for both chunk sizes in all three views. At
+half distances only the rear saving is supported; the other intervals cross zero.
+The forced-LOD4 chunk comparisons show no reliable benefit. Full/front draws rise
+from 66 to 495 / 203 for 4 m / 8 m, while triangles fall from 1,491,643 to
+668,281 / 862,199. Moving CPU averages 0.740 / 1.669 / 1.071 ms per frame for
+32 m / 4 m / 8 m. Batch-update portions are 0.169 / 0.317 / 0.278 ms per frame.
+Eight scans occur per 60-frame drive, without shadow regeneration. Eight-meter
+batches are the more promising dense-grass compromise; a hybrid retaining large
+LOD4 batches has not yet been implemented or measured.
+
+`tests/headless/e2e/grass_debug_v2_transition_experiments.pwtest.js` checks one ground
+surface per cell, real compiled anisotropy samplers and restoration, strip triangle
+counts, chunk coverage, idle reuse and zero steady shadow regeneration across
+distance, elevated and flat configurations. The original transition E2E also passes.
+
+## Adopted filtering and edge combination (2026-10-03)
+
+`recommended` combines 4× canopy filtering with edge/corner strips and is selected
+when no experiment is specified. Canopy maps are created at 4× directly: default
+loading allocates no comparison texture copies. The retained `baseline` lazily
+creates 8× copies only when requested, so frozen A/B draws can coexist without
+changing sampler state between measurements. The default active map set remains
+78.29 MB including mipmaps. Other labs retain their existing 8× creation default.
+Compressed maps, approximate lighting and chunk sizes remain opt-in experiments.
+
+`?experiment=baseline` restores the previous 8×/edge-grid configuration. To compare
+the strategy before both earlier optimizations, also set `optimization=original`.
+A direct original/shadow-version URL without an explicit experiment selects the
+retained baseline. Existing historical suites explicitly request baseline, while
+the experiment E2E checks default adoption, zero initial comparison copies, all
+eight compiled samplers, toggling/restoration, cell ownership and idle work reuse.
+
+The combined benchmark uses the same six-round method described above, with
+front/rear/border views at full and half ranges plus forced LOD4 with side grass.
+Measured GPU milliseconds **above the camera-matched soil-only scene**:
+
+| Configuration / view | Previous 8× + grids | Default 4× + strips | Paired saving |
+|---|---:|---:|---:|
+| LOD4 / front | 0.480 | 0.199 | 0.281 |
+| LOD4 / rear | 0.443 | 0.153 | 0.290 |
+| LOD4 / border | 0.355 | 0.175 | 0.180 |
+| Full / front | 1.911 | 1.772 | 0.139 |
+| Full / rear | 1.756 | 1.609 | 0.146 |
+| Full / border | 2.017 | 1.934 | 0.083 |
+| Half / front | 1.220 | 1.054 | 0.167 |
+| Half / rear | 1.006 | 0.795 | 0.211 |
+| Half / border | 1.103 | 0.913 | 0.189 |
+
+All nine paired-saving 95% intervals are above zero. Half-range blocks are noisier;
+raw samples are retained without filtering. These remain hardware-specific results,
+with desktop clocks/load uncontrolled. Mean moving CPU is 0.843 ms/frame before
+versus 0.810 after; this small difference is not claimed as a proven CPU speedup.
+Each drive performs eight scans and zero shadow regenerations. Timed stationary
+blocks perform zero scans, uploads or shadow regenerations.
+
+The combined appearance is slightly softer at distance, preserving the field edges.
+Mean full-frame RGB error is 0.28–0.98 of 255 across nine comparisons, including
+unchanged sky/soil; inspect the image split rather than interpreting this as a
+grass-only metric. Draw-call changes match the isolated strip experiment (for
+example forced-LOD4/front 50 → 59 calls, 52,997 → 39,877 submitted triangles).
+Images, raw timings and the split-view report are under
+`tests/artifacts/screens/grass_debug_v2/transition_lab/experiments/adoption/`.

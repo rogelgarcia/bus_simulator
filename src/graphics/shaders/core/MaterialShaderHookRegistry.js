@@ -346,3 +346,27 @@ export function cloneMaterialShaderContract(material, exclude = []) {
     }
     return clone;
 }
+
+/** Create a rendered variant with its own registry and base material properties.
+ * Hook recipes and their runtime uniform owners are deliberately shared with the source.
+ * Later source hook additions/removals are not inherited. Borrowed textures are not disposed here.
+ * @param {any} material */
+export function createSharedUniformMaterialVariant(material) {
+    requireMaterial(material);
+    const state = REGISTRIES.get(material);
+    const input = Object.create(Object.getPrototypeOf(material), Object.getOwnPropertyDescriptors(material));
+    input.userData = {};
+    const variant = new material.constructor().copy(input);
+    variant.userData = { ...material.userData };
+    if (material.defines) variant.defines = { ...material.defines };
+    if (material.extensions) variant.extensions = { ...material.extensions };
+    variant.onBeforeCompile = state?.previousOnBeforeCompile ?? material.onBeforeCompile;
+    variant.onBeforeRender = state?.previousOnBeforeRender ?? material.onBeforeRender;
+    const baseKey = state ? callPreviousCacheKey(state) : material.customProgramCacheKey();
+    variant.customProgramCacheKey = () => baseKey;
+    for (const hook of state?.ordered ?? []) {
+        registerMaterialShaderHook(variant, { id: hook.id, priority: hook.priority, enabled: hook.enabled,
+            variantKey: hook.variantKey, apply: hook.apply, uniforms: hook.uniforms });
+    }
+    return variant;
+}

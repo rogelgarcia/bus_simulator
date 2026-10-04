@@ -124,19 +124,35 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
     const labels = GRASS_TRANSITION_COLORS.map(createRingLabel);
     for (const label of labels) ringGroup.add(label.sprite);
     const cachedDistances = new Float64Array(4).fill(NaN);
+    const cachedStarts = new Float64Array(4).fill(NaN);
+    const startRings = GRASS_TRANSITION_COLORS.slice(0, 4).map((color, index) => {
+        const ring = new THREE.LineLoop(ringGeometry, new THREE.LineDashedMaterial({ color, dashSize: .025, gapSize: .02,
+            transparent: true, opacity: .8, depthTest: false, depthWrite: false, toneMapped: false }));
+        ring.computeLineDistances();
+        ring.name = `${TRANSITION_LEVELS[index]} transition start`;
+        ring.renderOrder = 1002;
+        ringGroup.add(ring);
+        return ring;
+    });
 
-    /** @param {readonly number[]} limits */
-    function updateDistances(limits) {
+    /** @param {readonly number[]} limits @param {readonly {start:number,end:number}[]} [bands] */
+    function updateDistances(limits, bands) {
         if (limits.length !== 4 || limits.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value <= limits[i - 1]))) {
             throw new RangeError('Grass transition helpers require four increasing positive limits.');
         }
         let changed = false;
-        for (let i = 0; i < 4; i++) if (limits[i] !== cachedDistances[i]) changed = true;
+        for (let i = 0; i < 4; i++) if (limits[i] !== cachedDistances[i] || (bands?.[i]?.start ?? limits[i]) !== cachedStarts[i]) changed = true;
         if (!changed) return;
         for (let i = 0; i < 4; i++) {
             cachedDistances[i] = limits[i];
+            const start = bands?.[i]?.start ?? limits[i];
+            cachedStarts[i] = start;
             rings[i].scale.set(limits[i], 1, limits[i]);
-            labels[i].setText(`${TRANSITION_LEVELS[i]} < ${Number(limits[i].toFixed(2))} m`);
+            startRings[i].visible = start < limits[i];
+            startRings[i].scale.set(start, 1, start);
+            labels[i].setText(start < limits[i]
+                ? `L${i}→${i + 1}: ${Number(start.toFixed(2))}–${Number(limits[i].toFixed(2))} m`
+                : `${TRANSITION_LEVELS[i]} < ${Number(limits[i].toFixed(2))} m`);
             labels[i].sprite.position.set(limits[i] * 0.707, 0.32 + i * 0.12, -limits[i] * 0.707);
         }
         labels[4].setText(`LOD4 ≥ ${Number(limits[3].toFixed(2))} m`);
@@ -146,8 +162,8 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
     group.add(overlay, outlines, ringGroup);
     return Object.freeze({
         group,
-        /** @param {Uint8Array|readonly number[]} levels @param {{x:number,z:number}} cameraPosition @param {readonly number[]|null} effectiveDistances */
-        update(levels, cameraPosition, effectiveDistances) {
+        /** @param {Uint8Array|readonly number[]} levels @param {{x:number,z:number}} cameraPosition @param {readonly number[]|null} effectiveDistances @param {readonly {start:number,end:number}[]} [bands] */
+        update(levels, cameraPosition, effectiveDistances, bands) {
             if (levels.length !== cells.length) throw new RangeError('Grass helper LOD count must match the cell count.');
             let changed = false;
             for (let i = 0; i < levels.length; i++) {
@@ -161,7 +177,7 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
             ringGroup.position.x = cameraPosition.x;
             ringGroup.position.z = cameraPosition.z;
             ringGroup.visible = effectiveDistances !== null;
-            if (effectiveDistances !== null) updateDistances(effectiveDistances);
+            if (effectiveDistances !== null) updateDistances(effectiveDistances, bands);
         },
         /** @param {boolean} visible */
         setVisible(visible) { group.visible = visible; },
@@ -180,7 +196,7 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
             outlines.geometry.dispose();
             outlines.material.dispose();
             ringGeometry.dispose();
-            for (const ring of rings) ring.material.dispose();
+            for (const ring of [...rings, ...startRings]) ring.material.dispose();
             for (const label of labels) label.dispose();
             group.clear();
         }

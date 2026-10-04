@@ -10,6 +10,7 @@ export const GRASS_CANOPY_DIAGNOSTICS = Object.freeze({
     full: 'Complete LOD4 shader',
     aniso1: '1× anisotropic filtering on canopy channels',
     aniso4: '4× anisotropic filtering on canopy channels',
+    aniso8: 'Retained 8× anisotropic filtering on canopy channels',
     single_scale: 'One fixed texture scale; paired tiles retained',
     no_visibility: 'No baked/external shadow-visibility sampling',
     baked_only: 'Baked self-shadows only; no white external lookup or live-shadow branch',
@@ -24,21 +25,34 @@ export const GRASS_CANOPY_DIAGNOSTICS = Object.freeze({
 });
 
 /** @param {THREE.MeshStandardMaterial} source @param {string} id */
-export function createGrassDebugV2CanopyDiagnostic(source, id) {
+export function createGrassDebugV2CanopyDiagnostic(source, id, { renderer = null, textureCache = null } = {}) {
     if (!source?.isMeshStandardMaterial || !Object.hasOwn(GRASS_CANOPY_DIAGNOSTICS, id)) throw new Error('Invalid canopy diagnostic: ' + id);
-    const material = cloneMaterialShaderContract(source), textures = new Map();
+    const material = cloneMaterialShaderContract(source), textures = textureCache ?? new Map(), uniforms = {}, targets = [];
     material.name = 'CanopyDiagnostic-' + id;
     material.userData = { ...source.userData };
-    const anisotropy = id === 'aniso1' ? 1 : id === 'aniso4' ? 4 : null;
+    const requestedAnisotropy = { aniso1: 1, aniso4: 4, aniso8: 8 }[id];
+    const anisotropy = requestedAnisotropy === undefined ? null
+        : Math.min(requestedAnisotropy, renderer?.capabilities.getMaxAnisotropy() ?? requestedAnisotropy);
     const texture = original => {
         if (!textures.has(original)) {
-            const copy = original.clone(); copy.anisotropy = anisotropy; copy.needsUpdate = true; textures.set(original, copy);
+            let copy;
+            if (original.isRenderTargetTexture) {
+                if (!renderer) throw new Error('Canopy filtering comparisons require the renderer to copy GPU render-target pixels.');
+                const target = new THREE.WebGLRenderTarget(original.image.width, original.image.height, {
+                    format: original.format, type: original.type, colorSpace: original.colorSpace, depthBuffer: false,
+                    minFilter: original.minFilter, magFilter: original.magFilter, generateMipmaps: original.generateMipmaps,
+                    wrapS: original.wrapS, wrapT: original.wrapT, anisotropy });
+                copy = target.texture; copy.userData = { ...original.userData }; targets.push(target);
+                renderer.initRenderTarget(target); renderer.copyTextureToTexture(original, copy);
+            } else { copy = original.clone(); copy.anisotropy = anisotropy; copy.needsUpdate = true; }
+            textures.set(original, copy);
         }
         return textures.get(original);
     };
     if (anisotropy !== null) for (const key of ['map', 'normalMap', 'roughnessMap']) material[key] = texture(source[key]);
     Object.values(snippets).forEach(payload => attachShaderMetadata(material, payload));
-    registerMaterialShaderHook(material, { id: 'grass.canopy-diagnostic', priority: 200,
+    registerMaterialShaderHook(material, { id: anisotropy !== null ? 'grass.canopy-filtering' : 'grass.canopy-diagnostic', priority: 200,
+        uniforms,
         variantKey: id + '|' + Object.values(snippets).map(payload => payload.variantKey).join('|'),
         apply(shader) {
             const replace = (anchor, value) => {
@@ -47,9 +61,9 @@ export function createGrassDebugV2CanopyDiagnostic(source, id) {
             };
             if (anisotropy !== null) for (const key of ['grassCanopyAlbedoB', 'grassCanopyNormalB', 'grassCanopyRoughnessB',
                 'grassCanopyVisibilityB', 'grassCanopyTileVisibility', 'grassCanopyShadowVisibility']) {
-                shader.uniforms[key] = { value: texture(shader.uniforms[key].value) };
+                uniforms[key] = { value: texture(shader.uniforms[key].value) }; shader.uniforms[key] = uniforms[key];
             }
-            if (id === 'single_scale') shader.uniforms.grassCanopyDistance = { value: new THREE.Vector3(1000, 2000, 2) };
+            if (id === 'single_scale') { uniforms.grassCanopyDistance = { value: new THREE.Vector3(1000, 2000, 2) }; shader.uniforms.grassCanopyDistance = uniforms.grassCanopyDistance; }
             if (id === 'flat_normals') {
                 const sampling = grassFieldCanopySamplingShader.fragmentSource;
                 replace(sampling, sampling + '\n' + snippets.normal.fragmentSource);
@@ -73,5 +87,6 @@ export function createGrassDebugV2CanopyDiagnostic(source, id) {
             }
         }
     });
-    return Object.freeze({ material, dispose() { material.dispose(); for (const value of textures.values()) value.dispose(); } });
+    return Object.freeze({ material, dispose() { material.dispose(); targets.forEach(target => target.dispose());
+        if (!textureCache) for (const value of textures.values()) value.dispose(); } });
 }

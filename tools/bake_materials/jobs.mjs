@@ -7,6 +7,7 @@ import { publishBakeDirectory } from '../baking/Publication.mjs';
 import { grassJob } from './grass/job.mjs';
 import { dryLitterJob } from './dry_litter/job.mjs';
 import { grassLod4LayoutJob } from './grass/lod4_layout/job.mjs';
+import { grassLod4MapsJob } from './grass/lod4_maps/job.mjs';
 
 const families = [
     ['tools/modern_bank_pbr/run.mjs', ['burnt_cement_panel', 'bronze_anodized_panel']],
@@ -39,4 +40,4 @@ export const materialJobs = families.flatMap(([script, names]) => names.map(name
         return result;
     }, validate: validatePbr
 })));
-materialJobs.push(grassJob, dryLitterJob, grassLod4LayoutJob, { id: 'materials', description: 'Existing grass and procedural PBR asset bakers', children: [...materialJobs.map(v => v.id), grassJob.id] });
+materialJobs.push(grassJob, dryLitterJob, grassLod4LayoutJob, grassLod4MapsJob, { id: 'materials', description: 'Existing grass and procedural PBR asset bakers', children: [...materialJobs.map(v => v.id), grassJob.id] });

@@ -94,6 +94,8 @@ export class GrassDebugV2Lighting {
             sunDirection: this.sunRef.direction.toArray(),
             sunColorLinear: this.sun.color.toArray(),
             sunIntensity: this.sun.intensity,
+            hemisphereIntensity: this.hemi.intensity,
+            environmentIntensity: this.settings.ibl.envMapIntensity,
             exposure: this.renderer.toneMappingExposure,
             environmentId: this.settings.ibl.iblId,
             sunBloomEnabled: this.bloomSettings.enabled,

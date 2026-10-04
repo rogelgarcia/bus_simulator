@@ -7,13 +7,15 @@ import {
     TRANSITION_LEVELS
 } from '../../../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionSelection.js';
 
+const abrupt = options => new GrassDebugV2TransitionSelection({ transitionFraction: 0, movementThreshold: .25, intervalMs: 100, ...options });
+
 const origin = Object.freeze({ x: 0, z: 0 });
 const cell = (x, z = 0) => ({ centerX: x, centerZ: z, minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 });
 
 test('Grass transitions: exact thresholds select the farther LOD without a fade', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [0, 0.999, 1, 2.999, 3, 5.999, 6, 24.999, 25, 80].map((x) => cell(x)) });
+    const selection = abrupt({ cells: [0, 0.999, 1, 1.999, 2, 4.999, 5, 17.999, 18, 80].map((x) => cell(x)) });
     const result = selection.update(origin, 0);
-    assert.deepEqual(DEFAULT_TRANSITION_DISTANCES, [1, 3, 6, 25]);
+    assert.deepEqual(DEFAULT_TRANSITION_DISTANCES, [1, 2, 5, 18]);
     assert.deepEqual(TRANSITION_LEVELS, ['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4']);
     assert.deepEqual(Array.from(result.levels), [0, 0, 1, 1, 2, 2, 3, 3, 4, 4]);
     assert.deepEqual(Array.from(result.counts), [2, 2, 2, 2, 2]);
@@ -22,7 +24,7 @@ test('Grass transitions: exact thresholds select the farther LOD without a fade'
 });
 
 test('Grass transitions: horizontal radial center distance ignores camera height and orientation', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(1.8, 2.4), cell(-3.6, -4.8), cell(0.8, 0.8)] });
+    const selection = abrupt({ cells: [cell(1.8, 2.4), cell(-3.6, -4.8), cell(0.8, 0.8)] });
     const result = selection.update({ x: 0, y: 200, z: 0, yaw: 0 }, 0);
     assert.deepEqual(Array.from(result.levels), [2, 3, 1]);
     assert.equal(selection.update({ x: 0, y: 1, z: 0, yaw: Math.PI }, 2000).scanned, false);
@@ -30,20 +32,20 @@ test('Grass transitions: horizontal radial center distance ignores camera height
 });
 
 test('Grass transitions: half distance settings force an immediate stationary reclassification', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [0.5, 1.5, 3, 12.5, 25].map((x) => cell(x)) });
+    const selection = abrupt({ cells: [0.5, 1, 2.5, 9, 25].map((x) => cell(x)) });
     selection.update(origin, 0);
     selection.setSettings({ scale: 0.5 });
     const result = selection.update(origin, 1);
     assert.equal(result.scanned, true);
     assert.deepEqual(Array.from(result.levels), [1, 2, 3, 4, 4]);
     assert.equal(result.changedCount, 4);
-    assert.deepEqual(selection.getSnapshot().effectiveDistances, [0.5, 1.5, 3, 12.5]);
+    assert.deepEqual(selection.getSnapshot().effectiveDistances, [0.5, 1, 2.5, 9]);
     selection.setSettings({ distances: [2, 4, 8, 40] });
     assert.deepEqual(Array.from(selection.update(origin, 2).levels), [0, 1, 2, 3, 4]);
 });
 
 test('Grass transitions: displacement accumulates, interval caps scans, and result buffers are reused', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(1.1), cell(8)] });
+    const selection = abrupt({ cells: [cell(1.1), cell(8)] });
     const first = selection.update(origin, 0);
     const arrays = [first.levels, first.changedIndices, first.counts];
     assert.equal(selection.update({ x: 0.1, z: 0 }, 1000).scanned, false);
@@ -68,7 +70,7 @@ test('Grass transitions: displacement accumulates, interval caps scans, and resu
 });
 
 test('Grass transitions: stationary updates never scan, and explicit force bypasses both gates', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(1.1)], movementThreshold: 0 });
+    const selection = abrupt({ cells: [cell(1.1)], movementThreshold: 0 });
     selection.update(origin, 0);
     for (let i = 0; i < 500; i++) assert.equal(selection.update(origin, i * 1000).scanned, false);
     assert.equal(selection.getSnapshot().visitedCells, 1);
@@ -81,8 +83,8 @@ test('Grass transitions: stationary updates never scan, and explicit force bypas
 
 test('Grass transitions: fixed centers and snapshots are isolated from caller input mutation', () => {
     const cells = [cell(4)];
-    const distances = [1, 3, 6, 25];
-    const selection = new GrassDebugV2TransitionSelection({ cells, distances });
+    const distances = [1, 2, 5, 18];
+    const selection = abrupt({ cells, distances });
     cells[0].centerX = 100;
     distances[0] = 10;
     assert.deepEqual(Array.from(selection.update(origin, 0).levels), [2]);
@@ -99,21 +101,21 @@ test('Grass transitions: fixed centers and snapshots are isolated from caller in
 
 test('Grass transitions: invalid settings fail before altering the working configuration', () => {
     for (const options of [{ distances: [1, 2] }, { distances: [1, 3, 3, 25] }, { scale: 0 }, { intervalMs: -1 }, { movementThreshold: NaN }, { sideLeafDistance: -1 }]) {
-        assert.throws(() => new GrassDebugV2TransitionSelection({ cells: [], ...options }), RangeError);
+        assert.throws(() => abrupt({ cells: [], ...options }), RangeError);
     }
-    assert.throws(() => new GrassDebugV2TransitionSelection({ cells: [cell(Infinity)] }), RangeError);
-    assert.throws(() => new GrassDebugV2TransitionSelection({ cells: [{ ...cell(0), minX: 1 }] }), RangeError);
-    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(2)] });
+    assert.throws(() => abrupt({ cells: [cell(Infinity)] }), RangeError);
+    assert.throws(() => abrupt({ cells: [{ ...cell(0), minX: 1 }] }), RangeError);
+    const selection = abrupt({ cells: [cell(2)] });
     assert.throws(() => selection.setSettings({ scale: -1 }), RangeError);
     assert.equal(selection.getSnapshot().scale, 1);
     assert.throws(() => selection.update({ x: NaN, z: 0 }, 0), RangeError);
-    assert.deepEqual(Array.from(selection.update(origin, 0).levels), [1]);
+    assert.deepEqual(Array.from(selection.update(origin, 0).levels), [2]);
 });
 
 test('Grass transitions: side leaves keep the exact cutoff and full/half presets do not scale it', () => {
-    const cells = [24, 25, 35, 35.01, 40].map(x => ({ ...cell(x), edge: 1 }));
+    const cells = [17, 18, 35, 35.01, 40].map(x => ({ ...cell(x), edge: 1 }));
     cells.push(cell(30));
-    const selection = new GrassDebugV2TransitionSelection({ cells });
+    const selection = abrupt({ cells });
     assert.deepEqual([...selection.update(origin, 0).sideLeaves], [0, 1, 1, 0, 0, 0]);
     selection.setSettings({ scale: .5 });
     assert.deepEqual([...selection.update(origin, 1).sideLeaves], [1, 1, 1, 0, 0, 0]);
@@ -126,7 +128,7 @@ test('Grass transitions: side leaves keep the exact cutoff and full/half presets
 });
 
 test('Grass transitions: crossing only the side-leaf cutoff updates the cached visibility', () => {
-    const selection = new GrassDebugV2TransitionSelection({ cells: [{ ...cell(35.1), edge: 2 }], movementThreshold: .25 });
+    const selection = abrupt({ cells: [{ ...cell(35.1), edge: 2 }], movementThreshold: .25 });
     const mask = selection.update(origin, 0).sideLeaves;
     assert.deepEqual([...mask], [0]);
     assert.equal(selection.update({ x: .2, z: 0 }, 100).scanned, false);
@@ -138,4 +140,80 @@ test('Grass transitions: crossing only the side-leaf cutoff updates the cached v
     const stationary = selection.update({ x: .3, z: 0 }, 1000);
     assert.equal(stationary.scanned, false);
     assert.equal(stationary.sideLeavesChangedCount, 0);
+});
+
+test('Grass transitions: default half-band starts at 11.5 m, scales with ranges, and uses faster gates', () => {
+    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(0)] });
+    const state = selection.getSnapshot();
+    assert.deepEqual(state.transitionBands.map(b => [b.start,b.end]), [[.5,1],[1.5,2],[3.5,5],[11.5,18]]);
+    assert.equal(state.movementThreshold,.2); assert.equal(state.intervalMs,50);
+    selection.update(origin,0);
+    assert.equal(selection.update({x:.19,z:0},1000).scanned,false);
+    assert.equal(selection.update({x:.2,z:0},20).scanned,false);
+    assert.equal(selection.update({x:.2,z:0},50).scanned,true);
+    selection.setSettings({scale:.5});
+    assert.deepEqual(selection.getSnapshot().transitionBands[3],{from:3,to:4,start:5.75,end:9});
+    selection.setSettings({transitionFraction:0});
+    assert.equal(selection.getSnapshot().transitionBands[3].start,9);
+    for(const transitionFraction of [-.1,1.1,NaN])assert.throws(()=>selection.setSettings({transitionFraction}),RangeError);
+});
+
+test('Grass transitions: spatial mixture is reproducible, bounded and independent of cell ordering', () => {
+    const cells = Array.from({length:2048},(_,i)=>{const a=i*Math.PI*2/2048;return cell(14.75*Math.cos(a),14.75*Math.sin(a));});
+    const selection = new GrassDebugV2TransitionSelection({cells, transitionMode:'patches'});
+    const before = [...selection.update(origin,0).levels];
+    assert(before.every(lod=>lod===3||lod===4));
+    const fraction=before.filter(lod=>lod===4).length/before.length;
+    assert(Math.abs(fraction-.5)<.04, 'Mid-band should contain approximately half of each LOD: '+fraction);
+    const reversed = new GrassDebugV2TransitionSelection({cells:cells.slice().reverse(), transitionMode:'patches'});
+    assert.deepEqual([...reversed.update(origin,0).levels].reverse(),before);
+    selection.update({x:2,z:0},100);
+    assert.deepEqual([...selection.update(origin,200).levels],before);
+    const one = new GrassDebugV2TransitionSelection({cells:[cell(0)]});
+    assert.equal(one.update({x:11.5,z:0},0).levels[0],3);
+    assert.equal(one.update({x:18,z:0},100).levels[0],4);
+});
+
+test('Grass transitions: blend candidates include both sides and retain the dominant LOD', () => {
+    const selection = new GrassDebugV2TransitionSelection({ cells: [0, 3.5, 11.5, 14.75, 18, 20].map(x => cell(x)) });
+    const result = selection.update(origin, 0), masks = [...result.renderMasks];
+    assert.equal(selection.getSnapshot().transitionMethod, 'complementary-screen-door');
+    assert.deepEqual(masks.slice(2), [24, 24, 24, 16]);
+    masks.forEach((mask, i) => assert(mask & (1 << result.levels[i])));
+    selection.setSettings({ transitionMode: 'patches' });
+    const patches = selection.update(origin, 1);
+    patches.renderMasks.forEach((mask, i) => assert.equal(mask, 1 << patches.levels[i]));
+    selection.setSettings({ transitionMode: 'blend', transitionFraction: 0 });
+    const abrupt = selection.update(origin, 2);
+    abrupt.renderMasks.forEach((mask, i) => assert.equal(mask, 1 << abrupt.levels[i]));
+    assert.throws(() => selection.setSettings({ transitionMode: 'unknown' }), RangeError);
+});
+
+test('Grass transitions: cached support covers all contributing levels between scans', () => {
+    const cells = Array.from({ length: 481 }, (_, i) => cell(i / 20));
+    const selection = new GrassDebugV2TransitionSelection({ cells });
+    const masks = [...selection.update(origin, 0).renderMasks], state = selection.getSnapshot();
+    assert.equal(state.blendGuardMeters, 1.45);
+    for (const displacement of [-1.45, -.2, 0, .2, 1.45]) {
+        cells.forEach((c, i) => {
+            const distance = Math.abs(c.centerX - displacement);
+            for (let level = 0; level < 5; level++) {
+                const starts = level ? state.transitionBands[level - 1].start : -Infinity;
+                const ends = level < 4 ? state.transitionBands[level].end : Infinity;
+                if (distance > starts && distance < ends) assert(masks[i] & (1 << level), `${i}, ${displacement}, ${level}`);
+            }
+        });
+    }
+});
+
+test('Grass transitions: teleports refresh before the interval can expose missing candidates', () => {
+    const selection = new GrassDebugV2TransitionSelection({ cells: [cell(0), cell(20)] });
+    const masks = selection.update(origin, 0).renderMasks;
+    assert.equal(selection.update({ x: .4, z: 0 }, 10).scanned, false);
+    const jump = selection.update({ x: 20, z: 0 }, 11);
+    assert.equal(jump.scanned, true);
+    assert.equal(jump.renderMasks, masks);
+    assert.equal(jump.renderMasks[0], 16);
+    assert(jump.renderMasks[1] & 1);
+    assert.equal(jump.renderChangedCount, 2);
 });

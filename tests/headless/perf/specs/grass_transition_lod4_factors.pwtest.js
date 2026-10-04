@@ -23,7 +23,7 @@ test('LOD4 elevation, fringe and shadows on hardware', async ({ page, browser })
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_transition_scene.html?configuration=lod4-elevated-sides&revision=lod4-factors-1#front');
+    await page.goto('/debug_tools/grass_transition_scene.html?transition=0&experiment=baseline&configuration=lod4-elevated-sides&revision=lod4-factors-1#front');
     await page.waitForFunction(() => !!window.__grassTransitionReadiness);
     await page.evaluate(() => window.__grassTransitionReadiness);
     const metadata = await page.evaluate(async ({ samples, warmup }) => {

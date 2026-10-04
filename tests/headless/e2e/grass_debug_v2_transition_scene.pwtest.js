@@ -246,7 +246,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     try {
-        await page.goto('/debug_tools/grass_transition_scene.html?revision=transition-lab-1#front');
+        await page.goto('/debug_tools/grass_transition_scene.html?transition=0&experiment=baseline&revision=transition-lab-1#front');
         await page.waitForFunction(() => !!window.__grassTransitionReadiness);
         await page.evaluate(async () => {
             await window.__grassTransitionReadiness;
@@ -259,7 +259,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
         expect(initial.state.fields.fieldSize).toBe(32);
         expect(initial.state.fields.selectionCellMeters).toBe(1);
         expect(initial.state.fields.groundLayersPerCell).toBe(1);
-        expect(initial.state.selection.distances).toEqual([1, 3, 6, 25]);
+        expect(initial.state.selection.distances).toEqual([1, 2, 5, 18]);
         expect(initial.counts).toEqual(initial.state.selection.counts);
         expect(initial.counts.every(count => count > 0)).toBe(true);
         expect(initial.invalid).toEqual([]); expect(initial.mismatches).toEqual([]); expect(initial.unknown).toEqual([]);
@@ -290,7 +290,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
 
         await page.locator('#transition-half').click();
         const half = await inspectCoverage(page); evidence.half = half;
-        expect(half.state.selection.effectiveDistances).toEqual([0.5, 1.5, 3, 12.5]);
+        expect(half.state.selection.effectiveDistances).toEqual([0.5, 1, 2.5, 9]);
         expect(half.counts[4]).toBeGreaterThan(initial.counts[4]);
         expect(half.invalid).toEqual([]); expect(half.mismatches).toEqual([]);
         expect(half.openEdgeCount).toBeGreaterThan(0); expect(half.invalidOpenEdges).toEqual([]);
@@ -416,7 +416,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
         evidence.sideLeaves = { normalSides, allSides, noSides, restoredSides };
         await page.locator('#transition-half').click();
         await expect(page.locator('#transition-half')).toHaveAttribute('aria-pressed', 'true');
-        await expect(page.locator('#transition-half-3')).toHaveText('½ 12.5 m');
+        await expect(page.locator('#transition-half-3')).toHaveText('½ 9 m');
         expect((await inspectSides()).state.selection.sideLeafDistance).toBe(35);
         for (let i = 0; i < 4; i++) {
             const input = await page.locator('#transition-limit-' + i).boundingBox();

@@ -52,6 +52,7 @@ individual leaf commands, scoped parameters and recovery, and
 | bakeVisibility | `tools/bake_visibility/` | Stages and validates the existing PVS bake before optional publication | `node tools/bake_visibility/run.mjs` |
 | bakeMaterials | `tools/bake_materials/` | Grass, existing procedural PBR recipes, and explicit dry-litter ORM repair | `node tools/bake_materials/run.mjs`; `node tools/bake.mjs --target materials/dry_litter` |
 | grassLod4Layout | `tools/bake_materials/grass/lod4_layout/` | Compile and validate the LOD4 periodic leaf positions for fast scene startup | `node tools/bake.mjs --target materials/grass/lod4-layout --publish` |
+| grassLod4Maps | `tools/bake_materials/grass/lod4_maps/` | Bake final All-layer maps offline; optional BC3 / BC1 texture experiment with integrity and fresh-loading gates | `node tools/bake.mjs --target materials/grass/lod4-maps --publish`; see its README for visual limitations |
 | compareBusModels | `tools/compareBusModels.mjs` | Compare coach/city bus model offsets from wheel centers | `node tools/compareBusModels.mjs` |
 | computeTreeConfig | `tools/computeTreeConfig.mjs` | Compute tree orientation/size metadata and write `TreeConfig.js` | `node tools/computeTreeConfig.mjs` |
 | verifyTreeModels | `tools/verify_tree_models.mjs` | Verify tree model base alignment offline | `node tools/verify_tree_models.mjs` |

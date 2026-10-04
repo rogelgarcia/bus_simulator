@@ -37,6 +37,19 @@ export function applyGrassDebugV2DistanceAppearance(material) {
     });
 }
 
+/** Keep material filtering ahead of the abrupt LOD4 switch; called only when ranges change.
+ * @param {Iterable<THREE.MeshStandardMaterial>} materials
+ * @param {number[]} distances Effective horizontal LOD1–4 switches in metres.
+ */
+export function configureGrassDebugV2TransitionAppearance(materials, distances) {
+    const [,, start, end] = distances;
+    if (!(start > 0 && end > start)) throw new Error('Transition appearance requires increasing LOD3/4 distances.');
+    for (const material of materials) {
+        const distance = material.userData.grassFieldDistance;
+        if (distance) { distance.value.x = start; distance.value.y = end; }
+    }
+}
+
 /** @param {THREE.MeshStandardMaterial} material */
 export function applyGrassDebugV2CanopyDistanceAppearance(material) {
     const config = GRASS_FIELD_DISTANCE_APPEARANCE;

@@ -27,7 +27,7 @@ test('Almost-all-LOD4 cost, submitted geometry and duplicate-ground audit', asyn
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_transition_scene.html?revision=transition-draw-count-1#front');
+    await page.goto('/debug_tools/grass_transition_scene.html?transition=0&experiment=baseline&revision=transition-draw-count-1#front');
     await page.waitForFunction(() => !!window.__grassTransitionReadiness);
     await page.evaluate(() => window.__grassTransitionReadiness);
     const metadata = await page.evaluate(async ({ warmupFrames, sampleFrames }) => {

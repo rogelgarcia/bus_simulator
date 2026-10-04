@@ -17,6 +17,7 @@ export function createGrassDebugV2FloorMaterial(textures, { canopyContrast = 1, 
     if (captureToCard) uniforms.grassFloorCaptureToCard = { value: captureToCard };
     const material = createGrassDebugV2Material({ map: textures.albedo, normalMap: textures.normal,
         normalMapType: THREE.TangentSpaceNormalMap, roughnessMap: textures.roughness, roughness: 1 });
+    material.userData.grassFloorLeafColorScale = uniforms.grassFloorLeafColorScale;
     material.defines = { ...material.defines, GRASS_FLOOR_OCCLUSION_STRENGTH: canopyOcclusionStrength.toFixed(3) };
     if (captureToCard) material.defines = { ...material.defines, GRASS_FLOOR_CAPTURE_FRAME: 1 };
     if (textures.albedo.userData.grassCanopyHeight) material.defines = { ...material.defines, GRASS_FLOOR_HEIGHT: 1, GRASS_FLOOR_CONTRAST: canopyContrast.toFixed(3) };

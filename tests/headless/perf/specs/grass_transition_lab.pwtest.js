@@ -48,7 +48,7 @@ test('Grass transition lab reports full and half ranges above matched soil-only 
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_transition_scene.html?revision=transition-benchmark-1');
+    await page.goto('/debug_tools/grass_transition_scene.html?transition=0&experiment=baseline&revision=transition-benchmark-1');
     await page.waitForFunction(() => !!window.__grassTransitionReadiness);
     await page.evaluate(() => window.__grassTransitionReadiness);
     await page.mouse.move(20, 20);

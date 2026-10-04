@@ -51,8 +51,8 @@ function canopyGeometry(width, depth) {
     return geometry;
 }
 
-/** @param {{renderer:THREE.WebGLRenderer, source:THREE.Mesh, lod2:THREE.Mesh, soil:THREE.Mesh, litter:THREE.Object3D, width:number, depth:number, shadowDirection:THREE.Vector3, lighting:object, onProgress?:(message:string)=>void,onPatternPreview?:(preview:object)=>void,compileLayout?:boolean,mapResolutions?:Partial<Record<'albedo'|'normal'|'roughness'|'visibility',number>>,mapResolutionProfiles?:Record<string,Partial<Record<'albedo'|'normal'|'roughness',number>>>}} options */
-export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,litter,width,depth,shadowDirection,lighting,onProgress,onPatternPreview,compileLayout=false,mapResolutions={},mapResolutionProfiles={}}) {
+/** @param {{renderer:THREE.WebGLRenderer, source:THREE.Mesh, lod2:THREE.Mesh, soil:THREE.Mesh, litter:THREE.Object3D, width:number, depth:number, shadowDirection:THREE.Vector3, lighting:object, onProgress?:(message:string)=>void,onPatternPreview?:(preview:object)=>void,compileLayout?:boolean,mapResolutions?:Partial<Record<'albedo'|'normal'|'roughness'|'visibility',number>>,anisotropy?:number,mapResolutionProfiles?:Record<string,Partial<Record<'albedo'|'normal'|'roughness',number>>>}} options */
+export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,litter,width,depth,shadowDirection,lighting,onProgress,onPatternPreview,compileLayout=false,mapResolutions={},mapResolutionProfiles={},anisotropy=8}) {
     if (!(width > 1 && depth > 1) || !source.userData.grassLeafRanges?.length
         || source.userData.grassLeafRanges.length !== lod2.userData.grassLeafRanges?.length)
         throw new Error('Field canopy requires corresponding source/LOD2 leaf ranges.');
@@ -111,7 +111,7 @@ export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,l
         periodicSnapshots.push(periodic.getSnapshot()); shadowPeriodicSnapshots.push(shadowPeriodic.getSnapshot());
         bakes.push(await createGrassDebugV2FieldCanopyBake({ renderer, source: periodic.group, shadowSource: shadowPeriodic.group, shadowDirection, soil, litter,
             width: GRASS_FIELD_CANOPY.tileMeters, depth: GRASS_FIELD_CANOPY.tileMeters, sourceHeight: source.geometry.boundingBox.max.y,
-            resolution: GRASS_FIELD_CANOPY.resolution, mapResolutions: { ...GRASS_FIELD_CANOPY.mapResolutions, ...mapResolutions }, mapResolutionProfiles, onProgress }));
+            resolution: GRASS_FIELD_CANOPY.resolution, mapResolutions: { ...GRASS_FIELD_CANOPY.mapResolutions, ...mapResolutions }, mapResolutionProfiles, anisotropy, onProgress }));
         } finally { periodic?.dispose(); shadowPeriodic?.dispose(); }
     }
     const bake = bakes[0];

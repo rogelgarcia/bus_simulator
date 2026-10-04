@@ -6,7 +6,6 @@ import { resolvePbrMaterialPipeline } from '../../content3d/materials/PbrTexture
 import { createGrassDebugV2Material } from './GrassDebugV2Material.js';
 import { createGrassDebugV2FieldLod } from './GrassDebugV2FieldLod1.js';
 import { createGrassDebugV2FieldDetail } from './GrassDebugV2FieldDetail.js';
-import { createGrassDebugV2FieldCanopy } from './GrassDebugV2FieldCanopy.js?v=lod4-shadow-fast-1';
 import { createGrassDebugV2LitterSoilMaterial } from './GrassDebugV2LitterSoilMaterial.js';
 import { applyGrassDebugV2DistanceAppearance } from './GrassDebugV2DistanceAppearance.js';
 import { cloneMaterialShaderContract } from '../../shaders/core/MaterialShaderHookRegistry.js';
@@ -22,18 +21,11 @@ function groundMapping(mesh) {
     return new THREE.Matrix3().set(u.x, u.y, u.z, v.x, v.y, v.z, 0, 0, 1);
 }
 
-export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress }) {
+export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress, offline = false }) {
     const response = await fetch(ROOT + 'scene.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Grass source manifest unavailable: ' + response.status);
     const manifest = await response.json();
-    lighting.settings = { ...lighting.settings, ibl: { ...lighting.settings.ibl, iblId: manifest.lighting.environmentId } };
-    lighting.sunRef.direction.fromArray(manifest.lighting.sunDirection);
-    lighting.sunRef.color.fromArray(manifest.lighting.sunColorLinear);
-    lighting.sunRef.intensity = manifest.lighting.sunIntensity;
-    lighting.sun.color.copy(lighting.sunRef.color); lighting.sun.intensity = lighting.sunRef.intensity;
-    lighting.hemi.intensity = manifest.lighting.hemisphereIntensity;
-    renderer.toneMappingExposure = manifest.lighting.exposure;
-    lighting.pipeline?.setToneMapping({ toneMapping: renderer.toneMapping, exposure: renderer.toneMappingExposure });
+    // Geometry exports record capture lighting; the live lab uses the game's resolved settings.
     await primePbrAssetsAvailability();
     const ormUrl = new URL(resolvePbrMaterialPipeline('pbr.dry_litter').urls.ormUrl, location.href);
     ormUrl.searchParams.set('v', 'orm-repair-1');
@@ -70,9 +62,11 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     const generated = ['LOD0_SMART', 'LOD1', 'LOD2'].map(lod => createGrassDebugV2FieldLod({ lod,
         placements: manifest.placements, seed: manifest.seed, material: sourceMaterial }));
     const detail = createGrassDebugV2FieldDetail({ source: generated[2].mesh, width: manifest.widthMeters, depth: manifest.depthMeters });
-    const canopy = await createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
+    const canopy = offline
+        ? await (await import('./GrassDebugV2CanopyTextureAsset.js')).loadGrassCanopyTextureAsset({ renderer, shadowDirection: lighting.sunRef.direction, anisotropy: 4 })
+        : await (await import('./GrassDebugV2FieldCanopy.js?v=lod4-shadow-fast-1')).createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
         soil, litter, width: manifest.widthMeters, depth: manifest.depthMeters, shadowDirection: lighting.sunRef.direction,
-        lighting, onProgress });
+        lighting, onProgress, anisotropy: 4 });
     // The tile already contains grass self-shadows; this lab has no external occluders.
     const externalVisibility = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
     externalVisibility.name = 'GrassTransitionExternalVisibility'; externalVisibility.generateMipmaps = false;
@@ -82,7 +76,9 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     canopy.shadowUniforms.grassCanopyShadowPass.value = 2;
     // Opt in only after baking. The general material still supports external occluders in the field lab.
     for (const material of Object.values(canopy.materials)) {
-        material.defines = { ...material.defines, GRASS_CANOPY_BAKED_SHADOW_ONLY: 1 };
+        // Linear leaf-only probe, normalized by coverage; litter retains its own base color.
+        material.userData.grassFloorLeafColorScale.value.set(1.04, 1.03, 1.02);
+        material.defines = { ...material.defines, GRASS_CANOPY_BAKED_SHADOW_ONLY: 1, GRASS_TRANSITION_CANOPY_COVERAGE: 1 };
         material.needsUpdate = true;
     }
     const liveMaterial = cloneMaterialShaderContract(sourceMaterial);

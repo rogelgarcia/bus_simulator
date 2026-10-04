@@ -27,8 +27,9 @@ function periodicGroundMaterial(mesh, width, depth, phase, temporaryTextures) {
     return material;
 }
 
-/** @param {{renderer:THREE.WebGLRenderer, source:THREE.Object3D, shadowSource:THREE.Object3D, shadowDirection:THREE.Vector3, soil:THREE.Mesh, litter:THREE.Object3D, width:number, depth:number, sourceHeight:number, resolution?:number, mapResolutions?:Partial<Record<'albedo'|'normal'|'roughness'|'visibility',number>>, mapResolutionProfiles?:Record<string,Partial<Record<'albedo'|'normal'|'roughness',number>>>, onProgress?:(message:string)=>void, shadowResolution?:number,layers?:string[],yieldBetweenChannels?:boolean}} options */
-export async function createGrassDebugV2FieldCanopyBake({ renderer, source, shadowSource, shadowDirection, soil, litter, width, depth, sourceHeight, resolution = 4096, mapResolutions = {}, mapResolutionProfiles = {}, shadowResolution = 8192, layers = ['all', 'grass'], yieldBetweenChannels = true, onProgress = () => {} }) {
+/** @param {{renderer:THREE.WebGLRenderer, source:THREE.Object3D, shadowSource:THREE.Object3D, shadowDirection:THREE.Vector3, soil:THREE.Mesh, litter:THREE.Object3D, width:number, depth:number, sourceHeight:number, resolution?:number, mapResolutions?:Partial<Record<'albedo'|'normal'|'roughness'|'visibility',number>>, anisotropy?:number,mapResolutionProfiles?:Record<string,Partial<Record<'albedo'|'normal'|'roughness',number>>>, onProgress?:(message:string)=>void, shadowResolution?:number,layers?:string[],yieldBetweenChannels?:boolean}} options */
+export async function createGrassDebugV2FieldCanopyBake({ renderer, source, shadowSource, shadowDirection, soil, litter, width, depth, sourceHeight, resolution = 4096, mapResolutions = {}, mapResolutionProfiles = {}, shadowResolution = 8192, anisotropy = 8, layers = ['all', 'grass'], yieldBetweenChannels = true, onProgress = () => {} }) {
+    if (!Number.isInteger(anisotropy) || anisotropy < 1) throw new Error('Canopy anisotropy must be a positive integer.');
     if (!(width > 0 && depth > 0 && Number.isFinite(sourceHeight) && sourceHeight > 0) || !Number.isInteger(resolution) || resolution < 256 || resolution > 4096
         || resolution > renderer.capabilities.maxTextureSize) throw new Error('Invalid canopy capture dimensions.');
     if (!Number.isInteger(shadowResolution) || shadowResolution < 256 || shadowResolution > 8192
@@ -134,7 +135,7 @@ export async function createGrassDebugV2FieldCanopyBake({ renderer, source, shad
                 target.texture.name = 'GrassFieldCanopy-' + layer + '-' + name + '-' + size;
                 target.texture.generateMipmaps = true; target.texture.minFilter = THREE.LinearMipmapLinearFilter;
                 target.texture.wrapS = target.texture.wrapT = THREE.RepeatWrapping;
-                target.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+                target.texture.anisotropy = Math.min(anisotropy, renderer.capabilities.getMaxAnisotropy());
                 target.texture.userData.grassSoilContributions = name === 'roughness';
                 renderer.setRenderTarget(null);
                 if (name === 'visibility' || size !== resolution) { renderer.setRenderTarget(target); renderer.render(resolveScene, resolveCamera); renderer.setRenderTarget(null); }

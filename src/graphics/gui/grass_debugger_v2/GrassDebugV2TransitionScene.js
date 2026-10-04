@@ -1,27 +1,31 @@
-// Interactive abrupt grass transitions with cached spatial selection and a soil-only baseline.
+// Interactive grass transition bands with cached spatial selection and a soil-only baseline.
 import * as THREE from 'three';
 import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { createGrassDebugV2FreeCamera } from './GrassDebugV2FreeCamera.js?v=transition-navigation-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
-import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=lod4-shadow-fast-1';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=lod4-interior-quads-1';
-import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=lod4-flat-1';
-import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=side-leaf-cutoff-1';
+import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=transition-lighting-1';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=transition-blend-startup-1';
+import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=transition-band-1';
+import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=transition-blend-1';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
+import { createGrassDebugV2TransitionExperiments, GRASS_TRANSITION_EXPERIMENTS } from './GrassDebugV2TransitionExperiments.js';
+import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 
 const loading = document.querySelector('#scene-loading');
 const controls = document.querySelectorAll('#scene-panel input, #scene-panel select, #scene-panel button');
-controls.forEach(control => { control.disabled = true; });
 
-async function start() {
+export async function createGrassDebugV2TransitionScene() {
     const canvas = document.querySelector('#scene-canvas');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .02, 250);
     const lighting = new GrassDebugV2Lighting({ renderer, scene, camera, retainSceneDepth: true });
-    const assets = await loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress: message => { loading.textContent = message; } });
+    const assets = await loadGrassDebugV2TransitionAssets({ renderer, lighting, offline: new URLSearchParams(location.search).get('assets') === 'compressed', onProgress: message => { loading.textContent = message; } });
     const fields = createGrassDebugV2TransitionFields({ ...assets, fieldSize: 32, gap: 1 });
+    const experiments = createGrassDebugV2TransitionExperiments(renderer, lighting.environment, lighting.sunRef.direction);
+    let experiment = 'recommended';
+    let experimentRequest = 0;
     scene.add(fields.group);
     const axis = [-120, -32.5, -.5, .5, 32.5, 120], positions = [], uv = [], indices = [];
     const coordinate = new THREE.Vector3();
@@ -38,8 +42,13 @@ async function start() {
     groundGeometry.setIndex(indices); groundGeometry.computeVertexNormals();
     const ground = new THREE.Mesh(groundGeometry, assets.soilMaterial); ground.name = 'TransitionPathsAndSurroundings';
     ground.receiveShadow = true; scene.add(ground);
-    const selection = new GrassDebugV2TransitionSelection({ cells: fields.cells });
+    const bandParameter = new URLSearchParams(location.search).get('transition');
+    const selection = new GrassDebugV2TransitionSelection({ cells: fields.cells,
+        transitionFraction: bandParameter === null ? .5 : Number(bandParameter) / 100,
+        transitionMode: new URLSearchParams(location.search).get('transitionMode') || 'blend' });
     const helpers = createGrassDebugV2TransitionHelpers({ cells: fields.cells });
+    const appearanceMaterials = new Set();
+    fields.group.traverse(mesh => { if (mesh.isMesh && mesh.material.userData.grassFieldDistance) appearanceMaterials.add(mesh.material); });
     lighting.applyEnvironment();
     const sun = lighting.sun, extent = 48;
     sun.position.copy(lighting.sunRef.direction).multiplyScalar(100); sun.target.position.set(0, 0, 0);
@@ -52,7 +61,7 @@ async function start() {
     const flatLevels = new Uint8Array(fields.cells.length).fill(4), noSideLeaves = new Uint8Array(fields.cells.length);
     const forcedSideLeaves = new Uint8Array(fields.cells.length), perimeterCells = fields.cells.filter(cell => cell.edge);
     let configuration = 'distance';
-    let levels, shadowGenerations = 0, soilOnly = false, showHelpers = true, pose = 'front';
+    let levels, renderMasks = null, shadowGenerations = 0, soilOnly = false, showHelpers = true, pose = 'front';
     let animating = false, frame = null, previous = performance.now(), lastTelemetry = 0, drive = false;
     let renderedFrames = 0, frameCpuTotalMs = 0, frameCpuMaxMs = 0;
     const frameDraws = { triangles: 0, calls: 0, lines: 0, points: 0 };
@@ -63,7 +72,7 @@ async function start() {
     navigation.setSpeed(3);
     const updateSelection = (force = false, now = performance.now()) => {
         if (configuration !== 'distance') {
-            levels = flatLevels;
+            levels = flatLevels; renderMasks = null;
             const sides = configuration === 'lod4-elevated-sides';
             const scanned = sides && selection.update(camera.position, now, { force }).scanned;
             if (force || scanned) {
@@ -78,9 +87,9 @@ async function start() {
             return { levels, scanned: !!scanned, changedCount: 0, sideLeavesChangedCount: 0 };
         }
         const result = selection.update(camera.position, now, { force });
-        levels = result.levels;
-        if (force || result.changedCount || result.sideLeavesChangedCount) fields.applyLevels(levels, result.sideLeaves);
-        if (result.scanned && showHelpers) helpers.update(levels, camera.position, selection.getSnapshot().effectiveDistances);
+        levels = result.levels; renderMasks = result.renderMasks;
+        if (force || result.changedCount || result.sideLeavesChangedCount || result.renderChangedCount) fields.applyLevels(levels, result.sideLeaves, renderMasks);
+        if (result.scanned && showHelpers) { const state = selection.getSnapshot(); helpers.update(levels, camera.position, state.effectiveDistances, state.transitionBands); }
         return result;
     };
     const refreshShadows = () => {
@@ -94,7 +103,7 @@ async function start() {
             shadowGenerations++;
         } finally {
             renderer.setRenderTarget(previousTarget);
-            if (!soilOnly) fields.applyLevels(levels);
+            if (!soilOnly) fields.applyLevels(levels, null, renderMasks);
             helpers.group.visible = helperVisible;
         }
     };
@@ -116,7 +125,7 @@ async function start() {
     const setHelpers = value => {
         showHelpers = value; helpers.setVisible(value);
         document.querySelector('#transition-helpers').checked = value;
-        if (value && levels) helpers.update(levels, camera.position, configuration !== 'distance' ? null : selection.getSnapshot().effectiveDistances);
+        if (value && levels) { const state = selection.getSnapshot(); helpers.update(levels, camera.position, configuration !== 'distance' ? null : state.effectiveDistances, state.transitionBands); }
     };
     const setConfiguration = value => {
         if (!['distance', 'lod4-flat', 'lod4-ground', 'lod4-elevated', 'lod4-elevated-sides'].includes(value)) throw new Error('Unknown transition configuration: ' + value);
@@ -140,9 +149,24 @@ async function start() {
         else url.searchParams.set('optimization', value);
         history.replaceState(null, '', url);
     };
+    const setExperiment = async value => {
+        if (!Object.hasOwn(GRASS_TRANSITION_EXPERIMENTS, value)) throw new Error('Unknown grass experiment: ' + value);
+        const request = ++experimentRequest;
+        await experiments.prepare(value);
+        if (request !== experimentRequest) return;
+        experiment = value; fields.setMaterialTransform(material => experiments.material(material, value));
+        fields.setEdgeStrips(value === 'strips' || value === 'recommended');
+        fields.setChunkSize(value === 'chunks4' ? 4 : value === 'chunks8' ? 8 : 32);
+        document.querySelector('#transition-experiment').value = value;
+        const url = new URL(location.href);
+        if (value === 'recommended') url.searchParams.delete('experiment'); else url.searchParams.set('experiment', value);
+        history.replaceState(null, '', url);
+    };
     const setSettings = settings => {
-        selection.setSettings(settings); updateSelection(true);
+        selection.setSettings(settings);
         const state = selection.getSnapshot();
+        fields.configureBlend(state.transitionBands); updateSelection(true);
+        configureGrassDebugV2TransitionAppearance(appearanceMaterials, state.effectiveDistances);
         state.distances.forEach((distance, i) => {
             document.querySelector('#transition-limit-' + i).value = distance;
             const half = document.querySelector('#transition-half-' + i);
@@ -153,6 +177,15 @@ async function start() {
         document.querySelector('#transition-interval').value = state.intervalMs;
         document.querySelector('#transition-side-leaves').value = state.sideLeafDistance;
         document.querySelector('#transition-only-side-leaves').value = state.sideLeafDistance;
+        document.querySelector('#transition-band').value = state.transitionFraction * 100;
+        document.querySelector('#transition-mode').value = state.transitionMode;
+        document.querySelector('#transition-band-ranges').textContent = state.transitionFraction
+            ? state.transitionBands.map(band => `L${band.from}→${band.to}: ${Number(band.start.toFixed(2))}–${Number(band.end.toFixed(2))} m`).join(' · ')
+            : 'Abrupt switches';
+        const url = new URL(location.href);
+        if (state.transitionMode === 'blend') url.searchParams.delete('transitionMode'); else url.searchParams.set('transitionMode', state.transitionMode);
+        if (state.transitionFraction === .5) url.searchParams.delete('transition'); else url.searchParams.set('transition', String(state.transitionFraction * 100));
+        history.replaceState(null, '', url);
         document.querySelector('#transition-full').setAttribute('aria-pressed', String(state.scale === 1));
         document.querySelector('#transition-half').setAttribute('aria-pressed', String(state.scale === .5));
     };
@@ -220,17 +253,29 @@ async function start() {
         if (value) frame = requestAnimationFrame(loop);
     };
     const events = [];
+    const setPanelCollapsed = collapsed => {
+        document.querySelector('#transition-panel-body').hidden = collapsed;
+        document.querySelector('#scene-panel').classList.toggle('is-collapsed', collapsed);
+        const toggle = document.querySelector('#transition-panel-toggle');
+        toggle.textContent = collapsed ? 'Expand' : 'Collapse';
+        toggle.title = collapsed ? 'Expand edit panel' : 'Collapse edit panel';
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+    };
     const bind = (selector, event, action) => {
         const element = document.querySelector(selector);
-        const listener = () => {
+        const listener = async () => {
             const error = document.querySelector('#transition-error');
-            try { action(element); error.hidden = true; } catch (e) { error.textContent = e.message; error.hidden = false; }
+            try { await action(element); error.hidden = true; } catch (e) { error.textContent = e.message; error.hidden = false; }
         };
         element.addEventListener(event, listener); events.push(() => element.removeEventListener(event, listener));
     };
     bind('#transition-pose', 'change', element => setPose(element.value));
+    bind('#transition-panel-toggle', 'click', element => setPanelCollapsed(element.getAttribute('aria-expanded') === 'true'));
     bind('#transition-configuration', 'change', element => setConfiguration(element.value));
     bind('#transition-optimization', 'change', element => setOptimization(element.value));
+    const experimentSelect = document.querySelector('#transition-experiment');
+    for (const [value, label] of Object.entries(GRASS_TRANSITION_EXPERIMENTS)) experimentSelect.add(new Option(label, value));
+    bind('#transition-experiment', 'change', element => setExperiment(element.value));
     bind('#transition-reset', 'click', () => setPose(pose));
     bind('#transition-full', 'click', () => setDistanceScale(1));
     bind('#transition-half', 'click', () => setDistanceScale(.5));
@@ -246,36 +291,33 @@ async function start() {
     bind('#transition-interval', 'change', element => setSettings({ intervalMs: Number(element.value) }));
     bind('#transition-side-leaves', 'change', element => setSettings({ sideLeafDistance: Number(element.value) }));
     bind('#transition-only-side-leaves', 'change', element => setSettings({ sideLeafDistance: Number(element.value) }));
+    bind('#transition-mode', 'change', element => setSettings({ transitionMode: element.value }));
+    bind('#transition-band', 'change', element => setSettings({ transitionFraction: Number(element.value) / 100 }));
     window.addEventListener('resize', resize);
     resize(); setPose(location.hash.slice(1) || 'front'); setSettings({});
     setConfiguration(new URLSearchParams(location.search).get('configuration') || 'distance');
     setOptimization(new URLSearchParams(location.search).get('optimization') || 'optimized');
+    await setExperiment(new URLSearchParams(location.search).get('experiment')
+        || (fields.getSnapshot().optimization === 'optimized' ? 'recommended' : 'baseline'));
     loading.textContent = 'Caching field shadows…'; refreshShadows();
     await renderer.compileAsync(scene, camera);
     selection.resetMetrics(); controls.forEach(control => { control.disabled = false; });
     loading.hidden = true; setAnimating(true); canvas.focus();
-    return Object.freeze({ renderer, scene, camera, lighting, fields, selection, navigation, step, setAnimating, setPose,
-        setSettings, setDistanceScale, setSoilOnly, setShadows, setHelpers, setConfiguration, setOptimization, updateSelection,
-        getSnapshot: () => ({ pose, configuration, soilOnly, helpers: showHelpers, position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
+    return Object.freeze({ renderer, scene, camera, lighting, fields, selection, navigation, step, setAnimating, setPose, canopy: assets.canopy,
+        setSettings, setDistanceScale, setSoilOnly, setShadows, setHelpers, setConfiguration, setOptimization, setExperiment, updateSelection, setPanelCollapsed,
+        getSnapshot: () => ({ pose, configuration, experiment, soilOnly, helpers: showHelpers, position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
             cameraHeight: GRASS_FIELD_BUS_CAMERA.heightMeters, cameraPitch: GRASS_FIELD_BUS_CAMERA.pitchDegrees,
-            fields: fields.getSnapshot(), selection: selection.getSnapshot(),
+            fields: fields.getSnapshot(), selection: selection.getSnapshot(), lighting: lighting.getSnapshot(),
             shadows: { enabled: renderer.shadowMap.enabled, canopyMode: fields.getSnapshot().optimization === 'original' ? 'general' : 'baked-only', generations: shadowGenerations, cached: !renderer.shadowMap.needsUpdate && !sun.shadow.needsUpdate,
                 size: sun.shadow.mapSize.toArray(), canopyPass: assets.canopy.shadowUniforms.grassCanopyShadowPass.value,
                 canopyExternalVisibility: 1 },
             performance: { renderedFrames, frameCpuTotalMs, frameCpuMaxMs, draw: { ...frameDraws }, gpuTimer: gpu.getDiagnostics() },
-            canopy: assets.canopy.getSnapshot().bake, glError: renderer.getContext().getError() }),
+            canopy: assets.canopy.getSnapshot().bake, experiments: experiments.getSnapshot(), glError: renderer.getContext().getError() }),
         dispose() {
             setAnimating(false); events.forEach(remove => remove()); window.removeEventListener('resize', resize);
             gpu.resetSamples(); sun.shadow.dispose();
-            navigation.dispose(); helpers.dispose(); fields.dispose(); groundGeometry.dispose(); assets.dispose(); shadowTarget.dispose();
+            navigation.dispose(); helpers.dispose(); fields.dispose(); experiments.dispose(); groundGeometry.dispose(); assets.dispose(); shadowTarget.dispose();
             lighting.dispose(); renderer.dispose();
         }
     });
 }
-
-window.__grassTransitionReadiness = start().then(viewer => {
-    window.__grassTransitionScene = viewer; return viewer.getSnapshot();
-}).catch(error => {
-    loading.hidden = false; loading.textContent = 'Unable to load transition lab. ' + error.message;
-    console.error(error); throw error;
-});

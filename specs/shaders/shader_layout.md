@@ -70,3 +70,11 @@ cells are restored synchronously after authored compile callbacks so the visible
 material keeps its uniform owner. This helper is for compilation, not material
 replacement or independent rendered clones. Dispose temporary materials only
 after their live counterparts acquire the program, or when staging is cancelled.
+
+For a rendered variant that deliberately shares its source's runtime appearance,
+`createSharedUniformMaterialVariant` copies base material properties, callbacks,
+and registered recipes into a separate registry. Textures, nested user data and
+declared uniform cells remain borrowed. Source hook edits after creation are not
+propagated; variant-only hooks and defines do not alter the source. Dispose the
+variant material without disposing borrowed textures. Grass transition blend
+variants use this contract to share lighting while owning their coverage hook.
