@@ -10,14 +10,14 @@ const root = path.resolve('.'), source = path.join(root, 'assets/public/landscap
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
 if (phase !== null && !['before', 'after'].includes(phase)) throw new Error('LANDSCAPE_SURFACE_PHASE must be before or after');
 const deliverable = process.env.LANDSCAPE_SURFACE_DELIVERABLE ?? 'd1';
-if (!['d1', 'd1a', 'd2', 'd3'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2 or d3');
+if (!['d1', 'd1a', 'd2', 'd3', 'd4'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2, d3 or d4');
 const profile = process.env.LANDSCAPE_SURFACE_PROFILE ?? 'default';
-const budgetProfiles = { default: { cpuMiB: 128, gpuMiB: 64 }, quality: { cpuMiB: 256, gpuMiB: 128 }, realism: { cpuMiB: 384, gpuMiB: 192 } };
-if (!budgetProfiles[profile]) throw new Error('LANDSCAPE_SURFACE_PROFILE must be default, quality or realism');
+const budgetProfiles = { default: { cpuMiB: 128, gpuMiB: 64 }, quality: { cpuMiB: 256, gpuMiB: 128 }, realism: { cpuMiB: 384, gpuMiB: 192 }, shipped: { cpuMiB: 512, gpuMiB: 256 } };
+if (!budgetProfiles[profile]) throw new Error('LANDSCAPE_SURFACE_PROFILE must be default, quality, realism or shipped');
 const { cpuMiB, gpuMiB } = budgetProfiles[profile];
 const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}${profile === 'default' ? '' : `/${profile}`}`;
 const artifacts = path.join(root, artifactPrefix.slice(1), phase ?? 'unselected');
-const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling' }[deliverable];
+const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling', d4: 'D4 · Distinct macro, local and micro detail' }[deliverable];
 const manifestText = await readFile(path.join(source, 'manifest.json'), 'utf8'), manifest = JSON.parse(manifestText);
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, MiB = 1024 * 1024;
 const lightingDescription = 'Terrain shader illuminate(): fixed GGX sun direction [-0.44,0.87,-0.22], RGB [2.7,2.6,2.3], hemisphere ambient factor 0.68. LandscapeView fixed hemisphere 0xdceef4/0x536047 intensity 2.3 and directional 0xfff4dd intensity 2.2 at [-2000,4000,-1000].';
@@ -274,7 +274,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
                 expect(summary.triangles.median, 'Matched material evidence requires identical geometry').toBe(previous.triangles.median);
                 expect(summary.drawCalls.median, 'Matched material evidence requires identical draw calls').toBe(previous.drawCalls.median);
                 const identity = state => materialQuality(state).map(({ resolution, desiredResolution, ...material }) => material);
-                if (deliverable !== 'd1a') {
+                if (!['d1a', 'd4'].includes(deliverable)) {
                     expect(measured.state.appearance.materialTiling).toEqual(previous.state.appearance.materialTiling);
                     expect(identity(measured.state)).toEqual(identity(previous.state));
                 } else entry.materialIdentityChanges = { before: identity(previous.state), after: identity(measured.state),
@@ -282,7 +282,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
                 for (const material of measured.state.appearance.materials) {
                     const original = previous.state.appearance.materials.find(value => value.soilId === material.soilId);
                     expect(original, `Missing baseline soil binding ${material.soilId}`).toBeTruthy();
-                    if ((deliverable === 'd1a' || ['sand', 'loam', 'forest'].includes(material.soilId)) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
+                    if (deliverable !== 'd4' && (deliverable === 'd1a' || ['sand', 'loam', 'forest'].includes(material.soilId)) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
                         const failure = { stop: stop.id, soilId: material.soilId, materialId: material.materialId, before: original.resolution, after: material.resolution };
                         report.materialQualityFailures.push(failure);
                         console.warn(`[Landscape surface unmatched material tier] ${JSON.stringify(failure)}`);

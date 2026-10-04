@@ -152,8 +152,8 @@ function setup(t, { capacity = 4, cacheBytes = 4 * pageBytes } = {}) {
 }
 
 const camera = { position: { x: 1061, y: 11, z: 888 } };
-const plan = (ids, pixels = {}) => ({ visibleMaskIds: ['l3/c2/r6', 'l3/c1/r6'], desiredTiers: { sand: '512', loam: '512', seabed: '128', unknown: '32', forest: '128', rock: '128' },
-    detail: { visibleIds: ids, pixelsById: Object.fromEntries(ids.map(id => [id, pixels[id] ?? 10])) } });
+const plan = (ids, pixels = {}) => ({ visibleMaskIds: ['l3/c2/r6', 'l3/c1/r6'], pixelsPerMeterById: { 'l3/c2/r6': 900, 'l3/c1/r6': 20 },
+    detail: { visibleIds: ids, pixelsById: Object.fromEntries(ids.map(id => [id, pixels[id] ?? 10])), pixelsPerMeterById: Object.fromEntries(ids.map(id => [id, 40])) } });
 
 test('Surface detail pages: planning keeps fine ancestors, requires natively wanted parents and respects the slot capacity', t => {
     const { detail, masks, index } = setup(t, { capacity: 3 });
@@ -185,14 +185,14 @@ test('Surface detail pages: cached pages need no worker, uploads stay bounded an
     assert.equal(detail.update(8 * MIB), pageBytes);
     assert.deepEqual([record.status, record.progress, masks.texture.layers.at(-1), masks.pixels[17 * pageBytes]], ['resident', 0, 17, 7]);
     assert.equal(shared.snapshot().entries.find(value => value.key === record.key).cpuBytes, 0, 'the resident layer is accounted by the fine array reservation');
-    const interests = new Map(), tiers = {};
-    detail.interests(plan([id]), interests, tiers);
+    const interests = new Map(), densities = {};
+    detail.interests(plan([id]), interests, densities);
     assert.deepEqual([...interests.get(2)], ['l3/c2/r6'], 'fine soils join their visible native ancestor');
-    assert.equal(tiers.sand, '512');
+    assert.deepEqual(densities, { sand: 40, loam: 40 }, 'the visible fine leaf lends its own density to the soils of its resolved page, not to every native soil');
     masks.records.get('l3/c2/r6').progress = .5;
     const fading = {};
     detail.interests(plan([id]), new Map(), fading);
-    assert.equal(fading.sand, '32', 'fine residency never upgrades tiers beyond what the native page allows');
+    assert.deepEqual(fading, {}, 'fine residency never raises demand before its native page has faded in');
     masks.pixels[17 * pageBytes] = 9;
     masks.remove(record);
     assert.equal(masks.records.has(id), false);
@@ -262,7 +262,7 @@ test('Surface detail pages: obsolete work is canceled and a budget refusal is ex
     assert.equal(shared.snapshot().entries.some(value => value.key.includes('/detail/')), false);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(detail.jobs, 0);
-    assert.equal(shared.reserve('pressure', { cpuBytes: 384 * MIB - shared.snapshot().cpuBytes, gpuBytes: 0, kind: 'geometry' }).admitted, true, 'only the appearance credit remains, smaller than L4 scratch');
+    assert.equal(shared.reserve('pressure', { cpuBytes: shared.snapshot().limits.cpuBytes - shared.snapshot().cpuBytes, gpuBytes: 0, kind: 'geometry' }).admitted, true, 'only the appearance credit remains, smaller than L4 scratch');
     detail.plan(plan(['l4/c4/r12']), camera);
     detail.update(8 * MIB);
     assert.equal(pool.jobs.length, 1);

@@ -1,0 +1,12 @@
+{
+  "format": "landscape-material-preparation",
+  "schemaVersion": 1,
+  "materialId": "pbr.landscape_sand_micro_v1",
+  "micro": {
+    "algorithm": "micro-periodic-highpass-v1",
+    "encoding": "micro-normal-height-luminance-v1",
+    "radiusPixels": 9,
+    "luminanceRangePercentiles": [0.1, 99.9]
+  },
+  "sourceMapsUnmodified": true
+}

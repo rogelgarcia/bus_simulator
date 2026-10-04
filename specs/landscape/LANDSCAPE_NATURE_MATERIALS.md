@@ -22,8 +22,9 @@ licenses its texture assets under [CC0](https://polyhaven.com/license).
 The retained 1K diffuse JPEG, OpenGL normal PNG and AO/roughness/metalness PNG
 are unchanged originals. Their individual URLs, byte lengths and SHA-256 hashes
 are recorded in `assets/public/pbr/aerial_beach_01/pbr.material.config.js`.
-The catalog retains the documented 30-meter physical width. Viewer near/macro
-remapping is an artistic display treatment, not additional source resolution.
+The catalog retains the documented 30-meter physical width. Since AI577 D4 the viewer samples it
+at that period at every distance; stochastic tiling and the landscape-scale variation field are
+display treatments, not additional source resolution.
 
 The material is installed in the shared public game PBR catalog. Its correction
 config uses neutral albedo, 0.7 normal strength, nonmetal response and matte
@@ -65,6 +66,13 @@ The new bake receipt is under
 `tests/artifacts/screens/landscape/nature/appearance-validation.json`.
 Historical D7 performance evidence predates this shader/material pass and must
 not be presented as measurements of the new appearance.
+
+AI577 D4 adds a native 1024 tier of Aerial Beach 01 (29.3 mm per texel) and the Ground054 micro
+layer for sand and seabed in the multiscale companion
+([LANDSCAPE_APPEARANCE.md](LANDSCAPE_APPEARANCE.md)); the sand pages above are unchanged. The
+source's 1K JPEG base color shows 8×8 blocking at 1024 (block-boundary steps 2.04× the interior
+step, 1.15× at 512); near the camera the micro luminance masks it. Removing it requires a
+lossless sand source, which would change the accepted sand bytes, or a declared deblocking step.
 
 ## Nature-pass performance
 

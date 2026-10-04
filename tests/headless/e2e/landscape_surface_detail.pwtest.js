@@ -155,7 +155,10 @@ test('Surface detail: repeated travel away and back reuses cached pages without 
         const away = await visit(page, poses.away);
         expect(away.appearance.detail.residentIds).toEqual([]);
         const cached = away.appearance.detail.cache.view.pages, before = away.appearance.detail;
-        const back = await visit(page, poses['game-pov']), detail = back.appearance.detail;
+        await visit(page, poses['game-pov']);
+        // terrain records replaced by a refine stay resident for their 750 ms eviction grace; compare bytes after it has elapsed
+        await page.waitForTimeout(1000);
+        const back = await settle(page), detail = back.appearance.detail;
         const hits = detail.cache.hits - before.cache.hits, misses = detail.cache.misses - before.cache.misses;
         returns.push({ cycle, cached, hits, misses, resident: detail.residentIds.length, uniformFromMemo: detail.uniformResolutions.memo, cpuBytes: back.budget.cpuBytes, gpuBytes: back.budget.gpuBytes });
         expect(detail.residentIds.length).toBe(resident);

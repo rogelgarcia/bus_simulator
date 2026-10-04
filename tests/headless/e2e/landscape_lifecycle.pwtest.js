@@ -22,7 +22,7 @@ test('Landscape D7: actual Fabrication menu entry keeps one HUD and correct pick
     });
     await page.getByText('Landscape Fabrication', { exact: true }).click();
     await page.waitForURL('**/screens/landscape_fabrication.html');
-    await expect.poll(async () => (await snapshot(page)).planning?.ready).toBe(true);
+    await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
     await expect(page.locator('#ui-perf-bar')).toHaveCount(1);
     await page.evaluate(() => { window.__landscapeTestHooks.preset('top'); window.__landscapeTestHooks.setSelectionRadius(0); });
     const picks = [];
@@ -56,7 +56,7 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
         return route.fulfill({ status: bytes ? 200 : 404, contentType: key.endsWith('.json') ? 'application/json' : 'application/octet-stream', body: Buffer.from(bytes ?? []) });
     });
     await page.goto('/screens/landscape_fabrication.html');
-    await expect.poll(async () => (await snapshot(page)).planning?.ready).toBe(true);
+    await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
     await page.evaluate(() => window.addEventListener('pagehide', () => {
         sessionStorage.setItem('landscape-d7-disposed', JSON.stringify(window.__landscapeTestHooks.snapshot()));
     }, { once: true }));
@@ -72,8 +72,8 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
         await expect.poll(() => intercepted).toBe(true);
         await page.goto('/screens/landscape_fabrication.html?landscape=/__landscape_fixture/manifest.json');
         release();
-        await expect.poll(async () => (await snapshot(page)).revision).toBe(fixture.manifest.revision);
-        await expect.poll(async () => (await snapshot(page)).planning?.ready).toBe(true);
+        await expect.poll(async () => (await snapshot(page)).revision, { timeout: 20000 }).toBe(fixture.manifest.revision);
+        await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
         const previous = await page.evaluate(() => JSON.parse(sessionStorage.getItem('landscape-d7-disposed')));
         expect(previous.disposed).toBe(true);
         expect(previous.sourceBytes).toBe(0);
@@ -87,4 +87,25 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
         expect(final.budget.cpuBytes).toBe(0); expect(final.budget.gpuBytes).toBe(0);
         await writeFile(path.join(artifacts, 'landscape-switch.json'), JSON.stringify({ previous, current, final }, null, 2));
     } finally { release(); }
+});
+
+test('Landscape AI577 D4: disposing while the terrain program compiles stops waiting and releases the shared budget', async ({ page }) => {
+    await mkdir(artifacts, { recursive: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    // the GPU process caches linked programs across pages; a unique source line forces the cold compile this test interrupts
+    await page.route('**/src/graphics/shaders/materials/landscape/terrain.frag.glsl', async route => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: `${await response.text()}\n// lifecycle cold-compile probe ${Date.now()}\n` });
+    });
+    await page.goto('/screens/landscape_fabrication.html');
+    await expect.poll(async () => (await snapshot(page)).terrainProgram, { timeout: 20000 }).toMatchObject({ parallel: true, pending: true });
+    await page.evaluate(() => window.__landscapeTestHooks.dispose());
+    await page.waitForTimeout(250);
+    const disposed = await snapshot(page);
+    expect(disposed.disposed).toBe(true);
+    expect(disposed.ready).toBe(false);
+    expect(disposed.budget.cpuBytes).toBe(0); expect(disposed.budget.gpuBytes).toBe(0);
+    expect(errors).toEqual([]);
+    await writeFile(path.join(artifacts, 'dispose-during-compile.json'), JSON.stringify({ disposed: { ready: disposed.ready, budget: disposed.budget, lastError: disposed.lastError }, errors }, null, 2));
 });

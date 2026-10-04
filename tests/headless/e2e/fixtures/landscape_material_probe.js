@@ -1,14 +1,18 @@
 // Builds isolated material measurements with the unchanged production landscape shaders and uniforms.
 import * as T from 'three';
 import { createLandscapeShaderPayload } from '/src/graphics/shaders/materials/landscape/LandscapeShaderLoader.js';
-import { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeMacroVariationUniforms, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms,
+    setLandscapeSurfaceLayerUniforms } from '/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js';
+import { landscapeMacroVariationUniforms } from '/src/graphics/engine3d/landscape/LandscapeMacroVariation.js';
+import { landscapeSurfaceLayerUniforms } from '/src/graphics/engine3d/landscape/LandscapeSurfaceLayers.js';
 import { landscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
 import { landscapeMaterialSamplingUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_SOIL_CATALOG } from '/src/app/landscape/LandscapeCatalog.js';
 import { LandscapeMaskPages } from '/src/graphics/engine3d/landscape/LandscapeMaskPages.js';
 import { buildLandscapeContourCoverage } from '/src/graphics/engine3d/landscape/LandscapeContourCoverage.js';
 
-// materialSampling selects the compiled production mode (recipe default when omitted); stochastic uniforms start disabled
+// materialSampling selects the compiled production mode (recipe default when omitted); stochastic uniforms and the AI577 D4 layers
+// (macro variation, slope projection, normal filtering, micro detail) start disabled
 export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, materialSampling } = {}) {
     const renderer = new T.WebGLRenderer({ canvas: document.getElementById('surface-probe'), antialias: false, preserveDrawingBuffer: true, powerPreference: 'low-power' });
     renderer.setSize(size, size, false); renderer.setPixelRatio(1);
@@ -18,10 +22,15 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
     const coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
     const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, ...(materialSampling ? { materialSampling } : {}) });
-    const geometry = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).translate(1024, 0, 1024);
-    geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4), 1));
-    geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
-    geometry.setAttribute('color', new T.BufferAttribute(new Float32Array(12).fill(1), 3));
+    // terrain vertex normals are world normals (identity model matrix), so tilted probe planes rotate their geometry
+    const plane = (normal = new T.Vector3(0, 1, 0), pivot = [1024, 1024]) => {
+        const value = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), normal)).translate(pivot[0], 0, pivot[1]);
+        value.setAttribute('parentHeight', new T.BufferAttribute(Float32Array.from({ length: 4 }, (_, index) => value.attributes.position.getY(index)), 1));
+        value.setAttribute('parentNormal', value.attributes.normal.clone());
+        value.setAttribute('color', new T.BufferAttribute(new Float32Array(12).fill(1), 3));
+        return value;
+    };
+    let geometry = plane();
     const material = new T.ShaderMaterial({ vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource, vertexColors: true,
         uniforms: { ...uniforms, uMorph: { value: 1 }, uEdges: { value: new T.Vector4() }, uEdgeMorph: { value: new T.Vector4(1, 1, 1, 1) },
             uBounds: { value: new T.Vector4(0, 2048, 0, 2048) }, uTint: { value: new T.Color(1, 1, 1) }, uLodColor: { value: 0 },
@@ -34,7 +43,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     masks.format = T.RGBAFormat; masks.magFilter = masks.minFilter = T.NearestFilter; masks.generateMipmaps = false; masks.flipY = false;
     uniforms.uMaskPages.value = masks; uniforms.uMaskDimensions.value.set(columns, columns); uniforms.uAppearanceReady.value = 1;
     resources.push(masks);
-    let center = [1024, 1024];
+    let center = [1024, 1024], planeNormal = new T.Vector3(0, 1, 0);
 
     const texture = (data, resolution, layers = 1, srgb = false, nearest = false) => {
         const value = layers === 1 ? new T.DataTexture(data, resolution, resolution, T.RGBAFormat) : new T.DataArrayTexture(data, resolution, resolution, layers);
@@ -73,8 +82,8 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
             surfaces[soil].image.data[7] = heights[soil]; surfaces[soil].needsUpdate = true;
             uniforms[`uSoilBase${soil}`].value = bases[soil]; uniforms[`uSoilSurface${soil}`].value = surfaces[soil];
             uniforms.uSoilScale.value[soil].set(period, 0, 1, 0);
-            uniforms.uSoilTiling.value[soil].set(period, period, .03, .25);
-            uniforms.uSoilHeightEnabled.value[soil] = flags[soil]; uniforms.uSoilResolution.value[soil] = resolution;
+            uniforms.uSoilTiling.value[soil].set(period, 0, 0, 0);
+            uniforms.uSoilState.value[soil].set(flags[soil], resolution, 0, 0);
         }
         uniforms.uMaterialBlendIndex.value = transition?.soil ?? -1;
         uniforms.uMaterialBlend.value = transition?.progress ?? 1;
@@ -105,10 +114,18 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
         material.vertexShader = next.vertexSource; material.fragmentShader = next.fragmentSource; material.needsUpdate = true;
     }
 
+    // a tilted plane (setPlane) is viewed along its normal with screen up pointing uphill, so screen columns follow the fall line
     function draw({ span = 4, offsetX = 0, offsetZ = 0, tilt = 0 } = {}) {
         camera.left = camera.bottom = -span / 2; camera.right = camera.top = span / 2;
-        camera.position.set(center[0] + offsetX, 1000, center[1] + offsetZ - tilt * 1000);
-        camera.lookAt(center[0] + offsetX, 0, center[1] + offsetZ); camera.updateProjectionMatrix();
+        if (planeNormal.y < 1) {
+            const target = new T.Vector3(center[0], 0, center[1]), uphill = new T.Vector3(0, 1, 0).addScaledVector(planeNormal, -planeNormal.y).normalize();
+            camera.up.copy(uphill); camera.position.copy(target).addScaledVector(planeNormal, 1000); camera.lookAt(target);
+        } else {
+            camera.up.set(0, 0, -1);
+            camera.position.set(center[0] + offsetX, 1000, center[1] + offsetZ - tilt * 1000);
+            camera.lookAt(center[0] + offsetX, 0, center[1] + offsetZ);
+        }
+        camera.updateProjectionMatrix();
         material.uniformsNeedUpdate = true; renderer.render(scene, camera);
         gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         const error = gl.getError(); if (error !== gl.NO_ERROR) throw new Error(`Landscape material probe WebGL error ${error}`);
@@ -150,12 +167,37 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
                 data.set([128, 128, 255, 255], index * 4);
                 data.set([255, 255, 0, Math.round((.5 + (soil === 2 ? .45 : -.45) * wave) * 255)], (resolution * resolution + index) * 4);
             }
-            uniforms[`uSoilSurface${soil}`].value = texture(data, resolution, 2); uniforms.uSoilResolution.value[soil] = resolution;
+            uniforms[`uSoilSurface${soil}`].value = texture(data, resolution, 2); uniforms.uSoilState.value[soil].y = resolution;
         }
     }
 
-    setCoverage([0, 0, 1, 0, 0, 0]); setSynthetic();
+    // AI577 D4 layers: macroSeed null disables the landscape-scale field; projection and normalFiltering toggle their production settings
+    function setLayers({ macroSeed = null, projection = false, normalFiltering = false } = {}) {
+        setLandscapeMacroVariationUniforms(uniforms, landscapeMacroVariationUniforms({ seed: macroSeed ?? 0, soils: LANDSCAPE_SOIL_CATALOG.map(soil => ({ soilId: soil.id })) }), macroSeed !== null);
+        setLandscapeSurfaceLayerUniforms(uniforms, landscapeSurfaceLayerUniforms({ projection, normalFiltering }));
+    }
+
+    // a paired micro layer (array layer 2) for one soil from RGBA bytes at its resolution; setSynthetic restores the plain two-layer surface
+    function setMicro(soil, { data = new Uint8Array([128, 128, 128, 128]), resolution = 1, tileMeters = 1.5, normalStrength = 1, luminanceScale = .4, heightStrength = .3,
+        normal = [128, 128, 255, 255], orm = [255, 255, 0, 128], nearest = false } = {}) {
+        const texels = resolution * resolution, layers = new Uint8Array(texels * 12);
+        for (let index = 0; index < texels; index++) { layers.set(normal, index * 4); layers.set(orm, (texels + index) * 4); }
+        layers.set(data, texels * 8);
+        uniforms[`uSoilSurface${soil}`].value = texture(layers, resolution, 3, false, nearest);
+        uniforms.uSoilTiling.value[soil].set(uniforms.uSoilTiling.value[soil].x, tileMeters, normalStrength, luminanceScale);
+        uniforms.uSoilState.value[soil].z = heightStrength;
+    }
+
+    function setPlane({ tiltDegrees = 0, azimuthDegrees = 0 } = {}) {
+        const theta = tiltDegrees * Math.PI / 180, phi = azimuthDegrees * Math.PI / 180;
+        planeNormal = new T.Vector3(Math.sin(theta) * Math.cos(phi), Math.cos(theta), Math.sin(theta) * Math.sin(phi));
+        const next = plane(planeNormal, center);
+        mesh.geometry = next; geometry.dispose(); geometry = next;
+    }
+
+    setCoverage([0, 0, 1, 0, 0, 0]); setSynthetic(); setLayers();
     return { size, renderer, uniforms, material, texture, setCoverage, setSynthetic, setClumps, setColors, setStochastic, setMaterialSampling, draw, measureWeights, setBoundary, setPatternedHeights,
+        setLayers, setMicro, setPlane,
         setCenter(value) { center = value; },
         snapshot: () => renderer.domElement.toDataURL('image/png'),
         rendererName: gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER),

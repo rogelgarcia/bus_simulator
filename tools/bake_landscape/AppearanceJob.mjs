@@ -9,25 +9,32 @@ import { acquireAuthoringLock, readAuthoringFile, writeImmutableAuthoringFile } 
 import { inspectAppearanceSources, prepareLandscapeAppearance, validateAppearanceCandidate, publishLandscapeAppearance } from './AppearancePreparation.mjs';
 import { appearanceCompatibilityOption, readAppearanceCompatibilitySnapshot } from './AppearanceCompatibility.mjs';
 import { prepareAppearanceMaterialBindings } from './AppearanceMaterialBindings.mjs';
+import { readAppearanceMultiscaleRequest, inspectAppearanceMultiscaleSources } from './AppearanceMultiscale.mjs';
 
+const MULTISCALE_RECEIPT = 'tests/artifacts/screens/landscape/ai577/d4/appearance-multiscale-validation.json';
 const pathOption = value => { if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new Error('Appearance source/directory must be an existing path'); return value; };
 export const appearanceJob = {
     id: 'landscape/appearance', configurationPaths: ['pythonExecutable'], codePaths: ['tools/bake_landscape'],
     description: 'Prepare independent authenticated PBR texture tiers from existing public catalog imagery without loading terrain heights',
-    outputs: ['tests/artifacts/screens/landscape/ai576/d4/appearance-validation.json'],
+    outputs: ['tests/artifacts/screens/landscape/ai576/d4/appearance-validation.json', MULTISCALE_RECEIPT],
     defaults: { directory: 'assets/public/landscape/coastal-city', 'source-root': 'assets/public/pbr' },
-    options: { directory: pathOption, 'source-root': pathOption, 'compatibility-snapshot': appearanceCompatibilityOption, 'material-bindings': pathOption },
+    options: { directory: pathOption, 'source-root': pathOption, 'compatibility-snapshot': appearanceCompatibilityOption, 'material-bindings': pathOption, multiscale: pathOption },
     async inputs(ctx) {
         const directory = path.resolve(ctx.root, ctx.options.directory), sourceRoot = path.resolve(ctx.root, ctx.options['source-root']);
         const materialBindings = ctx.options['material-bindings'] ? path.resolve(ctx.root, ctx.options['material-bindings']) : undefined;
+        const multiscale = ctx.options.multiscale ? path.resolve(ctx.root, ctx.options.multiscale) : undefined;
         const saved = await readLandscapeFileManifest(directory), manifest = await prepareAppearanceMaterialBindings(saved.manifest, materialBindings);
         const source = await inspectAppearanceSources(sourceRoot, manifest);
         const inputFile = path.join(ctx.stage, 'planned-terrain-manifest.json'); await writeImmutableAuthoringFile(inputFile, saved.bytes);
         const files = [inputFile, ...source.sources.map(file => path.join(sourceRoot, file))];
         if (materialBindings) files.push(materialBindings);
+        if (multiscale) {
+            const request = await readAppearanceMultiscaleRequest(multiscale, manifest);
+            files.push(multiscale, ...(await inspectAppearanceMultiscaleSources(sourceRoot, request.request)).sources.map(file => path.join(sourceRoot, file)));
+        }
         if (ctx.options['compatibility-snapshot']) files.push(...(await readAppearanceCompatibilitySnapshot(directory, ctx.options['compatibility-snapshot'])).files);
         for (const folder of ['src/app/landscape', 'tools/landscape_authoring']) files.push(...(await listFiles(path.join(ctx.root, folder))).filter(file => /\.(m?js)$/.test(file)));
-        return files;
+        return [...new Set(files)];
     },
     async run(ctx) {
         const directory = path.resolve(ctx.root, ctx.options.directory), sourceRoot = path.resolve(ctx.root, ctx.options['source-root']);
@@ -36,7 +43,8 @@ export const appearanceJob = {
             const source = await readLandscapeFileManifest(ctx.stage, 'planned-terrain-manifest.json');
             if (!(await readAuthoringFile(path.join(directory, 'manifest.json'), 1024 * 1024)).equals(source.bytes)) throw new Error('Current landscape changed after appearance planning; retry');
             const materialBindings = ctx.options['material-bindings'] ? path.resolve(ctx.root, ctx.options['material-bindings']) : undefined;
-            const prepared = await prepareLandscapeAppearance(ctx, { directory, sourceRoot, materialBindings, source });
+            const multiscale = ctx.options.multiscale ? path.resolve(ctx.root, ctx.options.multiscale) : undefined;
+            const prepared = await prepareLandscapeAppearance(ctx, { directory, sourceRoot, materialBindings, multiscale, source });
             await validateAppearanceCandidate(prepared); await ctx.assertInputsStable();
             const reportFile = path.join(ctx.stage, 'validation.json'); await writeJson(reportFile, prepared.report);
             const inputManifestFile = path.join(ctx.stage, 'terrain-manifest.json'); await writeJson(inputManifestFile, JSON.parse(prepared.inputManifestBytes.toString('utf8')));
@@ -45,9 +53,12 @@ export const appearanceJob = {
             if (ctx.publish) files.push(...await publishLandscapeAppearance(prepared, path.join(ctx.root, 'assets/public/pbr'), { compatibilitySnapshot: ctx.options['compatibility-snapshot'] }));
             const evidence = path.join(ctx.root, 'tests/artifacts/screens/landscape/ai576/d4/appearance-validation.json');
             await publishBakeFile(reportFile, evidence); files.push(evidence);
-            ctx.log.line(ctx.id, `${prepared.report.pages} bounded pages, ${prepared.report.materials} soil materials; no terrain payloads read`);
+            if (prepared.multiscale) { const receipt = path.join(ctx.root, MULTISCALE_RECEIPT); await publishBakeFile(reportFile, receipt); files.push(receipt); }
+            const extra = prepared.report.multiscale ? `; multiscale ${prepared.report.multiscale.revision} with ${prepared.report.multiscale.uniquePages} unique companion pages` : '';
+            ctx.log.line(ctx.id, `${prepared.report.pages} bounded pages, ${prepared.report.materials} soil materials${extra}; no terrain payloads read`);
             return { state: ctx.publish ? 'published' : 'validated', directory, outputDirectory: prepared.outputDirectory, metadataDirectory: prepared.metadataDirectory,
-                metadata: prepared.metadata, manifestFile: prepared.manifestFile, inputManifestFile, sourceManifestFile, reportFile, files };
+                metadata: prepared.metadata, manifestFile: prepared.manifestFile, inputManifestFile, sourceManifestFile, reportFile, files,
+                ...(prepared.multiscale ? { multiscale: prepared.multiscale } : {}) };
         } finally { await release(); }
     },
     async validate(result) {

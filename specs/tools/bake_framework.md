@@ -269,7 +269,7 @@ and never dispatches Blender or another bake branch. Source images are admitted
 at 512..1024 square pixels before decoding; sequential channel conversion has a
 96 MiB conservative working-array allowance. Exact global catalog metadata and
 source image hashes enter input identity. Pages are independently hashed RGBA8
-at32/128/512 resolution; validation checks dimensions, byte lengths, normalized
+at 32/128/512 resolution; validation checks dimensions, byte lengths, normalized
 normals and metadata. Optional publication installs immutable files before the
 appearance-sidecar switch under the authoring lock, leaving terrain unchanged
 unless an explicit complete `material-bindings` JSON selects a new material-only
@@ -283,6 +283,9 @@ conditioning and scalar source displacement are processed by the same bounded
 leaf. Height retains native integer precision and occupies existing ORM alpha
 under explicit material metadata; historical pages remain compatible.
 Its distinct D4 receipt avoids colliding with the importer's output graph claim.
+An optional `multiscale` request (AI577 D4) adds native 1024 tiers and CC0 micro pages in an
+additive `appearance/multiscale.json`, published after the schema-1 sidecar; a republish that
+would orphan the companion is refused, and the request claims a second receipt.
 See the [appearance workflow](../../tools/bake_landscape/appearance/README.md).
 
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every

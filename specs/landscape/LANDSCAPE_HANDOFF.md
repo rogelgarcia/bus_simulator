@@ -23,7 +23,7 @@ AI 577 continues the surface work on top of this foundation: continuous coverage
 relief transitions ([LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md)) and generated fine
 surface pages with natural boundaries and physical interleaving
 ([LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md)). Following the user's realism-first
-direction the shipped budget is 384 MiB CPU / 192 MiB GPU; the budget table below keeps the
+direction the shipped budget is 512 MiB CPU / 256 MiB GPU (384/192 MiB in D2–D3); the budget table below keeps the
 historical values for reference.
 
 ## Source and fidelity
@@ -93,8 +93,8 @@ Hierarchy preparation authenticates **current saved native chunks**, preserving 
 
 | Resource/operation | Declared default or ceiling |
 | --- | --- |
-| Combined terrain controlled CPU buffers/reservations | 384 MiB (128 MiB until AI577 D2) |
-| Combined estimated terrain GPU buffers/reservations | 192 MiB (64 MiB until AI577 D2) |
+| Combined terrain controlled CPU buffers/reservations | 512 MiB (128 MiB until AI577 D2, 384 MiB in D2–D3) |
+| Combined estimated terrain GPU buffers/reservations | 256 MiB (64 MiB until AI577 D2, 192 MiB in D2–D3) |
 | Background jobs | Two geometry workers plus one appearance worker |
 | Per-frame upload allowance | One geometry tile and 8 MiB shared upload bytes |
 | Geometry quality goal | 1.5 pixels, subject to source/detail availability and hard budgets |

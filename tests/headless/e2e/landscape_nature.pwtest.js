@@ -3,7 +3,6 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeNaturalPresentation } from '../../../src/graphics/engine3d/landscape/LandscapeNaturalPresentation.js';
-import { landscapeMaterialMacroWeight } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialTiling.js';
 
 const root = path.resolve('.'), source = path.join(root, 'assets/public/landscape/coastal-city');
 const artifacts = path.join(root, 'tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'nature');
@@ -90,7 +89,7 @@ test('Landscape nature: actual coast, clean sand, inferred planning ground and f
         await page.evaluate(point => window.__landscapeTestHooks.setCamera({ position: [point.x + 24, point.height + 18, point.z - 32], target: [point.x, point.height, point.z], projection: 'perspective', fov: 55, zoom: 1 }), beach);
         const sand = await settle(page);
         expect(sand.appearance.materials.some(item => item.materialId === 'pbr.aerial_beach_01' && item.refCount > 0)).toBe(true);
-        expect(sand.appearance.materialTiling.sand.nearTileMeters).toBe(30);
+        expect(sand.appearance.materialTiling.sand.tileMeters).toBe(30);
         await page.screenshot({ path: path.join(artifacts, '02-clean-beach-sand.png') });
         await page.evaluate(async point => { window.__landscapeTestHooks.setSelectionRadius(0); await window.__landscapeTestHooks.select(point.x, point.z); await window.__landscapeTestHooks.preset('pov'); }, beach);
         const gamePov = await settle(page);
@@ -107,12 +106,13 @@ test('Landscape nature: actual coast, clean sand, inferred planning ground and f
         for (const zoom of [1, 4, 16]) {
             await page.evaluate(({ point, zoom }) => window.__landscapeTestHooks.setCamera({ position: [point.x, point.height + 1200, point.z - .001], target: [point.x, point.height, point.z], projection: 'orthographic', orthoHeight: 800, zoom }), { point: grass, zoom });
             const state = await settle(page), tiling = state.appearance.materialTiling.loam;
-            const planarFootprintWeight = landscapeMaterialMacroWeight(tiling, state.camera.orthoHeight / state.camera.zoom / state.canvas.height);
-            zooms.push({ zoom, planarFootprintWeight, state });
+            zooms.push({ zoom, tileMeters: tiling.tileMeters, metersPerPixel: state.camera.orthoHeight / state.camera.zoom / state.canvas.height,
+                loamResolution: state.appearance.materials.find(item => item.soilId === 'loam').resolution, state });
             await page.screenshot({ path: path.join(artifacts, `05-grass-footprint-zoom-${zoom}.png`) });
         }
-        expect(zooms[0].planarFootprintWeight).toBe(1); expect(zooms[2].planarFootprintWeight).toBeLessThan(.1);
-        expect(zooms[1].planarFootprintWeight).toBeGreaterThan(zooms[2].planarFootprintWeight);
+        expect(zooms.every(entry => entry.tileMeters === zooms[0].tileMeters), 'grass keeps its physical period at every zoom').toBe(true);
+        expect(zooms[2].loamResolution, 'zooming in refines texel density instead of magnifying a macro lattice').toBeGreaterThan(zooms[0].loamResolution);
+        expect(zooms[1].loamResolution).toBeGreaterThanOrEqual(zooms[0].loamResolution);
         for (const entry of zooms) entry.state.camera.position.forEach((value, axis) => expect(value).toBeCloseTo(zooms[0].state.camera.position[axis], 6));
         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), wide);
         const returned = await settle(page);

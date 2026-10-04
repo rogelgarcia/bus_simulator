@@ -17,6 +17,9 @@ export { createLandscapeViewPlanner, planLandscapeView, landscapeResourceKey } f
 export { LANDSCAPE_STREAMING_BUDGETS, LandscapeResidencyBudget } from './LandscapeResidencyBudget.js';
 export { LANDSCAPE_APPEARANCE_TIERS, LANDSCAPE_APPEARANCE_MANIFEST_LIMIT, LANDSCAPE_APPEARANCE_PAGE_LIMIT, LandscapeAppearanceBindingError, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest, validateLandscapeAppearancePage } from './LandscapeAppearanceManifest.js';
 export { loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask, loadLandscapeCoverChannel, rasterizeLandscapeSoilMask } from './LandscapeAppearancePayload.js';
+export { LANDSCAPE_APPEARANCE_MULTISCALE_FORMAT, LANDSCAPE_APPEARANCE_MULTISCALE_ALGORITHM, LANDSCAPE_APPEARANCE_MULTISCALE_TIERS, LANDSCAPE_APPEARANCE_MULTISCALE_LIMIT, LANDSCAPE_APPEARANCE_MULTISCALE_PAGE_LIMIT,
+    LANDSCAPE_APPEARANCE_MICRO_ENCODING, LandscapeAppearanceMultiscaleBindingError, validateLandscapeAppearanceMultiscale, validateLandscapeAppearanceMultiscalePage, decodeLandscapeAppearanceMicroTexel } from './LandscapeAppearanceMultiscale.js';
+export { loadLandscapeAppearanceMultiscale, loadLandscapeAppearanceMultiscalePage } from './LandscapeAppearanceMultiscalePayload.js';
 export { createLandscapeAppearancePlanner } from './LandscapeAppearancePlanner.js';
 export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
 export { cityTileLandscapeCoverage } from './LandscapeCityCoverage.js';

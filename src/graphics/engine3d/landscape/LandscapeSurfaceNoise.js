@@ -68,6 +68,19 @@ export function landscapeLatticeNoise(u, v, salt) {
     return lattice(u, v, salt | 0);
 }
 
+/**
+ * One rotated, salt-offset octave at a world position, mirroring landscapeClumpNoise in chunks/landscape/material_clumps.glsl:
+ * the lattice coordinate is the rotated position divided by the wavelength plus the salt's low/high 16 bits as fractions.
+ * @param {number} x @param {number} z @param {number} inverseWavelength @param {readonly [number, number]} rotation cos, sin @param {number} salt
+ */
+export function landscapeRotatedNoise(x, z, inverseWavelength, rotation, salt) {
+    if (![x, z, inverseWavelength, rotation?.[0], rotation?.[1]].every(Number.isFinite)) throw new Error('[LandscapeSurfaceNoise] rotated noise needs a finite position, wavelength and rotation');
+    requireUint32(salt, 'noise salt');
+    const u = (rotation[0] * x - rotation[1] * z) * inverseWavelength + (salt & 0xffff) / 65536;
+    const v = (rotation[1] * x + rotation[0] * z) * inverseWavelength + (salt >>> 16) / 65536;
+    return lattice(u, v, salt | 0);
+}
+
 function requireOctaves(wavelengths, amplitudes) {
     if (!Array.isArray(wavelengths) || !Array.isArray(amplitudes) || wavelengths.length !== amplitudes.length || wavelengths.length > 16
         || !wavelengths.every(value => Number.isFinite(value) && value > 0) || !amplitudes.every(value => Number.isFinite(value) && value >= 0)) throw new Error('[LandscapeSurfaceNoise] octaves need matching positive wavelengths and nonnegative amplitudes');

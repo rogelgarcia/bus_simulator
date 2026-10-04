@@ -33,8 +33,8 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. D2 and D3 are complete. Leave D4–D7 pending for
-  later passes; D4 is next.
+  corrective D1a step are complete. D2, D3 and D4 are complete. Leave D5–D7 pending
+  for later passes; D5 is next.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -54,7 +54,8 @@ visually verified improvement at each step rather than postponing verification.
   props. Do not place city objects or implement city construction in this AI.
 - User direction, 2026-10-03 (during D2): achieve realism first; memory and
   performance requirements are flexible until D6 optimizes them. The shipped
-  landscape budget becomes 384 MiB controlled CPU / 192 MiB estimated GPU with the
+  landscape budget becomes 384 MiB controlled CPU / 192 MiB estimated GPU in D2 and
+  512 MiB / 256 MiB since D4 (measured geometry starvation at 384/192), with the
   unchanged 8 MiB per-frame upload cap. Allocations stay accounted and measured;
   before/after comparisons match budgets within each profile, and the historical
   128/64 MiB profile is retained for continuity.
@@ -164,19 +165,24 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D4. Distinct macro, local and micro detail
 
-- [ ] Separate unique landscape-scale variation, local material patches and close-up
+- [x] Separate unique landscape-scale variation, local material patches and close-up
   micro detail. Keep physical feature sizes stable as viewing distance changes.
-- [ ] Supply suitable CC0 material sources and finer streamed tiers where measured
+- [x] Supply suitable CC0 material sources and finer streamed tiers where measured
   texel density requires them; source quality, page encoding, compression, decoding
   and GPU residency must have explicit capability and fallback contracts. Retain
   D1a's homogeneous base-tile requirement when adding or replacing any material.
-- [ ] Transition contributions using projected footprint, filtering and hysteresis
+- [x] Transition contributions using projected footprint, filtering and hysteresis
   for perspective movement/FOV and orthographic zoom. Avoid magnified pebbles/ripples.
-- [ ] Add appropriate projection for steep surfaces and assess limited near-camera
+- [x] Add appropriate projection for steep surfaces and assess limited near-camera
   displacement only where it improves silhouettes/contact without corrupting
   authoritative terrain or collision expectations.
-- [ ] Compare near, intermediate and aerial views for scale, texture repetition,
+- [x] Compare near, intermediate and aerial views for scale, texture repetition,
   sharpness, temporal stability, page seams and budget behavior.
+- [x] Request each material's tier from the texel density of the visible pages where
+  that material occurs, not from the nearest page of any material, and fit the tiers
+  to the appearance budget level by level. A constrained profile must never leave a
+  visible material at its coarse fallback while others hold 1024 tiers (measured at
+  384/192 during D4: the rock close-up bound rock at 32 pixels against HEAD's 512).
 
 ### D5. Terrain-driven natural appearance and lighting
 
@@ -654,6 +660,129 @@ segments, and its macro ripples are still magnified 4× (D4). Patches add faint 
 variation of about 0.8 sRGB byte standard deviation at 200 m, so homogeneous sources remain
 required. Removing the grass page's 2.15° mean normal lean darkens sunlit grass by about
 0.45 bytes. Worker CPU and driver VRAM are not measured. This completes D3, not the entire AI.
+
+### D4 completed — 2026-10-04
+
+This step uses D3 commit `9ec8cf61` as its before baseline: four matched views in
+`d4/realism/before/` and 18 detail poses in `d4/views/before/`, sealed before rendering changed.
+D1–D3 remain completed history; D5–D7 remain pending and D5 is next.
+
+- Physical scale (`landscape-physical-tiling-v1`): every material is sampled at its calibrated
+  period at every distance. The former second lattice at four times the period, which magnified
+  ripples and pebbles fourfold in the middle and far field, is removed; grass keeps 4 m and sand
+  30 m at all distances.
+- Landscape-scale variation (`landscape-macro-variation-v1`): two decorrelated world-anchored
+  fields, tone and chroma, sum four rotated octaves at 400, 160, 64 and 25.6 m. Each octave fades
+  by projected footprint so it never aliases, and per-material responses turn them into value,
+  saturation, hue and roughness changes. `landscapeMacroField` is the input point for D5's
+  terrain-driven terms.
+- Micro detail (`landscape-micro-detail-v1`): a third layer of each material's surface array
+  carries mean-neutral detail normal, relief and luminance. Sand and seabed pair with the CC0
+  ambientCG Ground054 close-up sand at its real 3.5 m scale (3.42 mm per texel at 1024), sampled
+  with its own stochastic lattice. It feeds the D1a competition and D2 clumps and fades before it
+  could alias; it is never magnified beyond its resident texel.
+- Filtering and steep ground: normal mip filtering (`landscape-normal-mip-vmf-v1`) widens GGX
+  roughness from the length of mip-filtered normals, so distant ripples keep their averaged
+  response instead of turning glossy. Slope-adaptive projection (`landscape-slope-projection-v1`)
+  adds side projections only above about 24.6° of slope, so gentle ground keeps the established
+  top projection bit for bit.
+- Finer streamed tiers: the companion `appearance/multiscale.json` (schema
+  `landscape-appearance-multiscale` v1, revision `multiscale-eedd520219823e11ff6c7381`) adds native
+  1024 tiers for all six soils and the paired micro pages, prepared by the registered
+  `landscape/appearance` bake leaf (`multiscale` request) with retained CC0 provenance, strict
+  validation, deterministic output and an orphan guard; the schema-1 sidecar bytes are unchanged.
+  The runtime reports explicit capability and fallback outcomes (`active`, `active-limited`,
+  `absent`, `disabled`, `invalid`, `budget-denied`, `device-capacity`), splits a 1024 upload over
+  up to four frames under the shared 8 MiB cap and only transitions to fully uploaded tiers.
+- Material demand (`landscape-material-water-filling-v1`): each material requests the tier its own
+  visible pages need, and the tiers are fitted to the appearance budget level by level with
+  incumbent hysteresis. Verification of the first build found the old view-wide demand starving
+  the rock close-up at 384/192 (rock at its 32-pixel fallback while four materials held 1024); the
+  corrected demand binds rock at 1024 there and never leaves a visible material below a level that
+  fits for all.
+- Startup: the larger terrain program compiles through `KHR_parallel_shader_compile` before the
+  first upload, so its 5.5 s compile no longer freezes the page (longest main-thread gap 76–90 ms,
+  from 3.9 s).
+- Budget: the shipped total is 512 MiB CPU / 256 MiB GPU. At 384/192 the 1024 tiers left telephoto
+  beach geometry degraded (3.14 px against the 1.5 px target at FOV 8); at 512/256 it reaches
+  0.21 px and nothing is budget-degraded.
+- Displacement was assessed and rejected: a parallax-occlusion prototype changed only the sand
+  close-up (mean 0.9 sRGB bytes) for +0.5 ms, cannot change silhouettes, and vertex displacement
+  of the 1.95 m mesh would desynchronize picking, queries and future collision.
+
+Verification: all 296 landscape Node tests pass (258 in D3), including companion validation,
+preparation and published-asset tests, material demand and water-filling (with a 400-trial
+randomized invariant), surface layers and the updated budget tests.
+44 browser tests across 14 suites pass on the final tree: height blend 6, surface detail 8, seams 2,
+appearance 8 (including the companion fallback and published-companion streaming tests), nature 1,
+planning 1, streaming 6, lifecycle 3, appearance binding 1, fabrication 2, navigation 2, authoring 2,
+city binding 1 and the three-profile performance gate 1. The gate's precondition now requires the
+native geometry to exceed only the historical and constrained GPU limits, because the shipped
+256 MiB limit can hold it. One earlier full run timed out once while a page started; the test passed
+in isolation and in 10 repeats, and the terrain program wait is now flushed and bounded at 20 s.
+`landscape_large_editing` still stops at the pre-existing stale city pin (tracked under D7).
+The 13 failures in 11 non-landscape unit files are environmental and predate D4 (missing
+OpenImageIO/PyOpenColorIO, shared-store asset gaps, other branches' expectations); D4 changes no
+non-landscape code.
+
+Feature scale and stability: the sand ripple peak stays at 0.84 m at 20 m and 60 m orthographic
+spans, and the formerly magnified far-field ripple band loses 72–73% of its power at FOV 55 and 20.
+On tilted probe planes the checker transitions per meter are 3.375/2.875/3.375/3.875 at
+30/45/60/80° (top projection alone: 1.875 at 60°, 0.625 at 80°). On four camera paths the largest
+frame-to-frame difference stays within 1.11× the median, so there is no popping. Holding each
+pose for 10 s after settling causes no tier upload, load or eviction in any of the three
+profiles. The final renders match the first D4 build within 3 sRGB bytes even where demand now
+binds smaller tiers.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d4/`.
+
+- Four matched views: `realism/comparisons/01-game-pov-comparison.png` through
+  `04-medium-distance-comparison.png`.
+- Detail poses and crops: `comparisons/` (sand, grass and rock close-ups, telephoto beach, far
+  field, top-down sand, aerial and steep views), renders in `views/before/` and `views/final-d4c/`;
+  the first build's sheets, which show the starved rock, are kept in `comparisons-pre-d4c/`.
+- Materials and data: `materials/` (candidate audit, review sheets, bake receipts),
+  `appearance-multiscale-validation.json`.
+- Metrics: `performance/` (paired HEAD timings, `d4c-gpu-*.json`, micro A/B, compile and load
+  timing), `analysis-feature-scale-companion.json`, `temporal/`, `displacement/`, `d4c/` and
+  `regression/`.
+
+Measured on Windows 10.0.26200 x64, Ryzen 5 9600X, RTX 3060 through ANGLE/D3D11, Chromium
+151.0.7922.34, 1920×1080 at DPR 1 and 384/192 MiB, with 30 warm-up and 120 sampled frames and
+completed GPU timer queries. The sealed baseline was captured in the morning; the after capture
+ran in the afternoon while other applications kept the GPU about 35% busy, which raised the cost
+floor of cheap views by about 2 ms for HEAD as well. Matched realism views, before → after:
+
+| View | GPU median, ms | GPU p95, ms | CPU median, ms | Draws / triangles | CPU / GPU MiB | Peak upload, bytes/frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| Game POV | 7.614 → 8.158 | 8.298 → 8.206 | 1.30 → 1.20 | 17 / 1,996,804 (unchanged) | 166.9 → 216.1 / 121.8 → 170.0 | 7,871,003 → 6,137,372 |
+| Oblique | 12.891 → 12.984 | 12.983 → 13.063 | 1.30 → 1.20 | 19 / 2,263,044 (unchanged) | 170.0 → 219.2 / 121.8 → 170.0 | 544,968 (unchanged) |
+| Top-down | 3.764 → 5.877 | 3.830 → 6.071 | 0.60 → 0.50 | 6 / 532,484 (unchanged) | 125.3 → 149.7 / 82.2 → 97.4 | 3,676,703 (unchanged) |
+| Medium distance | 18.777 → 17.343 | 19.166 → 18.950 | 1.20 → 1.30 | 19 / 2,263,044 (unchanged) | 187.6 → 234.0 / 132.3 → 176.8 | 4,766,639 → 5,864,888 |
+
+Same-session pairs (HEAD and final D4 run back to back under the same load) isolate the cost:
+game POV 7.61 → 8.24 ms, oblique 12.12 → 13.04, top-down 5.33 → 5.85, medium distance
+16.76 → 17.97 and aerial oblique 19.01 → 20.59 (about +7–8%); close-ups add 0.4–0.7 ms, of which
+micro detail is at most 0.34 ms. The medium view's frame-interval p95 falls from 35.6 to 18.1 ms.
+Lifetime peaks were 285.0 MiB CPU and 187.3 MiB GPU (D3: 237.6 / 142.8), with no denial, and
+disposal returns zero. At the shipped 512/256 MiB the appearance share is 21–112 MiB of GPU
+memory by pose (all five materials at 1024 only at the rock mid view), the largest total is
+201.6 MiB at the telephoto beach and the lifetime peak 218.8 MiB. No pose is geometry- or
+material-budget limited; wide views still report the fine-mask slot limit
+(`appearance-mask-capacity`) exactly as D3 did.
+
+Limitations: the four main views cost about 7–8% more GPU time than D3, and the medium and aerial
+views exceed 16.7 ms; reductions belong to D6. Resident tiers keep their decoded CPU copies
+(+46–49 MiB CPU at the main views). Compile plus first draw takes 5.5 s instead of 3.8 s and planning
+becomes ready about 2 s later; the test-only `setMaterialSampling` switch still recompiles
+synchronously. Micro normals are not part of the roughness widening term. Micro detail raises
+near-field temporal contrast under motion (Laplacian 2.07 → 3.46 on the dolly path) and its
+aliasing was not compared against a supersampled reference. Ground054 repeats a faint 35 × 20 cm
+oval every 3.5 m in its relief, and the accepted sand's JPEG base color shows 8×8 blocks at 1024
+outside the micro range. Grazing far-field ground stays soft under 4× anisotropic filtering. Demand
+resolves only to 62.5 m fine pages, so soils sharing the camera's page are ordered by page count.
+`landscape_large_editing` still stops at the stale city pin (D7). This completes D4, not the
+entire AI.
 
 ## On completion
 

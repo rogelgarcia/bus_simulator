@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES, landscapeHexBlend, landscapeHexContrastSignal, landscapeHexLattice, landscapeHexLatticeAngle,
     landscapeHexNormalSlope, landscapeHexRotateGradient, landscapeHexTriangle, landscapeHexVertexCenter, landscapeHexVertexTransform, landscapeHexWeights,
-    landscapeMaterialSamplingDefinition, landscapeMaterialSamplingMode, landscapeMaterialSamplingSalt, landscapeMaterialSamplingUniforms } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
+    landscapeMaterialSamplingDefinition, landscapeMaterialSamplingMode, landscapeMaterialSamplingSalt, landscapeMaterialSamplingUniforms, landscapeMicroSamplingSalt } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
+import { LANDSCAPE_MICRO_DETAIL } from '../../../src/graphics/engine3d/landscape/LandscapeMicroDetail.js';
 import { landscapeNoiseHash } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceNoise.js';
 import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
 
 const seed = 1207276911, model = LANDSCAPE_MATERIAL_SAMPLING;
 const close = (actual, expected, tolerance = 1e-9, label = '') => assert.ok(Math.abs(actual - expected) <= tolerance, `${label} ${actual} differs from ${expected} by more than ${tolerance}`);
-const lattice = (soilId, u, v, exponent, lattice = 'near') => {
+const lattice = (soilId, u, v, exponent, lattice = 'top') => {
     const definition = landscapeMaterialSamplingDefinition(soilId);
     return landscapeHexLattice({ u, v, cellsPerPeriod: definition.cellsPerPeriod, salt: landscapeMaterialSamplingSalt(seed, soilId, lattice),
         rotationRangeRadians: definition.rotationRangeDegrees * Math.PI / 180, offsetSpreadV: definition.offsetSpreadV, exponent: exponent ?? definition.contrastExponent });
@@ -40,18 +41,24 @@ test('Material sampling: the frozen catalog covers every soil with bounded, dire
     assert.ok(model.weightCutoff > 0 && model.weightCutoff < 1 / 255, 'skipped samples stay below one 8-bit step');
 });
 
-test('Material sampling: salts derive deterministically from the landscape seed, soil and lattice', () => {
+test('Material sampling: salts derive deterministically from the landscape seed, soil and projection', () => {
     const salts = LANDSCAPE_SOIL_CATALOG.map(soil => landscapeMaterialSamplingSalt(seed, soil.id));
     assert.deepEqual(salts, LANDSCAPE_SOIL_CATALOG.map(soil => landscapeMaterialSamplingSalt(seed, soil.id)), 'repeatable');
     assert.equal(new Set(salts).size, salts.length, 'every soil has its own lattice');
+    assert.deepEqual(model.projections, ['top', 'side-x', 'side-z']);
     for (const [index, soil] of LANDSCAPE_SOIL_CATALOG.entries()) {
-        const macro = landscapeMaterialSamplingSalt(seed, soil.id, 'macro');
         assert.ok(Number.isSafeInteger(salts[index]) && salts[index] >= 0 && salts[index] <= 0xffffffff);
-        assert.equal(macro, landscapeNoiseHash((salts[index] ^ model.macroSaltMix) >>> 0), 'the shader derives the macro salt from the near salt');
-        assert.notEqual(macro, salts[index]);
+        assert.equal(landscapeMaterialSamplingSalt(seed, soil.id, 'top'), salts[index], 'the top projection keeps the AI577 D3 lattice salt');
+        const sides = ['side-x', 'side-z'].map((projection, side) => {
+            const salt = landscapeMaterialSamplingSalt(seed, soil.id, projection);
+            assert.equal(salt, landscapeNoiseHash((salts[index] ^ model.projectionSaltMixes[side + 1]) >>> 0), `the shader derives the ${projection} salt from the top salt`);
+            return salt;
+        });
+        assert.equal(new Set([salts[index], ...sides]).size, 3, 'each projection has its own lattice');
+        assert.equal(landscapeMicroSamplingSalt(salts[index]), landscapeNoiseHash((salts[index] ^ LANDSCAPE_MICRO_DETAIL.saltMix) >>> 0), 'micro lattices derive from their projection salt');
     }
     assert.notEqual(landscapeMaterialSamplingSalt(seed + 1, 'loam'), landscapeMaterialSamplingSalt(seed, 'loam'));
-    assert.throws(() => landscapeMaterialSamplingSalt(seed, 'loam', 'far'), /Lattice must be near or macro/);
+    assert.throws(() => landscapeMaterialSamplingSalt(seed, 'loam', 'macro'), /Projection must be one of top, side-x, side-z/);
     for (const salt of salts) { const angle = landscapeHexLatticeAngle(salt); assert.ok(angle >= 0 && angle < Math.PI / 3); }
 });
 
@@ -202,14 +209,19 @@ test('Material sampling: shader uniforms pack catalog values, int32 salts and di
 test('Material sampling: the GLSL chunk mirrors the JavaScript constants and the terrain shader uses one shared weight set', async () => {
     const chunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/stochastic_tiling.glsl', import.meta.url), 'utf8');
     const terrain = await readFile(new URL('../../../src/graphics/shaders/materials/landscape/terrain.frag.glsl', import.meta.url), 'utf8');
-    for (const literal of ['0x27d4eb2du', '0x165667b1u', `0x${model.rotationSaltMix.toString(16)}u`, `0x${model.latticeAngleSaltMix.toString(16)}u`, `0x${model.macroSaltMix.toString(16)}u`,
+    const layers = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_layers.glsl', import.meta.url), 'utf8');
+    for (const literal of ['0x27d4eb2du', '0x165667b1u', `0x${model.rotationSaltMix.toString(16)}u`, `0x${model.latticeAngleSaltMix.toString(16)}u`,
         '0.57735026919', '1.15470053838', '0.86602540378', '1.0471975512', `#define LANDSCAPE_HEX_SLOPE_LIMIT ${model.slopeLimit.toFixed(1)}`]) assert.ok(chunk.includes(literal), `chunk mirrors ${literal}`);
+    for (const mix of [...model.projectionSaltMixes.slice(1), LANDSCAPE_MICRO_DETAIL.saltMix]) assert.ok(layers.includes(`0x${mix.toString(16)}u`), `surface layers mirror salt mix ${mix.toString(16)}`);
+    assert.ok(!chunk.includes('macroLattice') && !terrain.includes('macroLattice'), 'the magnifying macro lattice is gone');
     assert.match(chunk, /#ifndef LANDSCAPE_MATERIAL_SAMPLING\s+#error /);
     assert.match(chunk, /uniform vec4 uSoilStochastic\[6\];\s+uniform ivec4 uSoilStochasticSalts\[2\];\s+uniform vec4 uStochasticSettings;/);
     assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/);
     assert.match(terrain, /int samples = hex \? min\(int\(uStochasticSettings\.w\), 3\) : 1;/, 'a uniform sample count keeps one loop body per soil');
-    assert.match(terrain, /soilTextures\(soil, sampleUv, turn \* dx, turn \* dy, sampleAlbedo, encodedNormal, sampleOrm\);/, 'gradients rotate with each sample');
-    assert.match(terrain, /slope \+= weight \* landscapeHexSlope\(encodedNormal \* 2\.0 - 1\.0, rotation\);/, 'normals blend as inverse-rotated slopes with the shared weights');
+    assert.match(terrain, /latticeTexel\(soil, micro, sampleUv, turn \* dx, turn \* dy, sampleAlbedo, encodedNormal, sampleOrm\);/, 'gradients rotate with each sample');
+    assert.match(terrain, /vec3 decoded = encodedNormal \* 2\.0 - 1\.0;[\s\S]*?slope \+= weight \* landscapeHexSlope\(decoded, rotation\);/, 'normals blend as inverse-rotated slopes with the shared weights');
+    assert.match(terrain, /encodedNormal = microNormal\(texel\) \* 0\.5 \+ 0\.5;/, 'micro normals run through the same lattice body and blend as inverse-rotated slopes');
+    assert.match(terrain, /if \(micro && hex\) stochastic = uMicroSampling;/, 'micro lattices use their own catalog parameters');
     assert.match(terrain, /if \(bound < uStochasticSettings\.y\) continue;\s+weight \*= smoothstep\(uStochasticSettings\.y, 2\.0 \* uStochasticSettings\.y, bound\);/, 'skipped samples fade in continuously');
-    assert.equal((terrain.match(/soilLattice\(soil, /g) ?? []).length, 1, 'one inlined lattice call per soil surface');
+    assert.equal((terrain.match(/soilLattice\(soil, /g) ?? []).length, 1, 'one inlined lattice call per soil surface serves every projection and the micro layer');
 });

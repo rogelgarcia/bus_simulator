@@ -244,8 +244,10 @@ export class LandscapeMaskPages {
             warp: { enabled: warp.enabled, baked: false, x: warp.x, z: warp.z }, warpedPosition: { x: warpedX, z: warpedZ } };
     }
 
+    // every soil of a visible page's resident record (or nearest resident ancestor) leases that page; a fully faded-in visible page lends
+    // its projected density to its soils, except a native page the plan splits into fine leaves, whose visible leaves lend their own
     interests(plan) {
-        const interests = new Map(), desiredTiers = {};
+        const interests = new Map(), densityBySoil = {}, split = new Set(this.detail ? plan.detail?.splitNativeIds ?? [] : []);
         for (const id of plan.visibleMaskIds) {
             let descriptor = this.descriptors.get(id), record;
             while (descriptor) {
@@ -254,16 +256,16 @@ export class LandscapeMaskPages {
                 descriptor = this.descriptors.get(descriptor.parentId);
             }
             if (!record || record.status !== 'resident') continue;
+            const density = record.id === id && record.progress === 1 && !split.has(id) ? plan.pixelsPerMeterById[id] : 0;
             for (const index of record.soils) {
                 if (!interests.has(index)) interests.set(index, new Set());
                 interests.get(index).add(id);
                 const soilId = this.manifest.soil.catalog[index].id;
-                const tier = record.id === id && record.progress === 1 ? Number(plan.desiredTiers[soilId]) : 32;
-                desiredTiers[soilId] = String(Math.max(Number(desiredTiers[soilId] ?? 32), tier));
+                densityBySoil[soilId] = Math.max(densityBySoil[soilId] ?? 0, density);
             }
         }
-        this.detail?.interests(plan, interests, desiredTiers);
-        return { interests, desiredTiers };
+        this.detail?.interests(plan, interests, densityBySoil);
+        return { interests, densityBySoil };
     }
 
     remove(record) {

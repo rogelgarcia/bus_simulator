@@ -147,3 +147,50 @@ not measured source dimensions. Sand retains the accepted Aerial Beach 01
 response and 30-meter scale; the same material also supplies seabed. The new
 matching sand displacement affects only ORM alpha, preserving every RGB byte,
 normal page and calibration setting from the previous sand publication.
+
+## Multiscale companion (AI577 D4)
+
+The optional `multiscale` input adds finer data without touching the schema-1
+sidecar. The shipped request is `multiscale-v1.json`:
+
+```sh
+node tools/bake.mjs --target landscape/appearance --set landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1.json
+node tools/bake.mjs --target landscape/appearance --set landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1.json --publish
+```
+
+The request (`landscape-appearance-multiscale-request`, schema 1) names the
+landscape, `extraTiers: [1024]` and micro layers as `{materialId, soilIds}`.
+The converter adds a native 1024 tier for every bound material in the same
+decode and with the same filters as the 32/128/512 tiers; a source smaller than
+1024 pixels fails instead of being upsampled. Micro materials are landscape-local
+folders under the source root with `pbr.material.config.js` (CC0 provenance,
+real `tileMeters`, `baseColor`/`normal`/`displacement` maps) and a
+`pbr.landscape.config.json` `micro` recipe (`micro-periodic-highpass-v1`,
+`radiusPixels`, `luminanceRangePercentiles`); they are not registered in the
+global catalog. Three wrapped box passes separate scales: log luminance, tangent
+slopes and height each lose their low-frequency part, so the micro layer carries
+only detail finer than the recorded half-power wavelength. Micro pages exist at
+32/128/512/1024 so each pairs with one base tier: RG are OpenGL detail normal XY,
+B is median-centered p01/p99 relative height, and A is
+`0.5 + 0.5 * (L / mean - 1) / luminanceRange`, clamped. All pages keep the
+schema-1 orientation and filtering rules.
+
+The companion is written as `appearance/multiscale.json` plus an immutable
+`multiscale.<sha256>.json` and content-addressed pages. Its revision is content
+derived; it records the extended appearance revision and binding key, every
+page-affecting source hash and the recipes. Validation checks hashes, sizes,
+alpha, normalized base normals, the unit-disc micro normals and neutral micro
+means. Publication installs pages and the snapshot first, switches the schema-1
+sidecar, then `multiscale.json`, and only then terrain. Publishing a different
+appearance revision without the multiscale input is refused while a current
+companion exists, so a schema-1 republish cannot silently orphan it. Repeated
+inputs produce byte-identical companion bytes. A converter allocation peak
+(Python tracemalloc, not RSS) is reported in the receipt
+`tests/artifacts/screens/landscape/ai577/d4/appearance-multiscale-validation.json`
+and kept out of the sidecar. Runtime loading is in `src/app/landscape`
+(`loadLandscapeAppearanceMultiscale`, `loadLandscapeAppearanceMultiscalePage`).
+
+The shipped micro layer is `pbr.landscape_sand_micro_v1` (CC0 ambientCG Ground054,
+surface photogrammetry, stated capture ca. 3.5 x 3.5 m, so 3.42 mm per texel at
+1024) for sand and seabed, with a 9-pixel radius (half-power wavelength about
+17 cm). Its originals and download receipts are retained under `downloads/`.

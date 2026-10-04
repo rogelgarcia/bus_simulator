@@ -68,8 +68,8 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 
 | Resource or work limit | Default |
 | --- | ---: |
-| Controlled terrain CPU buffers and reservations | 384 MiB (128 MiB before AI577 D2) |
-| Estimated terrain GPU buffers and reservations | 192 MiB (64 MiB before AI577 D2) |
+| Controlled terrain CPU buffers and reservations | 512 MiB (128 MiB before AI577 D2, 384 MiB in D2–D3) |
+| Estimated terrain GPU buffers and reservations | 256 MiB (64 MiB before AI577 D2, 192 MiB in D2–D3) |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
 | Concurrent independent appearance worker | 1 |
 | Concurrent surface-detail generation workers (AI577 D2) | 2 |

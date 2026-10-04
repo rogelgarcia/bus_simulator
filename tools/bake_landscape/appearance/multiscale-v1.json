@@ -1,0 +1,9 @@
+{
+  "format": "landscape-appearance-multiscale-request",
+  "schemaVersion": 1,
+  "landscapeId": "coastal-city",
+  "extraTiers": [1024],
+  "micro": [
+    { "materialId": "pbr.landscape_sand_micro_v1", "soilIds": ["seabed", "sand"] }
+  ]
+}

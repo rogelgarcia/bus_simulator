@@ -63,7 +63,7 @@ test('Landscape materials: matched old/new production PBR sheets expose homogene
                         const baseTexture = probe.texture(loaded[0], 512, 1, true), surfaceTexture = probe.texture(surface, 512, 2);
                         owner.configure(baseTexture, true); owner.configure(surfaceTexture, false);
                         probe.uniforms[`uSoilBase${soil}`].value = baseTexture; probe.uniforms[`uSoilSurface${soil}`].value = surfaceTexture;
-                        probe.uniforms.uSoilResolution.value[soil] = 512;
+                        probe.uniforms.uSoilState.value[soil].y = 512;
                         probe.setCoverage(Array.from({ length: 6 }, (_, index) => index === soil ? 1 : 0));
                         const period = probe.uniforms.uSoilTiling.value[soil].x;
                         for (const repeats of [1, 4]) {

@@ -1,5 +1,5 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
-import { LandscapeView, LANDSCAPE_SURFACE_DETAIL_MODES } from './LandscapeView.js';
+import { LandscapeView, LANDSCAPE_MULTISCALE_MODES, LANDSCAPE_SURFACE_DETAIL_MODES } from './LandscapeView.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
 
@@ -17,7 +17,9 @@ const surfaceDetail = parameters.get('landscapeSurfaceDetail') ?? '25cm';
 if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`landscapeSurfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
 const materialSampling = parameters.get('landscapeMaterialSampling') ?? LANDSCAPE_MATERIAL_SAMPLING.defaultMode;
 if (!Object.hasOwn(LANDSCAPE_MATERIAL_SAMPLING_MODES, materialSampling)) throw new Error(`landscapeMaterialSampling must be one of ${Object.keys(LANDSCAPE_MATERIAL_SAMPLING_MODES).join(', ')}; received ${materialSampling}`);
-const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling });
+const multiscale = parameters.get('landscapeMultiscale') ?? 'auto';
+if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`landscapeMultiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
+const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -37,6 +39,7 @@ window.__landscapeTestHooks = Object.freeze({
     setMaterialClumps: enabled => view.setMaterialClumps(enabled),
     setMaterialSampling: mode => view.setMaterialSampling(mode),
     setMaterialSamplingEnabled: enabled => view.setMaterialSamplingEnabled(enabled),
+    setSurfaceLayers: layers => view.setSurfaceLayers(layers),
     setBudgets: options => view.setBudgets(options),
     beginPerformanceCapture: options => view.beginPerformanceCapture(options),
     endPerformanceCapture: () => view.endPerformanceCapture(),

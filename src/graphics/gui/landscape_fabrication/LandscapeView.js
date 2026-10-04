@@ -26,12 +26,22 @@ const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 /** Generated surface-detail modes: levels below the native cover grid (25 cm reaches 0.244 m samples on the coast). */
 export const LANDSCAPE_SURFACE_DETAIL_MODES = Object.freeze({ off: 0, '50cm': 2, '25cm': 3 });
 
+/** Companion multiscale sidecar modes: auto loads it when published, off keeps the schema-1 tiers. */
+export const LANDSCAPE_MULTISCALE_MODES = Object.freeze(['auto', 'off']);
+
 export class LandscapeView {
-    /** @param {HTMLCanvasElement} canvas @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string}} options */
-    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode } = {}) {
+    /**
+     * @param {HTMLCanvasElement} canvas
+     * @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string,multiscale?:'auto'|'off'}} options multiscale 'off' keeps the
+     *   schema-1 material tiers without requesting the companion multiscale sidecar
+     */
+    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto' } = {}) {
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
+        if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
+        this.multiscale = multiscale;
+        this.surfaceLayers = null;
         this.canvas = canvas;
         this.surfaceDetail = surfaceDetail;
         this.surfaceDetailLevels = LANDSCAPE_SURFACE_DETAIL_MODES[surfaceDetail];
@@ -150,13 +160,14 @@ export class LandscapeView {
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
             const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer, coverageSlots: this.coverageSlots,
-                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling });
+                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling, multiscale: this.multiscale });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
             this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, visible: this.waterVisible });
             await appearance.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingAppearance = null;
+            if (this.surfaceLayers && appearance.initialized) appearance.setSurfaceLayers(this.surfaceLayers);
             const planning = new LandscapePlanningOverlay({ loaded, scene: this.scene, budget: this.budget,
                 visibility: this.planningVisibility, diagnostic: this.diagnostic });
             this.planning = this.loadingPlanning = planning;
@@ -229,6 +240,17 @@ export class LandscapeView {
         this.loadingAppearance?.setMaterialSampling(mode);
         this.appearance?.setMaterialSampling(mode);
         return this.appearance?.snapshot().materialSampling ?? { mode };
+    }
+
+    /**
+     * Enables or disables the D4 appearance layers (landscape-scale macro variation, paired micro detail, slope-adaptive projection and
+     * normal mip filtering) for A/B evidence; the choice persists across reloads. @param {{macro?:boolean,micro?:boolean,projection?:boolean,normalFiltering?:boolean}} layers
+     */
+    setSurfaceLayers(layers) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing surface layers');
+        this.appearance.setSurfaceLayers(layers);
+        this.surfaceLayers = { ...(this.surfaceLayers ?? {}), ...layers };
+        return this.appearance.snapshot().surfaceLayers;
     }
 
     /** @param {boolean} enabled runtime stochastic tiling of the compiled mode; disabled soils keep one lattice sample */
@@ -663,13 +685,13 @@ export class LandscapeView {
             ready: !!this.loaded, disposed: this.disposed, mode: this.mode, revision: this.loaded?.manifest.revision,
             selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray(), projection: this.projection, fov: this.perspectiveFov, orthoHeight: this.orthoHeight, zoom: this.camera.zoom },
             source: this.source, lastError: this.lastError ?? null, frameIndex: this.frameIndex,
-            loadTiming: this.loadTiming ? { ...this.loadTiming } : null,
+            loadTiming: this.loadTiming ? { ...this.loadTiming } : null, terrainProgram: (this.loadingStream ?? this.stream)?.programCompile ?? null,
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
-            materialSampling: this.materialSampling,
+            materialSampling: this.materialSampling, multiscale: this.multiscale,
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
@@ -739,7 +761,7 @@ export class LandscapeView {
                 this.panel.text('streaming', `LOD ${Math.min(...levels)}–${Math.max(...levels)} · ${stats.residentLeafIds.length} tiles · ${stats.pending} pending · CPU ${mib(stats.budget.cpuBytes)}/${mib(stats.budget.limits.cpuBytes)} MiB · GPU est. ${mib(stats.budget.gpuBytes)}/${mib(stats.budget.limits.gpuBytes)} MiB · error bound ${errorBound}/${stats.targetErrorPixels.toFixed(1)} px · ${stats.degradationReason ?? 'ready'}`);
                 this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`);
                 const appearance = this.appearance?.snapshot();
-                if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}`).join(' / ')} px · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
+                if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}${value.micro?.shown ? '+micro' : ''}`).join(' / ')} px · multiscale ${appearance.multiscale.status} · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
                 if (appearance) this.panel.text('surface-detail', this.surfaceDetailLine(appearance.detail));
                 if (this.selection) {
                     const x = this.selection.position.x, z = this.selection.position.z;

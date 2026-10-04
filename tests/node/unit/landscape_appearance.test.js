@@ -78,18 +78,25 @@ test('Perspective appearance density responds to fixed-position FOV and viewport
     assert.throws(() => planner.plan(camera, { targetMaskPixels: 0 }), /positive/);
 });
 
-test('Appearance selection budgets texels for the macro UV period independently of fixed-position orthographic zoom', () => {
+test('Appearance selection budgets texels at each physical period and its available tiers, independently of fixed-position orthographic zoom', () => {
     const { manifest } = createLandscapeModelFixture({ heightAt: () => 10 }), sidecar = appearance(manifest);
-    const profile = { nearTileMeters: 4, macroTileMeters: 16, blendStartMetersPerPixel: 4 / 128, blendEndMetersPerPixel: 4 / 16 };
-    const ordinary = createLandscapeAppearancePlanner(manifest, sidecar), tiling = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: profile } });
+    const ordinary = createLandscapeAppearancePlanner(manifest, sidecar), calibrated = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 16 } } });
+    const finer = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 16 } }, materialTiers: { loam: [32, 128, 512, 1024] } });
     const camera = { ...ortho, orthoHeight: 200 };
     assert.equal(ordinary.plan(camera).desiredTiers.loam, '32');
-    assert.equal(tiling.plan(camera).desiredTiers.loam, '128');
-    assert.equal(tiling.plan({ ...camera, zoom: 20 }).desiredTiers.loam, '512');
-    profile.macroTileMeters = 1;
-    assert.equal(tiling.plan(camera).desiredTiers.loam, '128');
-    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { missing: profile } }), /unknown material/);
-    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { ...profile, nearTileMeters: 0 } } }), /positive/);
+    assert.equal(calibrated.plan(camera).desiredTiers.loam, '128', 'a longer physical period needs more texels at the same footprint');
+    assert.equal(calibrated.plan({ ...camera, zoom: 20 }).desiredTiers.loam, '512', 'schema-1 tiers stop at 512');
+    const zoomed = finer.plan({ ...camera, zoom: 20 });
+    assert.equal(zoomed.desiredTiers.loam, '1024', 'a companion 1024 tier refines further');
+    assert.deepEqual(finer.materialTiers.loam, [32, 128, 512, 1024]); assert.deepEqual(finer.materialTiers.sand, [32, 128, 512]);
+    assert.equal(finer.plan({ ...camera, zoom: 7 }).desiredTiers.loam, '512');
+    assert.equal(finer.plan({ ...camera, zoom: 7 }, { previousTiers: zoomed.desiredTiers }).desiredTiers.loam, '1024', 'coarsening waits for 65% of the coarser tier');
+    assert.equal(finer.plan({ ...camera, zoom: 5 }, { previousTiers: zoomed.desiredTiers }).desiredTiers.loam, '512');
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { missing: { tileMeters: 4 } } }), /unknown material/);
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 0 } } }), /positive physical tileMeters/);
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 4, macroTileMeters: 16 } } }), /only a positive physical tileMeters/);
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiers: { loam: [512, 128] } }), /ascending/);
+    assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiers: { missing: [32] } }), /unknown material tier/);
 });
 
 test('Material requests authenticate one bounded raw page and refuse budget, corrupt, oversized and stale work', async () => {

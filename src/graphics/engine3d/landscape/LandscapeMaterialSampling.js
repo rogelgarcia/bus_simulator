@@ -1,6 +1,6 @@
 // Declares world-anchored stochastic hex tiling of landscape materials and the exact JavaScript mirror of its shader math.
 // @ts-check
-// Each material lattice (near and macro) is covered by an equilateral triangle grid measured in texture periods and turned
+// Each material lattice (one per planar projection, plus micro detail) is covered by an equilateral triangle grid measured in texture periods and turned
 // by a salt-derived angle, so grid edges align neither with texture, world nor neighbouring-material axes. Every grid vertex
 // owns a hashed random offset and a catalog-constrained rotation; a fragment blends the three vertices of its triangle with
 // one weight set shared by base color, normals (blended as slopes), ORM and relief, so all surface channels stay coherent.
@@ -10,6 +10,7 @@
 // anisotropic selection stay exact, and sampled tangent-space slopes are rotated back by the inverse rotation. Hashing uses
 // the surface warp's integer murmur finalizer, so JavaScript and GLSL select identical vertices, offsets and rotations.
 import { landscapeNoiseHash, landscapeNoiseSalt } from './LandscapeSurfaceNoise.js';
+import { LANDSCAPE_MICRO_DETAIL } from './LandscapeMicroDetail.js';
 
 /** Compile-time shader modes (LANDSCAPE_MATERIAL_SAMPLING define values). */
 export const LANDSCAPE_MATERIAL_SAMPLING_MODES = Object.freeze({ single: 0, 'hex-linear': 1, 'hex-contrast': 2, 'hex-variance': 3 });
@@ -28,7 +29,8 @@ export const LANDSCAPE_MATERIAL_SAMPLING = Object.freeze({
     varianceExponent: 3,
     samplesPerLattice: 3,
     slopeLimit: 128,
-    macroSaltMix: 0x6a09e667,
+    projections: Object.freeze(['top', 'side-x', 'side-z']),
+    projectionSaltMixes: Object.freeze([0, 0x9b05688c, 0x1f83d9ab]),
     latticeAngleSaltMix: 0x3c6ef372,
     rotationSaltMix: 0x9e3779b9,
     materials: Object.freeze({
@@ -78,15 +80,21 @@ function samplingComponent(soilId) {
 }
 
 /**
- * World-anchored lattice salt of one soil and lattice, derived from the landscape surface seed; the macro lattice salt is the
- * hashed near salt so the shader needs one salt per soil.
- * @param {number} seed @param {string} soilId @param {'near'|'macro'} [lattice]
+ * World-anchored lattice salt of one soil and planar projection, derived from the landscape surface seed; side projection salts are the
+ * hashed top salt so the shader needs one salt per soil. The top projection keeps the AI577 D3 lattice exactly.
+ * @param {number} seed @param {string} soilId @param {'top'|'side-x'|'side-z'} [projection]
  */
-export function landscapeMaterialSamplingSalt(seed, soilId, lattice = 'near') {
+export function landscapeMaterialSamplingSalt(seed, soilId, projection = 'top') {
     landscapeMaterialSamplingDefinition(soilId);
-    if (lattice !== 'near' && lattice !== 'macro') throw new Error(`[LandscapeMaterialSampling] Lattice must be near or macro; received ${lattice}`);
-    const near = landscapeNoiseSalt(seed, samplingComponent(soilId), 0);
-    return lattice === 'near' ? near : landscapeNoiseHash((near ^ LANDSCAPE_MATERIAL_SAMPLING.macroSaltMix) >>> 0);
+    const index = LANDSCAPE_MATERIAL_SAMPLING.projections.indexOf(projection);
+    if (index < 0) throw new Error(`[LandscapeMaterialSampling] Projection must be one of ${LANDSCAPE_MATERIAL_SAMPLING.projections.join(', ')}; received ${projection}`);
+    const top = landscapeNoiseSalt(seed, samplingComponent(soilId), 0);
+    return index === 0 ? top : landscapeNoiseHash((top ^ LANDSCAPE_MATERIAL_SAMPLING.projectionSaltMixes[index]) >>> 0);
+}
+
+/** Salt of the micro-detail lattice that accompanies a projection lattice salt. @param {number} salt uint32 */
+export function landscapeMicroSamplingSalt(salt) {
+    return landscapeNoiseHash((salt ^ LANDSCAPE_MICRO_DETAIL.saltMix) >>> 0);
 }
 
 /** Salt-derived lattice angle in radians, within the triangle grid's sixty-degree symmetry. @param {number} salt */
@@ -198,7 +206,7 @@ export function landscapeHexBlend({ values, weights, mode, mean = 0, clamp = fal
 
 /**
  * Terrain shader interface (chunks/landscape/stochastic_tiling.glsl): per soil slot uSoilStochastic vec4(cells per period,
- * rotation range in radians, V offset spread, contrast exponent), the near-lattice salts in uSoilStochasticSalts (two ivec4,
+ * rotation range in radians, V offset spread, contrast exponent), the top-projection salts in uSoilStochasticSalts (two ivec4,
  * soils 0-3 then 4-5) and uStochasticSettings vec4(contrast falloff, weight cutoff, variance exponent, samples per lattice).
  * The sample count is always three; it is a uniform so the shader compiler keeps one loop body. Disabled soils keep zero
  * rows, which selects one unrotated lattice sample at runtime. The slope limit is the shader constant LANDSCAPE_HEX_SLOPE_LIMIT.

@@ -4,7 +4,7 @@
 //   LANDSCAPE_MATERIAL_SAMPLING  compile-time mode: 0 single lattice sample, 1 hex linear, 2 hex contrast, 3 hex variance
 //   uSoilStochastic[soil]        vec4(lattice cells per texture period, rotation range in radians, V offset spread, contrast exponent);
 //                                zero cells keep one unrotated lattice sample at runtime
-//   uSoilStochasticSalts[2]      ivec4 near-lattice uint32 salts of soils 0-3 and 4-5, stored as two's-complement integers
+//   uSoilStochasticSalts[2]      ivec4 top-projection uint32 salts of soils 0-3 and 4-5, stored as two's-complement integers
 //   uStochasticSettings          vec4(contrast falloff, weight cutoff, variance-preserving exponent, samples per lattice = 3)
 // landscapeHexLattice(uv, salt, cells, exponent) locates the grid triangle containing uv and its normalized barycentric^exponent
 // pre-weights; landscapeHexVertex gives one vertex's sample coordinate (rotated about the vertex center plus a hashed offset,
@@ -26,11 +26,10 @@ struct LandscapeHexLattice {
     vec3 weights;
 };
 
-uint landscapeStochasticSalt(int soil, bool macroLattice) {
+uint landscapeStochasticSalt(int soil) {
     ivec4 salts = uSoilStochasticSalts[soil / 4];
     int lane = soil - soil / 4 * 4;
-    uint salt = uint(lane == 0 ? salts.x : lane == 1 ? salts.y : lane == 2 ? salts.z : salts.w);
-    return macroLattice ? landscapeWarpMix(salt ^ 0x6a09e667u) : salt;
+    return uint(lane == 0 ? salts.x : lane == 1 ? salts.y : lane == 2 ? salts.z : salts.w);
 }
 
 LandscapeHexLattice landscapeHexLattice(vec2 uv, uint salt, float cells, float exponent) {

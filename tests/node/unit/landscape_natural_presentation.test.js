@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
 import { createLandscapeNaturalPresentation, rasterizeLandscapeDisplayMask, landscapeNaturalPresentationBytes } from '../../../src/graphics/engine3d/landscape/LandscapeNaturalPresentation.js';
-import { createLandscapeMaterialTiling, landscapeMaterialMacroWeight } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialTiling.js';
+import { createLandscapeMaterialTiling, LANDSCAPE_MATERIAL_TILING } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialTiling.js';
 import { buildLandscapeMeshBuffers } from '../../../src/graphics/engine3d/landscape/LandscapeMeshBuffers.js';
 import { resolveLandscapeSoil } from '../../../src/app/landscape/LandscapeSoil.js';
 
@@ -88,15 +88,14 @@ test('Natural display: empty natural reference has an explicit loam fallback and
     assert.throws(() => rasterizeLandscapeDisplayMask(presentation, root.descriptor, new Uint8Array(1)), /dimensions/);
 });
 
-test('Landscape material tiling: projected footprint changes response weights smoothly without moving either world UV lattice', () => {
-    const grass = createLandscapeMaterialTiling(4), sand = createLandscapeMaterialTiling(30);
-    assert.equal(grass.nearTileMeters, 4); assert.equal(grass.macroTileMeters, 16);
-    assert.equal(sand.nearTileMeters, 30); assert.equal(sand.macroTileMeters, 120);
-    assert.equal(landscapeMaterialMacroWeight(grass, .001), 0);
-    assert.equal(landscapeMaterialMacroWeight(grass, 1), 1);
-    assert.equal(landscapeMaterialMacroWeight(grass, (grass.blendStartMetersPerPixel + grass.blendEndMetersPerPixel) / 2), .5);
-    const weights = [1600, 800, 400, 200, 100, 50, 25].map(zoom => landscapeMaterialMacroWeight(grass, 1000 / (1080 * zoom)));
-    assert.ok(weights.every((value, index) => !index || value >= weights[index - 1]));
+test('Landscape material tiling: every material keeps its physical period at every footprint and only paired micro detail has its own period', () => {
+    const grass = createLandscapeMaterialTiling(4), sand = createLandscapeMaterialTiling(30, { microTileMeters: 1.5 });
+    assert.equal(LANDSCAPE_MATERIAL_TILING.macroLattice, false, 'no four-times macro lattice magnifies distant features');
+    assert.deepEqual(grass, { model: LANDSCAPE_MATERIAL_TILING.id, tileMeters: 4, microTileMeters: null, microFadeStartMetersPerPixel: null, microFadeEndMetersPerPixel: null });
+    assert.equal(sand.tileMeters, 30); assert.equal(sand.microTileMeters, 1.5);
+    assert.ok(sand.microFadeStartMetersPerPixel < sand.microFadeEndMetersPerPixel && sand.microFadeEndMetersPerPixel < sand.microTileMeters);
+    assert.ok(Object.isFrozen(sand));
     assert.throws(() => createLandscapeMaterialTiling(0), /positive/);
-    assert.throws(() => landscapeMaterialMacroWeight(grass, NaN), /nonnegative/);
+    assert.throws(() => createLandscapeMaterialTiling(4, { microTileMeters: 8 }), /smaller than the material period/);
+    assert.throws(() => createLandscapeMaterialTiling(4, { microTileMeters: 0 }), /positive/);
 });

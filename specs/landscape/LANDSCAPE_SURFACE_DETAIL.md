@@ -138,10 +138,11 @@ Fine pages occupy additional layers of the existing nearest-filtered mask
 `DataArrayTexture`, after the native slots; they add no texture sampler (the fragment
 shader stays at fifteen). Fine slots are marked `meta.w = 2`. Per-slot uniform arrays are
 sized by the compile-time `LANDSCAPE_COVERAGE_SLOTS` define:
-`min(81, floor((maxFragmentUniforms − 134) / 4))` — seventeen native mask slots plus at most
-64 fine slots, four vectors per slot over 134 fixed vectors (warp, clump and D3 stochastic
-tiling uniforms included). This machine compiles 81 slots (1,024 vectors); the WebGL2 minimum
-of 224 vectors yields 22 slots (5 fine); devices below 202 vectors fail explicitly.
+`min(81, floor((maxFragmentUniforms − 142) / 4))` — seventeen native mask slots plus at most
+64 fine slots, four vectors per slot over 142 fixed vectors (warp, clump, D3 stochastic
+tiling and D4 macro/surface-layer uniforms included). This machine compiles 81 slots (1,024
+vectors); the WebGL2 minimum of 224 vectors yields 20 slots (3 fine); devices below 210 vectors
+fail explicitly.
 `uMaskSlotRanges` bounds every slot search to resident slots.
 
 The shader reconstruction of each page is the D1 reconstruction: cubic one-hot fallback,
@@ -199,7 +200,7 @@ progress 1.
 Capacity is `min(coverageSlots.detail, 64, floor(headroom / pageBytes))`, where headroom is
 the appearance GPU ceiling minus the native slots, every material's largest tier plus its
 32-pixel fallback (three mipped maps each) and one tier-transition overlap. It is 64 at
-384/192 and 256/128 MiB, 12 at the historical 128/64 MiB and 0 below 8 MiB of appearance GPU
+512/256, 384/192 and 256/128 MiB, 12 at the historical 128/64 MiB and 0 below 8 MiB of appearance GPU
 (16/8 MiB) or with detail off. The fine layers are a separate ledger entry
 (`appearance-surface-detail-array`, 17,438,976 bytes CPU and GPU at 64 slots); with fine layers
 present the first upload allocates storage and uploads only the root layer.
@@ -229,8 +230,9 @@ fine work; capacity- or budget-limited pages are reported as explicit degradatio
 ## Budgets
 
 User direction on 2026-10-03 prioritizes realism over memory limits until the D6
-optimization pass. The shipped landscape budget is therefore **384 MiB controlled CPU /
-192 MiB estimated GPU**, still with 8 MiB of uploads per frame. Appearance ceilings are
+optimization pass. The shipped landscape budget was therefore raised to **384 MiB controlled CPU /
+192 MiB estimated GPU** in D2 and to **512 MiB / 256 MiB** in D4 (whose 1024-pixel tiers otherwise
+starve terrain geometry at telephoto views), still with 8 MiB of uploads per frame. Appearance ceilings are
 half of each total. The historical 128/64 MiB profile left terrain geometry GPU-degraded
 in every AI577 capture view. At 256/128 MiB and above, geometry reaches its 1.5-pixel
 target in all four views. Explicit lower profiles remain supported, and fine detail

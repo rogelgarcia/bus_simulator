@@ -12,6 +12,7 @@ import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from './La
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
+const PROGRAM_COMPILE_WAIT_MS = 20000;
 const sourceBytes = descriptor => descriptor.channels.height.decodedByteLength + descriptor.channels.landCover.decodedByteLength;
 const arrayBytes = object => Object.values(object).reduce((sum, value) => sum + (ArrayBuffer.isView(value) ? value.byteLength : 0), 0);
 const inside = (bounds, x, z) => x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
@@ -66,6 +67,7 @@ export class LandscapeStreamer {
         this.uploadedBytes = 0;
         this.peakUploadBytes = 0;
         this.frameCostMs = 0;
+        this.programCompile = null;
         this.degradationReason = null;
         this.disposed = false;
         this.poolKey = `${this.instance}/worker-context`;
@@ -126,6 +128,8 @@ export class LandscapeStreamer {
             const record = this.reserveRecord(this.manifest.overviewId);
             if (!record) throw new Error(`Minimum terrain coverage cannot fit: ${this.degradationReason}`);
             await this.startRecord(record, this.loaded.chunk, 1000, this.loaded.chunk);
+            record.model = this.createModel(record);
+            await this.compileProgram(record.model, camera);
             this.uploadRecord(record, camera);
             record.model.mesh.visible = true;
             this.leaves.add(record.id);
@@ -134,16 +138,44 @@ export class LandscapeStreamer {
         } catch (error) { this.dispose(); throw error; }
     }
 
+    createModel(record) {
+        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling });
+        if (this.appearance) model.setAppearance(this.appearance.uniforms);
+        if (this.planning) model.setPlanning(this.planning.uniforms);
+        model.setMode(this.mode);
+        model.setBoundaries(this.boundaries);
+        model.setLodColors(this.lodColors);
+        model.mesh.visible = false;
+        this.scene.add(model.mesh);
+        return model;
+    }
+
+    /**
+     * Links the terrain program before its first draw. With KHR_parallel_shader_compile the driver compiles it off the main thread while
+     * the page stays responsive; without it the program reports ready at once and the first upload compiles it as before. The wait is
+     * bounded: past PROGRAM_COMPILE_WAIT_MS it reports `timedOut` and the first upload links the program synchronously.
+     * @param {any} model @param {any} camera
+     */
+    async compileProgram(model, camera) {
+        const started = performance.now(), parallel = this.renderer.extensions.has('KHR_parallel_shader_compile');
+        this.renderer.compile(model.mesh, camera, this.scene);
+        const program = this.renderer.properties.get(model.mesh.material).currentProgram;
+        if (typeof program?.isReady !== 'function') throw new Error('[Landscape] The renderer did not create a terrain program to compile');
+        this.programCompile = { parallel, pending: true, milliseconds: null, timedOut: false };
+        const gl = this.renderer.getContext();
+        gl.flush(); // submits the queued compile and link so the driver progresses while nothing else is drawn
+        while (!this.disposed && !program.isReady()) {
+            if (gl.isContextLost()) throw new Error('[Landscape] The WebGL context was lost while the terrain program compiled');
+            if (performance.now() - started > PROGRAM_COMPILE_WAIT_MS) break;
+            await new Promise(resolve => setTimeout(resolve, 16));
+        }
+        if (this.disposed) throw new DOMException('Landscape stream disposed while its terrain program compiled', 'AbortError');
+        this.programCompile = { parallel, pending: false, milliseconds: performance.now() - started, timedOut: !program.isReady() };
+    }
+
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;
-        record.model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling });
-        if (this.appearance) record.model.setAppearance(this.appearance.uniforms);
-        if (this.planning) record.model.setPlanning(this.planning.uniforms);
-        record.model.setMode(this.mode);
-        record.model.setBoundaries(this.boundaries);
-        record.model.setLodColors(this.lodColors);
-        record.model.mesh.visible = false;
-        this.scene.add(record.model.mesh);
+        record.model ??= this.createModel(record);
         record.model.upload(this.renderer, camera);
         record.uploaded = true;
         this.budget.update(record.key, { kind: 'terrain-resident' });
@@ -490,7 +522,7 @@ export class LandscapeStreamer {
             targetMet: achievedErrorPixels <= this.targetErrorPixels, degradationReason: this.degradationReason ?? (this.task ? 'loading-detail' : null),
             pending: pending.active + pending.queued, canceled: pending.canceled, loaded: this.loadedCount, evicted: this.evictedCount,
             queueDepth: pending.queued, activeWorkers: pending.active, uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadBytes, uploadLimitBytes: UPLOAD_BYTES_PER_FRAME, frameCostMs: this.frameCostMs,
-            prefetchIds: [...this.prefetchIds],
+            prefetchIds: [...this.prefetchIds], programCompile: this.programCompile,
             errors: [...this.failures].map(([id, value]) => ({ id, ...value })), budget: this.budget.snapshot(),
             sourceBytes: records.reduce((sum, record) => sum + (record.chunk ? sourceBytes(record.descriptor) : 0), 0),
             vertices: metrics.reduce((sum, metric) => sum + metric.vertices, 0), triangles: metrics.reduce((sum, metric) => sum + metric.triangles, 0),

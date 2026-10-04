@@ -5,7 +5,8 @@
 // requested only below a fully faded resident parent; its content identity selects a cached page or one worker
 // generation whose scratch is reserved before dispatch. Pages whose canonical support is a single display soil resolve
 // as uniform without a slot or upload, and so do their descendants. Fine residency never gates material tiers: fine
-// soils join the interests of their visible native ancestor at that page's tier.
+// soils join the interests of their visible native ancestor, and visible fine leaves lend their own projected densities
+// to the soils of their finest resolved page, so a material's texel demand follows the fine pages where it occurs.
 import { landscapeSurfaceDetailKey } from '../../../app/landscape/LandscapeSurfaceDetail.js';
 import { landscapeTextureBytes } from './LandscapeAppearanceBudget.js';
 import { LANDSCAPE_DETAIL_SLOTS_MAX } from './LandscapeCoverageSlots.js';
@@ -317,19 +318,28 @@ export class LandscapeSurfaceDetailPages {
         return best;
     }
 
-    interests(plan, interests, desiredTiers) {
+    // resident and uniform fine soils join the interests of their visible native ancestor; once that native page has fully faded in, each
+    // visible fine leaf lends its projected density to the soils of its finest resolved page (the native page while none is resolved)
+    interests(plan, interests, densityBySoil) {
         const visible = new Set(plan.visibleMaskIds), catalog = this.manifest.soil.catalog;
         for (const record of this.records()) {
             if (record.status !== 'resident' && record.status !== 'uniform') continue;
             const nativeId = record.descriptor.nativeAncestorId;
             if (!visible.has(nativeId)) continue;
-            const native = this.masks.records.get(nativeId), full = native?.status === 'resident' && native.progress === 1;
             for (const index of record.soils) {
                 if (!interests.has(index)) interests.set(index, new Set());
                 interests.get(index).add(nativeId);
-                const soilId = catalog[index].id, tier = full ? Number(plan.desiredTiers[soilId]) : 32;
-                desiredTiers[soilId] = String(Math.max(Number(desiredTiers[soilId] ?? 32), tier));
             }
+        }
+        for (const id of plan.detail?.visibleIds ?? []) {
+            const nativeId = this.index.nativeAncestorId(id), native = this.masks.records.get(nativeId);
+            if (!visible.has(nativeId) || native?.status !== 'resident' || native.progress !== 1) continue;
+            let soils = native.soils;
+            for (let current = id; this.index.isFine(current); current = this.index.parentId(current)) {
+                const record = this.masks.records.get(current);
+                if (record?.status === 'resident' || record?.status === 'uniform') { soils = record.soils; break; }
+            }
+            for (const index of soils) densityBySoil[catalog[index].id] = Math.max(densityBySoil[catalog[index].id] ?? 0, plan.detail.pixelsPerMeterById[id]);
         }
     }
 

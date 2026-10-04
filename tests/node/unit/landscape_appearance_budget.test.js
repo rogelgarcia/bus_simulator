@@ -15,7 +15,8 @@ test('Appearance budget: ceilings are half of each total and profiles up to the 
         assert.equal(shared.snapshot().entries.length, 0);
         return value;
     };
-    assert.deepEqual(limits(undefined), { limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
+    assert.deepEqual(limits(undefined), { limits: { cpuBytes: 256 * MIB, gpuBytes: 128 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
+    assert.deepEqual(limits({ cpuBytes: 384 * MIB, gpuBytes: 192 * MIB }), { limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
     assert.deepEqual(limits(HISTORICAL_PROFILE), { limits: { cpuBytes: 64 * MIB, gpuBytes: 32 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
     assert.deepEqual(limits({ cpuBytes: 80 * MIB, gpuBytes: 56 * MIB }), { limits: { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }, reserved: { cpuBytes: 7.5 * MIB, gpuBytes: 7 * MIB } });
     assert.deepEqual(limits({ cpuBytes: 48 * MIB, gpuBytes: 24 * MIB }), { limits: { cpuBytes: 24 * MIB, gpuBytes: 12 * MIB }, reserved: { cpuBytes: 4.5 * MIB, gpuBytes: 3 * MIB } });

@@ -168,11 +168,16 @@ can retain one geometry tile while masks and materials refine independently.
 
 Options are `previousMaskIds`, `previousTier`/`previousTiers`,
 `targetMaskPixels` (default 4) and `targetTexelPixels` (default 1.5). Outputs include
-complete `desiredMaskIds`, visible subset `visibleMaskIds`, per-soil
-`desiredTiers`, maximum `desiredTier`, `maskPixelsById`, `visibilityById`,
-`desiredMaskPixels`, targets, source/appearance revisions and `sourceLimited`.
-The renderer admits resources separately; a desired plan is not a claim that
-the budget allows every request or that the desired quality is already resident.
+complete `desiredMaskIds`, visible subset `visibleMaskIds`, `pixelsPerMeterById` (the
+projected density of every visible mask page), the view-wide per-soil `desiredTiers` and maximum
+`desiredTier` (every soil at the highest visible density; kept for diagnostics and for credit
+protected before any mask is resident), `maskPixelsById`, `visibilityById`, `desiredMaskPixels`,
+targets, source/appearance revisions and `sourceLimited`. With configured surface detail,
+`detail.pixelsPerMeterById` holds the density of every visible fine leaf and
+`detail.splitNativeIds` the native pages those leaves refine. Fine pages inherit their native
+page's height envelope and tile it, so a split native page without a visible leaf was only
+conservatively visible. The renderer admits resources separately; a desired plan is not a claim
+that the budget allows every request or that the desired quality is already resident.
 
 Mask selection refines when projected sample spacing exceeds its target,
 retaining covering ancestors outside the frustum. Material tier selection uses
@@ -183,16 +188,19 @@ refine at fixed position. Coarsening uses 65% hysteresis. Native mask resolution
 and 512-pixel source-page capacity stop refinement; larger values are explicitly
 source-limited rather than invented source detail.
 
-Optional factory configuration `materialTiling` maps soil IDs to positive
-`nearTileMeters`, `macroTileMeters`, `blendStartMetersPerPixel` and
-`blendEndMetersPerPixel`; the footprint interval must increase. Without this
-configuration, source `tileMeters` retains its original planning behavior. The
-renderer supplies calibrated physical near periods and four-times-larger macro
-periods. Admission conservatively includes the macro period across the visible
-footprint bound so a change of projection, zoom or surface orientation cannot
-silently retain tiers selected only for the denser near repetition. This can
-request more detail than an individual fragment uses; residency and degradation
-still obey the same shared budget.
+Optional factory configuration `materialTiling` maps soil IDs to `{tileMeters}`, the calibrated
+physical period the renderer samples at every distance (AI577 D4 removed the four-times macro
+lattice and its blend thresholds); soils without it use the sidecar `tileMeters`. Optional
+`materialTiers` maps soil IDs to their ascending available resolutions (default 32/128/512; the
+companion multiscale sidecar adds 1024). The pure
+`desiredMaterialTiers(densityBySoil, {previousTiers, targetTexelPixels})` gives every material its
+own tier (AI577 D4): its calibrated period times the highest projected density among the visible
+pages where it occurs, divided by the texel target, met by the smallest available tier. Each
+material coarsens with its own 65% hysteresis over its previous tier; a soil without a density
+requests its smallest tier. Page granularity (500 m native, 62.5 m finest generated pages) can
+still request more detail than a fragment uses. The renderer fits all material demands to the
+shared budget level by level ([LANDSCAPE_APPEARANCE_RUNTIME.md](LANDSCAPE_APPEARANCE_RUNTIME.md),
+"Material demand and budget fitting").
 
 ## Filtering, orientation and offline bounds
 
@@ -242,3 +250,42 @@ pre-I/O admission, failed/canceled/hash-corrupt loads, correct source filtering,
 repeatable preparation and manifest-last corruption refusal. Viewer/resource
 integration adds shared texture reference counting, GPU mip/staging accounting,
 bounded uploads, coarse fallback, transitions and the separate sea reference.
+
+## Multiscale companion (AI577 D4)
+
+`appearance/multiscale.json` is an optional, additive companion of one schema-1 sidecar; the
+schema-1 tiers and bytes stay unchanged. Format `landscape-appearance-multiscale` version 1
+records `landscapeId`, a content-derived `revision`, the extended `appearanceRevision` and its
+`bindingKey`, capabilities `{encoding: "rgba8", gpuCompression: "none", maxPageBytes: 4194304,
+tiers: [32, 128, 512, 1024]}`, `materials`, and provenance
+`{format: "landscape-appearance-multiscale-v1", sources, recipes}`. Every level has an exact field
+set and unknown fields are rejected. The file is at most 256 KiB, with an immutable
+`multiscale.<sha256>.json` snapshot and content-addressed pages.
+
+Each appearance soil, in appearance order, gets exactly one extra native 1024 tier with schema-1
+channel semantics (base color, normals, ORM with relief alpha); a smaller source fails instead of
+being upsampled. An optional `micro` entry
+`{materialId, tileMeters, encoding: "micro-normal-height-luminance-v1", luminanceRange,
+provenanceSourceIds, tiers}` adds one micro page per tier (32/128/512/1024, channel `micro`) so
+each micro page pairs with one base tier. RG hold the OpenGL detail-normal XY, B holds relative
+height (median-centered, normalized by the 1st/99th-percentile range) and A holds
+`0.5 + 0.5 · (L/mean − 1)/luminanceRange`, clamped, decoded as the luminance ratio
+`1 + (2A − 1) · luminanceRange`. Micro pages keep the schema-1 orientation and filters and are
+mean-neutral: a periodic three-pass box high-pass on log luminance, slopes and height keeps only
+detail finer than the recorded half-power wavelength.
+
+`validateLandscapeAppearanceMultiscale` is asynchronous (the binding key is verified with Web
+Crypto) and throws the typed `LandscapeAppearanceMultiscaleBindingError` for another landscape,
+appearance revision or binding, so pinned older appearances fall back to schema 1 explicitly.
+`loadLandscapeAppearanceMultiscale` returns null only for HTTP 404 and otherwise fails
+explicitly; `loadLandscapeAppearanceMultiscalePage` loads and authenticates the 1024 and micro
+pages that the schema-1 page loader rejects. Publication order is pages, immutable snapshot,
+schema-1 sidecar, `multiscale.json`, terrain; publishing a new appearance revision that would
+orphan an existing companion is refused.
+
+The D4 publication is `multiscale-eedd520219823e11ff6c7381` (`multiscale.07ec6c0a….json`,
+28,778 bytes, 38 provenance sources), extending `appearance-b3b39f64367c43336b3f45bd`. It adds
+1024 tiers for all six soils (12 unique 1024 pages, 50,331,648 bytes) and the Ground054 micro
+layer for sand and seabed (one unique page per tier, 5,312,512 bytes in all). Repeated
+preparation from the same inputs is byte-identical. Runtime selection, fallbacks and accounting
+are specified in [LANDSCAPE_APPEARANCE_RUNTIME.md](LANDSCAPE_APPEARANCE_RUNTIME.md).

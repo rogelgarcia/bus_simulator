@@ -103,7 +103,7 @@ world scale/orientation. The appearance planner can refine flat root geometry's
 materials without requesting fine height meshes. Its raw source page tiers are
 32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
 
-The same 384 MiB CPU / 192 MiB estimated GPU ledger (128/64 MiB before AI577 D2) covers both adapters. A base
+The same 512 MiB CPU / 256 MiB estimated GPU ledger (128/64 MiB before AI577 D2, 384/192 MiB in D2–D3) covers both adapters. A base
 appearance allowance and bounded view-demand credit protect planned material tiers
 before geometry admission. Delayed cover/halo work therefore cannot change their
 priority solely through completion order. Geometry and appearance share
@@ -140,8 +140,8 @@ Two module workers acquire, hash-check, decode and build bounded tile buffers.
 Root source data remains pinned for overview coverage and common border normals.
 Each worker owns one accounted root copy. Other source arrays, mesh/index arrays,
 queued jobs, staging copies and optional inspection buffers use the shared
-`LandscapeResidencyBudget`. Defaults are now 384 MiB controlled CPU buffers and
-192 MiB estimated GPU buffers (128/64 MiB in D3), with one tile upload and at most 8 MiB of uploads
+`LandscapeResidencyBudget`. Defaults are now 512 MiB controlled CPU buffers and
+256 MiB estimated GPU buffers (128/64 MiB in D3, 384/192 MiB in AI577 D2–D3), with one tile upload and at most 8 MiB of uploads
 per frame. No PBR pages or full-resolution masks are loaded in D3. Terrain colors
 come from the original cover palette and ordered semantic soil overrides.
 

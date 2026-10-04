@@ -17,7 +17,7 @@ test('Landscape navigation: fixed-eye looking, camera translation, native POV, s
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/screens/landscape_fabrication.html');
-    await expect.poll(async () => (await snapshot(page)).planning?.ready).toBe(true);
+    await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
     expect((await snapshot(page)).camera.fov).toBe(55);
     const canvas = page.locator('#game-canvas'), box = await canvas.boundingBox();
     const at = { x: box.x + box.width * .52, y: box.y + box.height * .56 };

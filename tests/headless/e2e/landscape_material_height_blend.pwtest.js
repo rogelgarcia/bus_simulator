@@ -1,4 +1,5 @@
-// Measures relative-relief dominance, clump relief parity, stochastic tiling parity and derivative stability through the unchanged production landscape shader.
+// Measures relative-relief dominance, clump relief parity, stochastic tiling parity, derivative stability and the AI577 D4 layers (micro detail, macro variation,
+// slope projection, split multiscale uploads) through the unchanged production landscape shader.
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -6,6 +7,8 @@ import path from 'node:path';
 import { landscapeClumpedCoverage, landscapeMaterialClumpRelief, landscapeMaterialHeightDetail, sampleLandscapeMaterialBlend } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialBlend.js';
 import { landscapeHexLattice, landscapeHexWeights, landscapeMaterialSamplingDefinition, landscapeMaterialSamplingSalt } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
+import { landscapeMacroField, landscapeMacroVariationDefinition, landscapeMacroVariationSalts } from '../../../src/graphics/engine3d/landscape/LandscapeMacroVariation.js';
+import { landscapeTextureBytes as landscapeTextureBytesNode } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai577/d1a', 'height-probe');
 const two = [0, 0, .5, .5, 0, 0], highThird = [255, 255, 0, 255, 255, 255], clumps = { seed: 4005984422 }, samplingSeed = 1207276911;
@@ -414,4 +417,316 @@ test('Landscape materials: production stochastic tiling follows the JS lattice, 
         expect(report.errors).toEqual([]);
         report.complete = true;
     } finally { await context.close(); await writeFile(path.join(artifacts, 'stochastic-report.json'), JSON.stringify(report, null, 2)); }
+});
+
+const routeProbe = async page => page.route('**/tests/headless/e2e/fixtures/landscape_*', async request => {
+    const file = new URL(request.request().url()).pathname.split('/').at(-1);
+    if (!['landscape_surface_probe.html', 'landscape_material_probe.js'].includes(file)) return request.fallback();
+    return request.fulfill({ contentType: file.endsWith('.js') ? 'text/javascript' : 'text/html', body: await readFile(`tests/headless/e2e/fixtures/${file}`, 'utf8') });
+});
+const collectErrors = (page, report) => {
+    page.on('pageerror', error => report.errors.push(error.message));
+    page.on('console', message => {
+        if (!['error', 'warning'].includes(message.type()) || !/shader|webgl|program|THREE|GL_INVALID/i.test(message.text())) return;
+        (message.type() === 'error' ? report.errors : report.warnings).push(message.text());
+    });
+};
+
+test('Landscape materials: AI577 D4 micro detail and macro variation follow their JavaScript mirrors, fade by footprint and leave legacy cases unchanged', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port).toBe('8002');
+    await mkdir(artifacts, { recursive: true });
+    const report = { format: 'landscape-d4-layer-gpu-probe', schemaVersion: 1, complete: false, createdAt: new Date().toISOString(), errors: [], warnings: [],
+        conditions: { size: 512, shader: 'production terrain programs (hex-contrast compiled, stochastic tiling disabled)', framebuffer: 'linear RGB8, no tone mapping or antialiasing',
+            micro: 'paired layer 2 of a three-layer surface array, 1.5 m period, resident resolution 512', macro: `landscape seed ${samplingSeed}` } };
+    const context = await browser.newContext({ baseURL, viewport: { width: 512, height: 512 }, deviceScaleFactor: 1 }), page = await context.newPage();
+    collectErrors(page, report);
+    try {
+        await routeProbe(page);
+        await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
+        const result = await page.evaluate(async ({ seed, legacyCases }) => {
+            const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+            const probe = createLandscapeMaterialProbe(), size = probe.size, snapshots = [];
+            const center = buffer => Array.from(buffer.slice(((size / 2) * size + size / 2) * 4, ((size / 2) * size + size / 2) * 4 + 3));
+            const pixel = (buffer, row, column) => Array.from(buffer.slice((row * size + column) * 4, (row * size + column) * 4 + 3));
+            const maxDifference = (a, b) => { let largest = 0; for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 3; c++) largest = Math.max(largest, Math.abs(a[i + c] - b[i + c])); return largest; };
+            const result = {};
+            try {
+                // micro luminance: albedo scales by 1 + (2A - 1) * luminance scale while the fade is complete
+                probe.setCoverage([0, 0, 1, 0, 0, 0]); probe.setSynthetic({ resolution: 512 });
+                probe.setColors(Array.from({ length: 6 }, () => [0, 0, 0])); probe.setMicro(2); const black = center(probe.draw());
+                probe.setColors(Array.from({ length: 6 }, () => [80, 80, 80]));
+                probe.setSynthetic({ resolution: 512 }); const plain = probe.draw().slice();
+                probe.setMicro(2); const neutral = probe.draw().slice();
+                result.neutralMicroDifference = maxDifference(plain, neutral);
+                result.luminance = [];
+                for (const alpha of [0, 64, 191, 255]) {
+                    probe.setMicro(2, { data: new Uint8Array([128, 128, 128, alpha]) });
+                    const value = center(probe.draw()), base = center(neutral);
+                    result.luminance.push({ alpha, measured: (value[1] - black[1]) / (base[1] - black[1]), expected: (1 + (alpha / 255 * 2 - 1) * .4) / (1 + (128 / 255 * 2 - 1) * .4) });
+                }
+                // a footprint beyond the micro fade leaves no trace
+                probe.setMicro(2, { data: new Uint8Array([128, 128, 128, 255]) }); const farMicro = probe.draw({ span: 400 }).slice();
+                probe.setMicro(2); const farNeutral = probe.draw({ span: 400 }).slice();
+                result.farFadeDifference = maxDifference(farMicro, farNeutral);
+                // micro slopes add to base slopes: a tilted micro normal lights like the same base normal
+                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setMicro(2, { normal: [204, 128, 230, 255] }); const baseTilt = center(probe.draw());
+                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setMicro(2, { data: new Uint8Array([204, 128, 128, 128]) }); const microTilt = center(probe.draw());
+                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setMicro(2); const untilted = center(probe.draw());
+                result.normal = { baseTilt, microTilt, untilted };
+                // micro relief joins the height competition of a two-material transition
+                probe.setCoverage([0, 0, .5, .5, 0, 0]); probe.setSynthetic({ resolution: 512 });
+                const balanced = probe.measureWeights().weights;
+                probe.setMicro(2, { data: new Uint8Array([128, 128, 255, 128]) }); const raised = probe.measureWeights().weights;
+                probe.setMicro(2, { data: new Uint8Array([128, 128, 0, 128]) }); const lowered = probe.measureWeights().weights;
+                result.relief = { balanced, raised, lowered };
+                // landscape-scale variation: a gray albedo keeps its hue and scales by 2^(value * tone)
+                probe.setCoverage([0, 0, 0, 1, 0, 0]); probe.setSynthetic({ resolution: 512 });
+                result.macro = [];
+                for (const [x, z] of [[1024, 1024], [1311.5, 977.25], [733.75, 1488.5]]) {
+                    probe.setCenter([x, z]);
+                    probe.setColors(Array.from({ length: 6 }, () => [0, 0, 0])); probe.setLayers(); const dark = center(probe.draw());
+                    probe.setColors(Array.from({ length: 6 }, () => [80, 80, 80])); const off = center(probe.draw());
+                    probe.setLayers({ macroSeed: seed }); const on = center(probe.draw());
+                    probe.setColors(Array.from({ length: 6 }, () => [0, 0, 0])); const darkOn = center(probe.draw());
+                    result.macro.push({ x, z, ratio: (on[1] - darkOn[1]) / (off[1] - dark[1]), hueShift: Math.max(...on.map((value, channel) => Math.abs((value - darkOn[channel]) / (on[1] - darkOn[1]) - (off[channel] - dark[channel]) / (off[1] - dark[1])))) });
+                    probe.setLayers();
+                }
+                probe.setCenter([1024, 1024]);
+                snapshots.push({ id: '09-d4-macro-field', dataUrl: (() => { probe.setColors(Array.from({ length: 6 }, () => [80, 80, 80])); probe.setLayers({ macroSeed: seed }); probe.draw({ span: 1200 }); const url = probe.snapshot(); probe.setLayers(); return url; })() });
+                // legacy boundary bytes are unchanged by enabled but neutral layers on a flat plane
+                probe.setSynthetic({ enabled: false }); probe.setBoundary(); probe.setPatternedHeights(); probe.uniforms.uSurfaceBlendEnabled.value = 1;
+                probe.setColors([[80, 80, 80], [80, 80, 80], [120, 28, 12], [12, 112, 30], [80, 80, 80], [80, 80, 80]]);
+                const legacy = probe.draw().slice();
+                probe.setLayers({ projection: true, normalFiltering: true });
+                const layered = probe.draw().slice();
+                result.legacyBoundaryDifference = maxDifference(legacy, layered);
+                probe.setLayers();
+                // legacy weight cases with neutral layers enabled
+                result.legacyWeights = [];
+                for (const value of legacyCases) {
+                    probe.setCoverage(value.weights); probe.setSynthetic(value); probe.setLayers({ projection: true, normalFiltering: true });
+                    result.legacyWeights.push({ id: value.id, ...probe.measureWeights({ span: value.span ?? 4 }) });
+                    probe.setLayers();
+                }
+                result.snapshots = snapshots;
+                result.renderer = probe.rendererName;
+                return result;
+            } finally { probe.dispose(); }
+        }, { seed: samplingSeed, legacyCases: cases.filter(value => !value.clumps && !value.center && !value.id.startsWith('tier-arrival-')) });
+        for (const snapshot of result.snapshots) await writeFile(path.join(artifacts, `${snapshot.id}.png`), Buffer.from(snapshot.dataUrl.split(',')[1], 'base64'));
+        delete result.snapshots;
+        Object.assign(report, result);
+        expect(result.neutralMicroDifference, 'a neutral micro layer changes nothing').toBeLessThanOrEqual(1);
+        for (const value of result.luminance) expect(Math.abs(value.measured - value.expected), `micro luminance alpha ${value.alpha}`).toBeLessThanOrEqual(.02);
+        expect(result.farFadeDifference, 'micro detail has faded at a far footprint').toBeLessThanOrEqual(1);
+        expect(Math.max(...result.normal.baseTilt.map((byte, channel) => Math.abs(byte - result.normal.microTilt[channel]))), 'micro slopes light like equal base slopes').toBeLessThanOrEqual(2);
+        expect(Math.max(...result.normal.untilted.map((byte, channel) => Math.abs(byte - result.normal.microTilt[channel]))), 'the tilt is visible').toBeGreaterThan(8);
+        expect(Math.abs(result.relief.balanced[2] - .5)).toBeLessThan(.02);
+        const metersPerPixel = 4 / 512, details = Array(6).fill(0).map(() => landscapeMaterialHeightDetail({ periodMeters: 4, resolution: 512, metersPerPixel }));
+        for (const [label, micro] of [['raised', 1], ['lowered', 0]]) {
+            const heights = [.5, .5, .5 + .3 * (micro - .5), .5, .5, .5].map(value => Math.round(value * 255) / 255), expected = sampleLandscapeMaterialBlend({ weights: [0, 0, .5, .5, 0, 0], heights, details }).weights;
+            report.relief[`${label}Expected`] = expected;
+            expect(Math.max(...expected.map((weight, soil) => Math.abs(weight - result.relief[label][soil]))), `micro relief ${label} matches the competition mirror`).toBeLessThanOrEqual(.03);
+        }
+        expect(result.relief.raised[2], 'raised micro relief wins the transition').toBeGreaterThan(.6);
+        expect(result.relief.lowered[2], 'lowered micro relief yields the transition').toBeLessThan(.4);
+        const salts = landscapeMacroVariationSalts(samplingSeed), loam = landscapeMacroVariationDefinition('loam');
+        report.macro = result.macro.map(value => {
+            const field = landscapeMacroField({ x: value.x + metersPerPixel / 2, z: value.z - metersPerPixel / 2, metersPerPixel, salts });
+            return { ...value, field, expected: 2 ** (loam.value * field.tone) };
+        });
+        for (const value of report.macro) {
+            expect(Math.abs(value.ratio - value.expected), `macro value at ${value.x},${value.z}`).toBeLessThanOrEqual(.015);
+            expect(value.hueShift, 'gray albedo stays gray').toBeLessThanOrEqual(.03);
+        }
+        expect(new Set(report.macro.map(value => value.ratio.toFixed(3))).size, 'the field varies over the landscape').toBeGreaterThan(1);
+        expect(result.legacyBoundaryDifference, 'neutral layers keep the legacy boundary bytes').toBeLessThanOrEqual(1);
+        for (const measured of result.legacyWeights) {
+            const value = cases.find(entry => entry.id === measured.id), expected = expectedWeights(value);
+            expect(Math.max(...expected.map((weight, soil) => Math.abs(weight - measured.weights[soil]))), `${value.id} with neutral layers enabled`).toBeLessThanOrEqual(.025);
+        }
+        expect(report.errors).toEqual([]);
+        report.complete = true;
+    } finally { await context.close(); await writeFile(path.join(artifacts, 'd4-layer-report.json'), JSON.stringify(report, null, 2)); }
+});
+
+test('Landscape materials: slope-adaptive projection removes stretching on steep planes, keeps gentle ground exact and shows no projection seams', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port).toBe('8002');
+    await mkdir(artifacts, { recursive: true });
+    const report = { format: 'landscape-d4-projection-gpu-probe', schemaVersion: 1, complete: false, createdAt: new Date().toISOString(), errors: [], warnings: [],
+        conditions: { size: 512, span: '8 m per frame on planes viewed along their normal, screen up uphill', texture: 'nearest 16x16 checker per 4 m period, stochastic tiling disabled',
+            density: 'checker transitions per meter along the fall line (screen column) and across it (screen row); unstretched density is 4 per meter' } };
+    const context = await browser.newContext({ baseURL, viewport: { width: 512, height: 512 }, deviceScaleFactor: 1 }), page = await context.newPage();
+    collectErrors(page, report);
+    try {
+        await routeProbe(page);
+        await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
+        const result = await page.evaluate(async () => {
+            const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+            const probe = createLandscapeMaterialProbe(), size = probe.size, span = 8, snapshots = [];
+            const transitions = (buffer, along) => {
+                let count = 0;
+                for (let i = 1; i < size; i++) {
+                    const a = along ? ((i - 1) * size + size / 2) * 4 : (size / 2 * size + i - 1) * 4, b = along ? (i * size + size / 2) * 4 : (size / 2 * size + i) * 4;
+                    if (Math.abs(buffer[a + 1] - buffer[b + 1]) > 30) count++;
+                }
+                return count / span;
+            };
+            const maxDifference = (a, b) => { let largest = 0; for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 3; c++) largest = Math.max(largest, Math.abs(a[i + c] - b[i + c])); return largest; };
+            const result = { planes: [] };
+            try {
+                probe.setCoverage([0, 0, 0, 1, 0, 0]); probe.setSynthetic({ resolution: 512 }); probe.setCenter([1024, 1024]);
+                const checker = new Uint8Array(16 * 16 * 4);
+                for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) checker.set((x + y) % 2 ? [90, 90, 90, 255] : [5, 5, 5, 255], (y * 16 + x) * 4);
+                const flat = probe.uniforms.uSoilBase3.value;
+                for (const tiltDegrees of [0, 15, 30, 45, 60, 80]) {
+                    probe.setPlane({ tiltDegrees, azimuthDegrees: 0 });
+                    probe.uniforms.uSoilBase3.value = probe.texture(checker, 16, 1, false, true);
+                    probe.setLayers({ projection: false }); const off = probe.draw({ span }).slice();
+                    probe.setLayers({ projection: true }); const on = probe.draw({ span }).slice();
+                    if (tiltDegrees === 60) { snapshots.push({ id: '10-d4-projection-60-on', dataUrl: probe.snapshot() }); probe.setLayers({ projection: false }); probe.draw({ span }); snapshots.push({ id: '11-d4-projection-60-off', dataUrl: probe.snapshot() }); }
+                    probe.uniforms.uSoilBase3.value = flat;
+                    probe.setLayers({ projection: false }); const flatOff = probe.draw({ span }).slice();
+                    probe.setLayers({ projection: true }); const flatOn = probe.draw({ span }).slice();
+                    result.planes.push({ tiltDegrees, offAlong: transitions(off, true), offAcross: transitions(off, false), onAlong: transitions(on, true), onAcross: transitions(on, false),
+                        gentleDifference: tiltDegrees < 24 ? maxDifference(off, on) : null, flatTextureDifference: maxDifference(flatOff, flatOn) });
+                }
+                // a curved surface through every slope: an 8x zoom must shrink the largest step, so projection blends have no seam
+                probe.setPlane({ tiltDegrees: 0 });
+                const smooth = new Uint8Array(64 * 64 * 4);
+                for (let ty = 0; ty < 64; ty++) for (let tx = 0; tx < 64; tx++) smooth.set([Math.round(40 + 30 * Math.sin(2 * Math.PI * tx / 64) * Math.cos(2 * Math.PI * ty / 64)), Math.round(40 + 30 * Math.sin(2 * Math.PI * (tx + ty) / 64)), 40, 255], (ty * 64 + tx) * 4);
+                probe.uniforms.uSoilBase3.value = probe.texture(smooth, 64);
+                probe.setLayers({ projection: true });
+                const steps = [];
+                for (const tiltDegrees of [20, 22, 24, 24.6, 25, 26, 28, 32, 36, 40, 44, 45, 46, 50, 60, 70]) {
+                    probe.setPlane({ tiltDegrees, azimuthDegrees: 30 }); probe.setLayers({ projection: true });
+                    const value = probe.draw({ span: 2 }).slice(), center = Array.from(value.slice((size / 2 * size + size / 2) * 4, (size / 2 * size + size / 2) * 4 + 3));
+                    probe.setLayers({ projection: false }); const reference = probe.draw({ span: 2 }).slice();
+                    steps.push({ tiltDegrees, center, differenceFromTop: maxDifference(value, reference) });
+                }
+                result.sweep = steps;
+                result.snapshots = snapshots;
+                result.renderer = probe.rendererName;
+                return result;
+            } finally { probe.dispose(); }
+        });
+        for (const snapshot of result.snapshots) await writeFile(path.join(artifacts, `${snapshot.id}.png`), Buffer.from(snapshot.dataUrl.split(',')[1], 'base64'));
+        delete result.snapshots;
+        Object.assign(report, result);
+        for (const plane of result.planes) {
+            const radians = plane.tiltDegrees * Math.PI / 180;
+            expect(Math.abs(plane.offAlong - 4 * Math.cos(radians)), `top projection density at ${plane.tiltDegrees} degrees`).toBeLessThanOrEqual(.35);
+            if (plane.tiltDegrees <= 30 || plane.tiltDegrees >= 60) expect(Math.abs(plane.onAcross - 4), `across-slope density at ${plane.tiltDegrees} degrees`).toBeLessThanOrEqual(.35);
+            expect(plane.flatTextureDifference, `constant maps light identically at ${plane.tiltDegrees} degrees`).toBeLessThanOrEqual(1);
+            if (plane.gentleDifference !== null) expect(plane.gentleDifference, `gentle ${plane.tiltDegrees} degree ground keeps the top projection exactly`).toBe(0);
+            if (plane.tiltDegrees >= 60) expect(plane.onAlong / plane.onAcross, `no stretching at ${plane.tiltDegrees} degrees`).toBeGreaterThan(.85);
+            if (plane.tiltDegrees >= 60) expect(plane.offAlong / plane.offAcross, `the top projection alone stretches at ${plane.tiltDegrees} degrees`).toBeLessThan(.55);
+        }
+        const sweep = result.sweep, at = degrees => sweep.find(value => value.tiltDegrees === degrees).differenceFromTop;
+        expect(sweep.filter(value => value.tiltDegrees < 24.6).every(value => value.differenceFromTop === 0), 'below the activation slope the projection is exactly the top projection').toBe(true);
+        expect(at(25), 'side projections fade in from zero above the activation slope').toBeLessThanOrEqual(3);
+        for (const [low, high] of [[25, 26], [26, 28], [28, 32], [32, 36], [36, 40]]) expect(at(high) + 2, `the side share grows continuously from ${low} to ${high} degrees`).toBeGreaterThanOrEqual(at(low));
+        expect(report.errors).toEqual([]);
+        report.complete = true;
+    } finally { await context.close(); await writeFile(path.join(artifacts, 'd4-projection-report.json'), JSON.stringify(report, null, 2)); }
+});
+
+test('Landscape materials: synthetic 1024 micro tiers upload in steps within the frame allowance, blend directly between tiers and fall back explicitly', async ({ browser }, testInfo) => {
+    test.setTimeout(120000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port).toBe('8002');
+    const context = await browser.newContext({ baseURL }), page = await context.newPage();
+    const report = { format: 'landscape-d4-multiscale-upload-probe', schemaVersion: 1, complete: false, createdAt: new Date().toISOString(), errors: [], warnings: [] };
+    collectErrors(page, report);
+    try {
+        await routeProbe(page);
+        await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
+        const result = await page.evaluate(async () => {
+            const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+            const { LandscapeMaterialPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialPages.js');
+            const { LandscapeResidencyBudget } = await import('/src/app/landscape/LandscapeResidencyBudget.js');
+            const { LandscapeAppearanceBudget, landscapeTextureBytes } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js');
+            const { createLandscapeAppearanceUniforms, LANDSCAPE_MASK_SLOTS } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
+            const probe = createLandscapeMaterialProbe(), shared = new LandscapeResidencyBudget(), budget = new LandscapeAppearanceBudget(shared, 'multiscale-probe');
+            const page = (resolution, name) => ({ url: `pages/${name}-${resolution}.rgba8`, width: resolution, height: resolution, sha256: `${name}${resolution}`.padEnd(64, '0') });
+            const schemaTier = resolution => ({ id: String(resolution), resolution, channels: { baseColor: page(resolution, 'base'), normal: page(resolution, 'normal'), orm: page(resolution, 'orm') } });
+            const appearance = { materials: [{ soilId: 'sand', materialId: 'pbr.aerial_beach_01', tileMeters: 30, roughnessInputRange: { min: 0, max: 1 }, tiers: [32, 128, 512].map(schemaTier) }] };
+            const tier = (resolution, source) => ({ id: String(resolution), resolution, pages: [...['baseColor', 'normal', 'orm'].map(role => ({ role, source, page: page(resolution, role) })), { role: 'micro', source: 'multiscale', page: page(resolution, 'micro') }] });
+            const multiscale = { status: 'active', reason: null, active: true, maxResolution: 1024,
+                materials: [{ soilId: 'sand', materialId: 'pbr.aerial_beach_01', maps: 4, micro: { materialId: 'pbr.micro', tileMeters: 1.5, luminanceRange: .4, encoding: 'micro-normal-height-luminance-v1' },
+                    tiers: [tier(32, 'appearance'), tier(128, 'appearance'), tier(512, 'appearance'), tier(1024, 'multiscale')] }] };
+            const requests = [];
+            let failNext = false;
+            const pool = { request: async ({ resolution, pages }) => {
+                requests.push({ resolution, roles: pages.map(value => value.role), sources: pages.map(value => value.source) });
+                if (failNext && pages.some(value => value.source === 'multiscale')) { failNext = false; throw new Error('synthetic multiscale page hash mismatch'); }
+                return { baseColor: new Uint8Array(resolution * resolution * 4).fill(120), surface: new Uint8Array(resolution * resolution * 4 * (pages.length - 1)).fill(128) };
+            } };
+            const uniforms = createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS);
+            const pages = new LandscapeMaterialPages({ appearance, multiscale, budget, pool, renderer: probe.renderer, uniforms, prefix: 'multiscale-probe' });
+            const settle = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 0)); };
+            const allowance = 8 * 1024 * 1024, frames = [];
+            const run = async (count, dt = .05) => { for (let i = 0; i < count; i++) { await settle(); const bytes = pages.update(dt, allowance); const snapshot = pages.snapshot(); frames.push({ bytes, pending: snapshot.pendingTier, transition: snapshot.transition, bound: snapshot.materials[0].resolution }); } };
+            const result = { mapBytes1024: landscapeTextureBytes(1024) };
+            try {
+                await pages.initialize();
+                const sand = pages.materials[0];
+                pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '32' });
+                await run(3);
+                result.coarse = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: uniforms.uSoilTiling.value[0].y, surfaceLayers: uniforms.uSoilSurface0.value?.image.depth };
+                pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '1024' });
+                frames.length = 0;
+                await settle();
+                frames.push({ bytes: pages.update(.05, allowance), pending: pages.snapshot().pendingTier, transition: null, bound: sand.current?.resolution });
+                result.decodeReservation = budget.snapshot();
+                await run(12);
+                result.upgradeFrames = frames.map(frame => ({ ...frame }));
+                result.after1024 = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: [...uniforms.uSoilTiling.value[0].toArray()], heightStrength: uniforms.uSoilState.value[0].z, budget: budget.snapshot(), uploads: pages.snapshot().uploads };
+                // coarsening to 512 loads 512 and blends directly from 1024
+                frames.length = 0;
+                pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '512' });
+                await run(14);
+                result.downFrames = frames.map(frame => ({ ...frame }));
+                result.after512 = { bound: sand.current?.resolution, records: [...pages.records.values()].map(record => record.resolution).sort((a, b) => a - b), budget: budget.snapshot() };
+                // a failing companion page returns the material to its schema-1 tiers explicitly
+                failNext = true;
+                pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '1024' });
+                await run(6);
+                result.failure = { failures: pages.snapshot().multiscaleFailures, tiers: sand.tiers.map(value => value.resolution), maps: sand.maps, micro: uniforms.uSoilTiling.value[0].y, bound: sand.current?.resolution };
+                result.requests = requests;
+            } finally { pages.dispose(); budget.dispose(); probe.dispose(); }
+            result.disposed = shared.snapshot();
+            return result;
+        });
+        Object.assign(report, result);
+        expect(result.coarse).toEqual({ bound: 32, maps: 4, micro: 1.5, surfaceLayers: 3 });
+        expect(result.decodeReservation.cpuBytes).toBeGreaterThanOrEqual(2 * 1024 * 1024 * 16);
+        const uploads = result.upgradeFrames.map(frame => frame.bytes).filter(bytes => bytes > 0);
+        expect(uploads, 'one 1024 map per frame under the 8 MiB allowance').toEqual([result.mapBytes1024, result.mapBytes1024, result.mapBytes1024, result.mapBytes1024]);
+        expect(result.upgradeFrames.every(frame => frame.bytes <= 8 * 1024 * 1024)).toBe(true);
+        const firstTransition = result.upgradeFrames.findIndex(frame => frame.transition);
+        const lastUpload = result.upgradeFrames.findLastIndex(frame => frame.bytes > 0);
+        expect(firstTransition, 'the transition starts only after the last map').toBeGreaterThanOrEqual(lastUpload);
+        expect(result.upgradeFrames.filter(frame => frame.pending?.status === 'uploading').every(frame => frame.bound === 32), 'the coarse tier stays bound while maps upload').toBe(true);
+        expect(result.after1024.bound).toBe(1024); expect(result.after1024.maps).toBe(4);
+        expect(result.after1024.micro).toEqual([30, 1.5, 1, .4]); expect(result.after1024.heightStrength).toBeCloseTo(.3, 6);
+        expect(result.after1024.uploads.splitTiers).toBeGreaterThanOrEqual(1); expect(result.after1024.uploads.maxFramesPerTier).toBe(4);
+        expect(result.after1024.budget.gpuBytes).toBe(landscapeTextureBytesNode(32) * 4 + landscapeTextureBytesNode(1024) * 4);
+        expect(result.downFrames.some(frame => frame.transition?.from === 1024 && frame.transition?.to === 512), 'coarsening blends 1024 directly to 512').toBe(true);
+        expect(result.downFrames.some(frame => frame.bound === 32), 'coarsening never falls back to the 32 fallback').toBe(false);
+        expect(result.after512.bound).toBe(512); expect(result.after512.records).toEqual([32, 512]);
+        expect(result.failure.failures.length).toBe(1); expect(result.failure.failures[0].message).toMatch(/hash mismatch/);
+        expect(result.failure.tiers).toEqual([32, 128, 512]); expect(result.failure.maps).toBe(3); expect(result.failure.micro).toBe(0);
+        expect(result.requests.find(request => request.resolution === 1024).roles).toEqual(['baseColor', 'normal', 'orm', 'micro']);
+        expect(result.disposed.cpuBytes).toBe(0); expect(result.disposed.gpuBytes).toBe(0); expect(result.disposed.leaseCount).toBe(0);
+        expect(report.errors).toEqual([]);
+        report.complete = true;
+    } finally { await context.close(); await mkdir(artifacts, { recursive: true }); await writeFile(path.join(artifacts, 'd4-multiscale-upload-report.json'), JSON.stringify(report, null, 2)); }
 });

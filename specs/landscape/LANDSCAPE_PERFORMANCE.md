@@ -22,7 +22,7 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | --- | --- |
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
-| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 384 / 192 MiB since AI577 D2 |
+| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3) |
 | Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |
@@ -80,7 +80,7 @@ The separate analytic inventory is exact for its stated layouts:
 - A single float32 XYZ position array and uint32 triangle-list index array require `2049² × 12 + 8,388,608 × 3 × 4 = 151,044,108` bytes before normals, materials, textures, or temporary overlap. This is a specified indexed-reference layout, not a universal lower bound across all possible compression/topology schemes.
 - Summing `estimateLandscapeMeshBuffers()` across all 64 native tiles gives the current adapter's full native geometry inventory, including skirts, normals, parent attributes, colors and indices; the measured receipt reports that arithmetic separately.
 
-Even the stated position/index-only reference (144.05 MiB) exceeds the historical 64 MiB and constrained 24 MiB GPU profiles; it fits the shipped 192 MiB profile, while the full native adapter inventory (224.41 MiB) exceeds every profile. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
+Even the stated position/index-only reference (144.05 MiB) exceeds the historical 64 MiB and constrained 24 MiB GPU profiles; it fits the shipped 256 MiB profile, while the full native adapter inventory (224.41 MiB) exceeds every profile. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
 
 ## Recorded results
 

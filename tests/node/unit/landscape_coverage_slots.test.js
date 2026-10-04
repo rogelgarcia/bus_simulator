@@ -12,8 +12,11 @@ const shader = await readFile(new URL('../../../src/graphics/shaders/materials/l
 const warpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_warp.glsl', import.meta.url), 'utf8');
 const clumpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/material_clumps.glsl', import.meta.url), 'utf8');
 const samplingChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/stochastic_tiling.glsl', import.meta.url), 'utf8');
+const macroChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/macro_variation.glsl', import.meta.url), 'utf8');
+const layerChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_layers.glsl', import.meta.url), 'utf8');
 const expandedShader = shader.replace('#include <shaderlib:landscape/surface_warp>', warpChunk).replace('#include <shaderlib:landscape/material_clumps>', clumpChunk)
-    .replace('#include <shaderlib:landscape/stochastic_tiling>', samplingChunk);
+    .replace('#include <shaderlib:landscape/stochastic_tiling>', samplingChunk).replace('#include <shaderlib:landscape/macro_variation>', macroChunk)
+    .replace('#include <shaderlib:landscape/surface_layers>', layerChunk);
 const warpSizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
 const count = (pattern) => (shader.match(pattern) ?? []).length;
 
@@ -38,18 +41,19 @@ test('Coverage slots: every slot array and slot loop in the terrain shader uses 
 });
 
 test('Coverage slots: conservative uniform accounting sizes the arrays from device fragment-uniform capacity', () => {
-    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/,
-        'the terrain shader compiles the shared recipe warp chunk and the clump and stochastic tiling chunks that reuse its hashing');
+    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>\s+#include <shaderlib:landscape\/macro_variation>\s+#include <shaderlib:landscape\/surface_layers>/,
+        'the terrain shader compiles the shared recipe warp chunk and the clump, stochastic tiling, macro variation and surface layer chunks that reuse its hashing');
     assert.throws(() => landscapeFragmentUniformVectors(expandedShader), /unsupported array size LANDSCAPE_SURFACE_WARP_OCTAVES/, 'the warp octave arrays need their compile-time size');
     const vectors = landscapeFragmentUniformVectors(expandedShader, warpSizes);
-    assert.deepEqual(vectors, { fixedVectors: 134, slotVectors: 4 },
-        '93 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, 18 clump relief vectors and 9 stochastic tiling vectors');
+    assert.deepEqual(vectors, { fixedVectors: 142, slotVectors: 4 },
+        '81 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, 18 clump relief vectors, 9 stochastic tiling vectors, '
+        + '6 packed soil state vectors (replacing the 12 scalar height/resolution vectors), 12 macro variation vectors and 2 surface layer vectors');
     assert.equal(LANDSCAPE_THREE_FRAGMENT_UNIFORM_VECTORS, 7);
     assert.deepEqual(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024, ...vectors }),
-        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 134, slotUniformVectors: 4 });
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 22, 'the WebGL2 minimum still admits 5 detail slots');
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 202, ...vectors }).detail, 0);
-    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 201, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 201 fits 16 terrain coverage slots/);
+        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 142, slotUniformVectors: 4 });
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 20, 'the WebGL2 minimum still admits 3 detail slots');
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 210, ...vectors }).detail, 0);
+    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 209, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 209 fits 16 terrain coverage slots/);
     assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024.5, ...vectors }), /positive integer maxFragmentUniforms/);
 });
 

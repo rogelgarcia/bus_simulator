@@ -179,7 +179,7 @@ struct-member arrays that the D3D shader backend cannot address reliably.
 
 View planning and demand admission run before geometry admission. The protected
 credit is bounded by the appearance ceilings (half of each total since AI577 D2) and the shared total
-budget (384/192 MiB shipped since AI577 D2). It includes intended material tiers and one sequential decode allowance;
+budget (512/256 MiB shipped since AI577 D4; 384/192 MiB in D2–D3). It includes intended material tiers and one sequential decode allowance;
 resident or pending resources replace the credit instead of being double-counted.
 This removes a race where longer halo I/O let geometry consume intended material
 capacity first. Decreasing demand releases unused credit promptly. The base

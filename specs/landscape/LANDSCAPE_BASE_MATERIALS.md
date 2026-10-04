@@ -65,6 +65,32 @@ The default landscape soil catalog uses these corrected bindings for future
 imports and newly created landscapes. Saved revision manifests retain their own
 material IDs and continue to resolve their original appearance snapshots.
 
+## D4 micro detail source
+
+AI577 D4 adds a micro layer only where measured texel density requires it. The 4-meter
+materials reach 3.9 mm per texel at their 1024 tier, so only sand and seabed (30-meter accepted
+sand, 29.3 mm per texel at 1024) receive one. About 25 Poly Haven and ambientCG close-up sand
+candidates were compared with contact sheets, shaded one-tile and 4×4 renders and stationarity
+metrics. Every candidate in the preferred 0.5–2 m range was disqualified: sand_02 has shoe prints
+in its relief, sand_03 a tile-scale relief band (1.94× energy variation across X),
+damp_beach_sand pits, damp_sand debris, dense_sand and park_sand footprints or tracks,
+Ground055S directional wind ripples, Ground080 a diagonal track and Ground052 rib-like features.
+Ground054 was the only stationary candidate: block-variance coefficient of variation 0.07 for
+luminance and 0.15 for slope, directional profiles within 1.32×.
+
+| Source | Provider | License | Technique | Stated size | Retained maps | Archive | Retained originals |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Ground054](https://ambientcg.com/a/Ground054) | ambientCG | CC0-1.0 | Surface photogrammetry | ca. 3.5 m × 3.5 m | 1K PNG color `bb3b8b28…`, NormalGL `33125854…`, 16-bit displacement `ee83f71d…` | `Ground054_1K-PNG.zip` `19aafb7d…` (17,930,839 bytes) | `downloads/landscape/ai577_d4/ambientcg_Ground054/` |
+
+The landscape-local material `pbr.landscape_sand_micro_v1` keeps the three maps unchanged at the
+provider's real 3.5 m scale (3.42 mm per texel at 1024; the close-up camera's footprint spans
+1.47–22.4 mm per pixel). It is deliberately not registered in the global catalog. Its recipe
+`micro-periodic-highpass-v1` (radius 9 pixels, half-power wavelength about 0.173 m, luminance
+range from the 0.1/99.9 percentiles = 0.625, 0.14% clamped texels at 1024) keeps only grain and
+dimple detail, so the source hue never reaches the rendered sand. Limitation: a smoothed oval
+impression about 35 × 20 cm recurs every 3.5 m in the relief; runtime stochastic sampling of the
+micro layer breaks its repetition up.
+
 ## Transition quality
 
 Continuous coverage identifies which materials may contribute. Within that

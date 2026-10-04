@@ -49,17 +49,18 @@ function detailPixelsPerMeter(node, camera) {
     return camera.viewportHeight * camera.zoom / (2 * Math.tan(camera.fovYRadians / 2)) * Math.min(1 + radius / depth, 2) / depth;
 }
 
-function tierFor(required, previous) {
-    const last = LANDSCAPE_APPEARANCE_TIERS.length - 1;
-    let index = LANDSCAPE_APPEARANCE_TIERS.findIndex(size => size >= required);
+// smallest available tier meeting the texel requirement; a coarser tier replaces a finer previous one only below 65% of its capacity
+function tierFor(required, previous, tiers) {
+    const last = tiers.length - 1;
+    let index = tiers.findIndex(size => size >= required);
     if (index < 0) index = last;
-    const previousIndex = LANDSCAPE_APPEARANCE_TIERS.indexOf(Number(previous));
+    const previousIndex = tiers.indexOf(Number(previous));
     if (previousIndex > index) {
         let retained = previousIndex;
-        while (retained > index && required <= LANDSCAPE_APPEARANCE_TIERS[retained - 1] * .65) retained--;
+        while (retained > index && required <= tiers[retained - 1] * .65) retained--;
         index = retained;
     }
-    return String(LANDSCAPE_APPEARANCE_TIERS[index]);
+    return String(tiers[index]);
 }
 
 function surfaceDetailConfiguration(manifest, input) {
@@ -72,16 +73,26 @@ function surfaceDetailConfiguration(manifest, input) {
 
 /**
  * @param {any} input @param {any} appearanceInput
- * @param {{materialTiling?:Object<string,{nearTileMeters:number,macroTileMeters:number,blendStartMetersPerPixel:number,blendEndMetersPerPixel:number}>,surfaceDetail?:{levels:number,targetPixels?:number}}} [configuration]
+ * materialTiling maps soil IDs to the calibrated physical period `{tileMeters}` the renderer samples at every distance (absent soils use
+ * the sidecar period); materialTiers maps soil IDs to their available ascending resolutions (default 32/128/512), for example a
+ * companion sidecar's additional 1024 tier. Plans report the projected density of every visible page (`pixelsPerMeterById`, and for
+ * visible fine leaves `detail.pixelsPerMeterById`, with the native pages they refine in `detail.splitNativeIds`); `desiredMaterialTiers`
+ * turns the densities of the pages where each soil occurs into that material's own tier.
+ * @param {{materialTiling?:Object<string,{tileMeters:number}>,materialTiers?:Object<string,number[]>,surfaceDetail?:{levels:number,targetPixels?:number}}} [configuration]
  */
-export function createLandscapeAppearancePlanner(input, appearanceInput, { materialTiling = {}, surfaceDetail } = {}) {
+export function createLandscapeAppearancePlanner(input, appearanceInput, { materialTiling = {}, materialTiers = {}, surfaceDetail } = {}) {
     const manifest = validateLandscapeManifest(input), appearance = validateLandscapeAppearanceManifest(appearanceInput, manifest);
     for (const [id, tiling] of Object.entries(materialTiling)) {
         requireCondition(appearance.materials.some(material => material.soilId === id), `unknown material tiling soil ${id}`);
-        requireCondition(['nearTileMeters', 'macroTileMeters', 'blendStartMetersPerPixel', 'blendEndMetersPerPixel'].every(key => Number.isFinite(tiling[key]) && tiling[key] > 0)
-            && tiling.blendEndMetersPerPixel > tiling.blendStartMetersPerPixel, 'appearance material tiling periods and footprint interval must be positive');
+        requireCondition(!!tiling && Object.keys(tiling).every(key => key === 'tileMeters') && Number.isFinite(tiling.tileMeters) && tiling.tileMeters > 0, 'appearance material tiling needs only a positive physical tileMeters');
     }
-    const tilings = Object.fromEntries(Object.entries(materialTiling).map(([id, value]) => [id, { ...value }]));
+    for (const [id, tiers] of Object.entries(materialTiers)) {
+        requireCondition(appearance.materials.some(material => material.soilId === id), `unknown material tier soil ${id}`);
+        requireCondition(Array.isArray(tiers) && tiers.length > 0 && tiers.every((size, index) => Number.isSafeInteger(size) && size >= 1 && size <= 8192 && (!index || size > tiers[index - 1])),
+            'appearance material tiers must be ascending positive integer resolutions up to 8192');
+    }
+    const tilings = Object.fromEntries(Object.entries(materialTiling).map(([id, value]) => [id, value.tileMeters]));
+    const tierLists = Object.fromEntries(appearance.materials.map(material => [material.soilId, Object.freeze([...(materialTiers[material.soilId] ?? LANDSCAPE_APPEARANCE_TIERS)])]));
     const detail = surfaceDetailConfiguration(manifest, surfaceDetail);
     const byId = new Map(manifest.chunks.map(chunk => [chunk.id, chunk])), children = new Map();
     for (const chunk of manifest.chunks) if (chunk.parentId && byId.get(chunk.parentId).level === chunk.level - 1) {
@@ -98,22 +109,39 @@ export function createLandscapeAppearancePlanner(input, appearanceInput, { mater
         }
         const spacingMetersByLevel = {};
         for (let level = maxLevel; level <= index.finestLevel; level++) { const spacing = index.spacing(level); spacingMetersByLevel[level] = Math.max(spacing.x, spacing.z); }
-        const desiredIds = [], visibleIds = [], pixelsById = {};
+        const desiredIds = [], visibleIds = [], pixelsById = {}, pixelsPerMeterById = {};
         const splits = (id, density, level) => level < index.finestLevel && density * spacingMetersByLevel[level + 1] > target / 2 * (previouslySplit.has(id) ? .65 : 1);
         function visit(node) {
             if (!visible(node, camera.frustumPlanes)) { desiredIds.push(node.id); return; }
             const density = detailPixelsPerMeter(node, camera);
             pixelsById[node.id] = density * spacingMetersByLevel[node.level];
             if (splits(node.id, density, node.level)) index.children(node.id).forEach(visit);
-            else { desiredIds.push(node.id); visibleIds.push(node.id); }
+            else { desiredIds.push(node.id); visibleIds.push(node.id); pixelsPerMeterById[node.id] = pixelsPerMeter(node, camera); }
         }
+        // children tile their native page within its height envelope, so a split page with no visible child was only conservatively visible
+        const splitNativeIds = [];
         for (const id of visibleMaskIds) {
             const node = byId.get(id);
-            if (node.level === maxLevel && splits(id, detailPixelsPerMeter(node, camera), maxLevel)) index.children(id).forEach(visit);
+            if (node.level === maxLevel && splits(id, detailPixelsPerMeter(node, camera), maxLevel)) { splitNativeIds.push(id); index.children(id).forEach(visit); }
         }
         delete spacingMetersByLevel[maxLevel];
         return Object.freeze({ levels, targetPixels: target, desiredIds: Object.freeze(desiredIds), visibleIds: Object.freeze(visibleIds), pixelsById: Object.freeze(pixelsById),
-            spacingMetersByLevel: Object.freeze(spacingMetersByLevel), sourceLimited: visibleIds.some(id => index.descriptor(id).level === index.finestLevel && pixelsById[id] > target) });
+            pixelsPerMeterById: Object.freeze(pixelsPerMeterById), splitNativeIds: Object.freeze(splitNativeIds), spacingMetersByLevel: Object.freeze(spacingMetersByLevel),
+            sourceLimited: visibleIds.some(id => index.descriptor(id).level === index.finestLevel && pixelsById[id] > target) });
+    }
+
+    /**
+     * Pure per-material tiers: each soil's calibrated period times the highest projected density (pixels per meter) of the visible pages
+     * where it occurs, met by its smallest available tier with its own 65% coarsening hysteresis; soils without a density request their
+     * smallest tier.
+     * @param {Object<string,number>} densityBySoil @param {{previousTiers?:Object<string,string|undefined>,targetTexelPixels?:number}} [options]
+     */
+    function desiredMaterialTiers(densityBySoil, { previousTiers = {}, targetTexelPixels = 1.5 } = {}) {
+        requireCondition(!!densityBySoil && typeof densityBySoil === 'object' && Object.entries(densityBySoil).every(([id, density]) => Object.hasOwn(tierLists, id) && Number.isFinite(density) && density >= 0),
+            'material densities must map known soils to nonnegative pixels per meter');
+        requireCondition(!!previousTiers && typeof previousTiers === 'object' && Number.isFinite(targetTexelPixels) && targetTexelPixels > 0, 'material tiers need previous tiers and a positive texel target');
+        return Object.freeze(Object.fromEntries(appearance.materials.map(({ soilId, tileMeters }) =>
+            [soilId, tierFor((tilings[soilId] ?? tileMeters) * (densityBySoil[soilId] ?? 0) / targetTexelPixels, previousTiers[soilId], tierLists[soilId])])));
     }
 
     /** @param {any} cameraSnapshot @param {{previousMaskIds?:string[],previousTier?:string,previousTiers?:object,targetMaskPixels?:number,targetTexelPixels?:number,previousDetailIds?:string[]}} [options] */
@@ -139,25 +167,19 @@ export function createLandscapeAppearancePlanner(input, appearanceInput, { mater
         }
         visit(byId.get(manifest.overviewId));
         const visibleMaskIds = desiredMaskIds.filter(id => visibilityById[id]);
+        const pixelsPerMeterById = Object.fromEntries(visibleMaskIds.map(id => [id, densityById[id]]));
+        // the view-wide tiers (every soil at the highest visible density) remain for diagnostics and pre-residency credit; streaming
+        // requests each material from the pages where it occurs through desiredMaterialTiers
         const density = Math.max(0, ...visibleMaskIds.map(id => densityById[id]));
-        const desiredTiers = Object.fromEntries(appearance.materials.map(material => {
-            const tiling = tilings[material.soilId];
-            let texels = material.tileMeters * density;
-            if (tiling && density > 0) {
-                const footprint = 1 / density;
-                const near = footprint < tiling.blendEndMetersPerPixel ? tiling.nearTileMeters * density : 0;
-                const macro = tiling.macroTileMeters * density;
-                texels = Math.max(near, macro);
-            }
-            return [material.soilId, tierFor(texels / targetTexelPixels, previousTiers[material.soilId] ?? previousTier)];
-        }));
+        const desiredTiers = desiredMaterialTiers(Object.fromEntries(appearance.materials.map(({ soilId }) => [soilId, density])),
+            { previousTiers: Object.fromEntries(appearance.materials.map(({ soilId }) => [soilId, previousTiers[soilId] ?? previousTier])), targetTexelPixels });
         const desiredTier = String(Math.max(...Object.values(desiredTiers).map(Number)));
         const desiredMaskPixels = Math.max(0, ...visibleMaskIds.map(id => maskPixelsById[id]));
         const result = { desiredMaskIds: Object.freeze(desiredMaskIds), visibleMaskIds: Object.freeze(visibleMaskIds), desiredTier,
-            desiredTiers: Object.freeze(desiredTiers), maskPixelsById: Object.freeze(maskPixelsById), visibilityById: Object.freeze(visibilityById),
+            desiredTiers, maskPixelsById: Object.freeze(maskPixelsById), pixelsPerMeterById: Object.freeze(pixelsPerMeterById), visibilityById: Object.freeze(visibilityById),
             targetMaskPixels, targetTexelPixels, desiredMaskPixels, sourceLimited: desiredMaskPixels > targetMaskPixels,
             sourceRevision: manifest.revision, appearanceRevision: appearance.revision };
         return Object.freeze(detail ? { ...result, detail: planDetail(camera, visibleMaskIds, targetMaskPixels, previousDetailIds) } : result);
     }
-    return Object.freeze({ manifest, appearance, plan, surfaceDetail: detail?.index ?? null });
+    return Object.freeze({ manifest, appearance, plan, desiredMaterialTiers, materialTiers: Object.freeze(tierLists), surfaceDetail: detail?.index ?? null });
 }

@@ -43,6 +43,8 @@ test.beforeAll(async () => {
     directory = await mkdtemp(path.join(artifacts, 'flat-run-'));
     await cp(path.join(source, 'payloads'), path.join(directory, 'payloads'), { recursive: true });
     await cp(path.join(source, 'appearance'), path.join(directory, 'appearance'), { recursive: true });
+    // LANDSCAPE_MULTISCALE_SOURCE=<directory with multiscale.json and pages/> evaluates an unpublished companion instead of the published one
+    if (process.env.LANDSCAPE_MULTISCALE_SOURCE) await cp(process.env.LANDSCAPE_MULTISCALE_SOURCE, path.join(directory, 'appearance'), { recursive: true });
     await copyLandscapePlanningSources(canonical, source, directory);
     appearanceSource = JSON.parse(await readFile(path.join(directory, 'appearance/manifest.json'), 'utf8'));
     const flat = structuredClone(canonical);
@@ -244,7 +246,10 @@ test('Landscape D4: corrupt fine material pages keep valid coarse appearance and
     await open(page, `${origin}/screens/landscape_fabrication.html`);
     await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), wide);
     await settle(page);
-    const suffixes = appearanceSource.materials.map(material => `/appearance/${material.tiers.find(tier => tier.resolution === 512).channels.baseColor.url}`);
+    // a published companion multiscale sidecar adds finer 1024 tiers; corrupting them as well keeps every material below 512
+    const multiscale = await readFile(path.join(directory, 'appearance/multiscale.json'), 'utf8').then(JSON.parse, error => { if (error.code === 'ENOENT') return null; throw error; });
+    const suffixes = [...appearanceSource.materials.map(material => `/appearance/${material.tiers.find(tier => tier.resolution === 512).channels.baseColor.url}`),
+        ...(multiscale?.materials ?? []).map(material => `/appearance/${material.tiers.find(tier => tier.resolution === 1024).channels.baseColor.url}`)];
     const filter = url => suffixes.some(suffix => url.pathname.endsWith(suffix));
     await page.route(filter, route => route.fulfill({ status: 200, body: Buffer.alloc(512 * 512 * 4) }));
     await page.evaluate(() => window.__landscapeTestHooks.setCamera({ orthoHeight: 2000, zoom: 100 }));
@@ -259,7 +264,7 @@ test('Landscape D4: corrupt fine material pages keep valid coarse appearance and
     await page.unroute(filter);
     await page.evaluate(() => window.__landscapeTestHooks.reload());
     const recovered = await settle(page);
-    expect(recovered.appearance.materials.some(material => material.resolution === 512)).toBe(true);
+    expect(recovered.appearance.materials.some(material => material.resolution >= 512)).toBe(true);
     assertBudget(recovered);
     expect(errors).toEqual([]);
     await writeFile(path.join(artifacts, 'failed-page-recovery.json'), JSON.stringify({ failed, retained, recovered, errors }, null, 2));
@@ -342,4 +347,62 @@ test('Landscape D4: an old in-flight mask cannot restore old soil after a saved 
     await writeFile(path.join(artifacts, 'old-mask-revision-cancellation.json'), JSON.stringify({ before, applied, current, sample, errors }, null, 2));
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
     expect((await snapshot(page)).budget.cpuBytes).toBe(0);
+});
+
+test('Landscape AI577 D4: a missing, invalid or disabled multiscale companion falls back explicitly to schema-1 tiers', async ({ page }) => {
+    test.setTimeout(180000);
+    const errors = observeErrors(page);
+    const cases = [
+        { id: 'absent', status: 'absent', reason: /^multiscale-sidecar-absent$/, respond: route => route.fulfill({ status: 404, contentType: 'text/plain', body: 'companion not published' }) },
+        { id: 'invalid', status: 'invalid', reason: /^multiscale-sidecar-invalid: /, respond: route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ format: 'landscape-appearance-multiscale', schemaVersion: 1 }) }) },
+        { id: 'disabled', status: 'disabled', reason: /^multiscale-disabled$/, query: '?landscapeMultiscale=off', respond: route => route.continue() }];
+    const results = [];
+    for (const item of cases) {
+        let requested = false;
+        await page.route('**/appearance/multiscale.json', route => { requested = true; return item.respond(route); });
+        await open(page, `${origin}/screens/landscape_fabrication.html${item.query ?? ''}`);
+        const state = await snapshot(page);
+        expect(state.appearance.multiscale).toMatchObject({ status: item.status, active: false, maxResolution: 512 });
+        expect(state.appearance.multiscale.reason).toMatch(item.reason);
+        expect(requested).toBe(item.id !== 'disabled');
+        expect(state.appearance.multiscale.materials.every(material => material.maps === 3 && material.micro === null && material.tiers.join(',') === '32,128,512')).toBe(true);
+        expect(state.appearance.materials.every(material => material.maps === 3 && material.micro === null && material.tiers.join(',') === '32,128,512')).toBe(true);
+        assertBudget(state);
+        results.push({ id: item.id, multiscale: state.appearance.multiscale });
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        await page.unroute('**/appearance/multiscale.json');
+    }
+    expect(errors).toEqual([]);
+    await writeFile(path.join(artifacts, 'multiscale-fallbacks.json'), JSON.stringify({ results, errors }, null, 2));
+});
+
+test('Landscape AI577 D4: the published multiscale companion streams 1024 tiers with paired micro layers in split uploads', async ({ page }) => {
+    test.setTimeout(180000);
+    const multiscale = await readFile(path.join(directory, 'appearance/multiscale.json'), 'utf8').then(JSON.parse, error => { if (error.code === 'ENOENT') return null; throw error; });
+    test.skip(!multiscale, 'Requires the published appearance/multiscale.json companion');
+    const errors = observeErrors(page);
+    await open(page, `${origin}/screens/landscape_fabrication.html`);
+    const microSoils = multiscale.materials.filter(material => material.micro).map(material => material.soilId);
+    const point = coverPoints.find(value => microSoils.includes(value.soilId));
+    expect(point, 'a retained cover interior over a micro-detail soil').toBeTruthy();
+    await page.evaluate(({ x, z }) => window.__landscapeTestHooks.setCamera({ position: [x - 1.2, 11.6, z - 1.4], target: [x, 10, z], projection: 'perspective', fov: 55 }), point);
+    const close = await settle(page);
+    expect(close.appearance.multiscale.status).toBe('active');
+    const material = close.appearance.materials.find(value => value.soilId === point.soilId);
+    expect(material).toMatchObject({ resolution: 1024, maps: 4, tiers: [32, 128, 512, 1024] });
+    expect(material.micro).toMatchObject({ resident: true, shown: true, tileMeters: multiscale.materials.find(value => value.soilId === point.soilId).micro.tileMeters });
+    expect(close.appearance.materialUploads.splitTiers).toBeGreaterThan(0);
+    expect(close.appearance.materialUploads.maxFramesPerTier).toBeGreaterThanOrEqual(3);
+    assertBudget(close);
+    await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), wide);
+    const far = await settle(page);
+    expect(far.appearance.materials.find(value => value.soilId === point.soilId).resolution).toBeLessThan(1024);
+    expect(far.appearance.gpuBytes).toBeLessThan(close.appearance.gpuBytes);
+    assertBudget(far);
+    expect(errors).toEqual([]);
+    await writeFile(path.join(artifacts, 'multiscale-streaming.json'), JSON.stringify({ point, close: { multiscale: close.appearance.multiscale, materials: close.appearance.materials, uploads: close.appearance.materialUploads, budget: close.budget },
+        far: { materials: far.appearance.materials, gpuBytes: far.appearance.gpuBytes }, errors }, null, 2));
+    await page.evaluate(() => window.__landscapeTestHooks.dispose());
+    expect((await snapshot(page)).budget.cpuBytes).toBe(0);
+    expect((await snapshot(page)).budget.gpuBytes).toBe(0);
 });

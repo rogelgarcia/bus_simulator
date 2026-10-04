@@ -9,11 +9,42 @@ import { validateLandscapeAppearanceManifest, LANDSCAPE_APPEARANCE_MANIFEST_LIMI
 import { runBakeProcess } from '../baking/Process.mjs';
 import { readAppearanceCompatibilitySnapshot, publishAppearanceBindingAlias } from './AppearanceCompatibility.mjs';
 import { prepareAppearanceMaterialBindings, assertAppearanceMaterialOnlyChange } from './AppearanceMaterialBindings.mjs';
+import { readAppearanceMultiscaleRequest, inspectAppearanceMultiscaleSources, appearanceMultiscaleConverterRequest, buildAppearanceMultiscale,
+    validateAppearanceMultiscaleCandidate, readCurrentAppearanceMultiscale, installAppearanceMultiscale } from './AppearanceMultiscale.mjs';
 
 const bytesOf = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 function pbrFile(directory, relative) {
     if (relative !== '_catalog_index.js') return authoringFile(directory, relative);
     return path.join(directory, relative);
+}
+
+function multiscaleBaseSources(sourceRoot, input) {
+    const result = [];
+    for (const material of input.materials) {
+        const slug = material.materialId.replace(/^pbr\./, '');
+        result.push(`${slug}/pbr.material.config.js`, ...(material.preparation ? [`${slug}/pbr.landscape.config.json`] : []));
+        for (const file of Object.values(material.mapFiles)) result.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
+    }
+    return [...new Set(result)];
+}
+
+function multiscaleReport(multiscale, conversion) {
+    const groups = new Map(), sum = values => [...values].reduce((total, bytes) => total + bytes, 0);
+    const add = (key, page) => {
+        const group = groups.get(key) ?? { logicalPages: 0, logicalDecodedBytes: 0, unique: new Map() };
+        group.logicalPages++; group.logicalDecodedBytes += page.byteLength; group.unique.set(page.url, page.byteLength); groups.set(key, group);
+    };
+    for (const material of multiscale.manifest.materials) {
+        for (const tier of material.tiers) for (const page of Object.values(tier.channels)) add(`base-${tier.id}`, page);
+        if (material.micro) for (const tier of material.micro.tiers) add(`micro-${tier.id}`, tier.channels.micro);
+    }
+    const unique = new Map([...groups.values()].flatMap(group => [...group.unique]));
+    return { revision: multiscale.manifest.revision, appearanceRevision: multiscale.manifest.appearanceRevision, sidecarSha256: multiscale.sha256, sidecarBytes: multiscale.bytes.length,
+        tiers: Object.fromEntries([...groups].map(([key, group]) => [key, { logicalPages: group.logicalPages, logicalDecodedBytes: group.logicalDecodedBytes,
+            uniquePages: group.unique.size, uniqueBytes: sum(group.unique.values()) }])),
+        uniquePages: unique.size, uniqueBytes: sum(unique.values()),
+        micro: conversion.multiscale.micro.map(entry => ({ materialId: entry.materialId, luminanceRange: entry.luminanceRange, recipe: entry.recipe, statistics: entry.statistics })),
+        measurements: conversion.multiscale.measurements, sourceDimensions: conversion.multiscale.sourceDimensions };
 }
 
 /** @param {string} sourceRoot @param {any} landscape */
@@ -53,22 +84,31 @@ export async function inspectAppearanceSources(sourceRoot, landscape) {
     return { materials, metadata: [...new Set(metadata)], sources: [...sources] };
 }
 
-/** @param {any} ctx @param {{directory:string,sourceRoot:string,materialBindings?:string,source?:any}} options */
-export async function prepareLandscapeAppearance(ctx, { directory, sourceRoot, materialBindings, source: plannedSource }) {
+/** @param {any} ctx @param {{directory:string,sourceRoot:string,materialBindings?:string,multiscale?:string,source?:any}} options */
+export async function prepareLandscapeAppearance(ctx, { directory, sourceRoot, materialBindings, multiscale: multiscaleFile, source: plannedSource }) {
     const source = plannedSource ?? await readLandscapeFileManifest(directory);
     const landscape = { manifest: await prepareAppearanceMaterialBindings(source.manifest, materialBindings), bytes: source.bytes };
     if (landscape.manifest !== source.manifest) landscape.bytes = bytesOf(landscape.manifest);
     const input = await inspectAppearanceSources(sourceRoot, landscape.manifest);
+    const multiscaleRequest = multiscaleFile ? await readAppearanceMultiscaleRequest(multiscaleFile, landscape.manifest) : null;
+    const multiscaleInput = multiscaleRequest ? await inspectAppearanceMultiscaleSources(sourceRoot, multiscaleRequest.request) : null;
     const outputDirectory = path.join(ctx.stage, 'appearance'), metadataDirectory = path.join(ctx.stage, 'pbr');
     await mkdir(outputDirectory, { recursive: true });
-    const sources = [];
+    const sources = [], sourceRecords = new Map();
     for (const relative of input.sources) {
         const bytes = await readAuthoringFile(pbrFile(sourceRoot, relative), 32 * 1024 * 1024);
         sources.push({ path: `pbr/${relative}`, sha256: authoringHash(bytes), byteLength: bytes.length });
+        sourceRecords.set(relative, { sha256: sources.at(-1).sha256, byteLength: bytes.length });
         if (input.metadata.includes(relative)) await writeImmutableAuthoringFile(pbrFile(metadataDirectory, relative), bytes);
     }
+    for (const relative of multiscaleInput?.sources ?? []) if (!sourceRecords.has(relative)) {
+        const bytes = await readAuthoringFile(authoringFile(sourceRoot, relative), 32 * 1024 * 1024);
+        sourceRecords.set(relative, { sha256: authoringHash(bytes), byteLength: bytes.length });
+        if (multiscaleInput.metadata.includes(relative)) await writeImmutableAuthoringFile(authoringFile(metadataDirectory, relative), bytes);
+    }
     const requestFile = path.join(ctx.stage, 'appearance-request.json');
-    await writeImmutableAuthoringFile(requestFile, bytesOf({ materials: input.materials.map(material => ({ ...material, calibration: undefined })), outputDirectory }));
+    await writeImmutableAuthoringFile(requestFile, bytesOf({ materials: input.materials.map(material => ({ ...material, calibration: undefined })), outputDirectory,
+        ...(multiscaleInput ? { multiscale: appearanceMultiscaleConverterRequest(multiscaleInput) } : {}) }));
     await runBakeProcess(ctx.config.pythonExecutable, [path.join(ctx.root, 'tools/bake_landscape/appearance_pages.py'), requestFile], ctx);
     const reportFile = path.join(outputDirectory, 'conversion.json'), conversion = JSON.parse(await readFile(reportFile, 'utf8'));
     const candidate = { format: 'landscape-appearance', schemaVersion: 1, landscapeId: landscape.manifest.id, revision: 'pending',
@@ -84,10 +124,14 @@ export async function prepareLandscapeAppearance(ctx, { directory, sourceRoot, m
     const manifest = validateLandscapeAppearanceManifest(candidate, landscape.manifest), bytes = bytesOf(manifest);
     if (bytes.length > LANDSCAPE_APPEARANCE_MANIFEST_LIMIT) throw new Error('Appearance manifest exceeds its bounded file limit');
     const manifestFile = path.join(outputDirectory, 'manifest.json'); await writeImmutableAuthoringFile(manifestFile, bytes);
+    const multiscale = multiscaleInput ? await buildAppearanceMultiscale({ appearance: manifest, conversion, inspected: multiscaleInput, request: multiscaleRequest,
+        baseSources: multiscaleBaseSources(sourceRoot, input), sourceRecords, outputDirectory }) : null;
     return { directory, outputDirectory, metadataDirectory, metadata: input.metadata, inputManifestBytes: landscape.bytes, sourceManifestBytes: source.bytes, manifestFile,
+        ...(multiscale ? { multiscale: { file: multiscale.file, sha256: multiscale.sha256, outputDirectory, metadata: multiscaleInput.metadata } } : {}),
         report: { passed: true, revision: manifest.revision, manifestSha256: authoringHash(bytes), materials: manifest.materials.length,
             pages: manifest.materials.length * 9, tiers: [32, 128, 512], decodedBytesPerTier: [32, 128, 512].map(size => ({ resolution: size, bytes: manifest.materials.length * size * size * 4 * 3 })),
-            workingByteLimit: conversion.workingByteLimit, maximumSourcePixels: conversion.maximumSourcePixels, sourceImagesProcessedSequentially: true } };
+            workingByteLimit: conversion.workingByteLimit, maximumSourcePixels: conversion.maximumSourcePixels, sourceImagesProcessedSequentially: true,
+            ...(multiscale ? { multiscale: multiscaleReport(multiscale, conversion) } : {}) } };
 }
 
 /** @param {any} prepared */
@@ -112,17 +156,33 @@ export async function validateAppearanceCandidate(prepared) {
         const bytes = await readAuthoringFile(pbrFile(prepared.metadataDirectory, relative), 256 * 1024);
         if (!expected || authoringHash(bytes) !== expected.sha256) throw new Error(`PBR catalog metadata integrity mismatch ${relative}`);
     }
-    return { manifest, bytes, files };
+    if (!prepared.multiscale) return { manifest, bytes, files };
+    const multiscale = await validateAppearanceMultiscaleCandidate(prepared.multiscale, manifest);
+    for (const relative of prepared.multiscale.metadata) {
+        const expected = multiscale.manifest.provenance.sources.find(source => source.path === `pbr/${relative}`);
+        const bytes = await readAuthoringFile(authoringFile(prepared.metadataDirectory, relative), 256 * 1024);
+        if (!expected || authoringHash(bytes) !== expected.sha256) throw new Error(`Micro detail metadata integrity mismatch ${relative}`);
+    }
+    return { manifest, bytes, files, multiscale };
+}
+
+/** @param {string} destination @param {any} manifest */
+async function assertMultiscaleNotOrphaned(destination, manifest) {
+    const current = await readCurrentAppearanceMultiscale(destination);
+    if (current && current.appearanceRevision !== manifest.revision) {
+        throw new Error('Publishing this appearance without landscape/appearance:multiscale would orphan the current appearance/multiscale.json; include the multiscale request');
+    }
 }
 
 /** @param {any} prepared @param {string} metadataDestination @param {{compatibilitySnapshot?:string}} [options] */
 export async function publishLandscapeAppearance(prepared, metadataDestination, { compatibilitySnapshot } = {}) {
-    const { manifest, bytes, files } = await validateAppearanceCandidate(prepared), installed = [];
+    const { manifest, bytes, files, multiscale } = await validateAppearanceCandidate(prepared), installed = [];
     const sourceManifestBytes = prepared.sourceManifestBytes ?? prepared.inputManifestBytes;
     if (!(await readAuthoringFile(path.join(prepared.directory, 'manifest.json'), 1024 * 1024)).equals(sourceManifestBytes)) throw new Error('Landscape changed during appearance preparation; retry against current terrain');
     const destination = path.join(prepared.directory, 'appearance');
     const compatibility = compatibilitySnapshot ? await readAppearanceCompatibilitySnapshot(prepared.directory, compatibilitySnapshot) : null;
     if (compatibility && compatibility.manifest.landscapeId !== manifest.landscapeId) throw new Error('Appearance compatibility snapshot belongs to a different landscape');
+    if (!multiscale) await assertMultiscaleNotOrphaned(destination, manifest);
     let previous;
     try {
         previous = await readAuthoringFile(path.join(destination, 'manifest.json'), LANDSCAPE_APPEARANCE_MANIFEST_LIMIT);
@@ -134,11 +194,17 @@ export async function publishLandscapeAppearance(prepared, metadataDestination, 
         if (authoringHash(payload) !== expected.sha256) throw new Error('PBR metadata changed during publication');
         const file = pbrFile(metadataDestination, relative); await writeImmutableAuthoringFile(file, payload); installed.push(file);
     }
+    for (const relative of multiscale ? prepared.multiscale.metadata : []) {
+        const payload = await readAuthoringFile(authoringFile(prepared.metadataDirectory, relative), 256 * 1024);
+        if (authoringHash(payload) !== multiscale.manifest.provenance.sources.find(source => source.path === `pbr/${relative}`).sha256) throw new Error('Micro detail metadata changed during publication');
+        const file = authoringFile(metadataDestination, relative); await writeImmutableAuthoringFile(file, payload); installed.push(file);
+    }
     for (const [relative, page] of files) {
         const payload = await readAuthoringFile(authoringFile(prepared.outputDirectory, relative), page.byteLength);
         if (authoringHash(payload) !== page.sha256) throw new Error('Appearance page changed during publication');
         const file = authoringFile(destination, relative); await writeImmutableAuthoringFile(file, payload); installed.push(file);
     }
+    if (multiscale) installed.push(...await installAppearanceMultiscale(prepared.multiscale, multiscale, destination));
     if (!sourceManifestBytes.equals(prepared.inputManifestBytes)) for (const snapshotBytes of [sourceManifestBytes, prepared.inputManifestBytes]) {
         const file = path.join(prepared.directory, `manifest.${authoringHash(snapshotBytes)}.json`);
         await writeImmutableAuthoringFile(file, snapshotBytes); installed.push(file);
@@ -148,6 +214,7 @@ export async function publishLandscapeAppearance(prepared, metadataDestination, 
     installed.push(...await publishAppearanceBindingAlias(destination, bytes));
     if (!(await readAuthoringFile(path.join(prepared.directory, 'manifest.json'), 1024 * 1024)).equals(sourceManifestBytes)) throw new Error('Landscape changed during appearance installation; retry against current terrain');
     await atomicAuthoringWrite(path.join(destination, 'manifest.json'), bytes); installed.push(path.join(destination, 'manifest.json'));
+    if (multiscale) { await atomicAuthoringWrite(path.join(destination, 'multiscale.json'), multiscale.bytes); installed.push(path.join(destination, 'multiscale.json')); }
     if (!sourceManifestBytes.equals(prepared.inputManifestBytes)) {
         await atomicAuthoringWrite(path.join(prepared.directory, 'manifest.json'), prepared.inputManifestBytes);
         installed.push(path.join(prepared.directory, 'manifest.json'));
