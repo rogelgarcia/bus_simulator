@@ -37,9 +37,13 @@ stops at the 50 cm target and 3 reaches 25 cm. The viewer accepts
 
 A page is a deterministic function of:
 
-- the recipe (`landscape-surface-detail-v3`), its canonical hash and seed;
+- the recipe (`landscape-surface-detail-v4`), its canonical hash and seed;
 - the authenticated native cover channels whose samples fall within the page's
   canonical support window, and the overview cover used by natural infill;
+- the natural-soil policy of every native support owner and, for owners on the terrain-driven
+  labels, the content address of their published natural-soil page (inputs schema 2:
+  `natural: [{id, policy:'natural-terrain-inference-v1', sha256|null} | {id, policy:'natural-overview-infill-v1'}]`);
+  a height or cover edit therefore renews exactly the identities whose owners it made stale;
 - the ordered semantic soil overrides whose regions intersect the page's influence
   bounds, with their order, region geometry and soil;
 - the soil catalog order, cover-to-soil mapping and planning-only classes;
@@ -58,11 +62,19 @@ retains the complete input list, recipe hash and seed of every resident page.
 ## Generation
 
 Generation runs in two dedicated surface-detail workers, never in the render loop. The
-recipe `landscape-surface-detail-v3` lives in `LandscapeSurfaceDetailRecipe.js`; its
+recipe `landscape-surface-detail-v4` lives in `LandscapeSurfaceDetailRecipe.js`; its
 validator and identity code live in `src/app/landscape/LandscapeSurfaceDetail.js`.
 
-1. **Canonical support.** Native display labels (natural infill, without authored
-   overrides) are built for a window covering the page, its stored halo, the boundary
+v4 (AI577 D5) changes only `base.labels` to `natural-terrain-inference-v1`: canonical support
+labels of planning-only samples are the published natural-soil labels of their native owners (the
+overview infill for owners on the fallback), exactly as in the resident native mask pages.
+Boundaries, warp, breakup, pair profiles, seed (family) and page format are unchanged, so a v4 page
+whose owners are all on the fallback is byte-identical to its v3 page; v3 and v4 pages, and terrain
+and fallback pages, never share a cache entry or uniform memo. Worker requests carry the same
+natural-soil request the identity hashed.
+
+1. **Canonical support.** Native display labels (terrain-driven natural soil with its per-native
+   overview fallback, without authored overrides) are built for a window covering the page, its stored halo, the boundary
    query radius, the maximum warp and a 19-cell smoothing dependency margin. Each sample
    reads authenticated same-level cover by canonical global coordinates, as D1 halos do,
    so the result does not depend on which pages are resident. A window in which more than
@@ -138,11 +150,12 @@ Fine pages occupy additional layers of the existing nearest-filtered mask
 `DataArrayTexture`, after the native slots; they add no texture sampler (the fragment
 shader stays at fifteen). Fine slots are marked `meta.w = 2`. Per-slot uniform arrays are
 sized by the compile-time `LANDSCAPE_COVERAGE_SLOTS` define:
-`min(81, floor((maxFragmentUniforms − 142) / 4))` — seventeen native mask slots plus at most
-64 fine slots, four vectors per slot over 142 fixed vectors (warp, clump, D3 stochastic
-tiling and D4 macro/surface-layer uniforms included). This machine compiles 81 slots (1,024
-vectors); the WebGL2 minimum of 224 vectors yields 20 slots (3 fine); devices below 210 vectors
-fail explicitly.
+`min(81, floor((maxFragmentUniforms − 155) / 4))` — seventeen native mask slots plus at most
+64 fine slots, four vectors per slot over 155 fixed vectors (warp, clump, D3 stochastic
+tiling, D4 macro/surface-layer and D5 lighting, terrain-field, response and planning-cover
+uniforms included; 142 in D4). This machine compiles 81 slots (1,024 vectors); the WebGL2
+minimum of 224 vectors yields the 17 native slots and no fine slot, so generated fine pages
+need a larger device; devices below 223 vectors fail explicitly.
 `uMaskSlotRanges` bounds every slot search to resident slots.
 
 The shader reconstruction of each page is the D1 reconstruction: cubic one-hot fallback,
@@ -210,7 +223,8 @@ through a conservative main-thread proof over resident native pages (about 0.7 m
 3 ms per-frame request allowance), the generator's support shortcut, a uniform parent or the
 cache's uniform memo. Two detail workers (`LandscapeSurfaceDetailWorker.js`) each reserve
 792,588 bytes of context (overview copy, natural-infill construction and an LRU of six
-authenticated native cover pages loaded by `loadLandscapeCoverChannel`); each running job
+authenticated native cover pages loaded by `loadLandscapeCoverChannel`), plus an LRU of six
+natural-soil pages (396,294 bytes, 1,188,882 in total) while terrain-driven natural soil is active; each running job
 reserves its level's scratch estimate before dispatch (12.97, 5.90 and 3.46 MB at L4, L5 and
 L6). Up to four uploads per frame share the remaining 8 MiB allowance. Each record holds an
 approximate appearance lease independent of geometry and native query leases. Failed
@@ -277,8 +291,8 @@ measured optimization candidate for D6.
 
 The warp, smoothing and breakup are artistic procedural detail anchored to the source
 boundaries; they do not invent terrain-driven ecology, which is planned for D5.
-Planning-only areas inherit the 15.625 m natural-infill shapes, smoothed but not
-re-inferred. Because distances are measured in warped space, effective transition widths
+Planning-only areas follow the published terrain-driven natural soil at native resolution;
+stale natives keep the 15.625 m infill shapes until the terrain fields are re-baked. Because distances are measured in warped space, effective transition widths
 vary by about 0.61–1.39× along a boundary. Breakup can still interrupt strips narrower
 than about 1 m whose two sides are the same soil pair. Where the soil under an override
 changes partway along one override edge, the generator can store "no boundary" within

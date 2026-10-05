@@ -9,10 +9,12 @@ import { landscapeMaterialClumpUniforms } from '/src/graphics/engine3d/landscape
 import { landscapeMaterialSamplingUniforms } from '/src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_SOIL_CATALOG } from '/src/app/landscape/LandscapeCatalog.js';
 import { LandscapeMaskPages } from '/src/graphics/engine3d/landscape/LandscapeMaskPages.js';
+import { createLandscapeReferenceProbeLightingUniforms } from '/src/graphics/engine3d/landscape/LandscapeLightingModel.js';
 import { buildLandscapeContourCoverage } from '/src/graphics/engine3d/landscape/LandscapeContourCoverage.js';
 
 // materialSampling selects the compiled production mode (recipe default when omitted); stochastic uniforms and the AI577 D4 layers
-// (macro variation, slope projection, normal filtering, micro detail) start disabled
+// (macro variation, slope projection, normal filtering, micro detail) start disabled. AI577 D5: material measurements use the fixed reference
+// probe illumination (pre-D5 magnitudes) and the low lighting tier, so no aerial perspective or water column enters a material probe.
 export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, materialSampling } = {}) {
     const renderer = new T.WebGLRenderer({ canvas: document.getElementById('surface-probe'), antialias: false, preserveDrawingBuffer: true, powerPreference: 'low-power' });
     renderer.setSize(size, size, false); renderer.setPixelRatio(1);
@@ -21,7 +23,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     renderer.outputColorSpace = toneMapping ? T.SRGBColorSpace : T.LinearSRGBColorSpace;
     const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
     const coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
-    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, ...(materialSampling ? { materialSampling } : {}) });
+    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'low', ...(materialSampling ? { materialSampling } : {}) });
     // terrain vertex normals are world normals (identity model matrix), so tilted probe planes rotate their geometry
     const plane = (normal = new T.Vector3(0, 1, 0), pivot = [1024, 1024]) => {
         const value = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), normal)).translate(pivot[0], 0, pivot[1]);
@@ -34,7 +36,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     const material = new T.ShaderMaterial({ vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource, vertexColors: true,
         uniforms: { ...uniforms, uMorph: { value: 1 }, uEdges: { value: new T.Vector4() }, uEdgeMorph: { value: new T.Vector4(1, 1, 1, 1) },
             uBounds: { value: new T.Vector4(0, 2048, 0, 2048) }, uTint: { value: new T.Color(1, 1, 1) }, uLodColor: { value: 0 },
-            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) } } });
+            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) }, ...createLandscapeReferenceProbeLightingUniforms() } });
     const scene = new T.Scene(), mesh = new T.Mesh(geometry, material), camera = new T.OrthographicCamera(-2, 2, 2, -2, .1, 5000);
     mesh.frustumCulled = false; scene.add(mesh); camera.up.set(0, 0, -1);
     const columns = 65, halo = 2, width = columns + 2 * halo, capacity = 17, resources = [];
@@ -110,7 +112,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     }
 
     function setMaterialSampling(mode) {
-        const next = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling: mode });
+        const next = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling: mode, lightingTier: 'low' });
         material.vertexShader = next.vertexSource; material.fragmentShader = next.fragmentSource; material.needsUpdate = true;
     }
 

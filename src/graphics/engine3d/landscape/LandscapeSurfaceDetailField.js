@@ -14,7 +14,11 @@
 // invalid, as in D1, so the shader fast path is exact at every footprint.
 // Positions whose whole warp reach is far from every boundary and override settle to their native label without
 // evaluation, which is exact by construction. Pure JavaScript: no THREE, DOM or heights.
+// Native display labels of planning-only samples come from the natural-soil pages of their native owners under a v4 recipe
+// (natural-terrain-inference-v1, read one owner at a time through the injected loader), or from the overview infill for owners the
+// natural soil request leaves on the fallback; the resident native mask pages use the same request, so fine and native labels agree.
 import { createLandscapeSurfaceDetailIndex, validateLandscapeSurfaceDetailRecipe, landscapeSurfaceDetailKey, LANDSCAPE_SURFACE_DETAIL_FORMAT } from '../../../app/landscape/LandscapeSurfaceDetail.js';
+import { LANDSCAPE_NATURAL_SOIL, createLandscapeNaturalSoilResolver } from '../../../app/landscape/LandscapeNaturalSoil.js';
 import { landscapeRegionBounds, landscapeRegionIntersectsBounds, landscapeRegionNearestBoundaryPoint, landscapeRegionSignedDistance } from '../../../app/landscape/LandscapeRegions.js';
 import { LANDSCAPE_CONTOUR_COVERAGE } from './LandscapeContourCoverage.js';
 import { LANDSCAPE_SURFACE_COVERAGE, landscapeCoverageMaskLayout } from './LandscapeSurfaceCoverage.js';
@@ -151,7 +155,7 @@ export function createLandscapeNearFieldEvaluator(input) {
 function requireSupportedRecipe(recipe) {
     if (recipe.transitionReferenceWidth !== LANDSCAPE_SURFACE_COVERAGE.blendWidthMeters) fail(`recipe ${recipe.id} must use the shader's ${LANDSCAPE_SURFACE_COVERAGE.blendWidthMeters} m transition ramp`);
     const boundary = recipe.boundary;
-    if (recipe.base.labels !== LANDSCAPE_NATURAL_PRESENTATION || recipe.base.boundary !== LANDSCAPE_SURFACE_BOUNDARY.id || recipe.base.encoding !== LANDSCAPE_CONTOUR_COVERAGE.id
+    if (![LANDSCAPE_NATURAL_PRESENTATION, LANDSCAPE_NATURAL_SOIL.terrain].includes(recipe.base.labels) || recipe.base.boundary !== LANDSCAPE_SURFACE_BOUNDARY.id || recipe.base.encoding !== LANDSCAPE_CONTOUR_COVERAGE.id
         || boundary.saddle !== LANDSCAPE_SURFACE_BOUNDARY.saddle || boundary.smoothing !== LANDSCAPE_SURFACE_BOUNDARY.smoothing || boundary.kernel !== LANDSCAPE_SURFACE_BOUNDARY.kernel
         || recipe.labelTies !== 'lower-soil-index' || recipe.distance !== 'warped-nearest-boundary'
         || recipe.warp.noise !== LANDSCAPE_SURFACE_NOISE.id || recipe.breakup.noise !== LANDSCAPE_SURFACE_NOISE.id) fail(`recipe ${recipe.id} names an unsupported label, boundary, encoding, tie, distance or noise algorithm`);
@@ -167,13 +171,15 @@ function regionEdges(region) {
     return edges;
 }
 
-function prepareContext({ manifest, descriptor, recipe: recipeInput, seed, presentation }) {
+function prepareContext({ manifest, descriptor, recipe: recipeInput, seed, presentation, natural = null }) {
     const recipe = validateLandscapeSurfaceDetailRecipe(recipeInput);
     requireSupportedRecipe(recipe);
     if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) fail('seed must be an unsigned 32-bit integer');
     const index = createLandscapeSurfaceDetailIndex(manifest, { levels: recipe.levels }), validated = index.manifest;
     const page = index.descriptor(typeof descriptor === 'string' ? descriptor : descriptor?.id);
     if (typeof descriptor !== 'string' && (descriptor.level !== page.level || descriptor.column !== page.column || descriptor.row !== page.row)) fail(`descriptor ${page.id} does not match its derived address`);
+    if (recipe.base.labels !== LANDSCAPE_NATURAL_SOIL.terrain && natural) fail(`recipe ${recipe.id} uses ${recipe.base.labels} labels and cannot read natural soil requests`);
+    const naturalSoil = createLandscapeNaturalSoilResolver(validated, recipe.base.labels === LANDSCAPE_NATURAL_SOIL.terrain ? natural : null);
     const support = index.support(page, recipe), soilIds = validated.soil.catalog.map(soil => soil.id), soilCount = soilIds.length;
     if (soilCount > 6) fail('fine coverage pages support at most six display soils');
     const overview = validated.chunks.find(chunk => chunk.id === validated.overviewId);
@@ -191,18 +197,18 @@ function prepareContext({ manifest, descriptor, recipe: recipeInput, seed, prese
             minX: bounds.minX - reach, maxX: bounds.maxX + reach, minZ: bounds.minZ - reach, maxZ: bounds.maxZ + reach });
     });
     return {
-        recipe, seed, index, manifest: validated, page, support, soilIds, soilCount, presentation, spacingX, spacingZ, range, profiles, profileScale, profileBreakup, overrides,
+        recipe, seed, index, manifest: validated, page, support, soilIds, soilCount, presentation, naturalSoil, spacingX, spacingZ, range, profiles, profileScale, profileBreakup, overrides,
         warp: createLandscapeSurfaceWarp({ seed, wavelengths: [...recipe.warp.wavelengths], amplitudes: [...recipe.warp.amplitudes], shaping: recipe.warp.shaping }),
         breakup: createLandscapeNoiseOctaves({ seed, component: 2, wavelengths: [...recipe.breakup.wavelengths], amplitudes: [...recipe.breakup.amplitudes],
             minimumWavelength: recipe.octaveMinimumSamples * Math.max(spacingX, spacingZ), shaping: recipe.breakup.shaping,
             ridgedMix: recipe.breakup.shaping === 'ridged-mix' ? recipe.breakup.ridgedMix : 0 }),
-        inputs: index.inputs(page, recipe, seed)
+        inputs: index.inputs(page, recipe, seed, natural)
     };
 }
 
-async function loadSupport(context, loadCover) {
+async function loadSupport(context, loadCover, loadNatural) {
     if (typeof loadCover !== 'function') fail('loadCover must be a function returning authenticated native cover');
-    const { manifest, support, presentation } = context, grid = manifest.grid, bounds = manifest.bounds, window = support.native.window, count = 2 ** grid.maxLevel;
+    const { manifest, support, presentation, naturalSoil } = context, grid = manifest.grid, bounds = manifest.bounds, window = support.native.window, count = 2 ** grid.maxLevel;
     const width = window.maxColumn - window.minColumn + 1, height = window.maxRow - window.minRow + 1;
     const columnIndex = new Int32Array(width), columnOwner = new Int32Array(width), rowIndex = new Int32Array(height), rowOwner = new Int32Array(height);
     for (let column = 0; column < width; column++) {
@@ -213,11 +219,13 @@ async function loadSupport(context, loadCover) {
         rowIndex[row] = Math.max(0, Math.min(grid.rows - 1, window.minRow + row));
         rowOwner[row] = Math.min(count - 1, Math.floor(rowIndex[row] / grid.chunkIntervals));
     }
-    const labels = new Uint8Array(width * height), covers = new Uint8Array(width * height), sourceIds = [];
+    const labels = new Uint8Array(width * height), covers = new Uint8Array(width * height), sourceIds = [], naturalIds = [];
     let filled = 0;
     for (const owner of support.owners) {
         const chunk = manifest.chunks.find(value => value.id === owner.id), cover = (await loadCover(owner.id))?.landCover;
         if (!(cover instanceof Uint8Array) || cover.length !== chunk.columns * chunk.rows) fail(`invalid canonical cover support ${owner.id}`);
+        const natural = await naturalSoil.load(chunk, loadNatural);
+        if (natural) naturalIds.push(owner.id);
         sourceIds.push(owner.id);
         for (let row = 0; row < height; row++) {
             if (rowOwner[row] !== chunk.row) continue;
@@ -225,7 +233,7 @@ async function loadSupport(context, loadCover) {
             for (let column = 0; column < width; column++) {
                 if (columnOwner[column] !== chunk.column) continue;
                 const globalColumn = columnIndex[column], coverId = cover[offset + globalColumn], at = row * width + column;
-                labels[at] = presentation.sampleBase(bounds.minX + globalColumn * grid.spacingX, z, coverId) >> 4;
+                labels[at] = presentation.sampleBase(bounds.minX + globalColumn * grid.spacingX, z, coverId, naturalSoil.label(natural, chunk, globalColumn, globalRow)) >> 4;
                 covers[at] = coverId;
                 filled++;
             }
@@ -234,7 +242,7 @@ async function loadSupport(context, loadCover) {
     if (filled !== width * height) fail(`canonical support of ${context.page.id} was not completely owned`);
     let uniform = true;
     for (let i = 1; i < labels.length && uniform; i++) uniform = labels[i] === labels[0];
-    return { sourceIds, labels, covers, width, height, uniform, boundaries: null,
+    return { sourceIds, naturalIds, labels, covers, width, height, uniform, boundaries: null,
         scratchBytes: labels.byteLength + covers.byteLength + 4 * (columnIndex.length + columnOwner.length + rowIndex.length + rowOwner.length) };
 }
 
@@ -446,12 +454,15 @@ function uniformPage(context, native, output) {
 
 /**
  * Generates one fine coverage page in the exact D1 mask layout ((columns+4)x(rows+4) RGBA8 with a two-sample halo).
- * The only data access is the injected loadCover(nativeChunkId) => {landCover}; no heights are requested.
- * @param {{manifest:any,descriptor:any,recipe:any,seed:number,presentation:any,loadCover:(id:string)=>Promise<{landCover:Uint8Array}>}} options
+ * The only data access is the injected loadCover(nativeChunkId) => {landCover} and, for owners the natural soil request keeps on the
+ * terrain-driven labels, loadNatural(entry, url) => authenticated natural-soil page bytes; no heights are requested.
+ * @param {{manifest:any,descriptor:any,recipe:any,seed:number,presentation:any,loadCover:(id:string)=>Promise<{landCover:Uint8Array}>,natural?:any,
+ *   loadNatural?:(entry:{url:string,sha256:string,byteLength:number},url:string)=>Promise<Uint8Array>}} options natural is the landscape-natural-soil-request of the
+ *   support owners (null: every owner keeps the overview infill)
  */
 export async function createLandscapeSurfaceDetailPage(options) {
     const started = performance.now(), context = prepareContext(options), windows = context.support.windows;
-    const native = await loadSupport(context, options.loadCover), loaded = performance.now(), shortcut = native.uniform && !context.overrides.length;
+    const native = await loadSupport(context, options.loadCover, options.loadNatural), loaded = performance.now(), shortcut = native.uniform && !context.overrides.length;
     let result, boundaries = null, samples = null, built = loaded, sampled = loaded;
     if (shortcut) result = uniformPage(context, native, windows.output);
     else {
@@ -471,7 +482,7 @@ export async function createLandscapeSurfaceDetailPage(options) {
             id: context.page.id, generated: true, measured: false, level: context.page.level, spacing: context.support.spacing,
             searchRadius: context.support.searchRadius, searchRadiusMeters: context.support.searchRadiusMeters,
             recipe: Object.freeze({ id: context.recipe.id, hash: context.inputs.recipe.hash }), seed: context.seed, key: landscapeSurfaceDetailKey(context.inputs), inputs: context.inputs,
-            uniform: uniformSoil >= 0, uniformSoil, shortcut,
+            naturalSoilIds: Object.freeze([...native.naturalIds]), uniform: uniformSoil >= 0, uniformSoil, shortcut,
             boundary: Object.freeze(boundaries ? { segments: boundaries.segmentCount, rawSegments: boundaries.rawSegmentCount, chains: boundaries.chainCount, loops: boundaries.loopCount }
                 : { segments: 0, rawSegments: 0, chains: 0, loops: 0 }),
             settledSamples: samples ? samples.settledSamples : 0, evaluatedSamples: samples ? samples.evaluatedSamples : 0,
@@ -486,7 +497,8 @@ export async function createLandscapeSurfaceDetailPage(options) {
  * Point inspection of the generator internals at a world position inside a fine page's stored extent: warp, base face
  * and painted label at the point with its nearest boundary, plus the nearest fine sample's pair, source, distance,
  * profile, breakup and stored texel.
- * @param {{manifest:any,descriptor:any,recipe:any,seed:number,presentation:any,loadCover:(id:string)=>Promise<{landCover:Uint8Array}>,x:number,z:number}} options
+ * @param {{manifest:any,descriptor:any,recipe:any,seed:number,presentation:any,loadCover:(id:string)=>Promise<{landCover:Uint8Array}>,natural?:any,
+ *   loadNatural?:(entry:{url:string,sha256:string,byteLength:number},url:string)=>Promise<Uint8Array>,x:number,z:number}} options
  */
 export async function sampleLandscapeSurfaceDetail(options) {
     const { x, z } = options;
@@ -495,7 +507,7 @@ export async function sampleLandscapeSurfaceDetail(options) {
     const bounds = context.manifest.bounds, output = support.windows.output;
     const column = Math.floor((x - bounds.minX) / spacingX + .5), row = Math.floor((bounds.maxZ - z) / spacingZ + .5);
     if (column < output.minColumn || column > output.maxColumn || row < output.minRow || row > output.maxRow) fail(`inspection point ${x},${z} lies outside page ${context.page.id}`);
-    const native = await loadSupport(context, options.loadCover), boundaries = buildBoundaries(context, native), sampler = createSampler(context, native);
+    const native = await loadSupport(context, options.loadCover, options.loadNatural), boundaries = buildBoundaries(context, native), sampler = createSampler(context, native);
     const point = { ...sampler.sample(x, z) }, warpedX = x + point.warpX, warpedZ = z + point.warpZ, baseLabels = new Int32Array(2);
     const baseDistance = boundaries.query(warpedX, warpedZ, support.queryRadiusMeters, baseLabels);
     const sampleColumn = Math.max(0, Math.min(support.fineColumns - 1, column)), sampleRow = Math.max(0, Math.min(support.fineRows - 1, row));

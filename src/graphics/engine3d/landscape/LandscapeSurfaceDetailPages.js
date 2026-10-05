@@ -7,6 +7,8 @@
 // as uniform without a slot or upload, and so do their descendants. Fine residency never gates material tiers: fine
 // soils join the interests of their visible native ancestor, and visible fine leaves lend their own projected densities
 // to the soils of their finest resolved page, so a material's texel demand follows the fine pages where it occurs.
+// Every generation and inspection carries the natural soil request of its native owners (AI577 D5), the same request whose
+// policy and page hashes enter the page identity, so a cached page always matches the labels of the resident native pages.
 import { landscapeSurfaceDetailKey } from '../../../app/landscape/LandscapeSurfaceDetail.js';
 import { landscapeTextureBytes } from './LandscapeAppearanceBudget.js';
 import { LANDSCAPE_DETAIL_SLOTS_MAX } from './LandscapeCoverageSlots.js';
@@ -57,10 +59,15 @@ export function landscapeSurfaceDetailCapacity({ levels, coverageSlots, limits, 
     return result(capacity, capacity ? null : 'appearance-gpu-headroom');
 }
 
-/** Controlled bytes of one detail worker context: overview cover copy, natural infill construction and its cover cache. @param {any} rootDescriptor @param {number} chunkSamples */
-export function landscapeSurfaceDetailWorkerBytes(rootDescriptor, chunkSamples) {
+/**
+ * Controlled bytes of one detail worker context: overview cover copy, natural infill construction, its cover cache and, while terrain-driven
+ * natural soil is active, its equally bounded natural-soil page cache (one label byte per chunk sample).
+ * @param {any} rootDescriptor @param {number} chunkSamples @param {{naturalSoil?:boolean}} [options]
+ */
+export function landscapeSurfaceDetailWorkerBytes(rootDescriptor, chunkSamples, { naturalSoil = false } = {}) {
     if (!Number.isSafeInteger(chunkSamples) || chunkSamples < 1) throw new Error('[LandscapeSurfaceDetail] chunkSamples must be a positive integer');
-    return rootDescriptor.columns * rootDescriptor.rows + landscapeNaturalPresentationBytes(rootDescriptor).workingBytes + LANDSCAPE_SURFACE_DETAIL_RUNTIME.workerCoverPages * chunkSamples;
+    return rootDescriptor.columns * rootDescriptor.rows + landscapeNaturalPresentationBytes(rootDescriptor).workingBytes
+        + LANDSCAPE_SURFACE_DETAIL_RUNTIME.workerCoverPages * chunkSamples * (naturalSoil ? 2 : 1);
 }
 
 /** @param {{levels:number,reason:string,recipe:any,recipeHash:string,seed:number}} options */
@@ -79,12 +86,13 @@ function statistics(values) {
 
 export class LandscapeSurfaceDetailPages {
     /**
-     * @param {{masks:any,budget:any,pool:any,cache:any,index:any,recipe:any,recipeHash:string,seed:number,levels:number,capacity:number,firstSlot:number,workerContextBytes:number}} options
+     * @param {{masks:any,budget:any,pool:any,cache:any,index:any,recipe:any,recipeHash:string,seed:number,levels:number,capacity:number,firstSlot:number,workerContextBytes:number,
+     *   natural?:any}} options natural is the ready LandscapeNaturalInference of the native masks (null: overview infill everywhere)
      */
-    constructor({ masks, budget, pool, cache, index, recipe, recipeHash, seed, levels, capacity, firstSlot, workerContextBytes }) {
+    constructor({ masks, budget, pool, cache, index, recipe, recipeHash, seed, levels, capacity, firstSlot, workerContextBytes, natural = null }) {
         if (!Number.isSafeInteger(capacity) || capacity < 1 || !Number.isSafeInteger(firstSlot) || firstSlot + capacity !== masks.slotCount) throw new Error('[LandscapeSurfaceDetail] fine slots must fill the mask array above the native capacity');
         if (!index || index.levels !== levels || !pool) throw new Error('[LandscapeSurfaceDetail] fine pages need a detail index for their levels and a worker pool');
-        Object.assign(this, { masks, budget, pool, cache, index, recipe, recipeHash, seed, levels, capacity, firstSlot, workerContextBytes });
+        Object.assign(this, { masks, budget, pool, cache, index, recipe, recipeHash, seed, levels, capacity, firstSlot, workerContextBytes, natural });
         this.manifest = masks.manifest;
         this.maxLevel = this.manifest.grid.maxLevel;
         this.levelIds = Array.from({ length: levels }, (_, offset) => this.maxLevel + 1 + offset);
@@ -192,11 +200,14 @@ export class LandscapeSurfaceDetailPages {
         return -1;
     }
 
+    // natural soil request of a page's native owners (null without a natural inference source: every owner keeps the overview infill)
+    naturalRequest(descriptor) { return this.natural ? this.natural.describe(this.index.support(descriptor, this.recipe).owners.map(owner => owner.id)) : null; }
+
     prepare(id) {
         let prepared = this.prepared.get(id);
         if (!prepared) {
-            const descriptor = this.index.descriptor(id), inputs = this.index.inputs(descriptor, this.recipe, this.seed);
-            prepared = { descriptor, inputs, identity: landscapeSurfaceDetailKey(inputs), proofEpoch: -1 };
+            const descriptor = this.index.descriptor(id), natural = this.naturalRequest(descriptor), inputs = this.index.inputs(descriptor, this.recipe, this.seed, natural);
+            prepared = { descriptor, inputs, natural, identity: landscapeSurfaceDetailKey(inputs), proofEpoch: -1 };
             this.prepared.set(id, prepared);
         }
         return prepared;
@@ -267,7 +278,7 @@ export class LandscapeSurfaceDetailPages {
         if (!record) return;
         this.jobs++;
         this.stats.cacheMisses++;
-        this.pool.request({ type: 'detail', pageId: id }, { priority: LANDSCAPE_SURFACE_DETAIL_RUNTIME.generationPriority, signal: record.abort.signal }).then(result => {
+        this.pool.request({ type: 'detail', pageId: id, ...(prepared.natural ? { natural: prepared.natural } : {}) }, { priority: LANDSCAPE_SURFACE_DETAIL_RUNTIME.generationPriority, signal: record.abort.signal }).then(result => {
             if (this.disposed || record.abort.signal.aborted || this.masks.records.get(id) !== record) return;
             if (result.metadata?.key !== record.identity) throw new Error(`[LandscapeSurfaceDetail] worker identity ${result.metadata?.key} differs from ${record.identity} for ${id}`);
             this.stats.generated++;
@@ -380,7 +391,8 @@ export class LandscapeSurfaceDetailPages {
         const admission = this.budget.reserve(key, { cpuBytes: this.scratchBytes[level], gpuBytes: 0, kind: 'appearance-surface-detail-inspection' });
         if (!admission.admitted) throw new Error(`[LandscapeSurfaceDetail] inspection cannot fit: ${admission.reason}`);
         try {
-            const result = await this.pool.request({ type: 'detail-sample', pageId, x, z }, { priority: LANDSCAPE_SURFACE_DETAIL_RUNTIME.inspectionPriority });
+            const natural = this.naturalRequest(this.index.descriptor(pageId));
+            const result = await this.pool.request({ type: 'detail-sample', pageId, x, z, ...(natural ? { natural } : {}) }, { priority: LANDSCAPE_SURFACE_DETAIL_RUNTIME.inspectionPriority });
             return { ...result.sample, resident: record ? { id: record.id, status: record.status, identity: record.identity, source: record.source, level: record.descriptor.level } : null };
         } finally { this.budget.release(key); }
     }
@@ -392,6 +404,7 @@ export class LandscapeSurfaceDetailPages {
         const exhausted = errors.some(failure => failure.attempts >= LANDSCAPE_SURFACE_DETAIL_RUNTIME.maxAttempts);
         return {
             enabled: true, reason: null, recipe: { id: this.recipe.id, hash: this.recipeHash }, seed: this.seed, levels: this.levels, finestLevel: this.index.finestLevel,
+            naturalLabels: { recipe: this.recipe.base.labels, policy: this.natural?.active ? this.natural.snapshot().policy : 'natural-overview-infill-v1', status: this.natural?.status ?? 'none' },
             capacity: this.capacity, firstSlot: this.firstSlot, workers: LANDSCAPE_SURFACE_DETAIL_RUNTIME.workers,
             wantedIds: [...this.wanted], residentIds: resident.map(record => record.id), uniformIds: uniform.map(record => record.id), pendingIds: pending.map(record => record.id),
             residentByLevel: byLevel(resident.map(record => record.id)), uniformByLevel: byLevel(uniform.map(record => record.id)), wantedByLevel: byLevel([...this.wanted]),

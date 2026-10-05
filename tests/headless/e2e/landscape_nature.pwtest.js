@@ -11,6 +11,10 @@ const descriptor = manifest.chunks.find(chunk => chunk.id === manifest.overviewI
 const landCover = await readFile(path.join(source, descriptor.channels.landCover.url));
 const heights = await readFile(path.join(source, descriptor.channels.height.url));
 const inference = createLandscapeNaturalPresentation(manifest, { descriptor, landCover });
+// since AI577 D5 planning-only cover displays the published terrain-driven natural soil; the root page holds the native labels of its aligned samples
+const fields = JSON.parse(await readFile(path.join(source, 'fields/manifest.json'), 'utf8'));
+const rootNatural = await readFile(path.join(source, 'fields', fields.pages.find(page => page.id === manifest.overviewId).naturalSoil.url));
+const planningCovers = new Set(manifest.landCover.catalog.filter(entry => entry.planningOnly).map(entry => entry.id));
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
 const sample = (page, point) => page.evaluate(({ x, z }) => window.__landscapeTestHooks.appearanceSample(x, z), point);
 
@@ -21,7 +25,7 @@ function referencePoint(coverId) {
         if (landCover[index] !== coverId) continue;
         const x = column * 15.625, z = 4000 - row * 15.625, height = heights.readFloatLE(index * 4);
         const interior = [-258, -257, -256, -1, 1, 256, 257, 258].filter(offset => landCover[index + offset] === coverId).length;
-        const displaySoilId = manifest.soil.catalog[inference.sample(x, z, coverId) >> 4].id;
+        const displaySoilId = manifest.soil.catalog[inference.sample(x, z, coverId, planningCovers.has(coverId) ? rootNatural[index] : -1) >> 4].id;
         const priority = interior + (coverId === 6 && displaySoilId === 'forest' ? 20 : 0) + (height > 0 ? 1 : 0);
         candidates.push({ x, z, height, coverId, displaySoilId, priority, distance: Math.hypot(column - 128, row - 128) });
     }
@@ -76,8 +80,10 @@ test('Landscape nature: actual coast, clean sand, inferred planning ground and f
     test.setTimeout(180000);
     try {
         const errors = await open(page), overview = await snapshot(page), references = [];
-        expect(overview.appearance.presentation.policy).toBe('natural-overview-infill-v1');
-        expect(overview.appearance.presentation.inferredSpacingMeters).toBe(15.625);
+        expect(overview.appearance.presentation.policy).toBe('natural-terrain-inference-v1');
+        expect(overview.appearance.presentation.status).toBe('active');
+        expect(overview.appearance.presentation.inferredSpacingMeters).toBe(1.953125);
+        expect(overview.appearance.presentation.fallback).toMatchObject({ policy: 'natural-overview-infill-v1', spacingMeters: 15.625 });
         expect(overview.appearance.materials.find(item => item.soilId === 'unknown').refCount).toBe(0);
         for (const cover of manifest.landCover.catalog) {
             const point = referencePoint(cover.id), displayed = await sample(page, point);

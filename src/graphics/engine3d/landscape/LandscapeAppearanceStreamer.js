@@ -10,7 +10,13 @@
 // normal mip filtering, and close-up micro detail paired with each tier by the optional companion multiscale sidecar, which also adds
 // 1024-pixel tiers; its absence, failure or budget refusal falls back to the schema-1 tiers with an explicit reason. Each material
 // requests its tier from the projected density of the visible pages where it occurs, and the requests are fitted to the appearance
-// ceilings level by level (LandscapeAppearanceDemand) before materials stream toward their fitted tiers.
+// ceilings level by level (LandscapeAppearanceDemand) before materials stream toward their fitted tiers. AI577 D5 terrain-field pages stream
+// beside the resident native mask pages (LandscapeTerrainFieldPages) into their own array; a missing sidecar leaves them explicitly absent.
+// Planning-only cover displays the terrain-driven natural soil of the shared LandscapeNaturalInference source (ready before the first
+// mask request) in native and generated pages alike, with its explicit per-native overview fallback reported as `presentation`. The terrain-driven
+// natural appearance (LandscapeTerrainAppearance) reads the resident root field and mask pages; this adapter mirrors it in JavaScript
+// (terrainAppearanceSample), evaluates the landscape-dressing-inputs v1 of the displayed soil (dressingSample) and lends the exposed-rock soil the
+// density of visible pages whose fields expose rock, so revealed rock streams at the tier its pages need.
 import { createLandscapeAppearancePlanner, loadLandscapeAppearanceManifest, loadLandscapeAppearanceMultiscale, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailRecipeHash } from '../../../app/landscape/index.js';
 import { LandscapeAppearanceBudget } from './LandscapeAppearanceBudget.js';
 import { LANDSCAPE_APPEARANCE_DEMAND, planLandscapeAppearanceDemand } from './LandscapeAppearanceDemand.js';
@@ -25,21 +31,30 @@ import { LANDSCAPE_MATERIAL_CLUMPS, landscapeMaterialClumpDefinition, landscapeM
 import { LandscapeMaskPages } from './LandscapeMaskPages.js';
 import { LandscapeMaterialPages } from './LandscapeMaterialPages.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
+import { LandscapeTerrainFieldPages, landscapeTerrainFieldProgress } from './LandscapeTerrainFieldPages.js';
+import { createLandscapeTerrainFieldTexture } from './LandscapeTerrainFieldTexture.js';
 import { landscapeCameraSnapshot } from './LandscapeStreamer.js';
-import { LANDSCAPE_NATURAL_PRESENTATION, landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
+import { LANDSCAPE_NATURAL_PRESENTATION, LANDSCAPE_NATURAL_TERRAIN_INFERENCE, landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
+import { LANDSCAPE_NATURAL_INFERENCE, acquireLandscapeNaturalInference, landscapeNaturalInferenceMode } from './LandscapeNaturalInference.js';
+import { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilPageBytes } from '../../../app/landscape/LandscapeNaturalSoil.js';
 import { landscapeCoverageMaskLayout } from './LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceDetailSeed, landscapeSurfaceWarpUniforms } from './LandscapeSurfaceDetailRecipe.js';
 import { createLandscapeSurfaceWarp } from './LandscapeSurfaceNoise.js';
 import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailCapacity, landscapeSurfaceDetailDisabledSnapshot, landscapeSurfaceDetailWorkerBytes } from './LandscapeSurfaceDetailPages.js';
+import { LANDSCAPE_TERRAIN_APPEARANCE, decodeLandscapeAppearanceLayer, landscapeAppearanceLayerUnits, landscapePlanningCover, landscapePlanningCoverMask, landscapeRockFactor,
+    landscapeSoilCatenaShare, landscapeSoilTerrainRole, landscapeTerrainAppearanceInputs, landscapeTerrainFreshness } from './LandscapeTerrainAppearance.js';
+import { sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
 
 export class LandscapeAppearanceStreamer {
     /**
      * @param {{loaded:any,budget:any,renderer:any,coverageSlots:{total:number,native:number,detail:number,detailMax:number,maxFragmentUniforms:number},appearanceUrl?:string,
-     *   surfaceDetail?:{levels:number},detailCache?:any,materialSampling?:string,multiscale?:'auto'|'off'}} options detailCache is the view-owned
-     *   LandscapeSurfaceDetailCache (or null); materialSampling is the compile-time mode of the view's terrain programs; multiscale 'off' keeps the
-     *   schema-1 tiers without requesting the companion sidecar
+     *   surfaceDetail?:{levels:number},detailCache?:any,materialSampling?:string,multiscale?:'auto'|'off',terrainFields?:'auto'|'off',naturalInference?:'terrain'|'overview'}} options
+     *   detailCache is the view-owned LandscapeSurfaceDetailCache (or null); materialSampling is the compile-time mode of the view's terrain programs;
+     *   multiscale 'off' keeps the schema-1 tiers without requesting the companion sidecar; terrainFields 'off' never streams terrain-field pages (the
+     *   natural inference of planning-only cover keeps its own policy); naturalInference is the view's natural display policy, shared with the geometry stream
      */
-    constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto' }) {
+    constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto', terrainFields = 'auto',
+        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode }) {
         Object.assign(this, { loaded, renderer });
         if (!['auto', 'off'].includes(multiscale)) throw new Error(`[Landscape] multiscale must be auto or off; received ${multiscale}`);
         this.multiscaleMode = multiscale;
@@ -48,9 +63,15 @@ export class LandscapeAppearanceStreamer {
         this.materialSampling = materialSampling;
         this.coverageSlots = coverageSlots;
         this.uniforms = createLandscapeAppearanceUniforms(coverageSlots?.total);
+        // AI577 D5: planning-only cover excludes the graded design terrain from the terrain-driven appearance terms
+        this.planningCoverMask = landscapePlanningCoverMask(loaded.manifest.landCover.catalog);
+        this.uniforms.uPlanningCover.value.set(this.planningCoverMask);
         this.resolveBindingFallback = appearanceUrl === undefined;
         this.appearanceUrl = this.resolveBindingFallback ? new URL('./appearance/manifest.json', loaded.manifestUrl).href : appearanceUrl;
         this.multiscaleUrl = new URL('./multiscale.json', this.appearanceUrl).href;
+        if (!['auto', 'off'].includes(terrainFields)) throw new Error(`[Landscape] terrainFields must be auto or off; received ${terrainFields}`);
+        this.terrainFieldsMode = terrainFields;
+        this.fieldsUrl = new URL('./fields/manifest.json', loaded.manifestUrl).href;
         this.prefix = `appearance/${crypto.randomUUID()}`;
         this.recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE;
         if (!Number.isSafeInteger(surfaceDetail?.levels) || surfaceDetail.levels < 0 || surfaceDetail.levels > this.recipe.levels) throw new Error(`[Landscape] surfaceDetail.levels must be an integer from 0 to ${this.recipe.levels}`);
@@ -63,6 +84,9 @@ export class LandscapeAppearanceStreamer {
         setLandscapeSurfaceWarpUniforms(this.uniforms, this.warpUniforms, true);
         this.detailReason = this.detailLevels ? null : 'surface-detail-off';
         this.budget = new LandscapeAppearanceBudget(budget, this.prefix);
+        // shared with the geometry stream of the same load (its fallback colors use the same natural soil policy)
+        this.naturalHandle = acquireLandscapeNaturalInference(loaded, { ledger: budget, mode: landscapeNaturalInferenceMode(naturalInference) });
+        this.natural = this.naturalHandle.source;
         this.abort = new AbortController();
         this.errors = [];
         this.materialTierHistory = {};
@@ -84,20 +108,33 @@ export class LandscapeAppearanceStreamer {
             const sourceSoils = new Set(root.landCover);
             this.provisionalSoils = new Set(this.loaded.manifest.soil.landCoverMapping.filter(entry => sourceSoils.has(entry.landCoverId))
                 .map(entry => this.loaded.manifest.soil.catalog.findIndex(soil => soil.id === entry.soilId)));
-            const contextAdmission = this.budget.reserve(`${this.prefix}/natural-overview-worker`, { cpuBytes: root.landCover.byteLength + landscapeNaturalPresentationBytes(root.descriptor).workingBytes, gpuBytes: 0, kind: 'appearance-natural-worker-context' });
+            await this.natural.ready;
+            if (this.disposed) return;
+            // the worker context also keeps a bounded content-addressed cache of natural-soil pages while terrain-driven natural soil is active
+            this.naturalWorkerPages = this.natural.active ? LANDSCAPE_NATURAL_SOIL.appearanceWorkerPages : 0;
+            const contextAdmission = this.budget.reserve(`${this.prefix}/natural-overview-worker`, { cpuBytes: root.landCover.byteLength + landscapeNaturalPresentationBytes(root.descriptor).workingBytes
+                + this.naturalWorkerPages * landscapeNaturalSoilPageBytes(root.descriptor), gpuBytes: 0, kind: 'appearance-natural-worker-context' });
             if (!contextAdmission.admitted) throw new Error(`Natural appearance worker cannot fit: ${contextAdmission.reason}`);
             const capacity = this.budget.limits.gpuBytes < 8 * 1024 * 1024 ? 5 : LANDSCAPE_MASK_SLOTS;
             const detail = this.createSurfaceDetail(root, capacity);
             const companion = await this.loadMultiscale();
             if (this.disposed) return;
             this.pool = new LandscapeWorkerPool({ size: 1, workerUrl: new URL('./LandscapeAppearanceWorker.js', import.meta.url), context: { type: 'initialize', manifest: this.loaded.manifest, manifestUrl: this.loaded.manifestUrl,
-                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, root } });
-            this.masks = new LandscapeMaskPages({ loaded: this.loaded, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix, capacity, detail, warp: this.warp });
+                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, fieldsUrl: this.fieldsUrl, root,
+                naturalPages: this.naturalWorkerPages } });
+            this.masks = new LandscapeMaskPages({ loaded: this.loaded, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix, capacity, detail, warp: this.warp,
+                natural: this.natural });
             if (detail && !this.masks.detail) this.releaseSurfaceDetail(this.masks.detailDegradation);
             this.multiscale = resolveLandscapeMultiscaleTiers({ appearance: this.appearance, sidecar: companion.sidecar, error: companion.error, enabled: this.multiscaleMode === 'auto',
                 maxTextureSize: this.renderer.capabilities.maxTextureSize, limits: this.budget.limits, fixedGpuBytes: this.masks.pixels.byteLength });
             this.materials = new LandscapeMaterialPages({ appearance: this.appearance, multiscale: this.multiscale, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix });
             await this.materials.initialize();
+            if (!this.disposed) {
+                this.fields = new LandscapeTerrainFieldPages({ loaded: this.loaded, shared: this.budget.shared, masks: this.masks, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms,
+                    prefix: this.prefix, url: this.fieldsUrl, mode: this.terrainFieldsMode, createTexture: createLandscapeTerrainFieldTexture,
+                    ...(this.natural.url === this.fieldsUrl ? { loadSidecar: () => this.natural.sidecar() } : {}) });
+                await this.fields.initialize();
+            }
             if (!this.disposed) {
                 this.macroUniforms = landscapeMacroVariationUniforms({ seed: this.seed, soils: this.appearance.materials.map(definition => ({ soilId: definition.soilId })) });
                 this.applySurfaceLayers();
@@ -171,7 +208,7 @@ export class LandscapeAppearanceStreamer {
         const sizing = landscapeSurfaceDetailCapacity({ levels: this.detailLevels, coverageSlots: this.coverageSlots, limits: this.budget.limits, pageBytes, nativeCapacity, materials: this.appearance.materials });
         this.detailSizing = sizing;
         if (!sizing.capacity) { this.detailReason = sizing.reason; return null; }
-        const manifest = this.loaded.manifest, contextBytes = landscapeSurfaceDetailWorkerBytes(root.descriptor, (manifest.grid.chunkIntervals + 1) ** 2), keys = [];
+        const manifest = this.loaded.manifest, contextBytes = landscapeSurfaceDetailWorkerBytes(root.descriptor, (manifest.grid.chunkIntervals + 1) ** 2, { naturalSoil: this.natural.active }), keys = [];
         for (let index = 0; index < LANDSCAPE_SURFACE_DETAIL_RUNTIME.workers; index++) {
             const key = `${this.prefix}/surface-detail-worker/${index}`, admission = this.budget.reserve(key, { cpuBytes: contextBytes, gpuBytes: 0, kind: 'appearance-surface-detail-worker-context' });
             if (!admission.admitted) { for (const reserved of keys) this.budget.release(reserved); this.detailReason = `surface-detail-worker-${admission.reason}`; return null; }
@@ -181,7 +218,7 @@ export class LandscapeAppearanceStreamer {
         this.detailPool = new LandscapeWorkerPool({ size: LANDSCAPE_SURFACE_DETAIL_RUNTIME.workers, workerUrl: new URL('./LandscapeSurfaceDetailWorker.js', import.meta.url),
             context: { type: 'initialize', manifest, manifestUrl: this.loaded.manifestUrl, root, recipe: this.recipe, seed: this.seed, coverPages: LANDSCAPE_SURFACE_DETAIL_RUNTIME.workerCoverPages } });
         return { capacity: sizing.capacity, pool: this.detailPool, cache: this.detailCache, index: createLandscapeSurfaceDetailIndex(manifest, { levels: this.detailLevels }),
-            recipe: this.recipe, recipeHash: this.recipeHash, seed: this.seed, levels: this.detailLevels, workerContextBytes: contextBytes * LANDSCAPE_SURFACE_DETAIL_RUNTIME.workers };
+            recipe: this.recipe, recipeHash: this.recipeHash, seed: this.seed, levels: this.detailLevels, workerContextBytes: contextBytes * LANDSCAPE_SURFACE_DETAIL_RUNTIME.workers, natural: this.natural };
     }
 
     releaseSurfaceDetail(reason) {
@@ -209,11 +246,12 @@ export class LandscapeAppearanceStreamer {
     // mask is resident the root cover's soils stand in at the view-wide tiers so their credit is protected before geometry refines
     materialDemand(plan) {
         const { interests, densityBySoil } = this.masks.interests(plan), detail = this.masks.detail, provisional = interests.size === 0;
+        if (!provisional) this.addRockExposureInterests(plan, interests, densityBySoil);
         const desiredTiers = provisional ? plan.desiredTiers : this.planner.desiredMaterialTiers(densityBySoil, { previousTiers: this.materialTierHistory, targetTexelPixels: plan.targetTexelPixels });
         const composition = planLandscapeAppearanceDemand({
             fixedCpuBytes: this.masks.pixels.byteLength + this.loaded.chunk.landCover.byteLength + landscapeNaturalPresentationBytes(this.loaded.chunk.descriptor).workingBytes
-                + (detail ? detail.workerContextBytes + detail.demandCpuBytes() : 0),
-            fixedGpuBytes: this.masks.pixels.byteLength, decodeBytes: this.masks.layout.decodeBytes, limits: this.budget.limits,
+                + (this.naturalWorkerPages ?? 0) * landscapeNaturalSoilPageBytes(this.loaded.chunk.descriptor) + (detail ? detail.workerContextBytes + detail.demandCpuBytes() : 0),
+            fixedGpuBytes: this.masks.pixels.byteLength, decodeBytes: this.masks.decodeBytes ?? this.masks.layout.decodeBytes, limits: this.budget.limits,
             materials: this.materials.materials.map(material => {
                 const soilId = material.definition.soilId, interested = provisional ? this.provisionalSoils.has(material.index) : interests.has(material.index);
                 return { soilId, index: material.index, density: densityBySoil[soilId] ?? 0, pages: interests.get(material.index)?.size ?? 0,
@@ -222,6 +260,23 @@ export class LandscapeAppearanceStreamer {
             })
         });
         return { ...composition, provisional, interests, densityBySoil, desiredTiers };
+    }
+
+    // AI577 D5: rock the terrain-driven appearance reveals through susceptible soils leases the exposed-rock soil at the density of each visible
+    // native page whose resident fields expose rock (largest page exposure x susceptibility of its soils x the exposure gain above 0.02)
+    addRockExposureInterests(plan, interests, densityBySoil) {
+        const materials = this.appearance.materials, rock = materials.findIndex(definition => landscapeSoilTerrainRole(definition.soilId) < 0);
+        if (rock < 0 || !this.fields?.active) return;
+        const rockId = materials[rock].soilId, gain = LANDSCAPE_TERRAIN_APPEARANCE.rockExposure.gain;
+        for (const id of plan.visibleMaskIds) {
+            const record = this.masks.records.get(id), exposure = this.fields.rockExposure(id);
+            if (!record || record.status !== 'resident' || !exposure) continue;
+            const susceptibility = Math.max(0, ...[...record.soils].map(index => landscapeSoilTerrainRole(materials[index]?.soilId)));
+            if (exposure * susceptibility * gain < .02) continue;
+            if (!interests.has(rock)) interests.set(rock, new Set());
+            interests.get(rock).add(id);
+            densityBySoil[rockId] = Math.max(densityBySoil[rockId] ?? 0, record.progress === 1 ? plan.pixelsPerMeterById[id] ?? 0 : 0);
+        }
     }
 
     update(dt, camera, viewportHeight, uploadAllowance) {
@@ -236,6 +291,7 @@ export class LandscapeAppearanceStreamer {
         this.materialTierHistory = demand.provisional ? {} : demand.desiredTiers;
         this.lastDemand = demand;
         this.uploadedBytes += this.materials.update(dt, uploadAllowance - this.uploadedBytes);
+        this.uploadedBytes += this.fields?.update(dt, uploadAllowance - this.uploadedBytes) ?? 0;
         this.uniforms.uAppearanceReady.value = this.masks.ready && this.materials.ready ? 1 : 0;
         this.peakUploadedBytes = Math.max(this.peakUploadedBytes, this.uploadedBytes);
         this.frameCostMs = performance.now() - start + this.prepareCostMs;
@@ -243,7 +299,51 @@ export class LandscapeAppearanceStreamer {
 
     sample(x, z) { return this.masks?.sample(x, z) ?? null; }
 
+    /** Exact JavaScript terrain-field sample (mirror of terrain_fields.glsl) over the resident field pages. @param {number} x @param {number} z @param {any} [options] */
+    terrainFieldsSample(x, z, options) { return this.fields?.sample(x, z, options) ?? null; }
+
     coverageSample(x, z, options) { return this.masks?.coverageSample(x, z, options) ?? null; }
+
+    /**
+     * Exact JavaScript mirror of landscapeTerrainAppearance (chunks/landscape/terrain_appearance.glsl) at a world position over the resident landscape-scale
+     * appearance layer (the root page's derived layer; slot 0 holds the root). soils lists the (tone, chroma) each catalog soil adds to its landscape-scale
+     * field (soilMacroField: its catena share times the shared terms) and rockFactor the exposed-rock albedo factor (landscapeRockFactor).
+     * @param {number} x @param {number} z @param {{height:number,slopeDegrees:number,footprint?:number,enabled?:boolean}} options terrain height (m) and geometric
+     *   slope (degrees) at the position, the footprint (m per pixel, major axis of the 3D screen derivatives) and the uLandscapeResponse.w switch
+     */
+    terrainAppearanceSample(x, z, { height, slopeDegrees, footprint = 0, enabled = true }) {
+        if (![x, z, height, slopeDegrees, footprint].every(Number.isFinite)) throw new Error('[Landscape] terrain appearance samples need a finite position, height, slope and footprint');
+        const root = this.masks?.records.get(this.loaded.manifest.overviewId);
+        if (!root || root.slot !== 0 || root.status !== 'resident') return null;
+        const bounds = root.descriptor.bounds, spacing = (bounds.maxX - bounds.minX) / (this.masks.columns - 1), state = this.uniforms.uTerrainFieldsState.value;
+        const source = (state[2] & 3) === 3 ? this.fields?.appearanceLayerSource() : null;
+        const layer = source ? decodeLandscapeAppearanceLayer(landscapeAppearanceLayerUnits(source.pixels, source.offset, source.layout, bounds, x, z)) : null;
+        const availability = layer ? landscapeTerrainFieldProgress(this.uniforms.uMaskMeta.value[0].w) * landscapeTerrainFreshness([state[0], state[1]], bounds, x, z) : 0;
+        const inputs = landscapeTerrainAppearanceInputs({ layer, availability, height: height - this.loaded.manifest.coordinates.seaLevel, geometricSlopeDegrees: slopeDegrees,
+            footprintSpacings: footprint / spacing, enabled });
+        const soils = Object.fromEntries(this.appearance.materials.map(definition => { const share = landscapeSoilCatenaShare(definition.soilId); return [definition.soilId, { share, tone: share * inputs.tone, chroma: share * inputs.chroma }]; }));
+        const rockFactor = enabled ? landscapeRockFactor({ slopeDegrees, height: height - this.loaded.manifest.coordinates.seaLevel, reach: inputs.reach, moisture: inputs.moisture * inputs.weight }) : [1, 1, 1];
+        return { recipe: LANDSCAPE_TERRAIN_APPEARANCE.id, layerRecipe: LANDSCAPE_TERRAIN_APPEARANCE.layer.id, enabled, layer, availability, ...inputs, soils, rockFactor };
+    }
+
+    /**
+     * landscape-dressing-inputs v1 of the displayed soil at a world position (the dressing diagnostics' inputs): the resident display coverage weights,
+     * the nearest native planning cover and the fine terrain fields at the footprint. Planning-only cover keeps the v1 suppression; `inferredGround`
+     * reports the outputs its inferred natural ground would have, so later dressing work can decide per use.
+     * @param {number} x @param {number} z @param {{dx?:number[],dy?:number[]}} [options]
+     */
+    dressingSample(x, z, { dx = [0, 0], dy = [0, 0] } = {}) {
+        const coverage = this.masks?.coverageSample(x, z, { dx, dy }), categorical = this.masks?.sample(x, z);
+        if (!coverage || !categorical) return null;
+        const sample = this.fields?.sample(x, z, { dx, dy }) ?? { availability: 0, fields: null };
+        const soilWeights = Object.fromEntries(coverage.soilIds.map((soilId, index) => [soilId, coverage.weights[index]]));
+        const planningShare = landscapePlanningCover(this.planningCoverMask, categorical.coverId) ? 1 : 0;
+        const fields = sample.fields && sample.availability > 0 ? sample.fields : null;
+        const outputs = sampleLandscapeDressingInputs({ soilWeights, planningShare, fields });
+        const inferred = sampleLandscapeDressingInputs({ soilWeights, planningShare: 0, fields });
+        return { ...outputs, planningShare, coverId: categorical.coverId, soilId: categorical.soilId, displaySoilId: categorical.displaySoilId, soilWeights, availability: sample.availability,
+            fields, inferredGround: planningShare ? Object.fromEntries(Object.entries(inferred).filter(([key]) => key !== 'recipe' && key !== 'fieldsAvailable')) : null };
+    }
 
     /** Generator-internal inspection through a detail worker. @param {number} x @param {number} z */
     detailSample(x, z) {
@@ -318,12 +418,21 @@ export class LandscapeAppearanceStreamer {
             sizing: this.detailSizing ?? null };
     }
 
+    // natural display policy of planning-only cover: the shared source's status, per-native policy and reason, plus the planning samples of the
+    // resident native pages counted by the policy that chose their display soil
+    presentationSnapshot(masks) {
+        const natural = this.natural.snapshot(), grid = this.loaded.manifest.grid, overviewSpacing = this.loaded.chunk.descriptor.sampleStride * grid.spacingX;
+        return { ...natural, inferredSpacingMeters: natural.policy === LANDSCAPE_NATURAL_TERRAIN_INFERENCE ? grid.spacingX : overviewSpacing,
+            fallback: { policy: LANDSCAPE_NATURAL_PRESENTATION, spacingMeters: overviewSpacing, sourceId: this.loaded.manifest.overviewId, sourceSha256: this.loaded.chunk.descriptor.channels.landCover.sha256 },
+            samples: masks?.coverage?.naturalSamples ?? null, sourceCoverPreserved: true, semanticSoilPreserved: true };
+    }
+
     snapshot() {
-        const masks = this.masks?.snapshot(), materials = this.materials?.snapshot(), budget = this.budget?.snapshot(), detail = this.detailSnapshot(masks);
+        const masks = this.masks?.snapshot(), materials = this.materials?.snapshot(), budget = this.budget?.snapshot(), detail = this.detailSnapshot(masks), fields = this.fields?.snapshot();
         const pending = (masks?.pending ?? 0) + (materials?.pending ?? 0) + detail.pending;
         const errors = [...this.errors, ...(masks?.errors ?? []), ...(materials?.errors ?? [])];
         return { ready: this.uniforms.uAppearanceReady.value === 1,
-            settled: this.initialized ? pending === 0 && !masks?.transitioning && !masks?.missingWork && materials?.settled === true && !detail.missingWork && !detail.transitioning : errors.length > 0,
+            settled: this.initialized ? pending === 0 && !masks?.transitioning && !masks?.missingWork && materials?.settled === true && !detail.missingWork && !detail.transitioning && (fields?.settled ?? true) : errors.length > 0,
             desiredMaskIds: this.lastPlan?.desiredMaskIds ?? [], visibleMaskIds: this.lastPlan?.visibleMaskIds ?? [], residentMaskIds: masks?.residentMaskIds ?? [], maskLods: masks?.maskLods ?? [], maskCapacity: masks?.capacity ?? 0,
             materials: materials?.materials ?? [], desiredTier: this.lastPlan?.desiredTier ?? '32', desiredMaskPixels: this.lastPlan?.desiredMaskPixels ?? 0,
             cpuBytes: budget?.cpuBytes ?? 0, gpuBytes: budget?.gpuBytes ?? 0, reserved: budget?.reserved ?? { cpuBytes: 0, gpuBytes: 0 }, peakCpuBytes: budget?.peakCpuBytes ?? 0, peakGpuBytes: budget?.peakGpuBytes ?? 0,
@@ -332,7 +441,7 @@ export class LandscapeAppearanceStreamer {
             uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadedBytes, frameCostMs: this.frameCostMs, errors,
             degradationReason: errors.length ? 'appearance-request-failed' : masks?.degradationReason ?? materials?.degradationReason ?? detail.degradationReason ?? null,
             revision: this.appearance?.revision ?? null, sourceRevision: this.loaded.manifest.revision, materialTransition: materials?.transition ?? null,
-            presentation: { policy: LANDSCAPE_NATURAL_PRESENTATION, inferredSpacingMeters: this.loaded.chunk.descriptor.sampleStride * this.loaded.manifest.grid.spacingX, sourceCoverPreserved: true, semanticSoilPreserved: true },
+            presentation: this.presentationSnapshot(masks),
             coverage: masks?.coverage ?? null,
             coverageSlots: { ...this.coverageSlots },
             detail: { ...detail, workerPool: this.detailPool?.snapshot() ?? null },
@@ -344,17 +453,24 @@ export class LandscapeAppearanceStreamer {
             materialTiling: this.materials?.tiling ?? {},
             multiscale: this.multiscaleSnapshot(),
             surfaceLayers: this.surfaceLayerSnapshot(),
-            materialUploads: materials?.uploads ?? null, pendingMaterialTier: materials?.pendingTier ?? null };
+            materialUploads: materials?.uploads ?? null, pendingMaterialTier: materials?.pendingTier ?? null,
+            terrainAppearance: { recipe: LANDSCAPE_TERRAIN_APPEARANCE.id, planningCover: Array.from(this.planningCoverMask), layer: this.fields?.appearanceLayer ?? null,
+                roles: Object.fromEntries((this.appearance?.materials ?? []).map(definition => [definition.soilId, landscapeSoilTerrainRole(definition.soilId)])),
+                switch: 'lighting.response.terrainAppearance (uLandscapeResponse.w)', model: LANDSCAPE_TERRAIN_APPEARANCE },
+            terrainFields: fields ?? { status: this.terrainFieldsMode === 'off' ? 'disabled' : 'pending', reason: this.terrainFieldsMode === 'off' ? 'terrain-fields-off' : 'appearance-not-initialized', mode: this.terrainFieldsMode, url: this.fieldsUrl } };
     }
 
     releaseResources() {
         this.uniforms.uAppearanceReady.value = 0;
+        this.fields?.dispose();
+        this.fields = null;
         this.materials?.dispose();
         this.masks?.dispose();
         this.pool?.dispose();
         this.detailPool?.dispose();
         this.materials = this.masks = this.pool = this.detailPool = null;
-        for (const [name, uniform] of Object.entries(this.uniforms)) if (/^(uSoilBase|uSoilSurface|uBlendBase|uBlendSurface|uMaskPages)/.test(name)) uniform.value = null;
+        for (const [name, uniform] of Object.entries(this.uniforms)) if (/^(uSoilBase|uSoilSurface|uBlendBase|uBlendSurface|uMaskPages|uTerrainFields$)/.test(name)) uniform.value = null;
+        this.naturalHandle?.release();
         this.budget?.dispose();
         this.budget = null;
         this.initialized = false;

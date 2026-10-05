@@ -155,11 +155,13 @@ export function landscapeHexRotateGradient([x, y], [c, s]) { return [c * x - s *
 
 /**
  * Tangent-space normal of a rotated sample as a slope (height derivative) in the unrotated texture frame: the slope is
- * limited like Mikkelsen's derivative conversion, then rotated by the inverse sample rotation.
+ * limited like Mikkelsen's derivative conversion, less the page's mean slope in the texture frame (AI577 D5c de-leaning, zero
+ * by default), then rotated by the inverse sample rotation.
  * @param {[number, number, number]} normal decoded OpenGL tangent normal @param {[number, number]} rotation cos, sin @param {number} [slopeLimit]
+ * @param {[number, number]} [meanSlope] the page's mean slope (LandscapeMaterialCalibration)
  */
-export function landscapeHexNormalSlope([x, y, z], [c, s], slopeLimit = LANDSCAPE_MATERIAL_SAMPLING.slopeLimit) {
-    const depth = Math.max(Math.abs(z), Math.max(Math.abs(x), Math.abs(y)) / slopeLimit), sx = x / depth, sy = y / depth;
+export function landscapeHexNormalSlope([x, y, z], [c, s], slopeLimit = LANDSCAPE_MATERIAL_SAMPLING.slopeLimit, [mx, my] = [0, 0]) {
+    const depth = Math.max(Math.abs(z), Math.max(Math.abs(x), Math.abs(y)) / slopeLimit), sx = x / depth - mx, sy = y / depth - my;
     return [c * sx + s * sy, -s * sx + c * sy];
 }
 

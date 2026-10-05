@@ -51,6 +51,41 @@ test('Landscape handoff: saves valid context and rejects stale or foreign reques
     }
 });
 
+test('Landscape server: serves the game lighting environments the viewer is lit by, and nothing else under lighting', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'landscape-lighting-'));
+    const lighting = path.join(root, 'assets/public/lighting');
+    await mkdir(path.join(root, 'assets/public/landscape/coastal-city'), { recursive: true });
+    await writeFile(path.join(root, 'assets/public/landscape/coastal-city/manifest.json'), JSON.stringify({ id: 'coastal', revision: 'r1' }));
+    for (const directory of ['calibrated', 'hdri', 'drafts']) await mkdir(path.join(lighting, directory), { recursive: true });
+    await writeFile(path.join(lighting, 'calibrated/clear-afternoon-55.hdr'), '#?RADIANCE\n');
+    await writeFile(path.join(lighting, 'calibrated/clear-afternoon-55.json'), '{"schemaVersion":1}');
+    await writeFile(path.join(lighting, 'calibrated/notes.txt'), 'private');
+    await writeFile(path.join(lighting, 'hdri/street_2k.hdr'), '#?RADIANCE\n');
+    await writeFile(path.join(lighting, 'hdri/street_2k.source.json'), '{}');
+    await writeFile(path.join(lighting, 'drafts/sky.hdr'), '#?RADIANCE\n');
+    await writeFile(path.join(lighting, 'calibrated/raw.exr'), 'exr');
+    const server = createLandscapeServer({ root });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    try {
+        for (const file of ['calibrated/clear-afternoon-55.hdr', 'calibrated/clear-afternoon-55.json', 'hdri/street_2k.hdr', 'hdri/street_2k.source.json']) {
+            const response = await fetch(`${origin}/assets/public/lighting/${file}`);
+            assert.equal(response.status, 200, file);
+            assert.equal(response.headers.get('cache-control'), 'no-cache');
+            await response.arrayBuffer();
+        }
+        assert.equal((await fetch(`${origin}/assets/public/lighting/calibrated/clear-afternoon-55.json`).then(response => response.json())).schemaVersion, 1);
+        for (const file of ['calibrated/notes.txt', 'calibrated/raw.exr', 'drafts/sky.hdr', 'calibrated', 'clear-afternoon-55.hdr']) {
+            assert.equal((await fetch(`${origin}/assets/public/lighting/${file}`)).status, 404, file);
+        }
+    } finally {
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+        assert.ok(path.basename(root).startsWith('landscape-lighting-'));
+        await rm(root, { recursive: true, force: true });
+    }
+});
+
 test('Landscape server: serves a junctioned shared asset store but rejects links escaping it', async () => {
     const base = await mkdtemp(path.join(tmpdir(), 'landscape-junction-'));
     const root = path.join(base, 'worktree'), store = path.join(base, 'shared-assets'), outside = path.join(base, 'outside');

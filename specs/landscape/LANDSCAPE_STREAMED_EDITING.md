@@ -129,6 +129,10 @@ current manifest. Failure/cancellation leaves the published revision intact.
 There is no partial-pass visibility. Revert restores a complete saved hierarchy
 under a fresh revision while retaining accepted batch IDs to reject replay.
 
+Height and land-cover edits make the terrain fields of exactly the changed native chunks stale
+([LANDSCAPE_TERRAIN_FIELDS.md](LANDSCAPE_TERRAIN_FIELDS.md), Staleness and authoring); those chunks fall
+back to analytic terms until the `landscape/terrain-fields` leaf is re-run. Soil-only batches stale nothing.
+
 ## Buffer bounds and impact
 
 The maximum domain working allowance is 8 MiB; callers may lower it. Admission

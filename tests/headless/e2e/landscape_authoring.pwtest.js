@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
+import { createLandscapeNaturalPresentation } from '../../../src/graphics/engine3d/landscape/LandscapeNaturalPresentation.js';
 
 const root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/authoring`);
@@ -59,7 +60,7 @@ test('Landscape D2: native area, raise and sand, persistent reopen, stale refusa
     await page.getByRole('button', { name: 'Top', exact: true }).click();
     const canvas = await page.locator('#game-canvas').boundingBox();
     await page.mouse.click(canvas.x + canvas.width * .5, canvas.y + canvas.height * .5);
-    await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection?.editingReady)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__landscapeTestHooks.snapshot().selection?.editingReady), { timeout: 30000 }).toBe(true);
     await expect(page.locator('[data-field="handoff"]')).toContainText('Native context saved');
     const before = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     expect(before.selection.provisional).toBe(false);
@@ -137,4 +138,117 @@ test('Landscape D2: native area, raise and sand, persistent reopen, stale refusa
     expect(errors).toEqual([]);
     await writeFile(path.join(artifacts, 'verification.json'), JSON.stringify({ directory, before, batch, applied, edited, reopened, reverted, restored, errors }, null, 2));
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
+});
+
+test.describe('Landscape D5 natural inference authoring', () => {
+    // a height edit inside a planning area makes exactly its native stale: that native falls back to the overview infill, the rest keep
+    // the published terrain-driven natural soil, and a revert restores the terrain policy everywhere
+    let naturalServer, naturalOrigin, naturalDirectory;
+    const source = path.join(root, 'assets/public/landscape/coastal-city');
+    test.beforeAll(async () => {
+        naturalDirectory = await mkdtemp(path.join(artifacts, 'natural-run-'));
+        for (const entry of ['manifest.json', 'payloads', 'appearance', 'fields']) await cp(path.join(source, entry), path.join(naturalDirectory, entry), { recursive: true });
+        await copyLandscapePlanningSources(JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8')), source, naturalDirectory);
+        naturalServer = createLandscapeServer({ root, landscapeDirectory: naturalDirectory });
+        await new Promise(resolve => naturalServer.listen(0, '127.0.0.1', resolve));
+        naturalOrigin = `http://127.0.0.1:${naturalServer.address().port}`;
+    });
+    test.afterAll(async () => {
+        if (!naturalServer) return;
+        naturalServer.closeAllConnections();
+        await new Promise(resolve => naturalServer.close(resolve));
+    });
+
+    // a root-aligned planning sample (present at every level) whose terrain label differs from the overview infill, inside a uniform 9 x 9 label block
+    async function contrastPoint(manifest, inference, nativeId) {
+        const sidecar = JSON.parse(await readFile(path.join(source, 'fields/manifest.json'), 'utf8')), chunk = manifest.chunks.find(entry => entry.id === nativeId);
+        const labels = await readFile(path.join(source, 'fields', sidecar.pages.find(page => page.id === nativeId).naturalSoil.url)), cover = await readFile(path.join(source, chunk.channels.landCover.url));
+        const soils = manifest.soil.catalog.map(soil => soil.id);
+        for (let row = 16; row < 241; row += 8) for (let column = 16; column < 241; column += 8) {
+            const i = row * 257 + column, x = chunk.bounds.minX + column * manifest.grid.spacingX, z = chunk.bounds.maxZ - row * manifest.grid.spacingZ;
+            if (!manifest.landCover.catalog.find(entry => entry.id === cover[i]).planningOnly) continue;
+            let uniform = true;
+            for (let dr = -4; dr <= 4 && uniform; dr++) for (let dc = -4; dc <= 4; dc++) if (labels[i + dr * 257 + dc] !== labels[i]) { uniform = false; break; }
+            const overview = soils[inference.sample(x, z, cover[i]) >> 4], terrain = soils[labels[i]];
+            if (uniform && overview !== terrain) return { x, z, coverId: cover[i], terrain, overview };
+        }
+        throw new Error(`No contrasting planning sample in ${nativeId}`);
+    }
+
+    test('Landscape D5: editing a planning area stales only its native, which falls back explicitly, and a revert restores the terrain policy', async ({ page }) => {
+        test.setTimeout(240000);
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        const manifest = JSON.parse(await readFile(path.join(naturalDirectory, 'manifest.json'), 'utf8')), overview = manifest.chunks.find(chunk => chunk.id === manifest.overviewId);
+        const inference = createLandscapeNaturalPresentation(manifest, { descriptor: overview, landCover: await readFile(path.join(source, overview.channels.landCover.url)) });
+        const edited = await contrastPoint(manifest, inference, 'l3/c3/r3'), neighbor = await contrastPoint(manifest, inference, 'l3/c4/r3');
+        const snapshot = () => page.evaluate(() => window.__landscapeTestHooks.snapshot());
+        const display = point => page.evaluate(({ x, z }) => window.__landscapeTestHooks.appearanceSample(x, z), point);
+        const settle = async () => {
+            await page.waitForTimeout(200);
+            await expect.poll(async () => { const state = await snapshot(); return state.ready && state.streaming?.settled && state.appearance?.settled; }, { timeout: 90000 }).toBe(true);
+            return snapshot();
+        };
+        const view = { position: [1820, 260, 2040], target: [1900, 0, 2400], projection: 'perspective', fov: 55, zoom: 1 };
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await page.goto(`${naturalOrigin}/screens/landscape_fabrication.html`);
+        await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 90000 });
+        await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
+        const before = await settle();
+        expect([before.appearance.presentation.status, before.appearance.presentation.policy, before.appearance.presentation.natives.terrain]).toEqual(['active', 'natural-terrain-inference-v1', 64]);
+        for (const point of [edited, neighbor]) {
+            const sample = await display(point);
+            expect([sample.coverId, sample.soilId, sample.displaySoilId], `${point.x},${point.z}`).toEqual([point.coverId, 'unknown', point.terrain]);
+        }
+        const batch = { format: 'landscape-edit-batch', schemaVersion: 1, id: 'd5-natural-planning-raise', landscapeId: manifest.id, expectedRevision: manifest.revision,
+            operations: [{ id: 'raise-urban-block', type: 'raise', region: { type: 'circle', center: { x: 1750, z: 2250 }, radius: 20 }, falloff: { type: 'linear', distance: 10 }, deltaMeters: 1 }] };
+        const response = await page.request.post(`${naturalOrigin}/api/landscape/apply`, { data: batch }), applied = await response.json();
+        expect(response.ok(), JSON.stringify(applied)).toBe(true);
+        expect(applied.summary.changedNativeIds).toEqual(['l3/c3/r3']);
+        await page.evaluate(() => window.__landscapeTestHooks.reload());
+        await expect.poll(async () => (await snapshot()).revision, { timeout: 90000 }).toBe(applied.revision);
+        await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
+        const stale = await settle(), presentation = stale.appearance.presentation;
+        expect([presentation.status, presentation.reason, presentation.policy, presentation.fallbackScope]).toEqual(['active-partial', 'terrain-fields-stale-chunks', 'natural-terrain-inference-v1', 'stale-natives']);
+        expect(presentation.overviewNatives).toEqual([{ id: 'l3/c3/r3', reason: 'stale' }]);
+        expect(presentation.natives).toEqual({ total: 64, terrain: 63, overview: 1 });
+        expect(presentation.policyByNative['l3/c3/r3']).toBe('natural-overview-infill-v1');
+        expect(presentation.policyByNative['l3/c4/r3']).toBe('natural-terrain-inference-v1');
+        expect(presentation.samples.overviewByReason.stale, 'resident pages report the planning samples on the fallback').toBeGreaterThan(0);
+        expect(presentation.samples.overviewByReason.unpublished + presentation.samples.overviewByReason.inactive).toBe(0);
+        expect(stale.streaming.naturalSoil.status).toBe('active-partial');
+        expect(stale.appearance.terrainFields.staleChunks).toEqual(['l3/c3/r3']);
+        expect((await display(edited)).displaySoilId, 'the stale native shows the overview infill').toBe(edited.overview);
+        expect((await display(neighbor)).displaySoilId, 'its fresh neighbor keeps the published label').toBe(neighbor.terrain);
+        const fine = await page.evaluate(({ x, z }) => window.__landscapeTestHooks.coverageSample(x, z), edited);
+        if (fine?.generated) expect(fine.inputs.natural.find(entry => entry.id === 'l3/c3/r3')).toEqual({ id: 'l3/c3/r3', policy: 'natural-overview-infill-v1' });
+        // AI577 D5 terrain appearance: the layer is derived with the stale cell excluded; its terms are neutral inside the stale native and fade in
+        // continuously over the freshness distance on the fresh side (no seam), while the coastal reach falls back to the local runup
+        expect(stale.appearance.terrainFields.appearanceLayerState.status).toBe('resident');
+        expect(stale.appearance.terrainFields.appearanceLayer.statistics.stale).toBeGreaterThan(0);
+        const across = await page.evaluate(() => Array.from({ length: 31 }, (_, k) => window.__landscapeTestHooks.terrainAppearanceSample(1990 + 2 * k, 2250)));
+        expect(across[0].availability, 'inside the stale native').toBe(0);
+        expect([across[0].tone, across[0].chroma, across[0].exposure].every(value => value === 0), 'neutral terms').toBe(true);
+        expect(across.at(-1).availability, 'past the fade on the fresh side').toBe(1);
+        for (let k = 1; k < across.length; k++) {
+            expect(across[k].availability).toBeGreaterThanOrEqual(across[k - 1].availability);
+            expect(across[k].availability - across[k - 1].availability, 'no seam at the stale border').toBeLessThan(.15);
+        }
+        await page.screenshot({ path: path.join(artifacts, '04-natural-stale-native.png') });
+        const revertResponse = await page.request.post(`${naturalOrigin}/api/landscape/revert`, { data: { expectedRevision: applied.revision } }), reverted = await revertResponse.json();
+        expect(revertResponse.ok(), JSON.stringify(reverted)).toBe(true);
+        await page.evaluate(() => window.__landscapeTestHooks.reload());
+        await expect.poll(async () => (await snapshot()).revision, { timeout: 90000 }).toBe(reverted.revision);
+        await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
+        const restored = await settle();
+        // the revert restores the bound channel hashes, so every native is fresh again (the revision itself is new)
+        expect([restored.appearance.presentation.status, restored.appearance.presentation.natives.terrain, restored.appearance.presentation.bound]).toEqual(['active', 64, false]);
+        expect((await display(edited)).displaySoilId).toBe(edited.terrain);
+        expect(errors).toEqual([]);
+        await writeFile(path.join(artifacts, 'natural-inference-verification.json'), JSON.stringify({ naturalDirectory, edited, neighbor, applied: applied.summary,
+            before: before.appearance.presentation, stale: presentation, restored: restored.appearance.presentation, fine: fine ? { generated: fine.generated, natural: fine.inputs?.natural ?? null } : null }, null, 2));
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        const disposed = await snapshot();
+        expect([disposed.budget.cpuBytes, disposed.budget.gpuBytes]).toEqual([0, 0]);
+    });
 });

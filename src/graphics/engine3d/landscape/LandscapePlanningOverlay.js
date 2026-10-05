@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { LANDSCAPE_PLANNING_ROLES, loadLandscapePlanningReferences } from '../../../app/landscape/LandscapePlanningReferences.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 import { buildLandscapePlanningPositions, landscapePlanningVertexCount } from './LandscapePlanningGeometry.js';
-import { createLandscapeDiagnosticUniforms, landscapeSurfaceSoilColorValues, LANDSCAPE_DIAGNOSTICS } from './LandscapeTerrainDiagnostics.js';
+import { createLandscapeDiagnosticUniforms, landscapeDressingClassValues, landscapeSurfaceSoilColorValues, LANDSCAPE_DIAGNOSTICS, LANDSCAPE_DRESSING_DIAGNOSTICS } from './LandscapeTerrainDiagnostics.js';
 
 const LAYERS = Object.freeze({ districts: { kind: 'district', color: 0xe0c984 }, roads: { kind: 'road', color: 0xe7d4bc },
     shoreline: { kind: 'shoreline', color: 0x75dce6 }, points: { kind: 'point', color: 0xffb37b }, corridors: { kind: 'view-corridor', color: 0xb5c980 } });
@@ -25,6 +25,8 @@ export class LandscapePlanningOverlay {
     applyDiagnostic(diagnostic) {
         if (!LANDSCAPE_DIAGNOSTICS.includes(diagnostic)) throw new Error('Unknown landscape diagnostic');
         if (diagnostic === 'surface-coverage') this.uniforms.uSurfaceSoilColors.value.set(landscapeSurfaceSoilColorValues(this.loaded.manifest.soil.catalog));
+        // AI577 D5 dressing diagnostics read each soil's dressing host class from the same uniform
+        if (LANDSCAPE_DRESSING_DIAGNOSTICS.includes(diagnostic)) this.uniforms.uSurfaceSoilColors.value.set(landscapeDressingClassValues(this.loaded.manifest.soil.catalog));
         this.diagnostic = diagnostic; this.uniforms.uDiagnostic.value = LANDSCAPE_DIAGNOSTICS.indexOf(diagnostic);
     }
 
@@ -63,7 +65,7 @@ export class LandscapePlanningOverlay {
             if (!admission.admitted) { this.visible[name] = false; this.errors.push(`${name} guide cannot fit: ${admission.reason}`); continue; }
             const positions = buildLandscapePlanningPositions(features, this.loaded.chunk), geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const material = new THREE.LineBasicMaterial({ color: layer.color, transparent: true, opacity: .86, depthWrite: false, depthTest: false });
+            const material = new THREE.LineBasicMaterial({ color: layer.color, transparent: true, opacity: .86, depthWrite: false, depthTest: false, toneMapped: false });
             const line = new THREE.LineSegments(geometry, material);
             line.name = `Landscape planning ${name}`; line.renderOrder = 7; line.visible = false; this.scene.add(line);
             this.records.set(name, { key, bytes, line, uploaded: false });

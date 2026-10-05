@@ -18,6 +18,9 @@ import { createLandscapeMaterialTiling, LANDSCAPE_MATERIAL_TILING } from './Land
 import { LANDSCAPE_MATERIAL_BLEND } from './LandscapeMaterialBlend.js';
 import { landscapeMicroUniformValues } from './LandscapeMicroDetail.js';
 import { landscapeMultiscaleFallback, landscapeSchemaMaterialTiers } from './LandscapeMultiscaleTiers.js';
+import { landscapeMaterialResponseValues } from './LandscapeMaterialResponse.js';
+import { LANDSCAPE_MATERIAL_CALIBRATION, landscapeMaterialCalibration } from './LandscapeMaterialCalibration.js';
+import { landscapeSoilTerrainRole } from './LandscapeTerrainAppearance.js';
 
 export class LandscapeMaterialPages {
     /**
@@ -41,6 +44,7 @@ export class LandscapeMaterialPages {
         this.disposed = false;
         this.tiling = {};
         this.microEnabled = true;
+        this.calibrationSwitches = { albedo: true, normalLean: true };
         this.uploads = { maps: 0, bytes: 0, tiers: 0, splitTiers: 0, maxFramesPerTier: 0, lastTier: null };
     }
 
@@ -54,7 +58,8 @@ export class LandscapeMaterialPages {
             const effective = material.pipeline.overrides.effective;
             const remap = effective.roughnessRemap;
             this.tiling[definition.soilId] = createLandscapeMaterialTiling(effective.tileMeters, { microTileMeters: material.micro?.tileMeters ?? null });
-            this.uniforms.uSoilScale.value[index].set(effective.tileMeters, effective.normalStrength, effective.aoIntensity, effective.metalness);
+            // x: the AI577 D5 terrain role of the soil (landscape-terrain-appearance-v1); the physical period lives in uSoilTiling.x
+            this.uniforms.uSoilScale.value[index].set(landscapeSoilTerrainRole(definition.soilId), effective.normalStrength, effective.aoIntensity, effective.metalness);
             this.uniforms.uSoilState.value[index].set(definition.height ? 1 : 0, 32, 0, 0);
             this.uniforms.uSoilAlbedo.value[index].set(effective.albedoBrightness, effective.albedoHueDegrees * Math.PI / 180, effective.albedoSaturation, effective.albedoTintStrength);
             this.uniforms.uSoilRoughness.value[index].set(remap?.min ?? 0, remap?.max ?? 1, remap?.gamma ?? 1, remap?.invertInput ? 1 : 0);
@@ -62,8 +67,31 @@ export class LandscapeMaterialPages {
             this.uniforms.uSoilRange.value[index].set(normalize ? definition.roughnessInputRange.min : 0, normalize ? definition.roughnessInputRange.max : 1, effective.roughness, (material.pipeline.meta?.calibration?.uvRotationDegrees ?? 0) * Math.PI / 180);
         }
         this.uniforms.uSurfaceBlendEnabled.value = this.materials.some(material => !!material.definition.height) ? 1 : 0;
+        this.response = landscapeMaterialResponseValues(this.materials.map(material => ({ soilId: material.definition.soilId })));
+        this.applyCalibration();
         this.applyMicroUniforms();
         this.initialized = true;
+    }
+
+    // AI577 D5c: natural-ground response per soil (uSoilResponse.xy, opposition in uSoilState.w) and the landscape-local material calibration
+    // (albedo gain on the shared brightness, page mean normal slope in uSoilResponse.zw)
+    applyCalibration() {
+        for (const material of this.materials) {
+            const { index } = material, effective = material.pipeline.overrides.effective;
+            material.calibration = landscapeMaterialCalibration(material.definition.materialId, this.calibrationSwitches);
+            this.uniforms.uSoilAlbedo.value[index].x = effective.albedoBrightness * material.calibration.albedoGain;
+            this.uniforms.uSoilResponse.value[index].set(this.response.response[index * 4], this.response.response[index * 4 + 1], ...material.calibration.meanNormalSlope);
+            this.uniforms.uSoilState.value[index].w = this.response.opposition[index];
+        }
+    }
+
+    /** @param {{albedo?:boolean,normalLean?:boolean}} switches landscape-local calibration parts for A/B evidence; omitted keys keep their state */
+    setCalibration(switches) {
+        if (!switches || typeof switches !== 'object' || !Object.entries(switches).every(([key, value]) => ['albedo', 'normalLean'].includes(key) && typeof value === 'boolean')) {
+            throw new Error('[Landscape] Material calibration accepts boolean albedo and normalLean');
+        }
+        this.calibrationSwitches = { ...this.calibrationSwitches, ...switches };
+        if (this.initialized) this.applyCalibration();
     }
 
     /** Tier resolutions each soil can stream now, for the view planner and demand. */
@@ -303,8 +331,11 @@ export class LandscapeMaterialPages {
                 fittedResolution: material.fittedResolution, density: material.priority,
                 refCount: material.refs.size, tileMeters: material.pipeline?.overrides.effective.tileMeters ?? material.definition.tileMeters, calibration: material.pipeline?.diagnostics ?? null, height: material.definition.height ?? null,
                 tiers: material.tiers.map(tier => tier.resolution), maps: material.current?.maps ?? material.maps, micro: material.micro ? { ...material.micro, resident: !!material.current?.micro, shown: this.uniforms.uSoilTiling.value[material.index].y > 0 } : null,
-                multiscaleFailure: material.multiscaleFailure })),
-            micro: { enabled: this.microEnabled }, uploads: { ...this.uploads, lastTier: this.uploads.lastTier ? { ...this.uploads.lastTier } : null }, multiscaleFailures: [...this.multiscaleFailures],
+                multiscaleFailure: material.multiscaleFailure,
+                response: this.response ? { diffuseRoughness: this.response.response[material.index * 4], specularShadowing: this.response.response[material.index * 4 + 1], opposition: this.response.opposition[material.index] } : null,
+                landscapeCalibration: material.calibration ? { ...material.calibration, albedoBrightness: this.uniforms.uSoilAlbedo.value[material.index].x } : null })),
+            micro: { enabled: this.microEnabled }, calibration: { id: LANDSCAPE_MATERIAL_CALIBRATION.id, switches: { ...this.calibrationSwitches } },
+            uploads: { ...this.uploads, lastTier: this.uploads.lastTier ? { ...this.uploads.lastTier } : null }, multiscaleFailures: [...this.multiscaleFailures],
             tiling: LANDSCAPE_MATERIAL_TILING.id, errors: [...this.failures.values()], loaded: this.loaded, evicted: this.evicted, degradationReason: this.degradationReason ?? this.limitation };
     }
 

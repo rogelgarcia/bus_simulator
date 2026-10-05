@@ -1,0 +1,99 @@
+{
+  "format": "landscape-terrain-fields-recipe",
+  "schemaVersion": 1,
+  "id": "landscape-terrain-fields-v1",
+  "workingLimitBytes": 805306368,
+  "gradient": {
+    "method": "central-difference-matching-mesh-vertex-normals"
+  },
+  "depressions": {
+    "method": "priority-flood-fifo-pit-queue",
+    "conditioningSamples": 3,
+    "flats": "barnes-2014-toward-lower-away-from-higher",
+    "outlets": "landscape-edge-and-below-sea-level",
+    "tieBreak": "elevation-then-index",
+    "neighbors": 8
+  },
+  "flow": {
+    "method": "quinn-mfd",
+    "exponent": 1.1,
+    "contourFactors": [0.5, 0.354],
+    "flats": "lower-mask-neighbors-and-draining-equal-level-neighbors",
+    "specificCatchmentWidth": "native-spacing",
+    "flatSuppressionSamples": 2,
+    "percentiles": [60, 99.7]
+  },
+  "wetness": {
+    "index": "ln(specific-catchment / max(minimumTangent, tan-slope-of-filled-surface))",
+    "minimumTangent": 0.001,
+    "percentiles": [2, 98],
+    "smoothingSamples": 3,
+    "belowSeaLevel": 1
+  },
+  "curvature": {
+    "scalesSamples": [4, 12, 40],
+    "weights": [0.35, 0.35, 0.3],
+    "normalizationPercentile": 98,
+    "smoothing": "three-pass-box-gaussian"
+  },
+  "deposition": {
+    "flowSmoothingSamples": 2,
+    "flowExponent": 0.7,
+    "slopeDegrees": [1.5, 12],
+    "concavity": [0.05, 0.6],
+    "concavityBase": 0.5,
+    "fillDepthMeters": [0.05, 1.5],
+    "sinkWeight": 0.6
+  },
+  "rock": {
+    "slopeSmoothingSamples": 0,
+    "slopeDegrees": [18, 32],
+    "convexBase": 0.65,
+    "flowSuppression": 0.75,
+    "depositionSuppression": 0.8,
+    "maximum": 0.95
+  },
+  "horizon": {
+    "stored": "rows-columns-diagonals-exact",
+    "skyView": "stored-plus-knight-moves-trapezoidal-azimuth-weights",
+    "earthCurvature": "ignored-below-0.02-degrees-over-4-km"
+  },
+  "skyView": {
+    "model": "cosine-weighted-visible-sky-of-the-facet",
+    "floor": "horizontal",
+    "tangentPlane": "facet-normal-from-central-differences"
+  },
+  "shore": {
+    "propagation": "dead-reckoning-8-neighbor-two-passes-repeated-twice",
+    "crossings": "linear-on-row-and-column-edges"
+  },
+  "naturalSoil": {
+    "policy": "natural-terrain-inference-v1",
+    "candidates": ["sand", "loam", "forest", "rock", "seabed"],
+    "prior": {
+      "decimation": 4,
+      "scalesMeters": [23.4375, 93.75, 375],
+      "weights": [1, 0.5, 0.25],
+      "floor": 0.02
+    },
+    "inputSmoothing": {
+      "slopeSamples": 2,
+      "wetnessSamples": 4
+    },
+    "likelihood": {
+      "model": "naive-bayes-tent-binned-histograms",
+      "features": {
+        "shoreMeters": [-32, 256],
+        "heightMeters": [-10, 60],
+        "slopeDegrees": [0, 40],
+        "wetness": [0, 1]
+      },
+      "bins": 64,
+      "binSmoothing": 1.5,
+      "pseudoCount": 1,
+      "spatialSmoothingSamples": 6
+    },
+    "priorWeight": 1,
+    "terrainWeight": 0.5
+  }
+}

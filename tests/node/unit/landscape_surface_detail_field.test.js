@@ -255,11 +255,11 @@ test('Surface warp: about one meter of mean displacement per axis, bounded peak,
 
 test('Surface detail recipe: data-driven pair profiles, per-level search radii and validated variants', () => {
     assert.ok(Object.isFrozen(recipe) && Object.isFrozen(recipe.pairProfiles.pairs[0].soils) && Object.isFrozen(recipe.warp.amplitudes) && Object.isFrozen(recipe.boundary.loops));
-    assert.deepEqual([recipe.id, recipe.family, recipe.levels, recipe.transitionReferenceWidth, recipe.maxTransitionWidth, recipe.measuredDetail], ['landscape-surface-detail-v3', 'landscape-surface-detail', 3, .75, 2.5, false]);
+    assert.deepEqual([recipe.id, recipe.family, recipe.levels, recipe.transitionReferenceWidth, recipe.maxTransitionWidth, recipe.measuredDetail], ['landscape-surface-detail-v4', 'landscape-surface-detail', 3, .75, 2.5, false]);
     const { family, ...unversioned } = structuredClone(recipe);
     assert.equal(family, 'landscape-surface-detail');
     assert.throws(() => validateLandscapeSurfaceDetailRecipe(unversioned), /recipe.family/);
-    assert.deepEqual({ ...recipe.base }, { labels: 'natural-overview-infill-v1', boundary: LANDSCAPE_SURFACE_BOUNDARY.id, encoding: LANDSCAPE_CONTOUR_COVERAGE.id });
+    assert.deepEqual({ ...recipe.base }, { labels: 'natural-terrain-inference-v1', boundary: LANDSCAPE_SURFACE_BOUNDARY.id, encoding: LANDSCAPE_CONTOUR_COVERAGE.id });
     assert.deepEqual([recipe.boundary.saddle, recipe.boundary.smoothing, recipe.boundary.kernel], [LANDSCAPE_SURFACE_BOUNDARY.saddle, LANDSCAPE_SURFACE_BOUNDARY.smoothing, LANDSCAPE_SURFACE_BOUNDARY.kernel]);
     assert.equal(recipe.transitionReferenceWidth, LANDSCAPE_SURFACE_COVERAGE.blendWidthMeters);
     assert.deepEqual([[...recipe.warp.wavelengths], [...recipe.warp.amplitudes], recipe.warp.shaping, [...recipe.breakup.wavelengths], [...recipe.breakup.amplitudes], recipe.breakup.shaping, recipe.breakup.ridgedMix],

@@ -5,8 +5,9 @@
 //   uMacroSalts        ivec4 octave salts (uint32 stored as two's-complement integers); each drives both fields of its octave
 //   uMacroSettings     vec4(enabled, fade start and end in wavelengths per pixel, reciprocal unfaded field deviation)
 //   uSoilMacro[soil]   vec4(log2 value, saturation, hue radians, roughness) per unit field deviation
-// landscapeMacroField(world, footprint) returns the footprint-filtered unit (tone, chroma) fields. D5 adds terrain-driven inputs to this
-// field vector before landscapeMacroAlbedo and landscapeMacroRoughness apply the per-material responses.
+// landscapeMacroField(world, footprint) returns the footprint-filtered unit (tone, chroma) fields. AI577 D5 adds the terrain-driven inputs of
+// landscape-terrain-appearance-v1 to this field vector before landscapeMacroAlbedo and landscapeMacroRoughness apply the per-material responses,
+// so uMacroSettings.x gates the noise octaves only and a zero field keeps every material's albedo and roughness exactly.
 uniform vec4 uMacroOctaves[4];
 uniform ivec4 uMacroSalts;
 uniform vec4 uMacroSettings;
@@ -44,7 +45,7 @@ vec2 landscapeMacroField(vec2 world, float footprint) {
 
 // hue rotates about the gray axis and saturation about Rec.709 luminance with chroma; the log2 value follows tone
 vec3 landscapeMacroAlbedo(int soil, vec2 field, vec3 albedo) {
-    if (uMacroSettings.x < 0.5) return albedo;
+    if (field.x == 0.0 && field.y == 0.0) return albedo;
     const vec3 axis = vec3(0.57735026919);
     vec4 response = uSoilMacro[soil];
     float angle = response.z * field.y, cosine = cos(angle), sine = sin(angle);
@@ -55,5 +56,5 @@ vec3 landscapeMacroAlbedo(int soil, vec2 field, vec3 albedo) {
 }
 
 float landscapeMacroRoughness(int soil, vec2 field, float roughness) {
-    return uMacroSettings.x < 0.5 ? roughness : clamp(roughness + uSoilMacro[soil].w * field.x, 0.05, 1.0);
+    return field.x == 0.0 ? roughness : clamp(roughness + uSoilMacro[soil].w * field.x, 0.05, 1.0);
 }

@@ -76,9 +76,11 @@ vec3 landscapeHexWeightBounds(vec3 weights) {
 #endif
 }
 
-// tangent-space normal of a rotated sample as a limited slope in the unrotated texture frame
-vec2 landscapeHexSlope(vec3 normal, vec2 rotation) {
+// tangent-space normal of a rotated sample as a limited slope in the unrotated texture frame, less the page's mean slope in the texture frame
+// (AI577 D5c de-leaning: the slope of a periodic height field averages to zero, so a mean lean is a page artifact that every rotated patch
+// would turn toward a different azimuth)
+vec2 landscapeHexSlope(vec3 normal, vec2 rotation, vec2 meanSlope) {
     float depth = max(abs(normal.z), max(abs(normal.x), abs(normal.y)) / LANDSCAPE_HEX_SLOPE_LIMIT);
-    vec2 slope = normal.xy / depth;
+    vec2 slope = normal.xy / depth - meanSlope;
     return vec2(rotation.x * slope.x + rotation.y * slope.y, rotation.x * slope.y - rotation.y * slope.x);
 }

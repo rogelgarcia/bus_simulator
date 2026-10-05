@@ -38,12 +38,13 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
             const { createLandscapeShaderPayload } = await import('/src/graphics/shaders/materials/landscape/LandscapeShaderLoader.js');
             const { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
             const { LandscapeMaskPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaskPages.js');
+            const { createLandscapeReferenceProbeLightingUniforms } = await import('/src/graphics/engine3d/landscape/LandscapeLightingModel.js');
             const size = 512, columns = 17, halo = 2, width = columns + halo * 2, capacity = 17;
             const renderer = new T.WebGLRenderer({ canvas: document.getElementById('surface-probe'), antialias: false, preserveDrawingBuffer: true });
             renderer.setSize(size, size, false); renderer.setPixelRatio(1); renderer.toneMapping = T.NoToneMapping; renderer.outputColorSpace = T.LinearSRGBColorSpace;
             const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
             const coverageSlots = chooseLandscapeCoverageSlots(renderer);
-            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total });
+            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low' });
             const geometry = new T.PlaneGeometry(64, 64).rotateX(-Math.PI / 2);
             geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4), 1));
             geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
@@ -51,7 +52,7 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
             const material = new T.ShaderMaterial({ vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource, vertexColors: true,
                 uniforms: { ...appearance, uMorph: { value: 1 }, uEdges: { value: new T.Vector4() }, uEdgeMorph: { value: new T.Vector4(1, 1, 1, 1) },
                     uBounds: { value: new T.Vector4(-32, 32, -32, 32) }, uTint: { value: new T.Color(1, 1, 1) }, uLodColor: { value: 0 },
-                    uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) } } });
+                    uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) }, ...createLandscapeReferenceProbeLightingUniforms() } });
             const scene = new T.Scene(), mesh = new T.Mesh(geometry, material), camera = new T.OrthographicCamera(-4, 4, 4, -4, .1, 200);
             mesh.frustumCulled = false; scene.add(mesh); camera.up.set(0, 0, -1);
             const resources = [], colors = [[30, 30, 30], [30, 30, 30], [107, 8, 5], [5, 102, 10], [6, 8, 112], [30, 30, 30]];
@@ -195,6 +196,7 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
             const { createLandscapeShaderPayload } = await import('/src/graphics/shaders/materials/landscape/LandscapeShaderLoader.js');
             const { createLandscapeAppearanceUniforms, chooseLandscapeCoverageSlots, setLandscapeSurfaceWarpUniforms } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
             const { LandscapeMaskPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaskPages.js');
+            const { createLandscapeReferenceProbeLightingUniforms } = await import('/src/graphics/engine3d/landscape/LandscapeLightingModel.js');
             const { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceWarpUniforms } = await import('/src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js');
             const { createLandscapeSurfaceWarp } = await import('/src/graphics/engine3d/landscape/LandscapeSurfaceNoise.js');
             const size = 512, columns = 17, halo = 2, width = columns + halo * 2, capacity = 17, nativeMaxLevel = 1, seed = 4005984422, recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE;
@@ -202,7 +204,7 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
             renderer.setSize(size, size, false); renderer.setPixelRatio(1); renderer.toneMapping = T.NoToneMapping; renderer.outputColorSpace = T.LinearSRGBColorSpace;
             const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
             const coverageSlots = chooseLandscapeCoverageSlots(renderer);
-            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total });
+            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low' });
             const warpUniforms = landscapeSurfaceWarpUniforms(recipe, seed);
             const jsWarp = createLandscapeSurfaceWarp({ seed, wavelengths: [...recipe.warp.wavelengths], amplitudes: [...recipe.warp.amplitudes], shaping: recipe.warp.shaping }), warpOut = new Float64Array(2);
             const geometry = new T.PlaneGeometry(256, 256).rotateX(-Math.PI / 2);
@@ -212,7 +214,7 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
             const material = new T.ShaderMaterial({ vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource, vertexColors: true,
                 uniforms: { ...appearance, uMorph: { value: 1 }, uEdges: { value: new T.Vector4() }, uEdgeMorph: { value: new T.Vector4(1, 1, 1, 1) },
                     uBounds: { value: new T.Vector4(-128, 128, -128, 128) }, uTint: { value: new T.Color(1, 1, 1) }, uLodColor: { value: 0 },
-                    uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) } } });
+                    uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) }, ...createLandscapeReferenceProbeLightingUniforms() } });
             const scene = new T.Scene(), mesh = new T.Mesh(geometry, material), camera = new T.OrthographicCamera(-4, 4, 4, -4, .1, 200);
             mesh.frustumCulled = false; scene.add(mesh); camera.up.set(0, 0, -1);
             const resources = [], colors = [[30, 30, 30], [30, 30, 30], [107, 8, 5], [5, 102, 10], [6, 8, 112], [30, 30, 30]];

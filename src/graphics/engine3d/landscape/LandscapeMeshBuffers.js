@@ -51,8 +51,12 @@ export function estimateLandscapeMeshBuffers(descriptor) {
     };
 }
 
-/** @param {{chunk:any,parent?:any,root?:any,manifest:any,presentation?:any}} options @returns {any} */
-export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk, manifest, presentation = createLandscapeNaturalPresentation(manifest, root) }) {
+/**
+ * @param {{chunk:any,parent?:any,root?:any,manifest:any,presentation?:any,naturalAt?:(column:number,row:number)=>number}} options naturalAt returns the resolved
+ *   terrain-driven natural label of a local sample (-1: overview infill), so fallback colors show the same display soil as the masks
+ * @returns {any}
+ */
+export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk, manifest, presentation = createLandscapeNaturalPresentation(manifest, root), naturalAt = () => -1 }) {
     const { descriptor, heights, landCover } = chunk;
     const { columns, rows, bounds } = descriptor;
     if (!(heights instanceof Float32Array) || !(landCover instanceof Uint8Array) || heights.length !== columns * rows || landCover.length !== heights.length) throw new Error('Terrain mesh requires complete bounded decoded channels');
@@ -84,7 +88,7 @@ export function buildLandscapeMeshBuffers({ chunk, parent = chunk, root = chunk,
             const parentMixed = parentNormal.map((value, axis) => value * (1 - edgeWeight) + referenceNormal[axis] * edgeWeight);
             const parentLength = Math.hypot(...parentMixed);
             parentNormals.set(parentMixed.map(value => Math.round(value / parentLength * 32767)), i * 3);
-            colors.set(soilPalette.get(soilIds[presentation.sample(x, z, landCover[i]) >> 4]), i * 3);
+            colors.set(soilPalette.get(soilIds[presentation.sample(x, z, landCover[i], naturalAt(column, row)) >> 4]), i * 3);
         }
     }
     let cursor = 0, wireCursor = 0;

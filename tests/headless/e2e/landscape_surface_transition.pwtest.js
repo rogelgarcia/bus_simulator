@@ -10,17 +10,41 @@ const root = path.resolve('.'), source = path.join(root, 'assets/public/landscap
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
 if (phase !== null && !['before', 'after'].includes(phase)) throw new Error('LANDSCAPE_SURFACE_PHASE must be before or after');
 const deliverable = process.env.LANDSCAPE_SURFACE_DELIVERABLE ?? 'd1';
-if (!['d1', 'd1a', 'd2', 'd3', 'd4'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2, d3 or d4');
+if (!['d1', 'd1a', 'd2', 'd3', 'd4', 'd5'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2, d3, d4 or d5');
 const profile = process.env.LANDSCAPE_SURFACE_PROFILE ?? 'default';
 const budgetProfiles = { default: { cpuMiB: 128, gpuMiB: 64 }, quality: { cpuMiB: 256, gpuMiB: 128 }, realism: { cpuMiB: 384, gpuMiB: 192 }, shipped: { cpuMiB: 512, gpuMiB: 256 } };
 if (!budgetProfiles[profile]) throw new Error('LANDSCAPE_SURFACE_PROFILE must be default, quality, realism or shipped');
 const { cpuMiB, gpuMiB } = budgetProfiles[profile];
 const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}${profile === 'default' ? '' : `/${profile}`}`;
 const artifacts = path.join(root, artifactPrefix.slice(1), phase ?? 'unselected');
-const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling', d4: 'D4 · Distinct macro, local and micro detail' }[deliverable];
+const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling', d4: 'D4 · Distinct macro, local and micro detail', d5: 'D5 · Terrain-driven natural appearance and lighting' }[deliverable];
 const manifestText = await readFile(path.join(source, 'manifest.json'), 'utf8'), manifest = JSON.parse(manifestText);
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, MiB = 1024 * 1024;
 const lightingDescription = 'Terrain shader illuminate(): fixed GGX sun direction [-0.44,0.87,-0.22], RGB [2.7,2.6,2.3], hemisphere ambient factor 0.68. LandscapeView fixed hemisphere 0xdceef4/0x536047 intensity 2.3 and directional 0xfff4dd intensity 2.2 at [-2000,4000,-1000].';
+// AI577 D5 replaces the fixed lights with the game's resolved calibrated lighting: its comparison records both lighting descriptions instead of
+// requiring equal ones, and the terrain geometry is matched without the HDR background box and the atmosphere backdrop the new lighting draws
+// and with the single-pass water surface in place of the two-pass pre-D5 one
+const lightingChanges = deliverable === 'd5';
+const fixed = (values, digits = 4) => values.map(value => Number(value).toFixed(digits)).join(', ');
+// describes the lighting a runtime resolved (snapshot().lighting), so a capture never claims a constant it did not render
+function describeLighting(lighting) {
+    if (!lighting) return lightingDescription;
+    const { sun, sky, haze, water, environment } = lighting;
+    return `Game lighting ${lighting.model} tier ${lighting.tier} (${lighting.status}) from ${lighting.sources.lighting} + ${lighting.sources.atmosphere}`
+        + ` (saved lighting ${lighting.sources.savedLighting}, saved atmosphere ${lighting.sources.savedAtmosphere}, URL overrides ${JSON.stringify(lighting.sources.urlOverrides)}):`
+        + ` ${lighting.toneMapping} tone mapping, exposure ${lighting.exposure}; sun azimuth ${sun.azimuthDeg}° elevation ${sun.elevationDeg}° direction [${fixed(sun.direction)}],`
+        + ` normal irradiance [${fixed(sun.irradiance, 3)}]; sky ${environment.iblId} at intensity ${environment.intensity} (${sky.model}, horizontal irradiance [${fixed(sky.irradiance.up, 3)}]),`
+        + ` background ${environment.background}; hemisphere ${lighting.hemisphereIntensity}; aerial perspective ${haze.model} ${haze.enabled ? 'on' : 'off'} (calibration [${fixed(haze.calibration)}]);`
+        + ` water ${water.model} at level ${water.opticalLevel}; visibility hooks ${lighting.hooks.sunVisibility}/${lighting.hooks.skyVisibility}.`;
+}
+// the pre-D5 sea-level reference was a transparent double-sided MeshStandardMaterial, which three.js draws as a back and a front pass
+const PRE_D5_WATER_PASSES = 2;
+function renderOverhead(state) {
+    if (!lightingChanges || !state.lighting) return { drawCalls: 0, triangles: 0 };
+    const water = state.water?.drawnLastFrame ? state.water.drawPasses - PRE_D5_WATER_PASSES : 0;
+    return { drawCalls: (state.lighting.environment.backgroundDrawCalls ?? 0) + (state.lighting.backdrop?.drawCalls ?? 0) + water,
+        triangles: (state.lighting.environment.backgroundTriangles ?? 0) + (state.lighting.backdrop?.triangles ?? 0) + water * (state.water?.trianglesPerPass ?? 0) };
+}
 const anchor = { x: 1071.2890625, z: 914.0625, height: 6.4459381103515625, chunkId: 'l3/c2/r6', row: 44, column: 36 };
 const { x, z, height: y } = anchor;
 const route = [
@@ -99,8 +123,8 @@ async function writeComparisons(browser, baseURL, before, after) {
             const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>AI577 ${deliverable.toUpperCase()} ${stop.label}</title>
 <link rel="stylesheet" href="comparison.css"></head>
-<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · ${cpuMiB}/${gpuMiB} MiB · Fixed camera and lighting</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
-<section><header><div>AFTER · AI577 ${deliverable.toUpperCase()} (working tree)</div><h1>${stop.label}</h1><p>AI577 ${deliveryLabel} · Original renders shown at native pixel dimensions</p></header><img src="../after/${stop.id}.png" width="1920" height="1080" alt="After: ${stop.label}"></section></main></body></html>`;
+<body><main><section><header><div>BEFORE · ${before.gitRevision.slice(0, 8)}</div><h1>${stop.label}</h1><p>Native coastal source · 1920 × 1080 · DPR 1 · ${cpuMiB}/${gpuMiB} MiB · ${lightingChanges ? 'Fixed camera; pre-D5 fixed lights' : 'Fixed camera and lighting'}</p></header><img src="../before/${stop.id}.png" width="1920" height="1080" alt="Before: ${stop.label}"></section>
+<section><header><div>AFTER · AI577 ${deliverable.toUpperCase()} (working tree)</div><h1>${stop.label}</h1><p>AI577 ${deliveryLabel} · ${lightingChanges ? 'Game calibrated lighting · ' : ''}Original renders shown at native pixel dimensions</p></header><img src="../after/${stop.id}.png" width="1920" height="1080" alt="After: ${stop.label}"></section></main></body></html>`;
             await writeFile(path.join(directory, `${stop.id}.html`), html);
             resources.set(`${prefix}/comparisons/${stop.id}.html`, { contentType: 'text/html', body: html });
             for (const phaseName of ['before', 'after']) resources.set(`${prefix}/${phaseName}/${stop.id}.png`, {
@@ -210,7 +234,10 @@ test('Landscape surface: four native coastal transitions retain identical captur
             report.materialComparison = { before: JSON.parse(await readFile(path.join(artifacts, '../before/material-inputs.json'), 'utf8')), after: report.materialInputs };
         } else expect(report.dataset).toEqual(before.dataset);
         expect(report.route).toEqual(before.route); expect(report.viewport).toEqual(before.viewport);
-        expect(report.captureConditions).toEqual(before.captureConditions);
+        if (lightingChanges) {
+            const { lighting: beforeLighting, ...beforeConditions } = before.captureConditions, { lighting: afterLighting, ...afterConditions } = report.captureConditions;
+            expect(afterConditions).toEqual(beforeConditions);
+        } else expect(report.captureConditions).toEqual(before.captureConditions);
     }
     const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 }), page = await context.newPage();
     await writeFile(path.join(artifacts, 'browser-errors.json'), '[]');
@@ -250,11 +277,16 @@ test('Landscape surface: four native coastal transitions retain identical captur
             window.dispatchEvent(new Event('resize'));
         });
         report.metadata = await page.evaluate(() => window.__landscapeTestHooks.performanceMetadata());
+        const resolvedLighting = await page.evaluate(() => window.__landscapeTestHooks.snapshot().lighting ?? null);
+        report.captureConditions.lighting = describeLighting(resolvedLighting);
+        if (resolvedLighting) report.resolvedLighting = resolvedLighting;
         expect(report.metadata.viewport).toEqual(report.viewport);
         expect(report.metadata.renderer.width).toBe(viewport.width); expect(report.metadata.renderer.height).toBe(viewport.height);
         if (before) {
             expect(report.metadata.renderer).toEqual(before.metadata.renderer);
-            expect(report.metadata.rendererSettings).toEqual(before.metadata.rendererSettings);
+            if (lightingChanges) report.lightingComparison = { before: { description: before.captureConditions.lighting, rendererSettings: before.metadata.rendererSettings },
+                after: { description: report.captureConditions.lighting, rendererSettings: report.metadata.rendererSettings } };
+            else expect(report.metadata.rendererSettings).toEqual(before.metadata.rendererSettings);
             expect(report.metadata.budgets).toEqual(before.metadata.budgets);
         }
         for (const stop of route) {
@@ -271,10 +303,12 @@ test('Landscape surface: four native coastal transitions retain identical captur
             if (before) {
                 const previous = before.stops.find(value => value.id === stop.id);
                 expect(measured.state.camera).toEqual(previous.state.camera);
-                expect(summary.triangles.median, 'Matched material evidence requires identical geometry').toBe(previous.triangles.median);
-                expect(summary.drawCalls.median, 'Matched material evidence requires identical draw calls').toBe(previous.drawCalls.median);
+                const overhead = renderOverhead(measured.state);
+                entry.lightingRenderOverhead = overhead;
+                expect(summary.triangles.median - overhead.triangles, 'Matched material evidence requires identical geometry').toBe(previous.triangles.median);
+                expect(summary.drawCalls.median - overhead.drawCalls, 'Matched material evidence requires identical draw calls').toBe(previous.drawCalls.median);
                 const identity = state => materialQuality(state).map(({ resolution, desiredResolution, ...material }) => material);
-                if (!['d1a', 'd4'].includes(deliverable)) {
+                if (!['d1a', 'd4', 'd5'].includes(deliverable)) {
                     expect(measured.state.appearance.materialTiling).toEqual(previous.state.appearance.materialTiling);
                     expect(identity(measured.state)).toEqual(identity(previous.state));
                 } else entry.materialIdentityChanges = { before: identity(previous.state), after: identity(measured.state),
@@ -282,7 +316,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
                 for (const material of measured.state.appearance.materials) {
                     const original = previous.state.appearance.materials.find(value => value.soilId === material.soilId);
                     expect(original, `Missing baseline soil binding ${material.soilId}`).toBeTruthy();
-                    if (deliverable !== 'd4' && (deliverable === 'd1a' || ['sand', 'loam', 'forest'].includes(material.soilId)) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
+                    if (!['d4', 'd5'].includes(deliverable) && (deliverable === 'd1a' || ['sand', 'loam', 'forest'].includes(material.soilId)) && (material.refCount > 0 || original.refCount > 0) && material.resolution !== original.resolution) {
                         const failure = { stop: stop.id, soilId: material.soilId, materialId: material.materialId, before: original.resolution, after: material.resolution };
                         report.materialQualityFailures.push(failure);
                         console.warn(`[Landscape surface unmatched material tier] ${JSON.stringify(failure)}`);

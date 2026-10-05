@@ -94,6 +94,29 @@ can z-fight over very low land in the Top view; diagnostic checks sample with wa
 See [LANDSCAPE_PLANNING.md](LANDSCAPE_PLANNING.md) for source formats and IDs,
 accuracy, bookmark scope, report coverage, budgets, and verification hooks.
 
+## AI577 D5 lighting, terrain fields and natural ground
+
+The viewer is lit by the game's calibrated daylight (LANDSCAPE_APPEARANCE_RUNTIME.md, Lighting):
+`landscapeLighting=low|standard|high` (default standard; any other value throws "landscapeLighting must
+be one of low, standard, high; received <value>"), and the test hook `setLighting({tier, response,
+calibration})` recompiles terrain, water and backdrop. The background is the calibrated HDR rotated by
+−yaw. A backdrop sphere (0.97 × far, 2,208 triangles, render order −1, not pickable) draws the haze limit
+below the horizon and blends into the HDR within ±0.5°; overlays are not tone mapped. A missing HDR
+reports lighting status `failed` with a console warning and never pushes a test fatal. Compared with D4
+a frame adds one draw call and 2,218 triangles (background box, backdrop, single-pass water). The
+landscape server allows `assets/public/lighting/(calibrated|hdri)/<name>.(hdr|json)` and nothing else
+under `lighting/`; a running server must be restarted to pick up allowlist changes.
+
+Terrain fields (LANDSCAPE_TERRAIN_FIELDS.md) stream with the mask pages and drive terrain shadows,
+terrain-scale sky occlusion and terrain-reflected light. Planning-only cover displays the terrain-driven
+natural soil at every level, with the overview flood fill as an explicit per-chunk fallback
+(`landscapeNaturalInference=terrain|overview`). `landscapeTerrainAppearance=on|off` (A/B without recompiling) and
+`landscapeTerrainFields=auto|off` complete the switches; they are `LandscapeView` options forwarded to both
+streams, and any other value throws "<name> must be one of …; received …". Hooks: `terrainAppearanceSample`,
+`dressingSample`, `setTerrainAppearance`, `setNaturalInference` and `setTerrainFields` (both reload).
+Diagnostics: `terrain-appearance` and the `dressing*` views. `snapshot()` reports `lighting`,
+`appearance.terrainFields` and `appearance.presentation`.
+
 ## D4 appearance and sea-level reference
 
 The viewer now composes independent categorical-mask and PBR-page streaming with
@@ -115,12 +138,12 @@ test hooks are documented in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 Water toggles a separately owned translucent plane at the retained sea level.
 Terrain raycasts and native height/soil/submerged queries always use the actual
 heightfield. The water reference never converts seabed elevation into sea level.
-Planning urban/road/runway classes now display nearby natural ground inferred
-from the shared overview. The legend labels those classes as imported surface
+Planning urban/road/runway classes display natural ground, inferred from terrain
+fields since AI577 D5 (the shared overview flood fill is the fallback). The legend labels those classes as imported surface
 references; semantic queries still report their original cover and unknown soil.
 Explicit soil assignments, including unknown, override the inferred appearance.
-Smooth material responses and stationary near/macro texture lattices respond to
-projected footprint, including fixed-position orthographic zoom. The new beach
+Smooth material responses respond to projected footprint, including fixed-position
+orthographic zoom; since AI577 D4 every material is sampled at its physical period. The new beach
 uses the calibrated CC0 sand documented in `LANDSCAPE_NATURE_MATERIALS.md`.
 AI577 D1 adds continuous material coverage, classification-preserving local
 contour fits, world-meter transition widths and shared edge/corner availability.

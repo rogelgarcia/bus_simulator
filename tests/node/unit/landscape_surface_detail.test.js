@@ -192,14 +192,16 @@ test('Surface detail identity: recipe, seed, owned cover and overview infill inp
     for (const byte of new TextEncoder().encode('coastal-city|landscape-surface-detail')) fnv = Math.imul(fnv ^ byte, 0x01000193);
     assert.equal(landscapeSurfaceDetailSeed('coastal-city', recipe), fnv >>> 0);
     assert.equal(landscapeSurfaceDetailSeed('coastal-city', recipe), 1207276911);
-    const nextVersion = validateLandscapeSurfaceDetailRecipe({ ...structuredClone(recipe), id: 'landscape-surface-detail-v4' });
+    const nextVersion = validateLandscapeSurfaceDetailRecipe({ ...structuredClone(recipe), id: 'landscape-surface-detail-v5' });
     assert.equal(landscapeSurfaceDetailSeed('coastal-city', nextVersion), landscapeSurfaceDetailSeed('coastal-city', recipe), 'a new version of the family keeps the seed');
     assert.notEqual(landscapeSurfaceDetailRecipeHash(nextVersion), landscapeSurfaceDetailRecipeHash(recipe), 'the recipe hash still renews identities');
     const otherFamily = validateLandscapeSurfaceDetailRecipe({ ...structuredClone(recipe), id: 'experimental-detail-v1', family: 'experimental-detail' });
     assert.notEqual(landscapeSurfaceDetailSeed('coastal-city', otherFamily), landscapeSurfaceDetailSeed('coastal-city', recipe));
     assert.equal(landscapeSurfaceDetailRecipeHash(recipe), landscapeSurfaceDetailRecipeHash(validateLandscapeSurfaceDetailRecipe(JSON.parse(JSON.stringify(recipe)))));
     const inputs = index.inputs(id, recipe, 5);
-    assert.deepEqual(Object.keys(inputs).sort(), ['cover', 'format', 'frame', 'overrides', 'overview', 'page', 'recipe', 'schemaVersion', 'seed', 'soil']);
+    assert.deepEqual(Object.keys(inputs).sort(), ['cover', 'format', 'frame', 'natural', 'overrides', 'overview', 'page', 'recipe', 'schemaVersion', 'seed', 'soil']);
+    assert.equal(inputs.schemaVersion, 2, 'v4 recipes hash the natural soil entries of their owners');
+    assert.deepEqual(inputs.natural, inputs.cover.map(entry => ({ id: entry.id, policy: 'natural-overview-infill-v1' })), 'without a natural soil request every owner keeps the overview infill');
     assert.deepEqual(inputs.soil.planningOnly, [5, 6, 7]);
     assert.throws(() => landscapeSurfaceDetailKey({ ...inputs, format: 'other' }), /inputs v1/);
     assert.throws(() => index.inputs(id, recipe, -1), /seed/);

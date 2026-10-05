@@ -219,7 +219,9 @@ test('Material sampling: the GLSL chunk mirrors the JavaScript constants and the
     assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/);
     assert.match(terrain, /int samples = hex \? min\(int\(uStochasticSettings\.w\), 3\) : 1;/, 'a uniform sample count keeps one loop body per soil');
     assert.match(terrain, /latticeTexel\(soil, micro, sampleUv, turn \* dx, turn \* dy, sampleAlbedo, encodedNormal, sampleOrm\);/, 'gradients rotate with each sample');
-    assert.match(terrain, /vec3 decoded = encodedNormal \* 2\.0 - 1\.0;[\s\S]*?slope \+= weight \* landscapeHexSlope\(decoded, rotation\);/, 'normals blend as inverse-rotated slopes with the shared weights');
+    assert.match(terrain, /vec3 decoded = encodedNormal \* 2\.0 - 1\.0;[\s\S]*?slope \+= weight \* landscapeHexSlope\(decoded, rotation, meanSlope\);/, 'normals blend as de-leaned, inverse-rotated slopes with the shared weights');
+    assert.match(chunk, /vec2 slope = normal\.xy \/ depth - meanSlope;/, 'the page mean slope is removed in the texture frame before the inverse rotation (AI577 D5c)');
+    assert.match(terrain, /microLayer \? vec2\(0\.0\) : uSoilResponse\[soil\]\.zw\);/, 'the mean-neutral micro layer is never de-leaned');
     assert.match(terrain, /encodedNormal = microNormal\(texel\) \* 0\.5 \+ 0\.5;/, 'micro normals run through the same lattice body and blend as inverse-rotated slopes');
     assert.match(terrain, /if \(micro && hex\) stochastic = uMicroSampling;/, 'micro lattices use their own catalog parameters');
     assert.match(terrain, /if \(bound < uStochasticSettings\.y\) continue;\s+weight \*= smoothstep\(uStochasticSettings\.y, 2\.0 \* uStochasticSettings\.y, bound\);/, 'skipped samples fade in continuously');

@@ -17,9 +17,14 @@ import { LANDSCAPE_SURFACE_LEVEL_COLORS, LANDSCAPE_SURFACE_SOIL_COLORS } from '.
 import { LandscapeSurfaceDetailCache, landscapeSurfaceDetailCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceDetailCache.js';
 import { landscapeCoverageMaskLayout } from '../../engine3d/landscape/LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
+import { LandscapeLighting } from '../../engine3d/landscape/LandscapeLighting.js';
+import { createLandscapeAtmosphereBackdrop } from '../../engine3d/landscape/LandscapeAtmosphereBackdrop.js';
+import { LANDSCAPE_LIGHTING, landscapeLightingTier } from '../../engine3d/landscape/LandscapeLightingModel.js';
 import { LandscapeBookmarks } from './LandscapeBookmarks.js';
 import { LandscapePerformanceCapture } from './LandscapePerformanceCapture.js';
 import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
+import { LANDSCAPE_TERRAIN_FIELD_RUNTIME } from '../../engine3d/landscape/LandscapeTerrainFieldPages.js';
+import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
@@ -29,16 +34,39 @@ export const LANDSCAPE_SURFACE_DETAIL_MODES = Object.freeze({ off: 0, '50cm': 2,
 /** Companion multiscale sidecar modes: auto loads it when published, off keeps the schema-1 tiers. */
 export const LANDSCAPE_MULTISCALE_MODES = Object.freeze(['auto', 'off']);
 
+/** Terrain-field page modes (AI577 D5a): auto streams them when published, off keeps the terrain-field hooks and terrain-driven terms neutral. */
+export const LANDSCAPE_TERRAIN_FIELD_MODES = LANDSCAPE_TERRAIN_FIELD_RUNTIME.modes;
+
+/** Terrain-driven natural appearance (AI577 D5, landscape-terrain-appearance-v1) A/B modes. */
+export const LANDSCAPE_TERRAIN_APPEARANCE_MODES = Object.freeze(['on', 'off']);
+
+/** Natural display policy of planning-only cover (AI577 D5d): terrain-driven inference or the former 15.625 m overview infill. */
+export const LANDSCAPE_NATURAL_INFERENCE_MODES = LANDSCAPE_NATURAL_INFERENCE.modes;
+
+/** @param {string} name @param {readonly string[]} modes @param {string} value */
+function requireViewMode(name, modes, value) {
+    if (!modes.includes(value)) throw new Error(`[Landscape] ${name} must be one of ${modes.join(', ')}; received ${value}`);
+    return value;
+}
+
 export class LandscapeView {
     /**
      * @param {HTMLCanvasElement} canvas
-     * @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string,multiscale?:'auto'|'off'}} options multiscale 'off' keeps the
-     *   schema-1 material tiers without requesting the companion multiscale sidecar
+     * @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string,multiscale?:'auto'|'off',lightingTier?:string,cityBinding?:any,
+     *   naturalInference?:'terrain'|'overview',terrainFields?:'auto'|'off',terrainAppearance?:'on'|'off'}} options multiscale 'off' keeps the
+     *   schema-1 material tiers without requesting the companion multiscale sidecar; lightingTier selects the compiled lighting tier (low, standard,
+     *   high); cityBinding (a validated city landscape binding) rotates the game-frame sun and sky into landscape space by its yaw; naturalInference is
+     *   the natural display policy of planning-only cover forwarded to both streams of every load (AI577 D5d); terrainFields 'off' never streams
+     *   terrain-field pages (AI577 D5a); terrainAppearance 'off' keeps the terrain-driven natural appearance neutral (AI577 D5 A/B)
      */
-    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto' } = {}) {
+    constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
+        lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on' } = {}) {
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
+        this.naturalInference = requireViewMode('naturalInference', LANDSCAPE_NATURAL_INFERENCE_MODES, naturalInference);
+        this.terrainFields = requireViewMode('terrainFields', LANDSCAPE_TERRAIN_FIELD_MODES, terrainFields);
+        requireViewMode('terrainAppearance', LANDSCAPE_TERRAIN_APPEARANCE_MODES, terrainAppearance);
         this.materialSampling = materialSampling;
         this.multiscale = multiscale;
         this.surfaceLayers = null;
@@ -74,14 +102,11 @@ export class LandscapeView {
         this.coverageSlots = chooseLandscapeCoverageSlots(this.renderer);
         this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.2;
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x263c4e);
-        this.scene.add(new THREE.HemisphereLight(0xdceef4, 0x536047, 2.3));
-        const sun = new THREE.DirectionalLight(0xfff4dd, 2.2);
-        sun.position.set(-2000, 4000, -1000);
-        this.scene.add(sun);
+        // the game's resolved tone mapping, exposure, calibrated sun and HDR sky (the terrain and water shaders read its shared uniforms)
+        this.lighting = new LandscapeLighting({ renderer: this.renderer, scene: this.scene, tier: landscapeLightingTier(lightingTier), binding: cityBinding });
+        if (terrainAppearance === 'off') this.lighting.setResponse({ terrainAppearance: false });
+        this.backdrop = createLandscapeAtmosphereBackdrop({ scene: this.scene, lighting: this.lighting });
         this.camera = new THREE.PerspectiveCamera(this.perspectiveFov, 1, 0.1, 25000);
         this.camera.position.set(4400, 3000, -2300);
         this.panel = new LandscapePanel(action => Promise.resolve(this.action(action)).catch(error => this.panel.notice(error.message)));
@@ -91,19 +116,22 @@ export class LandscapeView {
             onZoom: () => { this.panel.root.querySelector('[data-field="zoom"]').value = String(this.camera.zoom.toFixed(2)); } });
         this.controls.setLookAt({ position: this.camera.position, target: { x: 2000, y: 0, z: 2000 } });
         this.controls.setHomeFromCurrent();
-        this.marker = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffeaa8, depthTest: false }));
+        // inspection overlays show their authored colors, independent of the scene exposure
+        this.marker = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffeaa8, depthTest: false, toneMapped: false }));
         this.marker.renderOrder = 10;
         this.marker.visible = false;
         this.scene.add(this.marker);
-        this.selectionOutline = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffeaa8, depthTest: false }));
+        this.selectionOutline = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffeaa8, depthTest: false, toneMapped: false }));
         this.selectionOutline.renderOrder = 9;
         this.selectionOutline.visible = false;
         this.scene.add(this.selectionOutline);
         this.grid = new THREE.GridHelper(4000, 20, 0xc5d8d7, 0x819993);
+        this.grid.material.toneMapped = false;
         this.grid.position.set(2000, .4, 2000);
         this.grid.visible = false;
         this.scene.add(this.grid);
         this.axes = new THREE.AxesHelper(350);
+        this.axes.material.toneMapped = false;
         this.axes.visible = false;
         this.scene.add(this.axes);
         this.raycaster = new THREE.Raycaster();
@@ -141,10 +169,12 @@ export class LandscapeView {
         const reservation = this.budget.reserve(loadKey, { cpuBytes: 3 * 1024 * 1024, gpuBytes: 0, kind: 'manifest-overview-decode' });
         if (!reservation.admitted) { this.reloading = false; this.panel.notice(`Landscape reload cannot fit: ${reservation.reason}`); this.lastError = reservation.reason; return; }
         try {
-            const loaded = await loadLandscapeOverview(this.source, { signal: this.loadAbort.signal });
+            // the calibrated sky loads alongside the overview, so the first terrain frame is already lit like the game
+            const [loaded] = await Promise.all([loadLandscapeOverview(this.source, { signal: this.loadAbort.signal }), this.lighting.ready]);
             if (this.disposed || sequence !== this.loadSequence) return;
+            this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
             const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, materialSampling: this.materialSampling,
-                mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries });
+                lighting: this.lighting, lightingTier: this.lighting.tier, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, naturalInference: this.naturalInference });
             this.loadingStream = stream;
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
@@ -160,10 +190,11 @@ export class LandscapeView {
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
             const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer, coverageSlots: this.coverageSlots,
-                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling, multiscale: this.multiscale });
+                surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling, multiscale: this.multiscale,
+                terrainFields: this.terrainFields, naturalInference: this.naturalInference });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
-            this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, visible: this.waterVisible });
+            this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, lighting: this.lighting, visible: this.waterVisible });
             await appearance.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingAppearance = null;
@@ -183,7 +214,7 @@ export class LandscapeView {
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
             this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
             this.panel.text('status', 'Worker streaming ready · Soil PBR + independent masks · Y up / +Z north · Native queries independent of appearance');
-            this.panel.text('legend', `IMPORTED SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nNatural ground display: planning areas infer nearby substrate\nImported cover and soil queries remain unchanged\nWater: separate sea-level reference\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m`);
+            this.panel.text('legend', `IMPORTED SURFACE REFERENCE\n${manifest.landCover.catalog.map(item => `${item.id}  ${item.label}`).join('\n')}\n\nNatural ground display: planning areas infer nearby substrate\nImported cover and soil queries remain unchanged\nWater: separate sea-level reference\nWorld grid: 200 m · Elevations: meters\nNative spacing: ${manifest.grid.spacingX.toFixed(3)} m\n${this.lightingLine()}`);
             this.panel.notice('');
             if (this.selection) this.select(this.selection.position.x, this.selection.position.z);
             this.perfBar.requestUpdate();
@@ -253,6 +284,69 @@ export class LandscapeView {
         return this.appearance.snapshot().surfaceLayers;
     }
 
+    /**
+     * Recompiles the terrain and water programs for a lighting tier (A/B evidence; like setMaterialSampling, the programs compile on the next draw).
+     * AI577 D5c A/B switches without recompiling: response (natural-ground material response, terrain-reflected light, terrain-field visibility;
+     * kept by the view lighting across reloads) and calibration (landscape-local albedo gains and normal de-leaning of the loaded appearance).
+     * @param {{tier?:string,response?:{model?:boolean,bounce?:boolean,terrainVisibility?:boolean},calibration?:{albedo?:boolean,normalLean?:boolean}}} options
+     */
+    setLighting({ tier, response, calibration } = {}) {
+        if (calibration !== undefined && !this.appearance?.materials?.initialized) throw new Error('[Landscape] Load the landscape appearance before changing the material calibration');
+        if (tier !== undefined) {
+            landscapeLightingTier(tier);
+            this.lighting.setTier(tier);
+            this.loadingStream?.setLightingTier(tier);
+            this.stream?.setLightingTier(tier);
+            this.water?.setLightingTier(tier);
+            this.backdrop.setLightingTier(tier);
+        }
+        if (response !== undefined) this.lighting.setResponse(response);
+        if (calibration !== undefined) this.appearance.materials.setCalibration(calibration);
+        return { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot(), calibration: this.appearance?.materials?.calibrationSwitches ? { ...this.appearance.materials.calibrationSwitches } : null };
+    }
+
+    /** AI577 D5 A/B of the terrain-driven natural appearance (uLandscapeResponse.w; no recompile, kept across reloads). @param {boolean} enabled */
+    setTerrainAppearance(enabled) {
+        if (typeof enabled !== 'boolean') throw new Error('[Landscape] Terrain appearance enablement must be boolean');
+        this.lighting.setResponse({ terrainAppearance: enabled });
+        return { ...this.lighting.snapshot().response.switches };
+    }
+
+    /** Reloads with another natural display policy of planning-only cover (AI577 D5d A/B), forwarded to both streams. @param {'terrain'|'overview'} mode */
+    setNaturalInference(mode) {
+        this.naturalInference = requireViewMode('naturalInference', LANDSCAPE_NATURAL_INFERENCE_MODES, mode);
+        return this.load();
+    }
+
+    /** Reloads with or without the terrain-field pages (AI577 D5a). @param {'auto'|'off'} mode */
+    setTerrainFields(mode) {
+        this.terrainFields = requireViewMode('terrainFields', LANDSCAPE_TERRAIN_FIELD_MODES, mode);
+        return this.load();
+    }
+
+    /**
+     * JavaScript mirror of the terrain-driven appearance inputs at a world position (landscape-terrain-appearance-v1); height and slope default to the
+     * rendered terrain there. @param {number} x @param {number} z @param {{height?:number,slopeDegrees?:number,footprint?:number}} [options]
+     */
+    terrainAppearanceSample(x, z, { height, slopeDegrees, footprint = 0 } = {}) {
+        if (!this.appearance || !this.loaded) throw new Error('[Landscape] Load the landscape appearance before sampling the terrain-driven appearance');
+        const terrain = sampleLandscapeChunk(this.loaded.manifest, this.stream?.renderedChunkAt(x, z) ?? this.loaded.chunk, x, z);
+        if (terrain.status !== 'ready' && (height === undefined || slopeDegrees === undefined)) return null;
+        return this.appearance.terrainAppearanceSample(x, z, { height: height ?? terrain.height, slopeDegrees: slopeDegrees ?? terrain.slopeDegrees, footprint,
+            enabled: this.lighting.response.terrainAppearance });
+    }
+
+    /** Natural dressing inputs (landscape-dressing-inputs v1) of the displayed soil at a world position. @param {number} x @param {number} z @param {{dx?:number[],dy?:number[]}} [options] */
+    dressingSample(x, z, options) {
+        if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before sampling dressing inputs');
+        return this.appearance.dressingSample(x, z, options);
+    }
+
+    lightingLine() {
+        const state = this.lighting.snapshot();
+        return `Lighting ${state.tier}: game ${state.toneMapping.toUpperCase()} exposure ${state.exposure.toPrecision(3)} · sun az ${state.sun.azimuthDeg.toFixed(0)}° el ${state.sun.elevationDeg.toFixed(0)}° · ${state.status === 'ready' ? state.environment.iblId : `sky unavailable: ${state.error}`}`;
+    }
+
     /** @param {boolean} enabled runtime stochastic tiling of the compiled mode; disabled soils keep one lattice sample */
     setMaterialSamplingEnabled(enabled) {
         if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing material sampling');
@@ -311,7 +405,7 @@ export class LandscapeView {
     setWater(visible) {
         if (typeof visible !== 'boolean') throw new Error('Water visibility must be boolean');
         this.waterVisible = visible;
-        this.water?.setVisible(visible);
+        if (this.water) this.water.setVisible(visible); else this.lighting.setWaterVisible(visible);
         this.panel.active('water', visible);
     }
 
@@ -335,8 +429,12 @@ export class LandscapeView {
             elevation: () => 'Elevation: blue-green low → tan high. Contours every 5 m.', slope: () => 'Slope: green 0° → yellow 15° → red 35°+.',
             water: () => `Depth below sea level ${this.loaded.manifest.coordinates.seaLevel} m: cyan 0 → blue 10 m+. Gray-green is dry.`,
             'surface-level': () => `Surface detail level: shaded surface with a 50% tint of the finest contributing coverage page. ${LANDSCAPE_SURFACE_LEVEL_COLORS.map(entry => `L${entry.level} ${entry.name}`).join(' · ')}. Native level ${this.loaded.manifest.grid.maxLevel}; finer levels are generated.`,
-            'surface-coverage': () => `Surface coverage: unlit false colors of normalized weights after hierarchy availability, before height competition. ${this.loaded.manifest.soil.catalog.map(soil => `${soil.id} ${LANDSCAPE_SURFACE_SOIL_COLORS[soil.id].name}`).join(' · ')}.` };
+            'surface-coverage': () => `Surface coverage: unlit false colors of normalized weights after hierarchy availability, before height competition. ${this.loaded.manifest.soil.catalog.map(soil => `${soil.id} ${LANDSCAPE_SURFACE_SOIL_COLORS[soil.id].name}`).join(' · ')}.`,
+            'terrain-appearance': () => 'Terrain-driven appearance inputs: gray neutral · blue moist hollows · orange dry ridges and steep slopes (catena from the landscape-scale terrain fields) · cyan sea-wetted ground · red revealed rock · darkened where planning cover excludes the terrain terms.',
+            dressing: () => 'Natural dressing inputs of the displayed soil: green grass · ochre shrubs · dark green trees · blue-gray rock scatter · pink beach debris · dark slate planning cover reserved for city content. Placement is not part of the viewer.',
+            ...Object.fromEntries(['grass', 'shrub', 'tree', 'rock', 'debris'].map(output => [`dressing-${output}`, () => `Dressing input ${output}: gray value 0 (black) to 1 (white) of landscape-dressing-inputs v1, planning cover reserved.`])) };
         const accuracy = planning.diagnostic.startsWith('surface-') ? 'Resident appearance coverage pages, independent of geometry LOD; generated levels are visual detail, not measured data.'
+            : planning.diagnostic === 'terrain-appearance' || planning.diagnostic.startsWith('dressing') ? 'Derived from the resident terrain-field and mask pages; terrain fields are unmeasured offline analyses.'
             : `Approximate displayed terrain LOD; use Inspect area for native samples. Guides use ${planning.accuracy.overviewSpacingMeters.toFixed(3)} m overview spacing.`;
         this.panel.text('diagnostic-legend', `${legend[planning.diagnostic]()}\n${accuracy}`);
     }
@@ -689,9 +787,10 @@ export class LandscapeView {
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
-            appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null },
+            appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null }, lighting: { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot() },
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
-            materialSampling: this.materialSampling, multiscale: this.multiscale,
+            materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
+            terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off',
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
@@ -812,6 +911,8 @@ export class LandscapeView {
         this.planning?.dispose(); this.planning = null;
         this.stream?.dispose();
         this.stream = null;
+        this.backdrop.dispose();
+        this.lighting.dispose();
         this.consumerLeases.clear();
         this.gpuTimer.resetSamples();
         for (const helper of [this.grid, this.axes, this.marker, this.selectionOutline]) {

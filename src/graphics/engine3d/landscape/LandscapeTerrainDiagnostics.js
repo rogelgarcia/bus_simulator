@@ -1,9 +1,23 @@
 // Declares the terrain shader diagnostics and the surface review palettes shared by shader uniforms and legends.
 // @ts-check
 // Level tints are linear albedo colors so the tinted surface keeps its lighting and tone mapping. Soil review
-// colors are display sRGB written without tone mapping, so pure regions reproduce the review image bytes.
+// colors are display sRGB written without tone mapping, so pure regions reproduce the review image bytes. AI577 D5 adds the terrain-driven
+// appearance inputs and the natural dressing inputs (composite and one gray-value view per output), unlit like the coverage weights.
+import { landscapeDressingClass } from './LandscapeTerrainAppearance.js';
 
-export const LANDSCAPE_DIAGNOSTICS = Object.freeze(['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage']);
+export const LANDSCAPE_DIAGNOSTICS = Object.freeze(['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage', 'terrain-appearance',
+    'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris']);
+
+/** Diagnostics whose shader branch reads each soil's dressing host class from uSurfaceSoilColors[soil].x. */
+export const LANDSCAPE_DRESSING_DIAGNOSTICS = Object.freeze(LANDSCAPE_DIAGNOSTICS.filter(name => name.startsWith('dressing')));
+
+/** @param {ReadonlyArray<{id:string}>} soilCatalog @returns {Float32Array} per soil (dressing host class, 0, 0) in catalog order */
+export function landscapeDressingClassValues(soilCatalog) {
+    if (!Array.isArray(soilCatalog) || soilCatalog.length > 6) throw new Error('[Landscape] Dressing diagnostics support at most 6 soils');
+    const values = new Float32Array(18);
+    soilCatalog.forEach((soil, index) => { values[index * 3] = landscapeDressingClass(soil.id); });
+    return values;
+}
 
 export const LANDSCAPE_SURFACE_LEVEL_COLORS = Object.freeze([
     Object.freeze({ level: 0, name: 'blue', hex: '#3d5afe' }),
@@ -47,9 +61,23 @@ export function landscapeSurfaceSoilColorValues(soilCatalog) {
     return values;
 }
 
-/** @returns {{uSurfaceLevelColors:{value:Float32Array},uSurfaceSoilColors:{value:Float32Array}}} */
-export function createLandscapeDiagnosticUniforms() {
+/** @returns {Float32Array} linear albedo level tints in level order */
+export function landscapeSurfaceLevelColorValues() {
     const levels = new Float32Array(LANDSCAPE_SURFACE_LEVEL_COLORS.length * 3);
     LANDSCAPE_SURFACE_LEVEL_COLORS.forEach((entry, index) => levels.set(landscapeColorBytes(entry.hex).map(linear), index * 3));
-    return { uSurfaceLevelColors: { value: levels }, uSurfaceSoilColors: { value: new Float32Array(SOIL_CHANNELS * 3) } };
+    return levels;
+}
+
+/**
+ * The level tints as the compile-time vec3 list of the terrain shader's constant array (since AI577 D5c they occupy no uniform vectors).
+ * @returns {string}
+ */
+export function landscapeSurfaceLevelColorDefine() {
+    const values = landscapeSurfaceLevelColorValues();
+    return LANDSCAPE_SURFACE_LEVEL_COLORS.map((_, index) => `vec3(${[0, 1, 2].map(channel => values[index * 3 + channel].toFixed(8)).join(', ')})`).join(', ');
+}
+
+/** @returns {{uSurfaceSoilColors:{value:Float32Array}}} the catalog-ordered coverage review colors, set when the diagnostic is selected */
+export function createLandscapeDiagnosticUniforms() {
+    return { uSurfaceSoilColors: { value: new Float32Array(SOIL_CHANNELS * 3) } };
 }

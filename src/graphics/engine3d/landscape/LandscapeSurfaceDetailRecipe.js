@@ -6,19 +6,23 @@
 // catalog order (rock before unknown), then the default profile. Transition widths are wide enough (0.8-2 m) for the
 // material height competition to show physical interleaving instead of cut-out edges. The warp octaves are shared
 // with the terrain shader through landscapeSurfaceWarpUniforms so native, coarse and generated coverage meander alike.
+// v4 (AI577 D5) changes only the base labels: planning-only samples read the terrain-driven natural-soil labels of their native owners
+// (natural-terrain-inference-v1, with the per-native overview-infill fallback) instead of the 15.625 m overview infill, and page identities
+// add each owner's natural-soil policy and page hash, so v3 and v4 pages, and terrain and fallback pages, never share a cache entry.
 import { validateLandscapeSurfaceDetailRecipe, landscapeSurfaceDetailRecipeHash, landscapeSurfaceDetailSeed, landscapeSurfaceDetailSearchRadius } from '../../../app/landscape/LandscapeSurfaceDetail.js';
+import { LANDSCAPE_NATURAL_SOIL } from '../../../app/landscape/LandscapeNaturalSoil.js';
 import { createLandscapeSurfaceWarp } from './LandscapeSurfaceNoise.js';
 
 export { validateLandscapeSurfaceDetailRecipe, landscapeSurfaceDetailRecipeHash, landscapeSurfaceDetailSeed, landscapeSurfaceDetailSearchRadius };
 
 export const LANDSCAPE_SURFACE_DETAIL_RECIPE = validateLandscapeSurfaceDetailRecipe({
-    id: 'landscape-surface-detail-v3',
+    id: 'landscape-surface-detail-v4',
     family: 'landscape-surface-detail',
     levels: 3,
     units: 'world-xz-meters',
     generated: true,
     measuredDetail: false,
-    base: { labels: 'natural-overview-infill-v1', boundary: 'smoothed-native-marching-squares-v1', encoding: 'landscape-contour-coverage-v1' },
+    base: { labels: LANDSCAPE_NATURAL_SOIL.terrain, boundary: 'smoothed-native-marching-squares-v1', encoding: 'landscape-contour-coverage-v1' },
     boundary: {
         saddle: 'minority-4x4-lower-index',
         smoothing: 'turning-limited-local-quadratic',

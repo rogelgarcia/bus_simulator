@@ -110,7 +110,8 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uMaskNeighbors0: { value: Array.from({ length: slots }, () => new THREE.Vector4()) },
         uMaskNeighbors1: { value: Array.from({ length: slots }, () => new THREE.Vector4()) },
         uMaskSlotRanges: { value: new THREE.Vector3(slots, 0, slots) },
-        uSoilScale: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 1, 1, 0)) },
+        // AI577 D5: x is the soil's terrain role (rock exposure susceptibility, negative for the exposed-rock substrate); y, z, w normal strength, AO, metalness
+        uSoilScale: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 1, 1, 0)) },
         uSoilTiling: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(4, 0, 0, 0)) },
         uSoilAlbedo: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(1, 0, 0, 0)) },
         uSoilRoughness: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 1, 1, 0)) },
@@ -118,6 +119,8 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uSurfaceBlendEnabled: { value: 0 },
         uSurfaceBlendSettings: { value: new THREE.Vector4(blend.heightStrength, blend.scoreTransitionWidth, blend.fadeStartMetersPerPixel, blend.fadeEndMetersPerPixel) },
         uSoilState: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 32, 0, 0)) },
+        // AI577 D5c natural-ground response and page calibration: vec4(EON roughness, specular shadowing weight, mean normal slope X, Y); zero is the D5b response
+        uSoilResponse: { value: Array.from({ length: LANDSCAPE_SOIL_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
         uMaterialBlendIndex: { value: -1 },
         uMaterialBlend: { value: 1 },
         uBlendResolution: { value: 32 },
@@ -140,7 +143,12 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uSurfaceWarpEnabled: { value: 0 },
         uLandscapeWarpWaves: { value: new Float32Array(octaves * WARP_ARRAYS.uLandscapeWarpWaves) },
         uLandscapeWarpOffsets: { value: new Float32Array(octaves * WARP_ARRAYS.uLandscapeWarpOffsets) },
-        uLandscapeWarpSalts: { value: new Int32Array(octaves * WARP_ARRAYS.uLandscapeWarpSalts) }
+        uLandscapeWarpSalts: { value: new Int32Array(octaves * WARP_ARRAYS.uLandscapeWarpSalts) },
+        // AI577 D5 terrain fields (chunks/landscape/terrain_fields.glsl): the field array and uvec4(stale cells low, high, flags, layers per page)
+        uTerrainFields: { value: null },
+        uTerrainFieldsState: { value: new Uint32Array(4) },
+        // AI577 D5 terrain-driven appearance (chunks/landscape/terrain_appearance.glsl): bitmask of the planning-only land-cover IDs 0..127
+        uPlanningCover: { value: new Uint32Array(4) }
     };
     for (let i = 0; i < LANDSCAPE_SOIL_SLOTS; i++) { uniforms[`uSoilBase${i}`] = { value: null }; uniforms[`uSoilSurface${i}`] = { value: null }; }
     return uniforms;

@@ -7,8 +7,12 @@
 // that reads the soil just outside an override edge), the nearest-boundary query reach and the boundary smoothing
 // dependency radius. Identity keys hash exactly the inputs that can change a page's bytes, so a soil edit
 // changes only the keys of pages whose influence bounds it intersects, while revisions, heights and materials never do.
+// Recipes whose base labels are natural-terrain-inference-v1 (v4 on) also hash, per native owner of the support window, the natural-soil
+// policy and the content address of the published labels it reads (inputs schema 2), so terrain-driven and overview-fallback pages never
+// share an identity; a height or cover edit therefore renews exactly the keys of pages whose owners it made stale (their fallback changes).
 import { createLandscapeChunkId, validateLandscapeManifest } from './LandscapeManifest.js';
 import { landscapeRegionIntersectsBounds } from './LandscapeRegions.js';
+import { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilIdentity } from './LandscapeNaturalSoil.js';
 import { clonePlainData, freezeData, requireCondition, requireFinite, requireId, requireInteger } from './internal/LandscapeValidation.js';
 
 export const LANDSCAPE_SURFACE_DETAIL_MAX_LEVELS = 4;
@@ -190,9 +194,13 @@ export function landscapeSurfaceDetailSeed(landscapeId, recipe) {
 
 /** Stable 64-bit hexadecimal identity of canonical surface-detail inputs. @param {any} inputs @returns {string} */
 export function landscapeSurfaceDetailKey(inputs) {
-    requireCondition(inputs?.format === INPUT_FORMAT && inputs.schemaVersion === 1, 'surface detail key requires landscape-surface-detail-inputs v1');
+    requireCondition(inputs?.format === INPUT_FORMAT && (inputs.schemaVersion === 1 && inputs.natural === undefined || inputs.schemaVersion === 2 && Array.isArray(inputs.natural)),
+        'surface detail key requires landscape-surface-detail-inputs v1, or v2 with natural soil entries');
     return hash64(inputs);
 }
+
+/** Whether a recipe's base labels are the terrain-driven natural inference (natural-soil entries are part of page identity). @param {any} recipe */
+export function landscapeSurfaceDetailUsesNaturalSoil(recipe) { return validateLandscapeSurfaceDetailRecipe(recipe).base.labels === LANDSCAPE_NATURAL_SOIL.terrain; }
 
 /** @param {any} input @param {{levels:number}} options */
 export function createLandscapeSurfaceDetailIndex(input, options) {
@@ -300,12 +308,14 @@ export function createLandscapeSurfaceDetailIndex(input, options) {
             native: Object.freeze({ window: nativeWindow, bounds: nativeBounds, dependencyCells }), owners: Object.freeze(owners) });
     }
 
-    function inputsOf(value, input, seed) {
+    // natural: the landscape-natural-soil-request covering the support owners (null or absent: every owner keeps the overview infill)
+    function inputsOf(value, input, seed, natural = null) {
         requireInteger(seed, 0, 0xffffffff, 'surface detail seed');
         const recipe = validateLandscapeSurfaceDetailRecipe(input), support = supportOf(value, recipe), page = resolve(value);
-        const overview = manifest.chunks.find(chunk => chunk.id === manifest.overviewId);
+        const overview = manifest.chunks.find(chunk => chunk.id === manifest.overviewId), terrainLabels = recipe.base.labels === LANDSCAPE_NATURAL_SOIL.terrain;
         return freezeData({
-            format: INPUT_FORMAT, schemaVersion: 1,
+            format: INPUT_FORMAT, schemaVersion: terrainLabels ? 2 : 1,
+            ...(terrainLabels ? { natural: landscapeNaturalSoilIdentity(manifest, natural, support.owners.map(entry => entry.id)) } : {}),
             recipe: { id: recipe.id, hash: hash64(recipe) }, seed,
             page: { id: page.id, level: page.level, column: page.column, row: page.row },
             frame: { landscapeId: manifest.id, bounds: { minX: manifest.bounds.minX, maxX: manifest.bounds.maxX, minZ: manifest.bounds.minZ, maxZ: manifest.bounds.maxZ },
@@ -330,8 +340,11 @@ export function landscapeSurfaceDetailSupport(manifest, descriptor, recipe) {
     return createLandscapeSurfaceDetailIndex(manifest, { levels: validated.levels }).support(descriptor, validated);
 }
 
-/** Frozen canonical JSON of every input that determines a fine page's bytes. @param {any} manifest @param {any} descriptor @param {any} recipe @param {number} seed */
-export function landscapeSurfaceDetailInputs(manifest, descriptor, recipe, seed) {
+/**
+ * Frozen canonical JSON of every input that determines a fine page's bytes.
+ * @param {any} manifest @param {any} descriptor @param {any} recipe @param {number} seed @param {any} [natural] landscape-natural-soil-request of the support owners
+ */
+export function landscapeSurfaceDetailInputs(manifest, descriptor, recipe, seed, natural = null) {
     const validated = validateLandscapeSurfaceDetailRecipe(recipe);
-    return createLandscapeSurfaceDetailIndex(manifest, { levels: validated.levels }).inputs(descriptor, validated, seed);
+    return createLandscapeSurfaceDetailIndex(manifest, { levels: validated.levels }).inputs(descriptor, validated, seed, natural);
 }

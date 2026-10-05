@@ -6,7 +6,9 @@
 import * as THREE from 'three';
 import { landscapeCoverageMaskLayout, LANDSCAPE_SURFACE_COVERAGE, sampleLandscapeSurfaceCoverage, applyLandscapeContourCoverage } from './LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_CONTOUR_COVERAGE } from './LandscapeContourCoverage.js';
-import { LANDSCAPE_NATURAL_PRESENTATION } from './LandscapeNaturalPresentation.js';
+import { LANDSCAPE_NATURAL_PRESENTATION, LANDSCAPE_NATURAL_TERRAIN_INFERENCE } from './LandscapeNaturalPresentation.js';
+import { landscapeNaturalSoilTransientBytes } from '../../../app/landscape/LandscapeNaturalSoil.js';
+import { landscapeCoverageMaskOwners } from './LandscapeCoverageMask.js';
 import { LandscapeSurfaceDetailPages } from './LandscapeSurfaceDetailPages.js';
 
 const inside = (bounds, x, z) => x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
@@ -27,11 +29,12 @@ function neighborProgress(byPosition, nativeMaxLevel, level, column, row) {
 
 export class LandscapeMaskPages {
     /**
-     * @param {{loaded:any,budget:any,pool:any,renderer:any,uniforms:any,prefix:string,capacity:number,detail?:any,warp?:{evaluate:(x:number,z:number,out:Float64Array)=>Float64Array}|null}} options
-     * detail: options of LandscapeSurfaceDetailPages without masks/firstSlot; its capacity adds fine layers above the native slots
+     * @param {{loaded:any,budget:any,pool:any,renderer:any,uniforms:any,prefix:string,capacity:number,detail?:any,warp?:{evaluate:(x:number,z:number,out:Float64Array)=>Float64Array}|null,
+     *   natural?:any}} options detail: options of LandscapeSurfaceDetailPages without masks/firstSlot; its capacity adds fine layers above the native slots;
+     *   natural: the ready LandscapeNaturalInference whose policy every mask request carries (null: overview infill everywhere)
      */
-    constructor({ loaded, budget, pool, renderer, uniforms, prefix, capacity, detail = null, warp = null }) {
-        Object.assign(this, { loaded, budget, pool, renderer, uniforms, prefix, capacity, warp });
+    constructor({ loaded, budget, pool, renderer, uniforms, prefix, capacity, detail = null, warp = null, natural = null }) {
+        Object.assign(this, { loaded, budget, pool, renderer, uniforms, prefix, capacity, warp, natural });
         this.manifest = loaded.manifest;
         this.descriptors = new Map(this.manifest.chunks.map(value => [value.id, value]));
         this.columns = loaded.chunk.descriptor.columns;
@@ -39,6 +42,8 @@ export class LandscapeMaskPages {
         if (this.manifest.chunks.some(value => value.columns !== this.columns || value.rows !== this.rows)) throw new Error('Appearance mask array requires equal prepared page dimensions');
         this.layout = landscapeCoverageMaskLayout(loaded.chunk.descriptor);
         this.pageBytes = this.layout.pageBytes;
+        // largest mask decode reservation: the D1 decode bytes plus one natural-soil page and its fetch buffer while the policy is active
+        this.decodeBytes = this.layout.decodeBytes + (natural?.active ? landscapeNaturalSoilTransientBytes(loaded.chunk.descriptor) : 0);
         this.key = `${prefix}/categorical-mask-array`;
         const admission = budget.reserve(this.key, { cpuBytes: this.pageBytes * capacity, gpuBytes: this.pageBytes * capacity, kind: 'appearance-mask-array' });
         if (!admission.admitted) throw new Error(`Minimum appearance mask cannot fit: ${admission.reason}`);
@@ -74,18 +79,23 @@ export class LandscapeMaskPages {
     request(id, slot, landCover = null) {
         const descriptor = this.descriptors.get(id);
         const key = `${this.prefix}/mask/${this.manifest.revision}/${id}/${descriptor.channels.landCover.sha256}`;
-        const admission = this.budget.reserve(key, { cpuBytes: this.layout.decodeBytes, gpuBytes: 0, kind: 'appearance-mask-decode' });
+        // the job reads the natural-soil pages of its same-level owners one at a time, inside this decode reservation
+        const owners = this.natural ? landscapeCoverageMaskOwners(this.manifest, descriptor).map(owner => owner.id) : [], natural = this.natural?.describe(owners) ?? null;
+        const admission = this.budget.reserve(key, { cpuBytes: this.layout.decodeBytes + (this.natural?.transientBytes(owners) ?? 0), gpuBytes: 0, kind: 'appearance-mask-decode' });
         if (!admission.admitted) { this.degradationReason = admission.reason; return false; }
-        const record = { id, kind: 'native', key, descriptor, slot, progress: 0, status: 'loading', pixels: null, soils: [], abort: new AbortController(), sourceRevision: this.manifest.revision };
+        const record = { id, kind: 'native', key, descriptor, slot, progress: 0, status: 'loading', pixels: null, soils: [], abort: new AbortController(), sourceRevision: this.manifest.revision, natural: null };
         record.lease = this.budget.shared.acquireLease(key, { consumer: `appearance-mask/${id}`, priority: id === this.manifest.overviewId ? 100 : 40, accuracy: 'approximate' });
         this.records.set(id, record);
         const failure = this.failures.get(id);
-        this.pool.request({ type: 'mask', chunkId: id, ...(landCover ? { landCover } : {}) }, { priority: id === this.manifest.overviewId ? 100 : 40, signal: record.abort.signal }).then(result => {
+        this.pool.request({ type: 'mask', chunkId: id, ...(landCover ? { landCover } : {}), ...(natural ? { natural } : {}) }, { priority: id === this.manifest.overviewId ? 100 : 40, signal: record.abort.signal }).then(result => {
             if (this.disposed || record.abort.signal.aborted || this.records.get(id) !== record) return;
             record.pixels = result.pixels;
             record.soils = result.soils;
             record.sourceIds = result.sourceIds;
             record.sourceRevision = result.sourceRevision;
+            record.natural = result.natural ?? null;
+            // a fresh native without a published label for a planning sample means the catalog differs from the bake: shown on the fallback, never silently
+            if (record.natural?.overviewByReason.unpublished) console.warn(`[Landscape] Natural soil: ${record.natural.overviewByReason.unpublished} planning samples of ${id} have no published label and show the overview infill; re-bake the terrain fields`);
             record.status = 'decoded';
             this.budget.update(key, { cpuBytes: result.pixels.byteLength, kind: 'appearance-mask-upload-pending' });
             this.loadedCount++;
@@ -281,6 +291,20 @@ export class LandscapeMaskPages {
         this.evicted++;
     }
 
+    // planning-only samples of resident native pages (page area only, not halos) by the policy that chose their display soil, per page and summed
+    naturalSamples(records) {
+        const total = { terrain: 0, overview: 0, overviewByReason: { inactive: 0, stale: 0, unpublished: 0 } }, pages = [];
+        for (const record of records) {
+            const natural = record.natural;
+            if (!natural) continue;
+            total.terrain += natural.terrainSamples; total.overview += natural.overviewSamples;
+            for (const reason of Object.keys(total.overviewByReason)) total.overviewByReason[reason] += natural.overviewByReason[reason];
+            if (natural.terrainSamples || natural.overviewSamples) pages.push({ id: record.id, level: record.descriptor.level, terrain: natural.terrainSamples, overview: natural.overviewSamples,
+                overviewByReason: { ...natural.overviewByReason }, naturalPages: [...natural.pages] });
+        }
+        return { ...total, pages };
+    }
+
     snapshot() {
         const records = [...this.records.values()].filter(isNative);
         const missing = [...this.wanted].some(id => {
@@ -294,12 +318,14 @@ export class LandscapeMaskPages {
             residentMaskIds: records.filter(record => record.status === 'resident').map(record => record.id),
             maskLods: records.filter(record => record.status === 'resident').map(record => ({ id: record.id, level: record.descriptor.level, progress: record.progress, revision: record.sourceRevision })),
             coverage: { ...LANDSCAPE_SURFACE_COVERAGE, maskWidth: this.layout.width, maskHeight: this.layout.height, allocatedMaskBytes: this.pageBytes * this.capacity,
-                decodedMaskReservationBytes: this.layout.decodeBytes, contour: LANDSCAPE_CONTOUR_COVERAGE, sourceLimited: this.lastPlan?.sourceLimited ?? false,
+                decodedMaskReservationBytes: this.decodeBytes, contour: LANDSCAPE_CONTOUR_COVERAGE, sourceLimited: this.lastPlan?.sourceLimited ?? false,
                 coordinates: 'world-XZ-meters', landscapeId: this.manifest.id, sourceRevision: this.manifest.revision,
                 sourceSpacingMeters: { x: this.manifest.grid.spacingX, z: this.manifest.grid.spacingZ },
                 soilBindings: this.manifest.soil.catalog.map(soil => ({ soilId: soil.id, materialId: soil.materialId })),
-                naturalReference: { policy: LANDSCAPE_NATURAL_PRESENTATION, id: this.manifest.overviewId, sha256: this.loaded.chunk.descriptor.channels.landCover.sha256,
-                    spacingMeters: this.loaded.chunk.descriptor.sampleStride * this.manifest.grid.spacingX },
+                naturalReference: { policy: this.natural?.active ? LANDSCAPE_NATURAL_TERRAIN_INFERENCE : LANDSCAPE_NATURAL_PRESENTATION, fallbackPolicy: LANDSCAPE_NATURAL_PRESENTATION,
+                    id: this.manifest.overviewId, sha256: this.loaded.chunk.descriptor.channels.landCover.sha256, spacingMeters: this.loaded.chunk.descriptor.sampleStride * this.manifest.grid.spacingX,
+                    terrainRevision: this.natural?.revision ?? null, maskDecodeBytes: { layout: this.layout.decodeBytes, naturalPages: this.decodeBytes - this.layout.decodeBytes } },
+                naturalSamples: this.naturalSamples(records.filter(record => record.status === 'resident')),
                 residentDependencies: records.filter(record => record.status === 'resident').map(record => ({ id: record.id, sourceIds: record.sourceIds })),
                 allocatedArrayBytes: this.pixels.byteLength, arrayLayers: this.slotCount },
             wantedMaskIds: [...this.wanted], capacity: this.capacity, errors: [...this.failures.values()], loaded: this.loadedCount, evicted: this.evicted, degradationReason: this.degradationReason,

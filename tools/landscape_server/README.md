@@ -44,9 +44,12 @@ startup option, never a request parameter. Browser tests retain their edited
 fixtures and receipts under the prompt's gitignored screenshot artifact folder.
 
 The service binds loopback only, rejects unrelated Host/Origin values, and serves
-only application source, screen entries, the favicon, and retained landscape
-assets. Git metadata, downloads, licensed asset trees, and arbitrary filesystem
-paths are not static endpoints. Clipboard/download context still works when the
+only application source, screen entries, the favicon, retained landscape assets,
+PBR catalog metadata and, since AI577 D5, the game's lighting environments
+(`assets/public/lighting/calibrated|hdri/*.hdr|json`: the calibrated sky the viewer
+is lit by and its calibration/provenance JSON). Git metadata, downloads, licensed
+asset trees, other lighting files and arbitrary filesystem paths are not static
+endpoints. A running server must be restarted to pick up allowlist changes. Clipboard/download context still works when the
 viewer is served by another static server.
 
 For the existing headless runner, set `E2E_BASE_URL=http://127.0.0.1:8002` while

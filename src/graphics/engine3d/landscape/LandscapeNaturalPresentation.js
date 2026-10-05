@@ -1,8 +1,13 @@
-// Infers natural display ground from one immutable overview while preserving imported cover and semantic soil.
+// Displays natural ground on planning-only cover while preserving imported cover and semantic soil.
 // @ts-check
+// Planning samples show the terrain-driven label of the published natural-soil pages (natural-terrain-inference-v1) when the caller
+// resolves one (LandscapeNaturalSoil); otherwise, and for stale natives or a missing sidecar, they show the nearest label of one immutable
+// 15.625 m overview flood fill (natural-overview-infill-v1), which every worker keeps as the explicit fallback.
 import { landscapeRegionContains } from '../../../app/landscape/LandscapeRegions.js';
+import { LANDSCAPE_NATURAL_SOIL } from '../../../app/landscape/LandscapeNaturalSoil.js';
 
-export const LANDSCAPE_NATURAL_PRESENTATION = 'natural-overview-infill-v1';
+export const LANDSCAPE_NATURAL_PRESENTATION = LANDSCAPE_NATURAL_SOIL.overview;
+export const LANDSCAPE_NATURAL_TERRAIN_INFERENCE = LANDSCAPE_NATURAL_SOIL.terrain;
 
 /** @param {any} descriptor @returns {{retainedBytes:number,workingBytes:number}} */
 export function landscapeNaturalPresentationBytes(descriptor) {
@@ -61,17 +66,22 @@ export function createLandscapeNaturalPresentation(manifest, root) {
         return labels[row * columns + column];
     }
 
-    function sample(x, z, cover) {
+    /**
+     * Packed semantic|display<<4 soil after ordered overrides. `natural` is the resolved terrain-driven label of the sample, or -1 for the
+     * overview infill; it only affects planning-only cover.
+     * @param {number} x @param {number} z @param {number} cover @param {number} [natural]
+     */
+    function sample(x, z, cover, natural = -1) {
         const semantic = semanticOf(cover);
         for (let i = overrides.length - 1; i >= 0; i--) if (landscapeRegionContains(overrides[i].region, x, z)) return overrides[i].soil * 17;
         if (!planning.has(cover)) return semantic * 17;
-        return semantic | infill(x, z) << 4;
+        return semantic | (natural >= 0 ? natural : infill(x, z)) << 4;
     }
 
-    /** Packed semantic|display<<4 soil from cover and natural infill only, without authored overrides. */
-    function sampleBase(x, z, cover) {
+    /** Packed semantic|display<<4 soil from cover and natural inference only, without authored overrides. @param {number} x @param {number} z @param {number} cover @param {number} [natural] */
+    function sampleBase(x, z, cover, natural = -1) {
         const semantic = semanticOf(cover);
-        return planning.has(cover) ? semantic | infill(x, z) << 4 : semantic * 17;
+        return planning.has(cover) ? semantic | (natural >= 0 ? natural : infill(x, z)) << 4 : semantic * 17;
     }
 
     /** Semantic soil index after exact ordered override containment. */
@@ -81,18 +91,24 @@ export function createLandscapeNaturalPresentation(manifest, root) {
         return semantic;
     }
 
-    return Object.freeze({ sample, sampleBase, semanticSoil, reference });
+    /** @param {number} cover */
+    function isPlanning(cover) { return planning.has(cover); }
+
+    return Object.freeze({ sample, sampleBase, semanticSoil, isPlanning, reference });
 }
 
-/** @param {ReturnType<typeof createLandscapeNaturalPresentation>} presentation @param {any} descriptor @param {Uint8Array} landCover */
-export function rasterizeLandscapeDisplayMask(presentation, descriptor, landCover) {
+/**
+ * @param {ReturnType<typeof createLandscapeNaturalPresentation>} presentation @param {any} descriptor @param {Uint8Array} landCover
+ * @param {(column:number,row:number)=>number} [naturalAt] resolved terrain-driven label of a local sample, -1 for the overview infill
+ */
+export function rasterizeLandscapeDisplayMask(presentation, descriptor, landCover, naturalAt = () => -1) {
     const { columns, rows, bounds } = descriptor;
     if (!(landCover instanceof Uint8Array) || landCover.length !== columns * rows) throw new Error('Display mask dimensions do not match the cover channel');
     const pixels = new Uint8Array(landCover.length * 2), soils = new Set();
     for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
         const index = row * columns + column;
         const x = bounds.minX + column * (bounds.maxX - bounds.minX) / (columns - 1), z = bounds.maxZ - row * (bounds.maxZ - bounds.minZ) / (rows - 1);
-        pixels[index * 2] = presentation.sample(x, z, landCover[index]);
+        pixels[index * 2] = presentation.sample(x, z, landCover[index], naturalAt(column, row));
         pixels[index * 2 + 1] = landCover[index];
         soils.add(pixels[index * 2] >> 4);
     }

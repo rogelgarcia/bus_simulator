@@ -18,8 +18,10 @@ Source selection comes before later stochastic anti-tiling. AI577 D3 samples eve
 material with world-anchored stochastic hex tiling: it reshuffles, rotates and blends copies of
 the tile, so a distinctive feature would still recur at random positions, and homogeneous
 sources remain required. Sand and seabed keep their ripple orientation (no rotation, offsets
-along the crests only). Random rotation removes a page's mean normal lean; the grass page's
-2.15° lean shifts sunlit grass by about −0.45 sRGB bytes. Broad ecological,
+along the crests only). A page's mean normal lean is a capture artifact, because a periodic height
+field's slope averages to zero; rotated copies would turn it toward random azimuths and expose the
+hexagons under a low sun, so since AI577 D5 the runtime subtracts the measured mean slope before rotation
+(grass (−0.032, 0.022), about 2.2°). Broad ecological,
 moisture and soil variation belongs to the terrain coverage/appearance model,
 where it can have an intentional landscape-scale distribution.
 
@@ -90,6 +92,35 @@ range from the 0.1/99.9 percentiles = 0.625, 0.14% clamped texels at 1024) keeps
 dimple detail, so the source hue never reaches the rendered sand. Limitation: a smoothed oval
 impression about 35 × 20 cm recurs every 3.5 m in the relief; runtime stochastic sampling of the
 micro layer breaks its repetition up.
+
+## Landscape-local calibration (AI577 D5)
+
+The D1a materials were calibrated under the former ad-hoc viewer lighting. Under the game's physical
+daylight (LANDSCAPE_APPEARANCE_RUNTIME.md, Lighting) the effective albedo Y (π·L/E at 45° illumination,
+nadir view) of grass and rock fell outside physical ranges, so the landscape applies its own gains
+without editing the shared PBR store:
+
+| Material | Gain | Y before | Y after | Physical range | Sources |
+| --- | ---: | ---: | ---: | --- | --- |
+| grass (loam) | 0.71 | 0.185 | 0.121 | 0.08–0.15 | ColorChecker foliage (McCamy 1976), USGS splib07, Oke 1987 |
+| forest soil | 1 | 0.109 | 0.094 | 0.05–0.15 | Munsell renotation (Newhall 1943), Soil Survey Manual, Post et al. 2000 |
+| unknown substrate | 1 | 0.147 | 0.131 | 0.10–0.25 | Soil Survey Manual, Post et al. 2000 |
+| sand | 1 | 0.265 | 0.244 | 0.20–0.40 | USGS splib07, ASTER library |
+| rock | 0.68 | 0.362 | 0.242 | 0.15–0.30 | ASTER library, USGS splib07 |
+
+Y after also includes the D5 natural-ground response. Mean frame luminance over the 32 D5 views changed
+from 181.6 (first D5 lighting pass) to 164.5 at the unchanged game exposure.
+
+## Terrain-driven weathering and wetting (AI577 D5)
+
+Rock and beach sand change with their terrain position rather than through new source maps: gentle
+rock outcrops weather darker (factor `2^(−0.7·(1 + 0.4·max(m, 0)))`, tint (0.95, 1, 0.93); granite Y about
+0.15 instead of 0.24), faces steeper than 50° stay fresh, and rock within 1.8 × the coastal reach above the
+sea darkens like a Verrucaria black zone. Beach sand within the coastal reach (runup, falling tide and
+capillary fringe) takes the wet-film optics: wet/dry albedo ratio 0.53–0.60 and a smooth specular swash
+film (roughness 0.18). The models and sources are in LANDSCAPE_APPEARANCE_RUNTIME.md, Terrain-driven
+natural appearance. The current coastal data has no rock within the splash reach, so the black zone is
+verified by mirror tests and GPU parity rather than renders.
 
 ## Transition quality
 

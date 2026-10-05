@@ -1,5 +1,13 @@
 # Landscape preparation
 
+AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
+`node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current
+native grid as a whole (depressions, flow, wetness, deposition, rock exposure,
+horizons, sky view, shore distance and the natural soil of planning-only samples)
+before slicing mask-aligned pages into the additive `fields/` sidecar. It needs no
+machine executable, never writes terrain or appearance files, and verifies
+deterministic, validated output before an optional manifest-last publication.
+
 D4 adds [independent PBR appearance preparation](appearance/README.md) through
 `node tools/bake.mjs --target landscape/appearance`. It derives bounded texture
 tiers from existing public material sources while preserving the global catalog,

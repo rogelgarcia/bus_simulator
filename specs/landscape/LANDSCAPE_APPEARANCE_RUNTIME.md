@@ -91,7 +91,10 @@ field (`uMacroOctaves[4]`, `uMacroSalts`, `uMacroSettings`, `uSoilMacro[6]`) and
 most 64) is the fine-page capacity of [LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md).
 The RTX 3060 / ANGLE D3D11 test machine reports 1,024 vectors and compiles 81 slots; the WebGL2
 minimum of 224 yields 20 slots (3 fine); devices below 210 vectors cannot fit seventeen slots and
-fail with an explicit `[Landscape]` error.
+fail with an explicit `[Landscape]` error. Since AI577 D5 the fixed count is 155 (lighting 11, terrain
+fields 2, material response 7 and planning cover 1, less 8 diagnostic colors made compile-time constants):
+the WebGL2 minimum of 224 yields exactly the 17 native slots, and devices below 223 vectors fail
+explicitly.
 The geometry streamer's materials and the appearance uniforms receive the same count, and
 `setAppearance` rejects arrays of another length. The finest-page search loop is bounded by
 the mask array depth, so unused slots cost no fragment work. `snapshot().appearance.coverageSlots`
@@ -137,9 +140,9 @@ The external terrain shader applies normal strength, AO intensity, metalness,
 albedo correction and roughness interval/gamma/inversion controls from the
 resolved pipeline. Roughness percentile normalization uses the retained original
 source range at every tier. A constant input range preserves the raw scalar.
-The surface uses a GGX sun response and hemisphere ambient illumination. It does
-not introduce terrain displacement, extra measured elevation, an environment
-bake or gameplay lighting integration.
+The surface is lit by the game lighting with the natural-ground response, terrain-reflected light
+and terrain-field visibility (see Lighting and Lighting integration and material response, AI577 D5).
+It does not introduce terrain displacement, extra measured elevation or an environment bake.
 
 AI577 D1 reconstructs normalized material coverage independently from geometry.
 An interpolating cubic one-hot field preserves narrow source features; a bounded
@@ -241,6 +244,13 @@ hex-linear lost about a quarter of the rendered contrast; hex-variance and an of
 Gaussianized/inverse-LUT variant (evaluated only, not implemented: it needs new pages and a
 lookup per material) preserved variance at higher cost; hex-contrast keeps rendered contrast
 within −4.8…+1.2% of single sampling.
+
+Since AI577 D5 each lattice sample subtracts its page's mean tangent slope
+(`landscape-material-calibration-v1`) before the inverse rotation. Rotating a leaning page tilted every
+1.33 m hexagon toward a different azimuth and showed the lattice under a low sun: the hex-cell luminance
+standard deviation of grass under a 12° sun was 2.7–2.9 sRGB bytes, against 0.84–0.88 after de-leaning
+and a 0.84 single-sample floor, while the tile-period repetition correlations stay at D3's values.
+`landscapeHexNormalSlope(normal, rotation, slopeLimit, meanSlope)` mirrors `landscapeHexSlope`.
 
 ## Distinct appearance layers (AI577 D4)
 
@@ -355,6 +365,170 @@ when the desired tier returns to the bound one. `snapshot().appearance.materialU
 `{maps, bytes, tiers, splitTiers, maxFramesPerTier, lastTier}` and `pendingMaterialTier` the
 uploading tier.
 
+## Lighting (AI577 D5)
+
+The viewer is lit by `LandscapeLighting`, which resolves the game's `getResolvedLightingSettings` and
+`getResolvedAtmosphereSettings` (saved settings plus the game URL overrides `exposure`, `toneMapping`,
+`hemiIntensity`, `sunIntensity`, `ibl`, `iblIntensity`, `iblBackground`, `iblId`, `sunAzimuth`,
+`sunElevation`) without GameEngine, City or CSM. The defaults are `CALIBRATED_DAYLIGHT`: sun azimuth 45°,
+elevation 55°, normal irradiance (162.714, 139.738, 109.946), angular diameter 0.53°, ACES tone mapping at
+exposure 0.0511001705221839, hemisphere 0 and the calibrated HDR `ibl.calibrated.clear_afternoon_55` at
+intensity 1. Tone mapping applies to the canvas only.
+
+Directions are landscape world space (X east, Y up, Z north). The sun is the game direction
+`azimuthElevationDegToDir(az, el)` turned by the binding yaw only (x' = cos(yaw)·x − sin(yaw)·z,
+z' = sin(yaw)·x + cos(yaw)·z), so its azimuth matches the terrain-field horizon convention
+(counterclockwise from +X toward +Z). The game names −Z north; use vectors, never compass names.
+
+**Sky light.** The calibrated HDR is projected on the CPU onto spherical harmonics bands 0–2 plus zonal
+bands 4 and 6 about +Y, integrated per texel and cosine-convolved, with the yaw folded into azimuth,
+scaled by the environment intensity, plus the game hemisphere light when enabled. Against
+`clear-afternoon-55.json` `skyIrradiance` the horizontal irradiance differs by +1.83/+1.07/+0.52% (R/G/B)
+and the east and north irradiances by at most 0.3% (bands 0–2 alone would overstate the zenith by 8.4%).
+No PMREM is generated (three's PMREM shader triggered the D3D compiler warning X4122): the HDR is the
+scene background (rotation −yaw), and the water reads a CPU-prefiltered 128×64 RGBA16F reflection map
+(`LandscapeSkyReflection.js`, split-sum D(h)(n·l) estimator at the water's Cox–Munk roughness 0.368,
+lobe within 60° holding 98.85% of its weight; ≤0.8% error up to 60° elevation, 35–60 ms once at load).
+
+**Surface BRDF.** three r183 Physical (GGX with multiscatter, split-sum ambient specular) with the analytic
+Karis DFG instead of the `dfgLUT` texture, so the terrain samples no extra texture; natural ground adds
+the D5c response below. Uniforms (11 vectors): `uLandscapeSky[9]` (per channel (1,x,y,z),
+(xz,zy,3y²−1,xy), (x²−z², P4, P6, haze calibration)), `uLandscapeSun` (direction, sea level in w) and
+`uLandscapeSunIrradiance` (rgb, optical water level in w, or −1e9 when the water is hidden).
+
+**Aerial perspective** (pre-tonemap on terrain, water and backdrop): Rayleigh scattering
+(5.802, 13.558, 33.1)·10⁻⁶ m⁻¹ with an 8 km scale height; Mie scattering 5·10⁻⁶ m⁻¹ (2·10⁻⁵ × aerosol 0.25),
+extinction ×1.11, 1.2 km scale height, Henyey–Greenstein g = 0.76, ground albedo 0.3, from the calibrated
+clear-afternoon profile; per-channel calibration to the HDR horizon (standard (1.084, 1.089, 1.012), high
+(1.058, 1.065, 0.994)). Visibility is about 205 km at 550 nm; transmittance is (0.956, 0.927, 0.857) over
+4 km and (0.989, 0.981, 0.962) over 1 km, so aerial views gain depth while close views stay clear.
+
+**Water** (visual treatment, no hydrology): index of refraction 1.333; absorption (0.30, 0.07, 0.06) m⁻¹
+(Pope & Fry plus coastal CDOM), scattering 0.3 m⁻¹, backscattering (0.006, 0.0064, 0.0078) m⁻¹, Gordon
+reflectance 0.089u + 0.125u², diffuse cosine 0.86, diffuse transmittance 0.934, internal reflectance 0.485;
+Cox–Munk surface at 3 m/s (mean square slope 0.01836, α 0.1355). Submerged terrain applies absorption and
+in-scattering over the exact in-water path of the view ray below `coordinates.seaLevel`; submerged heights
+are never replaced. The single-pass water ShaderMaterial blends its premultiplied split-sum reflectance;
+sun glint is added in the terrain shader before tone mapping, divided by (1 − R). It keeps its 140-byte
+ledger entry, is never pickable, and hiding it removes the optical water body.
+
+**Tiers** (compile-time `LANDSCAPE_LIGHTING_TIER`, viewer `landscapeLighting=low|standard|high`): low has no
+haze, a constant deep-water colour and no terrain fields; standard is the full model; high adds
+direction-dependent sky in-scattering and horizon occlusion of specular. Renderer-owned resources outside
+the ledger: the HDR (4 MiB CPU and GPU), the background cube (12 MiB GPU) and the reflection map (64 KiB).
+
+## Lighting integration and material response (AI577 D5)
+
+**Material response** (`landscape-material-response-v1`, `LandscapeMaterialResponse.js` ↔ `lighting.glsl`):
+natural ground uses the energy-preserving Fujii Oren–Nayar diffuse (EON; Portsmouth, Kutz and Hill 2025,
+JCGT 14(1); OpenPBR 1.1) with per-soil roughness r and EON's directional albedo for ambient diffuse; the
+Hapke shadow-hiding opposition term 1 + B0/(1 + tan(g/2)/h) with h 0.06 (Hapke 1986/2002; Kuusk 1985),
+divided by its nadir-view hemispherical mean so it redistributes rather than adds energy; and the empirical
+natural-surface shadowing exp(−tan γ) (Maignan, Bréon et al. 2009, RSE 113:2642) blended into GGX by a
+weight w (γ from v·h for the sun, from n·v for ambient specular). Smooth or wet ground keeps GGX.
+
+| Soil | r | w | B0 | Backscatter/forward at 60° |
+| --- | ---: | ---: | ---: | ---: |
+| unknown | 0.30 | 1 | 0.35 | 2.48 |
+| seabed | 0.25 | 0 | 0 | 1.69 |
+| sand | 0.25 | 1 | 0.25 | 2.09 |
+| loam (grass) | 0.30 | 1 | 0.50 | 2.74 |
+| forest | 0.35 | 1 | 0.35 | 2.74 |
+| rock | 0.15 | 0.5 | 0.10 | 1.51 |
+
+The ratios lie within the 1.3–3 range field goniometers measure for soils, sand and lawns (Kimes 1983;
+Sandmeier and Itten 1999). Coverage weights the response after height blending; a zero response
+reproduces the plain Physical shading. Looking into a 12° sun the forward sheen falls from about 200 to
+about 48 sRGB bytes.
+
+**Terrain-reflected light** (`landscape-terrain-bounce-v1`): E_g = ρ̄[(1 − n_y)/2·E_h + (1 − V)(1 + n_y)/2·
+(E_sun·μ̄_occ + E_skyUp·S̄_occ)] (Liu and Jordan 1963; Dozier and Frew 1990), where ρ̄ is the
+coverage-weighted mean material albedo (one-texel mip, corrections and macro variation applied) and the
+occluders are the eight stored horizons, each facing the fragment at its horizon slope and weighted for the
+geometric normal. It reaches ambient diffuse through the EON albedo and the material AO; ambient specular
+adds the open ground below the horizon. Single bounce, unshadowed occluders, E_g ≤ ρ̄·E_h. At a 12° sun it
+adds 1.5–3.9% of the sky ambient on 25° slopes and 19–51% on vertical faces.
+
+**Terrain visibility** (`landscape-terrain-visibility-v1`): the terrain program includes
+`terrain_fields.glsl`; `terrainVisibility()` runs once per lit fragment right before lighting, in uniform
+control flow (evaluating it at the top of `main` measured 1.1–1.8 ms slower). Sun visibility is the
+visible segment of the solar disc against the interpolated horizon with radius max(0.265°,
+½·fwidth(margin)) for antialiased shadow edges; it multiplies the direct sun, the underwater sun and the
+glint. Sky visibility is skyView / ((1 + cos S)/2), clamped to [0, 1], because the sky harmonics already
+apply the facet tilt; it multiplies ambient sky diffuse with the AO and drives Lagarde specular occlusion.
+Both blend to 1.0 by field availability, so stale or absent fields are neutral; the low tier compiles
+without fields. Shadows agree in 99.97% of pixels under a pan and 99.70% between 300 m and 600 m views.
+
+**Landscape-local calibration** (`landscape-material-calibration-v1`, `LandscapeMaterialCalibration.js`):
+the shared PBR store is untouched. When a material's effective albedo Y (π·L/E at 45°/0°) falls outside its
+physical range, a gain applies through `uSoilAlbedo.x`: grass 0.71 (Y 0.185 → 0.121, range 0.08–0.15) and
+rock 0.68 (0.362 → 0.242, range 0.15–0.30); see LANDSCAPE_BASE_MATERIALS.md. Entries also record the
+page's mean tangent slope, bound to the SHA-256 of its 1024 normal page, which each stochastic sample
+subtracts before the inverse rotation (see Stochastic material sampling).
+
+**Interface and budget.** `setLighting({tier, response: {model, bounce, terrainVisibility}, calibration:
+{albedo, normalLean}})`; `snapshot().lighting` (sources, tone mapping, sun, environment and reflection,
+sky, haze, water, hooks, response, uniforms, resources, backdrop), `appearance.materials[].response` and
+`.landscapeCalibration`, `terrainFields.shader.included`. Uniforms `uLandscapeResponse`, `uSoilResponse[6]`
+(r, w, mean slope) and `uSoilState[].w` (opposition). Fixed fragment vectors: 154 (D4 142 + lighting 11 +
+fields 2 + response 7 − 8 diagnostic level colours, now the compile-time `LANDSCAPE_SURFACE_LEVEL_COLOR_LIST`);
+16 samplers; the WebGL2 minimum of 224 vectors keeps 17 native slots.
+
+## Terrain-driven natural appearance (AI577 D5)
+
+Terrain properties, not added noise, vary the natural ground at landscape scale. Nothing here changes
+heights, cover, soil semantics, queries or picking.
+
+**Landscape-scale layer.** One RGBA8 layer on the root grid (257², 15.6 m) holds the catena moisture
+index, deposition, coastal reach in centimeters (up to 2.55 m) and the rock-exposure modulation. It is the
+last layer of the terrain-field array (no new sampler or uniform). The appearance worker derives it from
+the decoded root field page plus the root heights and land cover (36–72 ms in Node, 67–131 ms in the
+browser worker; about 1 ms of main-thread copying) under the 12.7 MB reservation
+`terrain-appearance-layer-derivation`, and uploads it with the root page. If the derivation fails or is
+denied, the root page stays usable, `uTerrainFieldsState.z` bit 1 stays clear and every term is neutral.
+
+**Planning exclusion.** Graded pads and road embankments would otherwise draw dry rings around districts
+and double lines along roads. Each sample has the natural weight `w = smoothstep(60 m, 200 m, distance to
+planning cover)`. Terrain position is the height above a Gaussian-weighted plane fitted by normalized
+convolution (Knutsson and Westin 1993) through confident land samples only, at σ 4 and 12 samples (62 and
+188 m). Catena and deposition count with weight w⁴, then planning, stale and sea samples are filled by
+pull-push (Gortler et al. 1996) and a σ = 1 low-pass. On synthetic graded pads and embankments with
+72–150 m feathers the worst mean deviation per 20 m band is 0.03–0.12, against 0.77–0.96 without it.
+
+**Catena** (Milne 1935; Weiss 2001; De Reu et al. 2013). The index
+`−TPI/1.5 m + 0.5(TWI − 0.35) + 0.2·flow − 0.3·smoothstep(12°, 30°, slope)`, soft-clipped to ±1, adds
+`(−4.5m + 1.5d, 2.2m − d)` to the D4 (tone, chroma) field through the unchanged per-material responses:
+saturated hollows darker and richer (forest −24%), dry ridges lighter (forest +32%), grass in hollows greener.
+Each soil takes the terms by a development role in `uSoilScale.x`: loam, forest and unknown 1, sand 0.5,
+seabed and rock 0 (rock is −1, the substrate marker). Terms fade with root-page arrival, over 32 m on the
+fresh side of stale cells, with land height −0.25…0.5 m and with footprints of 1–4 root spacings.
+
+**Exposed rock.** `0.75 × smoothstep(18°, 32°, fragment slope) × layer modulation` raises rock in the D1a
+height competition; soil, cover and queries are unchanged.
+
+**Coastal wetting** (visual only; sea level untouched). Reach = Stockdon et al. (2006) R2 runup (H0 0.5 m,
+T 6 s, slope capped at 14°) + 0.5 m falling microtidal tide (seepage face; Turner 1993) + 0.35 m capillary
+fringe (Horn 2002; Namikas 2010) + 0.6 m × flow, fading out between 80 and 160 m inland. Darkening follows
+the Lekner and Dorf (1988) film model with the water-optics constants (T 0.481), a wet/dry albedo ratio of
+0.53–0.60 (measured 0.5–0.65: Twomey et al. 1986; Nolet et al. 2014). The swash film is smooth and
+specular (roughness 0.18, GGX kept). Dry sand to the darkest wet band falls from display Y 0.44–0.48 to 0.30.
+
+**Rock weathering.** Gentle outcrops darken by `2^(−0.7·(1 + 0.4·max(m, 0)))` with tint (0.95, 1, 0.93)
+(granite Y 0.24 → about 0.15; moist rock darker), faces steeper than 50° stay fresh, and a Verrucaria black
+zone (Stephenson and Stephenson 1949) darkens rock up to 1.8 × reach above the sea; the factor also scales
+the rock share of the ground albedo used by terrain-reflected light. The rock/sand display luminance ratio
+at the rock mid view falls from 1.14 to 0.83.
+
+**Interface and cost.** `uPlanningCover` (155 of the 156 fixed vectors; 17 native slots at the WebGL2
+minimum); no sampler; constants are compile-time defines (`landscapeTerrainAppearanceDefines`,
+`landscapeDressingDefines`). The switch `uLandscapeResponse.w` (`setLighting({response: {terrainAppearance}})`,
+viewer `landscapeTerrainAppearance`) gates a loop of uniform trip count, which the D3D compiler handles far
+better than an `if` (d5-hollow-inland +6.9 → +1.5 ms); switched off, all 32 D5 views match the build
+without it within one sRGB byte. The mirror `terrainAppearanceSample(x, z, {height, slopeDegrees, footprint})`
+returns the layer values, availability, tone, chroma, exposure, reach, moisture, weight, per-soil
+{share, tone, chroma} and rockFactor, within 2e-6 relative of the GPU. Standard-tier cost over the build
+without it: +1.0 to +2.7 ms GPU per view at 512/256 MiB.
+
 ## Material demand and budget fitting (AI577 D4)
 
 `landscape-material-water-filling-v1` (`LandscapeAppearanceDemand.js`) runs before geometry
@@ -405,41 +579,76 @@ issues the overview program with `renderer.compile` before its first upload and 
 `KHR_parallel_shader_compile` completion in 16 ms polls, keeping the main thread responsive
 (`snapshot().terrainProgram` and `snapshot().streaming.programCompile` report
 `{parallel, pending, milliseconds, timedOut}`). The compile is flushed to the driver at once and the
-wait is bounded: after 20 s without completion the stream stops waiting, reports `timedOut: true` and
+wait is bounded: after 60 s without completion the stream stops waiting, reports `timedOut: true` and
 the first upload links the program synchronously. A stream disposed meanwhile stops waiting with an
 AbortError; a lost context fails explicitly; without the extension the program reports ready at once
 and the first upload compiles it synchronously as before. Planning becomes ready 6.1–6.4 s after navigation
 instead of 4.1–4.2 s, but the page no longer freezes (longest main-thread gap 76–90 ms instead of
-3.9 s).
+3.9 s). Since AI577 D5 (lighting, terrain fields and
+response code) a cold browser profile needs 12–20 s to compile the terrain program on this machine,
+while Chromium's GPU program cache serves later loads in about 50 ms; the page stays responsive
+throughout, and reducing the cold compile belongs to D6.
 
 ## Natural presentation and imported reference data
 
-`LandscapeNaturalPresentation` uses the catalog's `planningOnly` flag; the coastal
-planning IDs are 5, 6 and 7. It removes their former pavement tint and distinct
-unknown-ground material silhouettes without editing imported cover or heights.
-The reference is one authenticated overview cover page, not an independently
-inferred result for every child tile. Every nonplanning root sample seeds its
-base soil into a deterministic four-neighbor flood fill. Seeds enter in row-major
-order and neighbors are visited north, west, east, south; this resolves equal
-Manhattan-distance ties reproducibly. If no natural seed exists, the explicit
-display fallback is loam when present, otherwise the declared default soil.
+Planning-only land cover (the catalog's `planningOnly` classes; coastal IDs 5 urban, 6 road, 7 runway) displays
+natural ground instead of a pavement tint or the unknown material, without editing imported cover, semantic soil
+or heights. Since AI577 D5 the display label is the terrain-driven `natural-terrain-inference-v1` label published
+by the terrain-fields bake (LANDSCAPE_TERRAIN_FIELDS.md); the former 15.625 m overview flood fill
+(`natural-overview-infill-v1`) is its explicit fallback.
 
-Every planning sample at every LOD looks up the same nearest world-coordinate
-root label. The coastal reference spacing is 15.625 meters. Child arrival order,
-worker replacement and mask eviction therefore cannot choose different inferred
-substrates along a shared border. Nonplanning samples keep their semantic soil.
-The current ordered authored overrides apply last, including an explicit override
-to unknown; an overridden unknown is not mistaken for unassigned planning ground.
-The same pure helper creates fallback mesh colors and packed appearance masks.
-This keeps a failed or not-yet-ready appearance stream from restoring pavement
-colors. Native road grading shoulders remain in the retained height field.
+**Data.** The terrain-fields sidecar publishes a natural-soil page for every chunk whose aligned samples contain
+planning cover (`pages[].naturalSoil`: one uint8 catalog soil index per sample, row 0 north, no halo,
+content-addressed `pages/<sha256>.u8`; coastal: 58 page entries, 27 unique 66,049-byte pages). A chunk of any
+level stores the native labels at its aligned samples, so every level reads identical labels at shared positions;
+non-planning samples hold their semantic soil. Pages are SHA-256 authenticated (`loadLandscapeTerrainFieldPage`)
+and must hold one label per sample, each the soil of a non-planning cover class (`validateLandscapeNaturalSoilPage`).
 
-This is an inferred visual treatment, not an assertion that urban or road samples
-actually contain forest, grass, or sand. Queries, reports and saved source cover
-continue to expose the imported reference and authored semantic soil. There is
-no new durable full-terrain raster, terrain write, or unbounded neighborhood fetch.
-Display material interests use the inferred/overridden soil rather than unknown
-source semantics, so referenced fine pages are admitted and released correctly.
+**Policy.** `LandscapeNaturalInference` decides the policy once per loaded landscape, before the root mesh or the
+first mask is built, and never changes it during that load. The geometry and appearance streams of a load share
+one reference-counted instance (keyed by the frozen `loaded` object), and `LandscapeTerrainFieldPages` reuses
+its memoized sidecar load, so `fields/manifest.json` is fetched once. The policy is per native chunk:
+
+| Status | Planning samples display |
+| --- | --- |
+| `active` | the published label everywhere |
+| `active-partial` | the published label, except natives whose height or land-cover hash changed since the bake (stale), which use the overview infill |
+| `stale` (all natives), `absent` (HTTP 404), `disabled` (`landscapeNaturalInference=overview`), `invalid`, `binding-mismatch`, `budget-denied`, `timeout` (no sidecar after 10 s) | the overview infill everywhere |
+
+A sample belongs to the native `min(n - 1, floor(index / chunkIntervals))` on each axis (the ownership rule of
+the mask halos): a stale native falls back for the samples it owns, while its east column and south row, owned by
+fresh neighbors whose unchanged channels include them, keep their published labels. Pages of every level, their
+halos and generated fine pages therefore choose the same label for every shared sample; coarse pages mix
+policies per native, never per page. Soil-only and material-only edits stale nothing. A planning sample of a
+fresh native without a published label (only possible if the cover catalog changed since the bake) shows the
+infill, is counted as `unpublished` and logged. The current ordered authored overrides apply last, including an
+explicit override to unknown.
+
+Workers receive the decision as a `landscape-natural-soil-request` (`createLandscapeNaturalSoilResolver`): the
+terrain-fields URL, the natives on the fallback and the page descriptors of exactly the chunks the job reads.
+Mask jobs read the pages of their same-level owners (page plus reconstruction halo), fine-page jobs those of their
+native support owners, mesh builds their own chunk's page; owners are read one at a time. Every worker still
+builds the overview infill: nonplanning root samples seed a deterministic four-neighbor flood fill (row-major
+seeds; neighbors north, west, east, south); without a natural seed the display fallback is loam when present,
+otherwise the declared default soil.
+
+Native and coarser mask pages, generated fine pages (recipe v4), fallback mesh colors,
+`appearanceSample(x,z).displaySoilId` and material interests/leases all use the same labels. Queries, reports
+and saved source cover keep exposing the imported reference and authored semantic soil. This is an inferred
+visual treatment, not an assertion that urban or road samples contain forest, grass or sand.
+
+`snapshot().appearance.presentation` reports `recipe`, `mode`, `configuredPolicy`, `policy`, `fallbackPolicy`,
+`status`, `reason`, `url`, `revision`, `terrainRevision`, `currentTerrainRevision`, `bound`,
+`natives:{total, terrain, overview}`, `fallbackScope` (`none` | `stale-natives` | `all-natives`),
+`overviewNatives:[{id, reason}]`, `policyByNative`, `pages:{published, unique, byteLength,
+transientWorkerBytes}`, `inference` (the bake statistics), `loadMs`, `errors`, `inferredSpacingMeters`
+(1.953125 m with terrain labels, else 15.625 m), `fallback:{policy, spacingMeters, sourceId, sourceSha256}` and
+`samples:{terrain, overview, overviewByReason:{inactive, stale, unpublished}, pages}` (planning samples of the
+resident native pages, page area only, by the policy that chose their label). `appearance.coverage.naturalReference`
+names both policies and the mask decode reservation, `streaming.naturalSoil` the fallback-color builds and
+`appearance.detail.naturalLabels` the fine-page label source. The viewer accepts
+`landscapeNaturalInference=terrain|overview` (default `terrain`, an explicit error otherwise); the test hook
+`setNaturalInference(mode)` reloads with another policy for A/B evidence.
 
 ## Shared memory and frame-work limits
 
@@ -492,15 +701,18 @@ eight bytes per original sample for serial fetch/hash/decode and transfer overla
 The contour fitter allocates no additional typed-array scratch. After upload only
 the shared array remains.
 
-Each worker's natural reference retains one 66,049-byte label array and builds
-it with a temporary 264,196-byte `Uint32Array` queue. Its 330,245-byte allowance
-stays reserved so terminated workers can be reconstructed safely. The two mesh
-workers already have accounted copies of the overview channels. Their context
-reservation adds two such allowances. The appearance worker additionally owns
-one 66,049-byte overview cover copy and reserves 396,294 bytes for that copy plus
-infill construction. Combined natural-presentation worker reservations remain
-1,056,784 CPU bytes, including scratch; contour/mask storage is counted separately above.
-All context allowances are released only after their worker pool is disposed.
+Each worker's overview infill retains one 66,049-byte label array and builds it with a temporary 264,196-byte
+`Uint32Array` queue. Its 330,245-byte allowance stays reserved so terminated workers can be reconstructed safely.
+The two mesh workers already have accounted copies of the overview channels; their context reservation adds two
+such allowances. The appearance worker additionally owns one 66,049-byte overview cover copy and, while
+terrain-driven natural soil is active, a content-addressed cache of nine natural-soil pages (594,441 bytes); its
+context reserves 990,735 bytes (396,294 in overview mode). Combined natural-presentation worker reservations are
+1,651,225 CPU bytes (1,056,784 in overview mode); each generated-detail worker adds a six-page natural-soil cache
+(396,294 bytes) to its context. A job that reads natural-soil pages reserves one page plus its fetch buffer
+(132,098 bytes) inside its own reservation: a coastal mask decode reserves 1,077,696 bytes when it reads a page
+(945,598 otherwise) and a mesh build 132,098 more. The sidecar decode reserves 768 KiB
+(`natural-inference-manifest-decode`) only while it loads. All context allowances are released only after their
+worker pool is disposed; natural-soil pages add no GPU memory (their labels live in the existing mask texels).
 
 The geometry adapter uploads first. Appearance receives only the remainder of
 the same **8 MiB per-frame** allowance. The initial mask array is uploaded once;
@@ -519,10 +731,11 @@ render targets owned by the main viewer and total browser heap/VRAM.
 ## Water and inspection
 
 The Water toggle owns a separate two-triangle plane at `coordinates.seaLevel`.
-Its 140 bytes of geometry attributes/indices are accounted on CPU and GPU. It is
-transparent and never joins terrain picking or native query acquisition. Sea
-level does not replace submerged terrain heights. The reference has no waves,
-hydrology, buoyancy or collision behavior.
+Its 140 bytes of geometry attributes/indices are accounted on CPU and GPU. Since AI577 D5 it is drawn
+with the single-pass water material described under Lighting (Fresnel reflection, depth-dependent
+seabed visibility through the terrain shader's underwater optics); it never joins terrain picking or
+native query acquisition. Sea level does not replace submerged terrain heights. The reference has no
+waves, hydrology, buoyancy or collision behavior; hiding it also removes the optical water body.
 
 The viewer reports mask residency, per-soil texture resolution, pending work,
 actual appearance CPU/GPU bytes and degradation alongside the shared performance
@@ -531,7 +744,8 @@ material interest counts, reserved credit, decode/upload state, errors and peak
 upload bytes. `appearanceSample(x,z)` reads the nearest resident categorical
 texel and reports semantic `soilId`, inferred/overridden `displaySoilId`, unchanged
 `coverId`, spatial mask ID, level, spacing and revision. `appearance.presentation`
-identifies the root-infill policy and reference spacing, while `materialTiling`
+reports the natural display policy, its per-native fallback and sample counts (see Natural
+presentation and imported reference data), while `materialTiling`
 reports each soil's physical period and micro fade thresholds (see Distinct appearance layers).
 `coverageSample(x,z,{dx,dy})` reports the continuous resident-page weights, raw
 cubic weights, fitted-pair confidence and world footprint before hierarchy fades.

@@ -6,13 +6,15 @@ import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { withLandscapeMorphedPositions } from './LandscapeTileEdges.js';
 import { createLandscapeAppearanceUniforms } from './LandscapeAppearanceUniforms.js';
 import { createLandscapeDiagnosticUniforms } from './LandscapeTerrainDiagnostics.js';
+import { createLandscapeLightingUniforms } from './LandscapeLightingModel.js';
 
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
 /**
  * @param {any} buffers @param {Float32Array} sourceHeights
- * @param {{coverageSlots:number,materialSampling?:string}} options view-wide compile-time coverage slot count and material sampling mode
+ * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string}} options view-wide compile-time coverage slot count, material sampling
+ *   mode and lighting tier; a tile renders with the calibrated sun and no sky light until setLighting binds the view lighting
  * @returns {any}
  */
 export function createLandscapeMesh(buffers, sourceHeights, options) {
@@ -25,14 +27,20 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         uBounds: { value: new THREE.Vector4(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ) }
     };
     const coverageSlots = options?.coverageSlots;
-    const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}) });
+    const variant = { ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}), ...(options?.lightingTier ? { lightingTier: options.lightingTier } : {}) };
+    const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
         vertexColors: true,
         uniforms: { ...sharedUniforms, ...createLandscapeAppearanceUniforms(coverageSlots), uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
-            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms() }
+            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms(), ...createLandscapeLightingUniforms() }
     });
+    const recompile = () => {
+        const payload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
+        material.vertexShader = payload.vertexSource; material.fragmentShader = payload.fragmentSource; material.needsUpdate = true;
+        attachShaderMetadata(material, payload);
+    };
     attachShaderMetadata(material, terrainPayload);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
@@ -63,7 +71,7 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         const lineMaterial = new THREE.ShaderMaterial({
             vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource,
             uniforms: { ...sharedUniforms, uColor: { value: new THREE.Color(loop ? 0xffde83 : 0x142f32) }, uOpacity: { value: loop ? 1 : .5 }, uOffset: { value: loop ? .2 : .04 } },
-            transparent: true, depthWrite: false
+            transparent: true, depthWrite: false, toneMapped: false
         });
         attachShaderMetadata(lineMaterial, payload);
         const line = loop ? new THREE.LineLoop(lineGeometry, lineMaterial) : new THREE.LineSegments(lineGeometry, lineMaterial);
@@ -87,12 +95,12 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
             Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true;
         },
         setPlanning(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
+        /** @param {{uLandscapeSky:any,uLandscapeSun:any,uLandscapeSunIrradiance:any}} uniforms the view lighting's shared uniform cells */
+        setLighting(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
         /** @param {string} materialSampling compile-time material sampling mode; the program recompiles on the next draw */
-        setMaterialSampling(materialSampling) {
-            const payload = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling });
-            material.vertexShader = payload.vertexSource; material.fragmentShader = payload.fragmentSource; material.needsUpdate = true;
-            attachShaderMetadata(material, payload);
-        },
+        setMaterialSampling(materialSampling) { variant.materialSampling = materialSampling; recompile(); },
+        /** @param {string} lightingTier compile-time lighting tier; the program recompiles on the next draw */
+        setLightingTier(lightingTier) { variant.lightingTier = lightingTier; recompile(); },
         setEdges(edges, morph = [1, 1, 1, 1]) { sharedUniforms.uEdges.value.set(...edges); sharedUniforms.uEdgeMorph.value.set(...morph); },
         setLodColors(enabled) { material.uniforms.uLodColor.value = enabled ? .78 : 0; },
         setMode(value) {

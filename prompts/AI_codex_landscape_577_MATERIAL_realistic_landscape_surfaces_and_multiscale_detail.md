@@ -33,8 +33,8 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. D2, D3 and D4 are complete. Leave D5–D7 pending
-  for later passes; D5 is next.
+  corrective D1a step are complete. D2, D3, D4 and D5 are complete. Leave D6–D7
+  pending for later passes; D6 is next.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -186,23 +186,30 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D5. Terrain-driven natural appearance and lighting
 
-- [ ] Derive broad variation from meaningful terrain properties such as slope,
+- [x] Derive broad variation from meaningful terrain properties such as slope,
   exposed rock, moisture, flow and sediment deposition, with restrained noise.
   Bake operations requiring global context before local detail processing.
-- [ ] Improve beach wet/dry transitions and land-water integration while preserving
+- [x] Improve beach wet/dry transitions and land-water integration while preserving
   sea level, submerged terrain and source semantics. Separate visual treatment from
   any future hydrology simulation or water physics.
-- [ ] Integrate consistent game illumination, terrain shadows and atmospheric depth
+- [x] Integrate consistent game illumination, terrain shadows and atmospheric depth
   as supported by the renderer, with explicit cost and graceful quality reduction.
-- [ ] Define natural dressing inputs for later grass, rocks and vegetation so their
+- [x] Define natural dressing inputs for later grass, rocks and vegetation so their
   distribution agrees with soil/coverage; actual large-scale prop placement remains
   separately scoped. Optional Gaea imports must use retained interoperable maps and
   provenance, not introduce a mandatory proprietary runtime dependency.
-- [ ] Validate varied lighting/view conditions and source/authoring compatibility.
-- [ ] Replace the 15.625 m nearest-overview natural infill of planning-only areas, visible as
+- [x] Validate varied lighting/view conditions and source/authoring compatibility.
+- [x] Replace the 15.625 m nearest-overview natural infill of planning-only areas, visible as
   large stair-stepped forest/grass outlines in aerial views beyond fine-page range (observed
   in the D3 baseline `rep-aerial-oblique`), with terrain-driven natural inference that stays
   consistent across native and generated levels.
+- [x] Remove the ~1.3 m hexagonal light/dark grass patches that a low sun exposed in D3
+  stochastic sampling (each patch turned the page's leaning normals toward another azimuth),
+  keeping D3's repetition metrics.
+- [x] Calibrate natural material response under the game's physical lighting: landscape-local
+  albedo calibration against physical reference ranges (the first D5 lighting pass rendered
+  pale grass and near-white rock), back-scattering rather than forward sheen for dry rough
+  ground, and terrain-scale ground bounce so backlit slopes do not turn blue.
 
 ### D6. Profile-guided surface caching
 
@@ -216,6 +223,11 @@ visually verified improvement at each step rather than postponing verification.
   publication ordering explicit. Later roads/decals must have an extension contract.
 - [ ] Compare uncached/cached quality, frame/GPU time, generation/upload spikes,
   bytes, latency and edit recovery under identical conditions.
+- [ ] Reduce the costs D4–D5 accepted for realism: the cold terrain program compile grew from
+  5.5 s (D4) to 12–20 s on a fresh browser profile (D5), and D5 lighting, terrain fields,
+  response and terrain appearance add +1.7 to +5.5 ms GPU at the four AI577 views (up to
+  +6.1 ms elsewhere; medium and aerial views now exceed 16.7 ms). Keep the D5 appearance, or
+  report each measured trade-off.
 
 ### D7. Integrated quality and resource acceptance
 
@@ -782,6 +794,111 @@ oval every 3.5 m in its relief, and the accepted sand's JPEG base color shows 8�
 outside the micro range. Grazing far-field ground stays soft under 4× anisotropic filtering. Demand
 resolves only to 62.5 m fine pages, so soils sharing the camera's page are ordered by page count.
 `landscape_large_editing` still stops at the stale city pin (D7). This completes D4, not the
+entire AI.
+
+### D5 completed — 2026-10-05
+
+This step uses D4 commit `c67080ef` as its before baseline at the shipped 512/256 MiB profile: four
+matched views in `d5/shipped/before/` and 32 detail views in `d5/views/before/` (coast, planning areas,
+bluff, cliffs, hollows, horizon and the D4 poses), sealed with content hashes before rendering changed.
+D1–D4 remain completed history; D6 and D7 remain pending and D6 is next.
+
+- Terrain fields (`landscape-terrain-fields` v1, `specs/landscape/LANDSCAPE_TERRAIN_FIELDS.md`): the
+  registered `landscape/terrain-fields` bake leaf computes global analyses on the full native grid first —
+  Priority-Flood depression handling, MFD flow accumulation, wetness index, deposition, multi-scale
+  convexity, rock exposure, horizon angles in 16 directions (8 stored), sky view and signed shoreline
+  distance — then slices mask-aligned pages. Output is deterministic (the global stage runs twice per
+  bake) and bound to the terrain revision; edited chunks go stale explicitly and fall back to neutral
+  terms. Optional imported overrides (8/16-bit PNG with provenance) need no proprietary runtime.
+- Game lighting: the viewer resolves the game's calibrated daylight (sun 45°/55°, physical sun
+  irradiance, exposure 0.0511, ACES) without GameEngine. The calibrated HDR is the visible sky and its
+  spherical-harmonic projection lights the ground (within 1.8% of the calibrated sky irradiance); no PMREM
+  is built. Aerial perspective uses Rayleigh and Mie scattering with height falloff, and the water and
+  submerged terrain use coastal-water optics over the exact in-water path. Tiers `low|standard|high`
+  provide graceful reduction.
+- Terrain shadows and response: horizon-based sun visibility with a soft solar disc, terrain-scale sky
+  occlusion, single-bounce terrain-reflected light, and a natural-ground response (energy-preserving
+  Oren–Nayar diffuse, Hapke opposition hot spot, natural-surface shadowing of specular) replacing the
+  forward sheen of dry rough ground. Landscape-local calibration brings grass and rock into physical
+  albedo ranges without touching the shared PBR store, and subtracting each page's mean normal lean
+  removes the hexagonal patches a low sun exposed in D3's stochastic sampling.
+- Terrain-driven appearance: a landscape-scale catena (moist hollows darker and richer, dry ridges
+  lighter) derived from the fields with planning areas excluded so graded roads leave no ghost lines,
+  restrained rock outcrops on steep convex slopes, weathered coastal rock instead of a near-white band,
+  and a beach sequence of dry sand, a wet band (wet/dry albedo 0.53–0.60) and a glossy swash film.
+  Variation comes from terrain properties only, never from added noise.
+- Natural infill: planning-only areas display the bake's terrain-driven natural soil at every level
+  (native, coarse and generated fine pages, recipe `landscape-surface-detail-v4`); the 15.625 m
+  stair-stepped flood fill is now only an explicit per-chunk fallback for stale or missing data.
+- Dressing inputs: `landscape-dressing-inputs` v1 (grass, shrub, tree, rock scatter and beach debris
+  densities from soil coverage and fields) with an exact sampler, the viewer hook `dressingSample` and
+  diagnostic views; it agrees with displayed soil, and prop placement remains out of scope.
+
+Verification: all 381 landscape Node tests pass (296 in D4), including terrain-field algorithms on
+synthetic grids, sidecar validation and determinism, natural inference across levels and staleness,
+sky-irradiance projection, lighting, response, calibration, terrain-appearance and dressing mirrors.
+58 browser tests across 17 suites pass on the final tree: height blend 6, surface detail 8, seams 2,
+appearance 8, lighting 6, terrain fields 3, terrain appearance 4, nature 1, planning 1, streaming 6,
+lifecycle 3, appearance binding 1, fabrication 2, navigation 2, authoring 3, city binding 1 and the
+three-profile performance gate 1 (navigation and authoring in a re-run after two test fixes: the viewer
+now installs its hooks after a larger shader set loads, sometimes after the load event, and a cold
+browser profile needs up to 20 s to compile the terrain program, so those waits are 60 s and 30 s; the
+viewer's own compile wait is bounded at 60 s). `landscape_large_editing` still stops at the
+pre-existing stale city pin (D7).
+GPU and JavaScript mirrors agree within 3e-4 for the fields, 0.1% for the water reflection map and
+2e-6 relative for the response and terrain appearance.
+
+Lighting and view validation: the 32 views were rendered under the calibrated sun, a 12° sun from four
+azimuths and an overhead sun. Low sun no longer shows grass hexagons (patch luminance standard deviation
+2.7–2.9 → 0.84–0.88 sRGB bytes, at the 0.84 single-sample floor) and the forward sheen falls from about
+200 to 48 sRGB bytes; D3's repetition correlations are unchanged. Terrain shadows agree in 99.97% of
+pixels under a pan and 99.70% between 300 m and 600 m views. Authoring: an edit in an urban block stales
+exactly its native chunk, whose fields fade to neutral and whose infill falls back to the overview,
+while a revert restores both.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d5/`.
+
+- Four matched views: `shipped/comparisons/01-game-pov-comparison.png` through
+  `04-medium-distance-comparison.png`.
+- 32 before/after sheets and a contact sheet: `comparisons/`; renders in `views/before/` and
+  `views/final/`.
+- Fields: `fields/published/` (every field, sun sweeps, natural soil old vs new); infill A/B:
+  `infill/iter1/comparisons/`; lighting: `lighting/`; response: `response/`; terrain appearance:
+  `appearance/`.
+- Metrics and logs: `performance/`, `lighting/performance/`, `response/performance/`,
+  `appearance/performance/`, `terrain-fields-validation.published.json`, `load-trace.txt`, `regression/`.
+
+Measured on Windows 10.0.26200 x64, Ryzen 5 9600X, RTX 3060 through ANGLE/D3D11, Chromium
+151.0.7922.34, 1920×1080 at DPR 1 and 512/256 MiB, with 30 warm-up and 120 sampled frames and
+completed GPU timer queries. Matched views, before → after (different sessions):
+
+| View | GPU median, ms | GPU p95, ms | CPU median, ms | Draws / triangles | CPU / GPU MiB | Peak upload, bytes/frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| Game POV | 8.168 → 12.445 | 8.223 → 12.700 | 1.30 → 1.40 | 17 → 18 / 1,996,804 → 1,999,022 | 216.1 → 235.4 / 170.0 → 188.0 | 5,864,888 → 6,137,372 |
+| Oblique | 13.004 → 18.941 | 13.080 → 19.330 | 1.40 → 1.60 | 19 → 20 / 2,263,044 → 2,265,262 | 219.2 → 238.5 / 170.0 → 188.0 | 544,968 → 1,362,420 |
+| Top-down | 5.934 → 6.602 | 6.065 → 6.869 | 0.60 → 0.80 | 6 → 7 / 532,484 → 534,702 | 149.7 → 168.9 / 97.4 → 115.3 | 3,676,703 (unchanged) |
+| Medium distance | 17.343 → 21.182 | 18.924 → 21.903 | 1.30 → 1.70 | 19 → 20 / 2,263,044 → 2,265,262 | 234.0 → 253.2 / 176.8 → 194.7 | 5,864,888 (unchanged) |
+
+The added draw and 2,218 triangles are the sky background, the haze backdrop and the single-pass water;
+terrain geometry and its error are unchanged. Same-session pairs (D4 and D5 back to back in both
+orders, mean of the two) put the D5 cost at +3.85 ms (+45%) at the game POV, +5.49 (+41%) oblique,
++1.69 (+35%) top-down and +4.74 ms (+29%) at medium distance; across all 22 timed views it is
++0.3 to +6.1 ms (+5% to +83%), largest on mid-distance soil and aerial views (aerial oblique
+18.5 → 24.7 ms). Lifetime peaks were 306.8 MiB CPU and
+205.3 MiB GPU (D4: 285.0 / 187.3) with no denial, and disposal returns zero. The terrain-field array adds
+18.8 MB on CPU and GPU, the HDR sky 4 MiB plus a 12 MiB background cube outside the ledger.
+
+Limitations: the realism costs are large and are D6's to reduce — up to +6.1 ms GPU per view, the
+medium and aerial views now exceed the 16.7 ms frame budget (medium frame-interval p95 18.0 → 35.6 ms), and the cold terrain program
+compile grows from 5.5 s to 12–20 s on a fresh browser profile (about 50 ms once Chromium has cached it);
+the page stays responsive meanwhile. One sky (sun elevation 55°) lights every sun elevation, ground bounce
+is single-scattering with unshadowed occluders, and backlit grass has no canopy transmission. The fields
+come from a designed prototype terrain: graded roads dominate flow and wetness (hence the planning
+exclusion, tuned to its 150 m grading feathers), the catena shows the generator's periodic undulations,
+sky view is near 1 almost everywhere and no rock lies within the splash reach, so the wet-rock zone is
+verified by mirrors only. The tide is a fixed falling-tide look, the water is flat, and haze is single
+scattering. Natural-soil labels of fresh chunks next to an edit keep the original bake until it is re-run.
+`landscape_large_editing` still stops at the pre-existing stale city pin (D7). This completes D5, not the
 entire AI.
 
 ## On completion

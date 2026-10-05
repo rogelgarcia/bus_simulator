@@ -7,12 +7,14 @@ import { createLandscapeMesh } from './LandscapeMesh.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { computeLandscapeTileEdges } from './LandscapeTileEdges.js';
 import { landscapeNaturalPresentationBytes } from './LandscapeNaturalPresentation.js';
+import { LANDSCAPE_NATURAL_INFERENCE, acquireLandscapeNaturalInference, landscapeNaturalInferenceMode } from './LandscapeNaturalInference.js';
 import { assertLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from './LandscapeMaterialSampling.js';
+import { LANDSCAPE_LIGHTING, landscapeLightingTier } from './LandscapeLightingModel.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
-const PROGRAM_COMPILE_WAIT_MS = 20000;
+const PROGRAM_COMPILE_WAIT_MS = 60000;
 const sourceBytes = descriptor => descriptor.channels.height.decodedByteLength + descriptor.channels.landCover.decodedByteLength;
 const arrayBytes = object => Object.values(object).reduce((sum, value) => sum + (ArrayBuffer.isView(value) ? value.byteLength : 0), 0);
 const inside = (bounds, x, z) => x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
@@ -34,11 +36,18 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 }
 
 export class LandscapeStreamer {
-    /** @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,mode?:string,lodColors?:boolean,boundaries?:boolean,targetErrorPixels?:number}} options */
-    constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5 }) {
+    /**
+     * @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,lightingTier?:string,lighting?:any,mode?:string,lodColors?:boolean,boundaries?:boolean,
+     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview'}} options naturalInference is the view's natural display policy of planning-only cover,
+     *   shared with the appearance stream of the same load
+     */
+    constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, lighting = null, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5,
+        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode }) {
         this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
+        this.lightingTier = landscapeLightingTier(lightingTier);
+        this.lighting = lighting;
         this.loaded = loaded;
         this.manifest = loaded.manifest;
         this.budget = budget;
@@ -74,6 +83,10 @@ export class LandscapeStreamer {
         const contextReservation = budget.reserve(this.poolKey, { cpuBytes: (loaded.decodedBytes + landscapeNaturalPresentationBytes(loaded.chunk.descriptor).workingBytes) * 2, gpuBytes: 0, kind: 'worker-overview-copies-and-natural-infill', pinned: true });
         if (!contextReservation.admitted) throw new Error(`Minimum terrain worker coverage cannot fit: ${contextReservation.reason}`);
         this.pool = new LandscapeWorkerPool({ manifest: this.manifest, manifestUrl: loaded.manifestUrl, root: loaded.chunk });
+        // fallback colors show the same natural display soil as the appearance masks; the policy is decided before the root is built
+        this.naturalHandle = acquireLandscapeNaturalInference(loaded, { ledger: budget, mode: landscapeNaturalInferenceMode(naturalInference) });
+        this.natural = this.naturalHandle.source;
+        this.naturalBuilds = { withPage: 0, withoutPage: 0 };
     }
 
     resourceCost(descriptor, sourceOnly = false, peak = true) {
@@ -82,8 +95,10 @@ export class LandscapeStreamer {
         const wireCpu = this.mode === 'shaded' ? 0 : estimate.vertices * 16;
         const wireGpu = this.mode === 'shaded' ? 0 : estimate.wireBytes;
         const boundaryGpu = this.boundaries ? estimate.boundaryBytes : 0;
+        // a build also reads the chunk's natural-soil page (and its fetch buffer) in the worker for its fallback colors
+        const natural = peak && !sourceOnly && this.natural ? this.natural.transientBytes([descriptor.id]) : 0;
         return {
-            cpuBytes: source * (peak ? 4 : 1) + (sourceOnly ? 0 : estimate.geometryBytes + estimate.wireIndexBytes + estimate.boundaryBytes + wireCpu + (peak ? source : 0)),
+            cpuBytes: source * (peak ? 4 : 1) + (sourceOnly ? 0 : estimate.geometryBytes + estimate.wireIndexBytes + estimate.boundaryBytes + wireCpu + (peak ? source : 0)) + natural,
             gpuBytes: sourceOnly ? 0 : estimate.geometryBytes + wireGpu + boundaryGpu,
             kind: sourceOnly ? 'source-acquisition' : peak ? 'terrain-build-reservation' : 'terrain-resident'
         };
@@ -108,10 +123,13 @@ export class LandscapeStreamer {
     startRecord(record, parent = null, priority = 0, suppliedChunk = record.chunk) {
         if (record.loading) return record.ready;
         record.loading = true;
-        record.ready = this.pool.request({ chunkId: record.id, sourceOnly: record.sourceOnly && !record.building, ...(parent ? { parent: { descriptor: parent.descriptor, heights: parent.heights } } : {}), ...(suppliedChunk ? { chunk: suppliedChunk } : {}) }, { signal: record.abort.signal, priority }).then(result => {
+        const natural = record.building && this.natural ? this.natural.describe([record.id]) : null;
+        record.ready = this.pool.request({ chunkId: record.id, sourceOnly: record.sourceOnly && !record.building, ...(parent ? { parent: { descriptor: parent.descriptor, heights: parent.heights } } : {}), ...(suppliedChunk ? { chunk: suppliedChunk } : {}),
+            ...(natural ? { natural } : {}) }, { signal: record.abort.signal, priority }).then(result => {
             if (this.disposed || record.abort.signal.aborted || this.records.get(record.id) !== record) throw new DOMException('Obsolete terrain result', 'AbortError');
             record.chunk = suppliedChunk ?? result.chunk;
             record.buffers = result.buffers;
+            if (result.buffers) this.naturalBuilds[result.naturalSoil?.read ? 'withPage' : 'withoutPage']++;
             record.sourceOnly = !result.buffers;
             record.building = false;
             const actual = { cpuBytes: sourceBytes(record.descriptor) + (record.buffers ? arrayBytes(record.buffers) + (this.mode === 'shaded' ? 0 : estimateLandscapeMeshBuffers(record.descriptor).vertices * 16) : 0), gpuBytes: this.resourceCost(record.descriptor, !record.buffers, false).gpuBytes, kind: record.buffers ? 'terrain-upload-pending' : 'source-resident' };
@@ -125,6 +143,8 @@ export class LandscapeStreamer {
 
     async initialize(camera) {
         try {
+            await this.natural.ready;
+            if (this.disposed) throw new DOMException('Landscape stream disposed while its natural soil policy loaded', 'AbortError');
             const record = this.reserveRecord(this.manifest.overviewId);
             if (!record) throw new Error(`Minimum terrain coverage cannot fit: ${this.degradationReason}`);
             await this.startRecord(record, this.loaded.chunk, 1000, this.loaded.chunk);
@@ -139,7 +159,8 @@ export class LandscapeStreamer {
     }
 
     createModel(record) {
-        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling });
+        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling, lightingTier: this.lightingTier });
+        if (this.lighting) model.setLighting(this.lighting.uniforms);
         if (this.appearance) model.setAppearance(this.appearance.uniforms);
         if (this.planning) model.setPlanning(this.planning.uniforms);
         model.setMode(this.mode);
@@ -190,6 +211,18 @@ export class LandscapeStreamer {
     setPlanning(planning) {
         this.planning = planning;
         for (const record of this.records.values()) record.model?.setPlanning(planning.uniforms);
+    }
+
+    /** Binds the view lighting's shared uniform cells to every terrain material; tiles created later receive them too. @param {any} lighting */
+    setLighting(lighting) {
+        this.lighting = lighting;
+        for (const record of this.records.values()) record.model?.setLighting(lighting.uniforms);
+    }
+
+    /** Recompiles every terrain material for a lighting tier; tiles uploaded later use it too. @param {string} lightingTier */
+    setLightingTier(lightingTier) {
+        this.lightingTier = landscapeLightingTier(lightingTier);
+        for (const record of this.records.values()) record.model?.setLightingTier(this.lightingTier);
     }
 
     /** Recompiles every terrain material for a material sampling mode; tiles uploaded later use it too. @param {string} materialSampling */
@@ -529,7 +562,8 @@ export class LandscapeStreamer {
             geometryBytes: metrics.reduce((sum, metric) => sum + metric.geometryBytes, 0), overlayBytes: records.reduce((sum, record) => sum + (record.model?.diagnostics().overlayBytes ?? 0), 0),
             estimatedGpuBytes: this.budget.snapshot().gpuBytes, estimatedPeakBytes: this.budget.snapshot().peakCpuBytes, memoryCapBytes: this.budget.snapshot().limits.cpuBytes,
             transition: this.task ? { kind: this.task.kind, parentId: this.task.parentId, phase: this.task.phase, progress: this.task.progress } : null,
-            lods: rendered.map(record => ({ id: record.id, level: record.descriptor.level, errorPixels: this.lastPlan?.errorsById[record.id] ?? null, geometricError: record.descriptor.geometricError, morph: record.model.morph, resident: true }))
+            lods: rendered.map(record => ({ id: record.id, level: record.descriptor.level, errorPixels: this.lastPlan?.errorsById[record.id] ?? null, geometricError: record.descriptor.geometricError, morph: record.model.morph, resident: true })),
+            naturalSoil: { status: this.natural.status, policy: this.natural.active ? 'natural-terrain-inference-v1' : 'natural-overview-infill-v1', fallbackColorBuilds: { ...this.naturalBuilds } }
         };
     }
 
@@ -549,6 +583,7 @@ export class LandscapeStreamer {
         }
         this.budget.update(this.poolKey, { pinned: false });
         this.budget.release(this.poolKey);
+        this.naturalHandle?.release();
         this.records.clear();
         this.leaves.clear();
         this.loaded = null;

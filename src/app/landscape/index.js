@@ -26,3 +26,13 @@ export { cityTileLandscapeCoverage } from './LandscapeCityCoverage.js';
 export { LANDSCAPE_REPORT_LIMITS, reportLandscapeTerrain, readLandscapeTerrainReport } from './LandscapeTerrainReports.js';
 export { createLandscapeDependency, checkLandscapeDependency, landscapeChangeInvalidates } from './LandscapeDependencies.js';
 export { LANDSCAPE_PLANNING_LIMITS, LANDSCAPE_PLANNING_ROLES, normalizeLandscapePlanningReference, loadLandscapePlanningReferences } from './LandscapePlanningReferences.js';
+export { LANDSCAPE_TERRAIN_FIELDS_FORMAT, LANDSCAPE_TERRAIN_FIELDS_ALGORITHM, LANDSCAPE_TERRAIN_FIELDS_LIMIT, LANDSCAPE_TERRAIN_FIELDS_PAGE_LIMIT, LANDSCAPE_TERRAIN_FIELDS_LAYOUT,
+    LANDSCAPE_TERRAIN_FIELDS_HORIZON, LANDSCAPE_TERRAIN_FIELDS_FILTER, LANDSCAPE_TERRAIN_FIELDS_STALE_GRID, LANDSCAPE_TERRAIN_FIELD_CHANNELS, LANDSCAPE_TERRAIN_FIELD_CURVES,
+    LandscapeTerrainFieldsBindingError, encodeLandscapeTerrainField, decodeLandscapeTerrainField, decodeLandscapeTerrainFields, landscapeTerrainFieldsLayout, landscapeTerrainFieldNativeIds,
+    landscapeTerrainFieldContentKey, validateLandscapeTerrainFields, landscapeTerrainFieldsStaleness, landscapeTerrainFieldStaleAt, sampleLandscapeTerrainFieldPage,
+    sampleLandscapeTerrainFieldSlots, landscapeTerrainHorizonSine, landscapeSolarDiscVisibility, landscapeTerrainSunVisibility, landscapeTerrainSkyVisibility, sampleLandscapeTerrainNaturalSoil } from './LandscapeTerrainFields.js';
+export { loadLandscapeTerrainFields, loadLandscapeTerrainFieldPage } from './LandscapeTerrainFieldsPayload.js';
+export { LANDSCAPE_DRESSING_INPUTS, sampleLandscapeDressingInputs } from './LandscapeDressingInputs.js';
+export { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilIndices, landscapeNaturalSoilPageBytes, landscapeNaturalSoilTransientBytes, validateLandscapeNaturalSoilPage,
+    createLandscapeNaturalSoilResolver, landscapeNaturalSoilIdentity } from './LandscapeNaturalSoil.js';
+export { landscapeSurfaceDetailUsesNaturalSoil } from './LandscapeSurfaceDetail.js';

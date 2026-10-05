@@ -288,6 +288,15 @@ additive `appearance/multiscale.json`, published after the schema-1 sidecar; a r
 would orphan the companion is refused, and the request claims a second receipt.
 See the [appearance workflow](../../tools/bake_landscape/appearance/README.md).
 
+`landscape/terrain-fields` (AI577 D5) is an explicit Node-only leaf (`configurationPaths: []`),
+excluded from `all` and the import parent. It computes global analyses on the current native grid
+before slicing mask-aligned pages, repeats the global stage to verify determinism, validates every
+byte and publishes the additive `fields/manifest.json` last under the authoring lock. Publication is
+refused if the terrain changed since planning or if a current sidecar belongs to another landscape.
+It claims only its receipt `tests/artifacts/screens/landscape/ai577/d5/terrain-fields-validation.json`.
+See [LANDSCAPE_TERRAIN_FIELDS.md](../landscape/LANDSCAPE_TERRAIN_FIELDS.md) and the
+[terrain-field workflow](../../tools/bake_landscape/terrain_fields/README.md).
+
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine
 paths. Jobs without this declaration retain the existing Blender configuration

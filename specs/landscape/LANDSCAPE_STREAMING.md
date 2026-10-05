@@ -75,6 +75,7 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Concurrent surface-detail generation workers (AI577 D2) | 2 |
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
+| Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
 | Geometric screen error goal | 1.5 pixels |
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection

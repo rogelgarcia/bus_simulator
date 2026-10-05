@@ -34,8 +34,11 @@ uniform sampler2D uBlendBase;
 uniform sampler2DArray uBlendSurface;
 uniform int uMaterialBlendIndex;
 uniform float uMaterialBlend;
-// per soil: uSoilTiling vec4(physical period m, paired micro period m or 0, micro normal strength, micro luminance scale) and
-// uSoilState vec4(relief declared, resident tier resolution, micro relief strength, 0)
+// per soil: uSoilScale vec4(AI577 D5 terrain role: soil development in [0, 1] scaling rock exposure and the catena, or negative for the exposed-rock substrate, normal
+// strength, AO intensity, metalness), uSoilTiling vec4(physical period m, paired micro period m or 0, micro normal strength, micro luminance scale),
+// uSoilState vec4(relief declared, resident tier resolution, micro relief strength, opposition amplitude) and (AI577 D5c) uSoilResponse
+// vec4(EON diffuse roughness, natural specular shadowing weight, page mean normal slope X, Y in its texture frame); zero response is the
+// D5b Lambert/GGX shading and zero slope keeps the page's normals
 uniform vec4 uSoilScale[6];
 uniform vec4 uSoilTiling[6];
 uniform vec4 uSoilAlbedo[6];
@@ -44,9 +47,14 @@ uniform vec4 uSoilRange[6];
 uniform float uSurfaceBlendEnabled;
 uniform vec4 uSurfaceBlendSettings;
 uniform vec4 uSoilState[6];
+uniform vec4 uSoilResponse[6];
 uniform float uBlendResolution;
-uniform vec3 uSurfaceLevelColors[8];
 uniform vec3 uSurfaceSoilColors[6];
+// surface-level diagnostic tints are compile-time constants (LandscapeTerrainDiagnostics), so they occupy no uniform vectors
+#ifndef LANDSCAPE_SURFACE_LEVEL_COLOR_LIST
+#error LANDSCAPE_SURFACE_LEVEL_COLOR_LIST must be defined by LandscapeShaderLoader
+#endif
+const vec3 landscapeSurfaceLevelColors[8] = vec3[8](LANDSCAPE_SURFACE_LEVEL_COLOR_LIST);
 uniform float uSurfaceWarpEnabled;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
@@ -57,6 +65,13 @@ varying vec3 vLandscapeWorld;
 #include <shaderlib:landscape/stochastic_tiling>
 #include <shaderlib:landscape/macro_variation>
 #include <shaderlib:landscape/surface_layers>
+#include <shaderlib:landscape/terrain_fields>
+#include <shaderlib:landscape/lighting_visibility>
+#include <shaderlib:landscape/lighting>
+#include <shaderlib:landscape/atmosphere>
+#include <shaderlib:landscape/water_optics>
+#include <shaderlib:landscape/terrain_appearance>
+#include <shaderlib:landscape/dressing_inputs>
 
 struct SoilSurface {
     vec3 albedo;
@@ -178,12 +193,12 @@ void latticeTexel(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, out vec3 albe
 }
 
 #if LANDSCAPE_MATERIAL_SAMPLING == 0
-LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint salt) {
+LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint salt, vec2 meanSlope) {
     LatticeSample result;
     vec3 encodedNormal;
     latticeTexel(soil, micro, uv, dx, dy, result.albedo, encodedNormal, result.orm);
     vec3 normal = encodedNormal * 2.0 - 1.0;
-    result.slope = micro ? landscapeHexSlope(normal, vec2(1.0, 0.0)) : normal.xy / max(0.01, normal.z);
+    result.slope = micro ? landscapeHexSlope(normal, vec2(1.0, 0.0), vec2(0.0)) : normal.xy / max(0.01, normal.z) - meanSlope;
     result.normalLength = length(normal);
     return result;
 }
@@ -205,8 +220,9 @@ void soilMeans(int soil, out vec3 albedo, out vec4 orm) {
 
 // one world-anchored lattice: the rotated, offset samples of its grid triangle share one weight set for every surface channel; the
 // paired micro layer runs through the same body with its own lattice parameters and its neutral mean 0.5; soils without stochastic
-// parameters take a single unrotated sample through the same loop
-LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint salt) {
+// parameters take a single unrotated sample through the same loop. meanSlope removes the page's mean normal lean before each sample's
+// inverse rotation, so rotated patches keep one mean orientation (zero for the mean-neutral micro layer)
+LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint salt, vec2 meanSlope) {
     vec4 stochastic = uSoilStochastic[soil];
     bool hex = stochastic.x > 0.0;
     if (micro && hex) stochastic = uMicroSampling;
@@ -251,7 +267,7 @@ LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint 
         vec3 decoded = encodedNormal * 2.0 - 1.0;
         albedo += weight * (sampleAlbedo - meanAlbedo);
         orm += weight * (sampleOrm - meanOrm);
-        slope += weight * landscapeHexSlope(decoded, rotation);
+        slope += weight * landscapeHexSlope(decoded, rotation, meanSlope);
         normalLength += weight * length(decoded);
         total += weight;
         squares += weight * weight;
@@ -274,6 +290,20 @@ LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint 
 }
 #endif
 
+// a soil's mean base color from its one-texel mip, following an arriving tier
+vec3 soilMeanAlbedo(int soil) {
+    const float coarsest = 16.0;
+    vec3 albedo;
+    if (soil == 0) albedo = textureLod(uSoilBase0, vec2(0.5), coarsest).rgb;
+    else if (soil == 1) albedo = textureLod(uSoilBase1, vec2(0.5), coarsest).rgb;
+    else if (soil == 2) albedo = textureLod(uSoilBase2, vec2(0.5), coarsest).rgb;
+    else if (soil == 3) albedo = textureLod(uSoilBase3, vec2(0.5), coarsest).rgb;
+    else if (soil == 4) albedo = textureLod(uSoilBase4, vec2(0.5), coarsest).rgb;
+    else albedo = textureLod(uSoilBase5, vec2(0.5), coarsest).rgb;
+    if (soil == uMaterialBlendIndex) albedo = mix(albedo, textureLod(uBlendBase, vec2(0.5), coarsest).rgb, uMaterialBlend);
+    return albedo;
+}
+
 vec3 correctedAlbedo(vec3 color, vec4 correction) {
     const vec3 axis = vec3(0.57735026919);
     float cosine = cos(correction.y), sine = sin(correction.y);
@@ -283,6 +313,22 @@ vec3 correctedAlbedo(vec3 color, vec4 correction) {
     vec3 tint = vec3(0.5 + 0.5 * cos(correction.y), 0.5 + 0.5 * cos(correction.y - 2.0943951), 0.5 + 0.5 * cos(correction.y + 2.0943951));
     color = mix(color, color * tint * 2.0, correction.w);
     return max(vec3(0.0), color * correction.x);
+}
+
+// the material mean albedo that stands for the surrounding terrain of terrain-reflected light: one-texel mip, correction, macro variation
+vec3 soilGroundAlbedo(int soil, vec2 macroField) {
+    return landscapeMacroAlbedo(soil, macroField, correctedAlbedo(soilMeanAlbedo(soil), uSoilAlbedo[soil]));
+}
+
+// AI577 D5: the landscape-scale field of one soil; the soil expresses the terrain-driven catena terms by its terrain role (developed soils fully,
+// mobile sand half, the seabed and the exposed-rock substrate not at all)
+vec2 soilMacroField(int soil, vec2 field, vec2 catena) {
+    return field + max(uSoilScale[soil].x, 0.0) * catena;
+}
+
+// natural-ground response of a soil: EON roughness, specular shadowing weight, opposition amplitude
+vec3 soilResponse(int soil) {
+    return vec3(uSoilResponse[soil].xy, uSoilState[soil].w);
 }
 
 // one soil at its physical period: each active projection evaluates the base lattice and, while it is resolved, the paired micro
@@ -316,7 +362,8 @@ SoilSurface soilSurface(int soil, vec3 position, vec3 positionDx, vec3 positionD
         vec2 coords = vec2(dot(position, axisU), dot(position, axisV));
         vec2 coordsDx = rotation * vec2(dot(positionDx, axisU), dot(positionDx, axisV)), coordsDy = rotation * vec2(dot(positionDy, axisU), dot(positionDy, axisV));
         uint projectionSalt = landscapeProjectionSalt(salt, p);
-        LatticeSample lattice = soilLattice(soil, microLayer, rotation * coords / period, coordsDx / period, coordsDy / period, microLayer ? landscapeMicroSalt(projectionSalt) : projectionSalt);
+        LatticeSample lattice = soilLattice(soil, microLayer, rotation * coords / period, coordsDx / period, coordsDy / period, microLayer ? landscapeMicroSalt(projectionSalt) : projectionSalt,
+            microLayer ? vec2(0.0) : uSoilResponse[soil].zw);
         vec2 slope = transpose(rotation) * lattice.slope * scale.y * (microLayer ? tiling.z * micro : 1.0);
         vec3 direction = p == 0 ? tangent * slope.x + north * slope.y : axisU * slope.x + axisV * slope.y;
         if (p > 0) direction -= normal * dot(normal, direction);
@@ -660,6 +707,25 @@ Coverage materialHeightCoverage(Coverage coverage, Coverage heights, float detai
     return mixCoverage(coverage, result, detail);
 }
 
+// the soil slot holding the exposed-rock substrate (negative terrain role), or -1
+int landscapeRockSoil() {
+    int rock = -1;
+    for (int soil = 0; soil < 6; soil++) if (uSoilScale[soil].x < 0.0) rock = soil;
+    return rock;
+}
+
+// AI577 D5 rock exposure: every susceptible soil cedes its role times the exposure of its coverage to the exposed-rock soil before the clumps and
+// the height competition, which then reveal rock relief through the soil; coverage stays normalized and absent soils stay absent
+Coverage landscapeRevealRock(Coverage coverage, float exposure) {
+    int rock = landscapeRockSoil();
+    if (exposure <= 0.0 || rock < 0) return coverage;
+    vec3 lowShare = clamp(vec3(uSoilScale[0].x, uSoilScale[1].x, uSoilScale[2].x), 0.0, 1.0) * exposure;
+    vec3 highShare = clamp(vec3(uSoilScale[3].x, uSoilScale[4].x, uSoilScale[5].x), 0.0, 1.0) * exposure;
+    Coverage identity = coverageIdentity(rock);
+    float moved = dot(coverage.low, lowShare) + dot(coverage.high, highShare);
+    return Coverage(coverage.low * (1.0 - lowShare) + identity.low * moved, coverage.high * (1.0 - highShare) + identity.high * moved);
+}
+
 void addSurface(inout SoilSurface result, SoilSurface part, float weight) {
     result.albedo += part.albedo * weight;
     result.normal += part.normal * weight;
@@ -699,7 +765,7 @@ vec3 surfaceLevelColor(vec2 world, vec2 warped) {
         if (parent == current || coverageAvailability(current, detailSlot(current) ? world : warped) > 0.0) break;
         current = parent;
     }
-    return uSurfaceLevelColors[clamp(int(uMaskMeta[current].x + 0.5), 0, 7)];
+    return landscapeSurfaceLevelColors[clamp(int(uMaskMeta[current].x + 0.5), 0, 7)];
 }
 
 vec3 surfaceCoverageColor(Coverage coverage) {
@@ -708,20 +774,32 @@ vec3 surfaceCoverageColor(Coverage coverage) {
 }
 
 // footprints: the planar major axis drives the established relief fades, the anisotropic mip footprint fades micro detail and the 3D major
-// axis low-passes the landscape-scale field; projection weights and the field are shared by every soil of the fragment
-SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy) {
+// axis low-passes the landscape-scale field; projection weights and the field are shared by every soil of the fragment. AI577 D5c: the
+// natural-ground response and the material mean albedo that stands for the surrounding terrain of terrain-reflected light (one-texel mip,
+// corrected, macro variation applied) are accumulated once from the final weights instead of riding in the six live soil surfaces, which
+// measured 0.4-2 ms cheaper on the RTX 3060 (register pressure). AI577 D5 terrain-driven appearance (landscape-terrain-appearance-v1): the terrain
+// inputs join the landscape-scale field and reveal rock before the soil lattices, so only the coastal reach stays live through them; the rock
+// weathering and splash biofilm factor is evaluated once and applied to the exposed-rock soil and its share of the ground albedo
+SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy, out vec3 groundAlbedo, out vec3 response, out float reach) {
     float footprint = max(length(dx), length(dy));
     float major = max(length(positionDx), length(positionDy)), detailFootprint = max(0.25 * major, min(length(positionDx), length(positionDy)));
     vec3 projection = landscapeProjectionWeights(normal);
-    vec2 macroField = landscapeMacroField(world, major);
+    LandscapeTerrainAppearance terrain = landscapeTerrainAppearance(vLandscapeWorld, normal, major);
+    vec2 macroField = landscapeMacroField(world, major), catena = terrain.macro;
+    coverage = landscapeRevealRock(coverage, terrain.exposure);
+    reach = terrain.reach;
     vec3 position = vLandscapeWorld;
     SoilSurface a = emptySurface(), b = emptySurface(), c = emptySurface(), d = emptySurface(), e = emptySurface(), f = emptySurface();
-    if (coverage.low.x > 0.0) a = soilSurface(0, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
-    if (coverage.low.y > 0.0) b = soilSurface(1, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
-    if (coverage.low.z > 0.0) c = soilSurface(2, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
-    if (coverage.high.x > 0.0) d = soilSurface(3, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
-    if (coverage.high.y > 0.0) e = soilSurface(4, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
-    if (coverage.high.z > 0.0) f = soilSurface(5, position, positionDx, positionDy, normal, projection, macroField, footprint, detailFootprint);
+    if (coverage.low.x > 0.0) a = soilSurface(0, position, positionDx, positionDy, normal, projection, soilMacroField(0, macroField, catena), footprint, detailFootprint);
+    if (coverage.low.y > 0.0) b = soilSurface(1, position, positionDx, positionDy, normal, projection, soilMacroField(1, macroField, catena), footprint, detailFootprint);
+    if (coverage.low.z > 0.0) c = soilSurface(2, position, positionDx, positionDy, normal, projection, soilMacroField(2, macroField, catena), footprint, detailFootprint);
+    if (coverage.high.x > 0.0) d = soilSurface(3, position, positionDx, positionDy, normal, projection, soilMacroField(3, macroField, catena), footprint, detailFootprint);
+    if (coverage.high.y > 0.0) e = soilSurface(4, position, positionDx, positionDy, normal, projection, soilMacroField(4, macroField, catena), footprint, detailFootprint);
+    if (coverage.high.z > 0.0) f = soilSurface(5, position, positionDx, positionDy, normal, projection, soilMacroField(5, macroField, catena), footprint, detailFootprint);
+    vec3 rockFactor = landscapeRockFactor(normal, position.y - uLandscapeSun.w, reach, terrain.moisture * terrain.weight);
+    int rock = landscapeRockSoil();
+    a.albedo *= rock == 0 ? rockFactor : vec3(1.0); b.albedo *= rock == 1 ? rockFactor : vec3(1.0); c.albedo *= rock == 2 ? rockFactor : vec3(1.0);
+    d.albedo *= rock == 3 ? rockFactor : vec3(1.0); e.albedo *= rock == 4 ? rockFactor : vec3(1.0); f.albedo *= rock == 5 ? rockFactor : vec3(1.0);
     Coverage heights = Coverage(vec3(a.height, b.height, c.height), vec3(d.height, e.height, f.height));
     Coverage details = Coverage(vec3(a.heightDetail, b.heightDetail, c.heightDetail), vec3(d.heightDetail, e.heightDetail, f.heightDetail));
     coverage = clumpedCoverage(coverage, materialClumpRelief(coverage, heights, details, world, footprint));
@@ -731,24 +809,117 @@ SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, v
     addSurface(surface, a, coverage.low.x); addSurface(surface, b, coverage.low.y); addSurface(surface, c, coverage.low.z);
     addSurface(surface, d, coverage.high.x); addSurface(surface, e, coverage.high.y); addSurface(surface, f, coverage.high.z);
     surface.normal = normalize(surface.normal);
+    // constant soil indices let the compiler resolve each soil's sampler; a loop over the soil index measured 1.4-2.5 ms slower
+    groundAlbedo = vec3(0.0);
+    if (coverage.low.x > 0.0) groundAlbedo += coverage.low.x * soilGroundAlbedo(0, soilMacroField(0, macroField, catena)) * (rock == 0 ? rockFactor : vec3(1.0));
+    if (coverage.low.y > 0.0) groundAlbedo += coverage.low.y * soilGroundAlbedo(1, soilMacroField(1, macroField, catena)) * (rock == 1 ? rockFactor : vec3(1.0));
+    if (coverage.low.z > 0.0) groundAlbedo += coverage.low.z * soilGroundAlbedo(2, soilMacroField(2, macroField, catena)) * (rock == 2 ? rockFactor : vec3(1.0));
+    if (coverage.high.x > 0.0) groundAlbedo += coverage.high.x * soilGroundAlbedo(3, soilMacroField(3, macroField, catena)) * (rock == 3 ? rockFactor : vec3(1.0));
+    if (coverage.high.y > 0.0) groundAlbedo += coverage.high.y * soilGroundAlbedo(4, soilMacroField(4, macroField, catena)) * (rock == 4 ? rockFactor : vec3(1.0));
+    if (coverage.high.z > 0.0) groundAlbedo += coverage.high.z * soilGroundAlbedo(5, soilMacroField(5, macroField, catena)) * (rock == 5 ? rockFactor : vec3(1.0));
+    response = coverage.low.x * soilResponse(0) + coverage.low.y * soilResponse(1) + coverage.low.z * soilResponse(2)
+        + coverage.high.x * soilResponse(3) + coverage.high.y * soilResponse(4) + coverage.high.z * soilResponse(5);
     return surface;
 }
 
-vec3 illuminate(SoilSurface surface) {
-    const float PI = 3.14159265359;
-    vec3 n = surface.normal, l = normalize(vec3(-0.44, 0.87, -0.22)), v = normalize(cameraPosition - vLandscapeWorld), h = normalize(l + v);
-    float nl = max(dot(n, l), 0.0), nv = max(dot(n, v), 0.001), nh = max(dot(n, h), 0.0), vh = max(dot(v, h), 0.0);
-    float alpha = surface.roughness * surface.roughness, a2 = alpha * alpha;
-    float denominator = nh * nh * (a2 - 1.0) + 1.0;
-    float distribution = a2 / max(PI * denominator * denominator, 0.00001);
-    float k = (surface.roughness + 1.0) * (surface.roughness + 1.0) / 8.0;
-    float geometry = nv / (nv * (1.0 - k) + k) * nl / (nl * (1.0 - k) + k);
-    vec3 fresnel0 = mix(vec3(0.04), surface.albedo, surface.metalness);
-    vec3 fresnel = fresnel0 + (1.0 - fresnel0) * pow(1.0 - vh, 5.0);
-    vec3 specular = distribution * geometry * fresnel / max(4.0 * nv * nl, 0.001);
-    vec3 diffuse = (1.0 - fresnel) * (1.0 - surface.metalness) * surface.albedo / PI;
-    vec3 hemisphere = mix(vec3(0.30, 0.34, 0.25), vec3(0.65, 0.78, 0.83), n.y * 0.5 + 0.5);
-    return hemisphere * surface.albedo * surface.ao * 0.68 + (diffuse + specular) * vec3(2.7, 2.6, 2.3) * nl;
+// AI577 D5 terrain radiance before tone mapping, lit like the game. Dry fragments take the calibrated sun and sky and then the aerial
+// perspective of their view path. Submerged fragments (below the optical water level) take Fresnel-transmitted, refracted and attenuated
+// light and the water column of their exact in-water view path, leave the water (radiance over n², the surface's Fresnel blend belongs to
+// the water material), gain the surface's sun glint and take the aerial perspective of the air path above it. A one-pixel blend keeps the
+// waterline antialiased. AI577 D5c: the natural-ground response (gated by uLandscapeResponse.x) shapes both paths; dry fragments also receive
+// terrain-reflected light of their material mean albedo (groundAlbedo); terrainVisibility evaluated the terrain-field hooks just before.
+// AI577 D5: dry fragments below the coastal reach are wetted by the sea (landscape-terrain-appearance-v1; the submerged path's water column already
+// carries the water-film optics, so it keeps the dry inputs)
+vec3 terrainRadiance(vec3 albedo, vec3 n, vec3 geometricNormal, float roughness, float metalness, float ao, vec3 response, vec3 groundAlbedo, float reach) {
+    vec3 world = vLandscapeWorld, origin, v;
+    float distance;
+    landscapeViewRay(world, origin, v, distance);
+    float skyVisibility = landscapeSkyVisibility(world, n);
+    float level = uLandscapeSunIrradiance.w, depth = level - world.y, band = max(fwidth(world.y), 1.0e-4);
+    float submerged = smoothstep(-band, band, depth);
+    vec3 radiance = vec3(0.0);
+    if (submerged < 1.0) {
+        LandscapeWetSurface wet = landscapeCoastalWetSurface(albedo, n, geometricNormal, roughness, response, world.y - uLandscapeSun.w, reach);
+        vec3 dry = landscapeReflectedRadiance(wet.albedo, wet.normal, v, wet.roughness, metalness, ao, skyVisibility, wet.response * uLandscapeResponse.x,
+            landscapeAirLight(world, wet.normal, v, wet.roughness, geometricNormal, groundAlbedo));
+        LandscapeHaze haze = landscapeAerialPerspective(origin, world);
+        radiance = (dry * haze.transmittance + haze.inscatter) * (1.0 - submerged);
+    }
+    if (submerged > 0.0) {
+        float waterDepth = max(depth, 0.0), startDepth = max(level - origin.y, 0.0);
+        float pathLength = origin.y > level ? distance * waterDepth / max(origin.y - world.y, 1.0e-4) : distance;
+        vec3 wet = landscapeReflectedRadiance(albedo, n, v, roughness, metalness, ao, skyVisibility, response * uLandscapeResponse.x, landscapeUnderwaterLight(world, n, v, roughness, waterDepth, albedo));
+        LandscapeWaterColumn column = landscapeWaterColumn(pathLength, waterDepth - startDepth, startDepth);
+        wet = wet * column.transmittance + column.inscatter;
+        if (origin.y > level) {
+            vec3 surface = world + v * pathLength;
+            LandscapeHaze haze = landscapeAerialPerspective(origin, surface);
+            wet = (wet / (LANDSCAPE_WATER_IOR * LANDSCAPE_WATER_IOR) + landscapeWaterGlint(surface, v)) * haze.transmittance + haze.inscatter;
+        }
+        radiance += wet * submerged;
+    }
+    return radiance;
+}
+
+// terrain shadows, terrain sky occlusion and the occluders of terrain-reflected light, once per lit fragment. Callers stay in uniform control
+// flow (main branches on uniforms only) and call it after the appearance: evaluated at the top of main, its live results measured 1.1-1.8 ms
+// slower on the RTX 3060 (register pressure through the soil lattices)
+void terrainVisibility(vec2 world, vec2 dx, vec2 dy, vec3 geometricNormal) {
+#if LANDSCAPE_LIGHTING_TIER > 0
+    landscapeEvaluateTerrainVisibility(world, dx, dy, geometricNormal);
+#endif
+}
+
+// unlit diagnostic palettes keep their established display: the exposure they were designed under replaces the scene exposure
+vec3 diagnosticDisplay(vec3 color) {
+#ifdef TONE_MAPPING
+    return color * (1.2 / toneMappingExposure);
+#else
+    return color;
+#endif
+}
+
+// AI577 D5 inspection, unlit display colors written after tone mapping like the coverage weights; planning-only cover (nearest native texel) is
+// shaded slate. terrain-appearance (6): gray neutral, blue moist and orange dry catena moisture times its weight, cyan coastal wetting, red rock
+// exposure. Natural dressing inputs (landscape-dressing-inputs v1 of the display soil weights, the planning cover and the fine terrain fields of
+// the fragment; tier low has neutral fields): composite (7) and single outputs as gray values, grass (8), shrubs (9), trees (10), rock scatter (11)
+// and beach debris (12). uSurfaceSoilColors[soil].x holds each soil's dressing host class while a dressing diagnostic is selected.
+vec3 terrainInputDiagnostic(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy) {
+    vec3 color;
+    int slot = maskAt(world, false);
+    float planning = 0.0;
+    if (slot >= 0) {
+        vec4 bounds = uMaskBounds[slot];
+        vec2 grid = clamp(vec2((world.x - bounds.x) / (bounds.y - bounds.x), (bounds.w - world.y) / (bounds.w - bounds.z)) * (uMaskDimensions - 1.0), vec2(0.0), uMaskDimensions - 1.0);
+        int cover = int(texelFetch(uMaskPages, ivec3(ivec2(floor(grid + 0.5)) + ivec2(int(uCoverageSettings.w)), slot), 0).g * 255.0 + 0.5);
+        planning = landscapePlanningCoverId(cover) ? 1.0 : 0.0;
+    }
+    if (uDiagnostic == 6) {
+        LandscapeTerrainAppearance terrain = landscapeTerrainAppearance(vLandscapeWorld, normal, max(length(positionDx), length(positionDy)));
+        vec2 wetting = landscapeCoastalWetting(vLandscapeWorld.y - uLandscapeSun.w, terrain.reach);
+        float moisture = terrain.moisture * terrain.weight;
+        color = mix(vec3(0.5), moisture > 0.0 ? vec3(0.13, 0.33, 0.78) : vec3(0.86, 0.55, 0.16), min(1.0, abs(moisture)));
+        color = mix(color, vec3(0.2, 0.85, 0.9), wetting.x);
+        color = mix(mix(color, vec3(0.85, 0.12, 0.1), min(1.0, 2.0 * terrain.exposure)), vec3(0.2, 0.2, 0.26), 0.35 * planning);
+    } else {
+        vec4 classes = vec4(0.0);
+        for (int soil = 0; soil < 6; soil++) classes += coverageWeight(coverage, soil) * vec4(equal(ivec4(int(uSurfaceSoilColors[soil].x + 0.5)), ivec4(1, 2, 3, 4)));
+        classes /= max(coverageTotal(coverage), 1.0e-6);
+#if LANDSCAPE_LIGHTING_TIER > 0
+        LandscapeTerrainFields fields = landscapeTerrainFieldsAt(world, dx, dy);
+#else
+        LandscapeTerrainFields fields = landscapeTerrainFieldsNone();
+#endif
+        LandscapeDressing dressing = landscapeDressingInputs(classes, planning, fields.availability > 0.0 ? fields.wetness : 0.5, fields.rockExposure, fields.skyView, fields.shoreDistance, fields.slopeDegrees);
+        if (uDiagnostic == 7) {
+            float total = dressing.grass + dressing.shrub + dressing.tree + dressing.rock + dressing.debris;
+            vec3 mixed = (dressing.grass * vec3(0.5, 0.82, 0.3) + dressing.shrub * vec3(0.86, 0.66, 0.24) + dressing.tree * vec3(0.08, 0.42, 0.2)
+                + dressing.rock * vec3(0.62, 0.66, 0.76) + dressing.debris * vec3(0.95, 0.45, 0.78)) / max(total, 1.0e-4);
+            color = mix(mix(vec3(0.36), mixed, min(1.0, total)), vec3(0.2, 0.2, 0.26), 0.85 * planning);
+        } else color = vec3(uDiagnostic == 8 ? dressing.grass : uDiagnostic == 9 ? dressing.shrub : uDiagnostic == 10 ? dressing.tree : uDiagnostic == 11 ? dressing.rock
+            : uDiagnostic == 12 ? dressing.debris : 0.0);
+    }
+    return color;
 }
 
 void main() {
@@ -758,7 +929,7 @@ void main() {
     vec3 positionDx = dFdx(vLandscapeWorld), positionDy = dFdy(vLandscapeWorld);
     vec2 warped = uSurfaceWarpEnabled > 0.5 ? world + landscapeSurfaceWarp(world) : world;
     vec2 warpedDx = dFdx(warped), warpedDy = dFdy(warped);
-    vec3 color;
+    vec3 color = vec3(0.0);
     if (uDiagnostic == 1) {
         float elevation = clamp((vLandscapeWorld.y - uDiagnosticRange.x) / max(0.001, uDiagnosticRange.y - uDiagnosticRange.x), 0.0, 1.0);
         vec3 low = mix(vec3(0.10, 0.27, 0.29), vec3(0.43, 0.54, 0.28), smoothstep(0.0, 0.45, elevation));
@@ -766,31 +937,37 @@ void main() {
         float contourHeight = vLandscapeWorld.y / 5.0;
         float contourDistance = abs(fract(contourHeight - 0.5) - 0.5);
         float contour = 1.0 - smoothstep(0.0, max(fwidth(contourHeight) * 1.2, 0.0001), contourDistance);
-        color = mix(color, vec3(0.07, 0.12, 0.13), contour * 0.82);
+        color = diagnosticDisplay(mix(color, vec3(0.07, 0.12, 0.13), contour * 0.82));
     } else if (uDiagnostic == 2) {
         vec3 faceNormal = normalize(cross(positionDx, positionDy));
         float slope = acos(clamp(abs(faceNormal.y), 0.0, 1.0)) * 57.2957795;
         color = mix(vec3(0.16, 0.54, 0.34), vec3(0.91, 0.67, 0.17), smoothstep(0.0, 15.0, slope));
-        color = mix(color, vec3(0.81, 0.16, 0.10), smoothstep(15.0, 35.0, slope));
+        color = diagnosticDisplay(mix(color, vec3(0.81, 0.16, 0.10), smoothstep(15.0, 35.0, slope)));
     } else if (uDiagnostic == 3) {
         float depth = max(0.0, uDiagnosticRange.z - vLandscapeWorld.y);
-        color = depth > 0.0 ? mix(vec3(0.18, 0.63, 0.72), vec3(0.04, 0.12, 0.33), clamp(depth / 10.0, 0.0, 1.0)) : vec3(0.46, 0.48, 0.37);
-    } else if (uAppearanceReady > 0.5) {
-        Coverage coverage = hierarchyCoverage(world, dx, dy, warped, warpedDx, warpedDy);
-        if (uDiagnostic == 5) color = surfaceCoverageColor(coverage);
-        else {
-            SoilSurface surface = appearanceSurface(coverage, world, dx, dy, normal, positionDx, positionDy);
-            surface.albedo = mix(surface.albedo, uTint, uLodColor);
-            if (uDiagnostic == 4) surface.albedo = mix(surface.albedo, surfaceLevelColor(world, warped), 0.5);
-            color = illuminate(surface);
-        }
+        color = diagnosticDisplay(depth > 0.0 ? mix(vec3(0.18, 0.63, 0.72), vec3(0.04, 0.12, 0.33), clamp(depth / 10.0, 0.0, 1.0)) : vec3(0.46, 0.48, 0.37));
     } else {
-        float diffuse = max(0.0, dot(normal, normalize(vec3(-0.44, 0.87, -0.22))));
-        vec3 hemisphere = mix(vec3(0.32, 0.37, 0.28), vec3(0.65, 0.78, 0.83), normal.y * 0.5 + 0.5);
-        color = mix(vLandscapeColor, uTint, uLodColor) * (hemisphere * 0.8 + diffuse * vec3(0.95, 0.91, 0.81));
+        // the vertex-color fallback until the appearance is ready; both share one lighting call site (AI577 D5: halves the inlined lighting code)
+        vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vec3(0.0), groundAlbedo = albedo;
+        float roughness = 0.9, metalness = 0.0, ao = 1.0, reach = 0.0;
+        if (uAppearanceReady > 0.5) {
+            Coverage coverage = hierarchyCoverage(world, dx, dy, warped, warpedDx, warpedDy);
+            if (uDiagnostic == 5) color = surfaceCoverageColor(coverage);
+            else if (uDiagnostic >= 6) color = terrainInputDiagnostic(coverage, world, dx, dy, normal, positionDx, positionDy);
+            else {
+                SoilSurface surface = appearanceSurface(coverage, world, dx, dy, normal, positionDx, positionDy, groundAlbedo, response, reach);
+                albedo = mix(surface.albedo, uTint, uLodColor);
+                if (uDiagnostic == 4) albedo = mix(albedo, surfaceLevelColor(world, warped), 0.5);
+                surfaceNormal = surface.normal; roughness = surface.roughness; metalness = surface.metalness; ao = surface.ao;
+            }
+        }
+        if (uAppearanceReady < 0.5 || uDiagnostic < 5) {
+            terrainVisibility(world, dx, dy, normal);
+            color = terrainRadiance(albedo, surfaceNormal, normal, roughness, metalness, ao, response, groundAlbedo, reach);
+        }
     }
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
-    if (uDiagnostic == 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 1.0);
+    if (uDiagnostic >= 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 1.0);
 }
