@@ -1,5 +1,10 @@
 # Project Tools
 
+The registered `vegetation/lod0` workflow includes spatial canopy revision and
+three-way review phases. See [LOD0 workflow](tools/bake_vegetation/lod0/README.md)
+for `spatial-build`, `placement=spatial`, baseline protection, and separate
+wood/leaf measurements. It uses the shared headless Blender configuration.
+
 Registry of scripts under `tools/`. When adding a new tool, register it here.
 
 AI568 source-material controls: `lighting/experiments/reference-matching/material-parity-capture`
@@ -20,6 +25,7 @@ individual leaf commands, scoped parameters and recovery, and
 | vegetationSurfaces | `tools/bake_vegetation/surfaces/` | Rebuild all 15 mature review models with authenticated photographic PBR bark and solid scan-textured leaves | `node tools/bake.mjs --target vegetation/surfaces`; explicit stage-only review, rejects publication; see its README |
 | vegetationJunctions | `tools/bake_vegetation/junctions/` | Refine photographed-tree branch attachments with asymmetric collars, upper bark ridges and parent shoulders | `node tools/bake.mjs --target vegetation/junctions`; shared headless configuration, stage-only; see its README |
 | vegetationGrowth | `tools/bake_vegetation/growth/` | Species-specific trunk sweeps and calibrated photographic bark crevices with attached foliage | `node tools/bake.mjs --target vegetation/growth`; shared headless configuration, stage-only; see its README |
+| vegetationLod0 | `tools/bake_vegetation/lod0/` | Bake high-detail mature references into separate LOD0 wood and canopy cards, export GLBs, and render matched comparisons | `node tools/bake.mjs --target vegetation/lod0`; explicit stage-only phases, immutable references, no gameplay publication; see its README |
 | bakeVegetation | `tools/bake_vegetation/` | Author, validate and publish five original species with three mature variants each, detailed 3D wood, solid leaves and editable specimen sources | `node tools/bake.mjs --target vegetation`; select a species leaf if needed; add `--publish` to install validated library assets; see its README |
 | cityInputs | `tools/bake_lighting/city_inputs/` | Precompute exact slab and receiver ownership plans, validate fresh-game geometry/source parity, optionally publish the reusable CPU cache | `node tools/bake.mjs --target lighting/city-inputs --publish`; see its README |
 | gameplayRecording | `tools/gameplay_recording/` | Decode compressed debug frame recordings, extract replay poses, and analyze repeated hardware replays for frame hitches | `node tools/gameplay_recording/decode.mjs capture.busrec`; `analyze_replay.mjs <artifact-output> <frames.json> [...]`; see its README |
@@ -129,3 +135,9 @@ See `tools/bake_lighting/experiments/reference_matching/README.md`.
 `tools/bake_lighting/glass_transmission/` — AI 549 analytic fixed-sun thin-pane
 transport, invoked through `node tools/bake.mjs --target lighting/illumination/glass-transmission`.
 Uses the shared bake configuration and rejects city publication; see its README.
+# Core canopy LOD0 review
+
+`node tools/bake.mjs --target vegetation/lod0` supports `placement=core` and
+the `wireframe` / `core-gallery` phases. The domain README documents the 50K
+aggregate leaf budget, five three-plane cores per mature specimen, half-budget
+wood, source PBR rebaking, preserved baseline and review-only publication gate.

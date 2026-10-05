@@ -1,5 +1,20 @@
 # Offline bake framework
 
+AI590 extends `vegetation/lod0` with `placement=spatial`, `spatial-build`, and
+`revision-gallery`. The explicit baseline input is authenticated, declared for
+input-stability checks, and protected against overlapping output paths. Accepted
+wood/maps are reused with hashes; only canopies are rebuilt. Three-way review
+reuses authenticated matched captures and reports separate wood/leaf triangles.
+The shared Blender configuration and stage-only publication boundary remain.
+
+AI589 adds the explicit `vegetation/lod0` leaf. It authenticates the immutable
+AI588 reference scene, reduces wood and bakes its PBR maps, captures solid leaf
+sprays into front/underside alpha atlases, exports separate LOD0 specimens and
+renders matched Cycles comparisons from the exported GLBs. The job reuses shared
+configuration and input stability gates and rejects publication. See its
+[workflow](../../tools/bake_vegetation/lod0/README.md) and
+[representation contract](../graphics/vegetation_lod0.md).
+
 AI588 adds `vegetation/growth`, an explicit stage-only leaf for species-informed
 trunk sweeps and calibrated photographic crevice relief. It uses the shared
 Blender configuration and authenticates the original scans, retained canopy
@@ -520,3 +535,11 @@ the existing candidate capture, transition and native-calibration gates. The
 `material-parity-capture` leaf also accepts `candidate-run` and `shadow-run` for
 isolated raw lobe captures before installation; fixed masks and display controls
 remain authenticated.
+# Core canopy revision of the vegetation LOD0 leaf
+
+`vegetation/lod0` also accepts `placement=core` with a separate preserved baseline
+and output. The `wireframe` and `core-gallery` phases expose the delivered mesh
+structure. Core placement allocates 50,000 foliage triangles across all 15
+mature specimens and targets half of each preceding woody mesh. Shared tool
+configuration, declared source/input hashes, reference authentication and the
+no-publication gate are unchanged. See `tools/bake_vegetation/lod0/README.md`.

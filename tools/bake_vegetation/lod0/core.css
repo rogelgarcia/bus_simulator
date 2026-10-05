@@ -1,0 +1,4 @@
+/* Keep actual triangle diagrams legible beside the shaded comparison. */
+#wire-panel { margin: 36px 0; padding: 20px; background: #10232c; }
+#wire-panel p { max-width: none; }
+#wire-panel img { display: block; width: 100%; }

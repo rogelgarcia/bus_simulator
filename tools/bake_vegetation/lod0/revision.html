@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mature trees · canopy placement review</title><link rel="stylesheet" href="revision.css">
+<main><div class="eyebrow">15 mature specimens · canopy revision</div><h1>Fuller crowns with fewer cards</h1>
+<p>Spatial groups keep nearby leaves together. Fitted card planes preserve their position through the crown, and a multi-angle coverage check removes redundant cards. The detailed references and current LOD0 are preserved; the baked trunks are unchanged.</p>
+<div class="controls"><label>Species<select id="species"></select></label><label>View<select id="view"></select></label></div>
+<section id="comparison"><h2 id="caption"></h2><div class="triptych">
+<figure><figcaption><b>Reference</b><span id="count-reference"></span></figcaption><a id="link-reference" target="_blank"><img id="image-reference" alt="Detailed reference"></a></figure>
+<figure><figcaption><b>Current LOD0</b><span id="count-current"></span></figcaption><a id="link-current" target="_blank"><img id="image-current" alt="Preserved current LOD0"></a></figure>
+<figure><figcaption><b>New LOD0</b><span id="count-revised"></span></figcaption><a id="link-revised" target="_blank"><img id="image-revised" alt="Revised spatial LOD0"></a></figure>
+</div></section>
+<p id="quality"></p><p><a id="download-image">Download this three-way image</a> · <a href="reference-current-new.jpg">All species comparison</a> · <a href="triangle-counts.csv" download>Triangle counts (CSV)</a> · <a href="revision.json">All measurements</a></p>
+<div id="totals" class="totals"></div>
+<h2>Triangles per mature form</h2><p>Wood includes the trunk, branches and roots. Reference leaves count the repeated solid-leaf instances and fine spray twigs. Card counts include both front and underside geometry.</p>
+<div class="table-scroll"><table><thead><tr><th>Mature form</th><th>Reference wood</th><th>Reference leaves</th><th>Current wood</th><th>Current leaves</th><th>New wood</th><th>New leaves</th><th>Downloads</th></tr></thead><tbody id="models"></tbody></table></div>
+<details><summary>Review conditions and limits</summary><p>1920 × 1080 matched Cycles renders, 64 samples, denoising, OPTIX on RTX 3060. Identical cameras, HDRI, sun, ground and exposure. The new renders use the final UASTC-decoded textures. The authenticated reference/current images reuse the preceding review captures with matching camera and sample metadata.</p><p>Pruning checks alpha silhouettes from 24 directions at 512 × 512 and allows at most 0.25% coverage loss in each direction. This is a geometric guard, not a runtime performance result. Close-up parallax remains below the solid-leaf reference. Wind, lower LODs and gameplay integration remain separate work; frame time and FPS are not measured.</p><p><a href="reference-sources.json">Texture credits</a> · <a href="reference-material-approximations.json">Material approximations</a> · <a href="reused-wood.json">Unchanged wood fingerprints</a></p></details>
+</main><script>window.REVISION_DATA=REVISION_PAYLOAD;</script><script src="revision.js"></script></html>

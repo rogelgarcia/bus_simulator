@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mature trees · 50K foliage review</title><link rel="stylesheet" href="revision.css"><link rel="stylesheet" href="core.css">
+<main><div class="eyebrow">15 mature specimens · 50,000 foliage triangles combined</div><h1>Interior canopy plates + exterior leaf cards</h1>
+<p>Each tree has five interior centers with three crossing planes each. These plates supply the crown mass. Smaller exterior planes, each carrying six separate leaves, shape the silhouette. Every foliage plane is flat and double-sided. Wood is reduced to half the preceding LOD0 budget and rebaked from the detailed reference.</p>
+<div class="controls"><label>Species<select id="species"></select></label><label>View<select id="view"></select></label></div>
+<section id="comparison"><h2 id="caption"></h2><div class="triptych">
+<figure><figcaption><b>Reference</b><span id="count-reference"></span></figcaption><a id="link-reference" target="_blank"><img id="image-reference" alt="Detailed reference"></a></figure>
+<figure><figcaption><b>Previous LOD0</b><span id="count-current"></span></figcaption><a id="link-current" target="_blank"><img id="image-current" alt="Preserved spatial LOD0"></a></figure>
+<figure><figcaption><b>New LOD0 · interior + shell</b><span id="count-revised"></span></figcaption><a id="link-revised" target="_blank"><img id="image-revised" alt="Core and outer canopy LOD0"></a></figure>
+</div></section>
+<p id="quality"></p><p><a id="download-image">Download this three-way image</a> · <a href="reference-current-new.jpg">All species comparison</a> · <a href="triangle-counts.csv" download>Triangle counts</a> · <a href="revision.json">Measurements</a></p>
+<div id="totals" class="totals"></div>
+<h2>Resource costs across all 15 models</h2><p>Large plates save geometry but require larger textures. Memory assumes shared canopy textures and ASTC 4×4 or BC7. Loading every GLB independently uses more memory. Material draws are mesh primitives before any renderer batching; frame time and FPS have not been measured in the game.</p>
+<div class="table-scroll"><table><thead><tr><th>Cost</th><th>Previous LOD0</th><th>New LOD0</th></tr></thead><tbody id="resource-costs"></tbody></table></div>
+<section id="wire-panel"><h2 id="wire-caption">Actual exported triangle edges</h2><p>Gold: trunk, branches and roots. Orange: interior canopy plates. Cyan: exterior leaf cards. Leaf transparency is disabled in these diagrams so the real plane boundaries and triangle diagonals are visible.</p><div class="triptych">
+<figure><figcaption><b>All three mature forms</b></figcaption><a id="wire-link" target="_blank"><img id="wire-image" alt="All three mature models in wireframe"></a></figure>
+<figure><figcaption><b>Interior plates isolated · wider bus view</b></figcaption><a id="core-link" target="_blank"><img id="core-image" alt="Five centers with three orthogonal planes each"></a></figure>
+<figure><figcaption><b>Wood triangle close-up</b></figcaption><a id="wood-link" target="_blank"><img id="wood-image" alt="Reduced trunk and branch wireframe"></a></figure>
+</div></section>
+<h2>Triangles per mature form</h2><p>Wood includes trunks, branches and roots. Foliage counts include both visible sides: one double-sided plane uses two triangles. Each tree uses 30 interior triangles; all remaining foliage triangles form its exterior shell.</p>
+<div class="table-scroll"><table><thead><tr><th>Mature form</th><th>Reference wood</th><th>Reference leaves</th><th>Previous wood</th><th>Previous leaves</th><th>New wood</th><th>New leaves</th><th>Downloads</th></tr></thead><tbody id="models"></tbody></table></div>
+<details><summary>Review conditions and limits</summary><p>Shaded: 1920 × 1080, Cycles, 64 samples, denoising, RTX 3060 / OPTIX. Identical cameras, HDRI, sun, ground and exposure. Final UASTC-decoded textures. Reference and previous LOD0 captures are authenticated copies with matching camera metadata. Wireframes use the actual exported triangles, 32 samples, and a separate dark diagram background.</p><p>Interior projections reduce depth and may reveal plane intersections at close range. Both faces share tissue color; front/back normals reverse correctly and the 0.17 diffuse-transmission factor is retained. Fine twig geometry, independent leaf parallax and wind are absent. Texture memory rises to retain large-plate detail. Gameplay integration, frame time and FPS are not measured.</p><p><a href="reference-sources.json">CC0 texture credits</a> · <a href="reference-material-approximations.json">Inherited material approximations</a> · <a href="wireframes/renders.json">Wireframe capture details</a></p></details>
+</main><script>window.REVISION_DATA=REVISION_PAYLOAD;</script><script src="revision.js"></script><script src="core.js"></script></html>

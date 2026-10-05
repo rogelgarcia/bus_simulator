@@ -46,6 +46,7 @@ The first implementation executes sequentially, including Blender and browser jo
 
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
+| `vegetation/lod0` | Bake immutable mature references into low triangle wood and front/underside canopy spray cards; export and compare all 15 models | Explicit stage-only phases, stable reference hashes, no gameplay publication; [workflow](../bake_vegetation/lod0/README.md) |
 | `vegetation/showcase` | Packed outdoor scene with all 15 mature models in species plots; warm brown bark and 21 headless Cycles views, including trunk/root close-ups | Explicit review only, outside authoring and production parents; rejects publication; [workflow](../bake_vegetation/showcase/README.md) |
 | `vegetation/surfaces` | Photo PBR replacement review: rebuilt wood, scanned leaf tissue, 15 mature models, 26 Cycles views | Explicit stage-only; authenticated CC0 scans and retained canopy anchors; [workflow](../bake_vegetation/surfaces/README.md) |
 | `vegetation/junctions` | Refine photographic-tree branch collars, bark ridges and descending shoulders; retain foliage and render fork close-ups | Explicit stage-only; manifold wood and unchanged foliage checks; [workflow](../bake_vegetation/junctions/README.md) |
@@ -202,6 +203,12 @@ same implementations; the hierarchy is the preferred entry point.
 
 ## Verification
 
+The explicit `vegetation/lod0` leaf also supports spatial canopy revisions:
+`placement=spatial`, `phase=spatial-build`, a preserved `baseline` directory and a
+fresh `output`. Follow with `compress`, `render` and `revision-gallery` using the
+same options. See [vegetation LOD0](../bake_vegetation/lod0/README.md). It preserves
+baseline/reference assets and rejects gameplay publication.
+
 For a supplied gameplay pose, use `lighting/experiments/reference-matching/pose-comparison`
 with leaf options `pose=<pose.json>`, `source-run=<authenticated afternoon run>` and
 `output=tests/artifacts/screens/ai562_acesfilmic_reference_matching/<new-name>`.
@@ -230,3 +237,10 @@ the explicit AI 549 parallel thin-pane sunlight fixture. It uses the shared
 configuration and framework, needs no Blender process, writes ignored evidence
 and cannot publish production assets. See
 [`glass_transmission/README.md`](../bake_lighting/glass_transmission/README.md).
+# Core canopy review
+
+The explicit `vegetation/lod0` leaf supports `placement=core` for five interior
+canopy centers, separated exterior leaf cards, a 50K combined foliage budget,
+and half-budget wood. Use its `wireframe` and `core-gallery` phases for the
+exported-mesh diagrams and matched comparisons. See the domain README for
+phases and required preserved baseline; this remains review-only.
