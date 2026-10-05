@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const root = path.resolve('.'), source = path.join(root, 'assets/public/landscape/coastal-city');
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
@@ -262,7 +263,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
         }
     });
     try {
-        await page.goto(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpuMiB}&landscapeGpuMiB=${gpuMiB}`);
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpuMiB}&landscapeGpuMiB=${gpuMiB}`));
         await page.waitForFunction(() => {
             const state = window.__landscapeTestHooks?.snapshot();
             if (window.__landscapeCaptureError) throw new Error(window.__landscapeCaptureError);

@@ -14,6 +14,7 @@ import {
     validateLandscapeCityBinding, loadCityLandscape, loadLandscapeChunk, queryLandscapeSelection,
     cityReservationsToLandscapeConstraints, readLandscapeTerrainReport
 } from '../../../src/app/landscape/index.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const run = promisify(execFile), root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd5'}/large-editing`);
@@ -120,7 +121,7 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     const unrelatedDependency = createLandscapeDependency(original, { bounds: { minX: 400, maxX: 600, minZ: 400, maxZ: 600 }, channels: ['height', 'soil'], algorithm: 'city-pad-study-v1' });
     const coverDependency = createLandscapeDependency(original, { bounds: { minX: 1100, maxX: 2800, minZ: 1200, maxZ: 2800 }, channels: ['landCover'], algorithm: 'cover-inspection-v1' });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(`${origin}/screens/landscape_fabrication.html`);
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const beforeCenter = await query(page, original.revision, 2000, 2000), beforeOutside = await query(page, original.revision, 500, 500);
     const beforeReport = await terrainReport(page, original, studyShape, reservations);
@@ -225,7 +226,7 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     expect(checkLandscapeDependency(unrelatedDependency, prepared, { requireRevision: false })).toEqual({ status: 'current' });
     expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: prepared })).toThrow(/revision is stale/);
     for (const chunk of saved.chunks.filter(value => value.level === saved.grid.maxLevel)) expect(prepared.chunks.find(value => value.id === chunk.id).channels).toEqual(chunk.channels);
-    await page.goto(`${origin}/screens/landscape_fabrication.html`);
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     await page.evaluate(async pose => { window.__landscapeTestHooks.setCamera(pose); await window.__landscapeTestHooks.select(2000, 2000); }, closePose);
     const reopened = await settle(page);

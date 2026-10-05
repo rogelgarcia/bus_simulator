@@ -22,8 +22,16 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
     windowPages: 64,
     maxMips: 16,
     maxAnisotropy: 2,
-    targetSlots: 2048,
+    // 11 layers: the largest demand of the 36 AI577 views at 1920x1080 is 2,510 pages (an orthographic 1000 m view, two texels per pixel); the
+    // demand of a view scales with its pixels (about 1.2 pages per 32x32 pixels of fully covered ground), so larger viewports are capacity limited
+    targetSlots: 2816,
+    // the atlas, scratch and indirection take at most this fraction of the GPU limit, and never the GPU bytes the uncached shipped profile gives
+    // the streams (streamReserveGpuBytes, LANDSCAPE_STREAMING_BUDGETS.gpuBytes): a profile without room above that reserve keeps the cache off
     gpuCeilingFraction: 3 / 8,
+    streamReserveGpuBytes: 256 * 1024 * 1024,
+    // an atlas the budget shrinks below this many slots (or the target, if smaller) is not used: it would truncate most views' demand to coarse
+    // rings, below the uncached frame's quality
+    minimumSlots: 1024,
     // terrain-reflected light reads the albedo of this mip (1 m texels) at its slot level 1, the coarse ground that stands for the surroundings
     groundMip: 6,
     // pages this coarse are generated from the always-resident overview tile instead of the rendered leaves
@@ -43,6 +51,12 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
         response: Object.freeze({ internalFormat: 'RGBA8', levels: 1, scale: .5, channels: Object.freeze(['eonRoughness', 'specularShadowingWeight', 'opposition', 'reach/4m']) })
     })
 });
+
+/**
+ * Residency budget of a view that draws through the surface cache (AI577 D6): the uncached shipped CPU limit and the GPU limit that admits the
+ * target atlas beside the streams' reserve without a ledger denial (measured peak 402 MiB over the 36 AI577 views at 1920x1080).
+ */
+export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 512 * 1024 * 1024, gpuBytes: 448 * 1024 * 1024 });
 
 const MODEL = LANDSCAPE_SURFACE_CACHE;
 const KEY_COORDINATE = 2 ** 15;
@@ -262,11 +276,11 @@ export function landscapeSurfaceCacheBlockPageOrigin(block, page) {
 export function landscapeSurfaceCacheIndirectionBytes(geometry) { return MODEL.windowPages * MODEL.windowPages * 4 * integer(geometry.mips, 'mips', 1, MODEL.maxMips); }
 
 /**
- * Fits the atlas to its explicit GPU ceiling (gpuCeilingFraction of the shared GPU limit, inside it) and to the GPU bytes the ledger still has
- * available when given: whole 256-slot layers up to the target. Fewer slots than the target report `surface-cache-gpu-ceiling`, or
- * `surface-cache-gpu-available` when the ledger's free bytes bound them (a cache switched on beside resident streams shrinks instead of
- * displacing them); no layer reports `surface-cache-gpu-budget`, a device below 1152 texels or the target's layer count
- * `surface-cache-device-capacity`.
+ * Fits the atlas to its explicit GPU ceiling (gpuCeilingFraction of the shared GPU limit, and never the streams' reserve below it) and to the GPU
+ * bytes the ledger still has available when given: whole 256-slot layers up to the target. Fewer slots than the target report
+ * `surface-cache-gpu-ceiling`, or `surface-cache-gpu-available` when the ledger's free bytes bound them (a cache switched on beside resident
+ * streams shrinks instead of displacing them); fewer than the minimum (no layer at all, or fewer than minimumSlots or the target if smaller)
+ * report `surface-cache-gpu-budget` with no slots, a device below 1152 texels or the target's layer count `surface-cache-device-capacity`.
  * @param {{limits:{cpuBytes:number,gpuBytes:number},available?:{gpuBytes:number}|null,geometry:{mips:number},targetSlots?:number,maxTextureSize?:number,maxArrayLayers?:number}} options
  */
 export function fitLandscapeSurfaceCache({ limits, available = null, geometry, targetSlots = MODEL.targetSlots, maxTextureSize = 16384, maxArrayLayers = 2048 }) {
@@ -274,16 +288,18 @@ export function fitLandscapeSurfaceCache({ limits, available = null, geometry, t
     const unit = landscapeSurfaceCacheSlotLayout({ slots: MODEL.slotsPerRow ** 2 }), perLayer = unit.perLayer;
     integer(targetSlots, 'target slots', perLayer, perLayer * 1024);
     // fixed: the indirection layers and the packed float scratch the generation program writes one batch of pages to
-    const indirection = landscapeSurfaceCacheIndirectionBytes(geometry), scratch = landscapeSurfaceCacheScratchLayout().bytes, ceiling = Math.floor(gpuLimit * MODEL.gpuCeilingFraction);
+    const indirection = landscapeSurfaceCacheIndirectionBytes(geometry), scratch = landscapeSurfaceCacheScratchLayout().bytes;
+    const ceiling = Math.max(0, Math.min(Math.floor(gpuLimit * MODEL.gpuCeilingFraction), gpuLimit - MODEL.streamReserveGpuBytes));
     const free = available ? Math.max(0, integer(Math.floor(available.gpuBytes), 'available GPU bytes', -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)) : Infinity;
     const layersIn = bytes => Math.max(0, Math.floor((bytes - indirection - scratch) / unit.layerBytes));
     const wanted = Math.ceil(targetSlots / perLayer), underCeiling = layersIn(ceiling), fitting = Math.min(underCeiling, layersIn(free));
     const deviceLayers = maxTextureSize >= unit.layerTexels ? Math.min(maxArrayLayers, 1024) : 0;
-    const layers = Math.min(wanted, fitting, deviceLayers);
-    let reason = null;
+    const minimum = Math.ceil(Math.min(targetSlots, MODEL.minimumSlots) / perLayer);
+    let layers = Math.min(wanted, fitting, deviceLayers), reason = null;
     if (layers < wanted) {
-        reason = deviceLayers < Math.min(wanted, fitting) ? 'surface-cache-device-capacity' : layers < 1 ? 'surface-cache-gpu-budget'
+        reason = deviceLayers < Math.min(wanted, fitting) ? 'surface-cache-device-capacity' : layers < minimum ? 'surface-cache-gpu-budget'
             : fitting < Math.min(wanted, underCeiling) ? 'surface-cache-gpu-available' : 'surface-cache-gpu-ceiling';
+        if (layers < minimum) layers = 0;
     }
     const slots = layers * perLayer, atlasBytes = layers * unit.layerBytes;
     // CPU: the indirection mirror and the slot table of page keys (Float64Array)

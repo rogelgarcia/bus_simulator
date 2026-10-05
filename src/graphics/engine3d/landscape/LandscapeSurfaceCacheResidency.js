@@ -4,7 +4,8 @@
 // then, so a stale page keeps rendering until its replacement exists. Eviction takes the page desired longest ago, never the pinned root or a
 // page desired in the protected frame. The indirection keeps one RGBA8UI 64x64 layer per mip: every texel of a mip's toroidal window holds the
 // slot and mip of the page itself when it is resident, otherwise its parent's texel, which the next coarser window always contains, so one fetch
-// returns the best resident ancestor. Changed pages mark the region they cover in their own and every finer layer; layers rebuild coarse to fine.
+// returns the best resident ancestor. Changed pages mark the region they cover in their own and every finer layer; a window that moves marks only
+// the strips of pages entering it (the toroidal addressing keeps every other texel valid); layers rebuild their dirty boxes coarse to fine.
 import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCachePageKey, landscapeSurfaceCachePagesPerAxis, landscapeSurfaceCacheWindowOrigin,
     parseLandscapeSurfaceCachePageKey } from './LandscapeSurfaceCacheLayout.js';
 
@@ -97,29 +98,55 @@ export class LandscapeSurfaceCacheIndirection {
         this.center = null;
         /** @type {Array<{x:number,z:number}|null>} */
         this.origins = Array.from({ length: geometry.mips }, () => null);
-        /** @type {Array<{x0:number,z0:number,x1:number,z1:number}|null>} dirty page box per layer (absolute page coordinates), null when clean */
-        this.dirty = Array.from({ length: geometry.mips }, () => null);
+        /** @type {Array<Array<{x0:number,z0:number,x1:number,z1:number}>>} dirty page boxes per layer (absolute page coordinates) */
+        this.dirty = Array.from({ length: geometry.mips }, () => []);
         this.rebuilds = 0;
+        this.rebuiltEntries = 0;
     }
 
+    /** Forgets every window and entry (a new binding or a restored context); the next center places every window afresh. */
+    reset() {
+        this.data.fill(0);
+        this.center = null;
+        this.origins.fill(null);
+        for (const list of this.dirty) list.length = 0;
+    }
+
+    // a box clipped to the layer's window joins its dirty list; a list grown past a few boxes collapses into their bounding box
     #markBox(mip, x0, z0, x1, z1) {
         const origin = this.origins[mip];
         if (!origin) return;
         const pages = landscapeSurfaceCachePagesPerAxis(this.geometry, mip);
         const box = { x0: Math.max(x0, origin.x), z0: Math.max(z0, origin.z), x1: Math.min(x1, origin.x + WINDOW, pages), z1: Math.min(z1, origin.z + WINDOW, pages) };
         if (box.x0 >= box.x1 || box.z0 >= box.z1) return;
-        const current = this.dirty[mip];
-        this.dirty[mip] = current ? { x0: Math.min(current.x0, box.x0), z0: Math.min(current.z0, box.z0), x1: Math.max(current.x1, box.x1), z1: Math.max(current.z1, box.z1) } : box;
+        const list = this.dirty[mip];
+        list.push(box);
+        if (list.length > 8) {
+            const merged = list.reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), z0: Math.min(a.z0, b.z0), x1: Math.max(a.x1, b.x1), z1: Math.max(a.z1, b.z1) }));
+            list.length = 0;
+            list.push(merged);
+        }
     }
 
-    /** Moves every window to a center (virtual meters); a window whose origin moved is rebuilt entirely. @param {{x:number,z:number}} center */
+    /**
+     * Moves every window to a center (virtual meters). A window that shifted by less than its size marks the strips of pages that entered it; a
+     * larger jump (or a first placement) marks the whole window. @param {{x:number,z:number}} center
+     */
     setCenter(center) {
         this.center = center;
         for (let mip = 0; mip < this.geometry.mips; mip++) {
             const origin = landscapeSurfaceCacheWindowOrigin(this.geometry, mip, center), previous = this.origins[mip];
             if (previous && previous.x === origin.x && previous.z === origin.z) continue;
             this.origins[mip] = origin;
-            this.#markBox(mip, origin.x, origin.z, origin.x + WINDOW, origin.z + WINDOW);
+            if (!previous || Math.abs(origin.x - previous.x) >= WINDOW || Math.abs(origin.z - previous.z) >= WINDOW) {
+                this.#markBox(mip, origin.x, origin.z, origin.x + WINDOW, origin.z + WINDOW);
+                continue;
+            }
+            // columns that entered along x (over the new window's rows), then rows that entered along z
+            if (origin.x > previous.x) this.#markBox(mip, previous.x + WINDOW, origin.z, origin.x + WINDOW, origin.z + WINDOW);
+            else if (origin.x < previous.x) this.#markBox(mip, origin.x, origin.z, previous.x, origin.z + WINDOW);
+            if (origin.z > previous.z) this.#markBox(mip, origin.x, previous.z + WINDOW, origin.x + WINDOW, origin.z + WINDOW);
+            else if (origin.z < previous.z) this.#markBox(mip, origin.x, origin.z, origin.x + WINDOW, previous.z);
         }
     }
 
@@ -141,18 +168,26 @@ export class LandscapeSurfaceCacheIndirection {
         if (!this.center) throw new Error('[LandscapeSurfaceCache] the indirection needs a center before it is built');
         const rebuilt = [], data = this.data, root = this.geometry.rootMip;
         for (let mip = root; mip >= 0; mip--) {
-            const box = this.dirty[mip];
-            if (!box) continue;
-            this.dirty[mip] = null;
-            const layer = mip * this.layerBytes, parentLayer = (mip + 1) * this.layerBytes;
-            for (let z = box.z0; z < box.z1; z++) {
-                for (let x = box.x0; x < box.x1; x++) {
-                    const offset = layer + ((z & (WINDOW - 1)) * WINDOW + (x & (WINDOW - 1))) * 4, slot = slotOf(mip, x, z);
-                    if (slot >= 0) { data[offset] = slot & 255; data[offset + 1] = slot >> 8; data[offset + 2] = mip; data[offset + 3] = 255; }
-                    else if (mip < root) data.copyWithin(offset, parentLayer + ((((z >> 1) & (WINDOW - 1)) * WINDOW + ((x >> 1) & (WINDOW - 1))) * 4), parentLayer + ((((z >> 1) & (WINDOW - 1)) * WINDOW + ((x >> 1) & (WINDOW - 1))) * 4) + 4);
-                    else data.fill(0, offset, offset + 4);
+            const boxes = this.dirty[mip];
+            if (!boxes.length) continue;
+            const layer = mip * this.layerBytes, parentLayer = (mip + 1) * this.layerBytes, origin = this.origins[mip], pages = landscapeSurfaceCachePagesPerAxis(this.geometry, mip);
+            for (const marked of boxes) {
+                // boxes marked before a window move are clipped to the current window (a texel outside it now belongs to another page)
+                const box = { x0: Math.max(marked.x0, origin.x), z0: Math.max(marked.z0, origin.z), x1: Math.min(marked.x1, origin.x + WINDOW, pages), z1: Math.min(marked.z1, origin.z + WINDOW, pages) };
+                if (box.x0 >= box.x1 || box.z0 >= box.z1) continue;
+                for (let z = box.z0; z < box.z1; z++) {
+                    for (let x = box.x0; x < box.x1; x++) {
+                        const offset = layer + ((z & (WINDOW - 1)) * WINDOW + (x & (WINDOW - 1))) * 4, slot = slotOf(mip, x, z);
+                        if (slot >= 0) { data[offset] = slot & 255; data[offset + 1] = slot >> 8; data[offset + 2] = mip; data[offset + 3] = 255; }
+                        else if (mip < root) {
+                            const parent = parentLayer + ((((z >> 1) & (WINDOW - 1)) * WINDOW + ((x >> 1) & (WINDOW - 1))) * 4);
+                            data[offset] = data[parent]; data[offset + 1] = data[parent + 1]; data[offset + 2] = data[parent + 2]; data[offset + 3] = data[parent + 3];
+                        } else data.fill(0, offset, offset + 4);
+                    }
                 }
+                this.rebuiltEntries += (box.x1 - box.x0) * (box.z1 - box.z0);
             }
+            boxes.length = 0;
             rebuilt.push(mip);
         }
         if (rebuilt.length) this.rebuilds++;

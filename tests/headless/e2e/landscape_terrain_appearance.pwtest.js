@@ -11,6 +11,7 @@ import { landscapeMacroAlbedo, landscapeMacroRoughness, landscapeMacroVariationU
 import { LANDSCAPE_TERRAIN_APPEARANCE, decodeLandscapeAppearanceLayer, landscapeCoastalWetSurface, landscapeRockFactor, landscapeTerrainAppearanceInputs } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainAppearance.js';
 import { decodeLandscapeTerrainFields } from '../../../src/app/landscape/index.js';
 import { sampleLandscapeDressingInputs } from '../../../src/app/landscape/LandscapeDressingInputs.js';
+import { landscapeShippedBudgetMiB, landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape/ai577/d5/appearance/e2e');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
@@ -32,7 +33,8 @@ async function ready(page) {
     return snapshot(page);
 }
 
-const openViewer = (page, query = '') => page.goto(`/screens/landscape_fabrication.html?landscapeCpuMiB=512&landscapeGpuMiB=256${query}`);
+const shipped = landscapeShippedBudgetMiB();
+const openViewer = (page, query = '') => page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${shipped.cpuMiB}&landscapeGpuMiB=${shipped.gpuMiB}${query}`));
 
 test.beforeAll(async () => { await mkdir(artifacts, { recursive: true }); });
 

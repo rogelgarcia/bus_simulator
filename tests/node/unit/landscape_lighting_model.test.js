@@ -188,8 +188,12 @@ test('Lighting model: terrain and water shaders read only the lighting uniforms,
     assert.equal((main.match(/terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/g) || []).length, 1, 'the fields are evaluated once per lit fragment, right before its radiance');
     assert.match(main, /#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+if \(uAppearanceReady < 0\.5 \|\| uDiagnostic < 5\)\s+#endif\s+\{\s+terrainVisibility\(world, dx, dy, normal\);/,
         'unlit diagnostics of the AI577 D6 diagnostics program skip the lighting; the default program lights every fragment');
-    const conditions = [...main.matchAll(/if \(([^)]*)\)/g)].map(match => match[1]);
-    assert.ok(conditions.length > 0 && conditions.every(condition => /^(uDiagnostic|uAppearanceReady)\b/.test(condition)), `main branches on uniforms only, so the evaluation stays in uniform control flow: ${conditions.join(' | ')}`);
+    // AI577 D6: the surface cache's near pass only discards the fragments the cache keeps (its depth-only mask keeps the cached frame off the fragments the
+    // near pass owns); it never branches around the evaluation, and its inspection view returns before it on a uniform
+    const nearDiscards = /if \(nearWeight <= 0\.0\) discard;/g;
+    assert.equal((main.match(nearDiscards) ?? []).length, 1, 'one discard test, in the near pass; the cached frame has none');
+    const conditions = [...main.replaceAll(nearDiscards, '').matchAll(/if \(([^)]*)\)/g)].map(match => match[1]);
+    assert.ok(conditions.length > 0 && conditions.every(condition => /^(uDiagnostic|uAppearanceReady|uSurfaceCacheNear\.w)\b/.test(condition)), `main branches on uniforms only, so the evaluation stays in uniform control flow: ${conditions.join(' | ')}`);
     assert.match(lighting, /uLandscapeSunIrradiance\.rgb \* landscapeSunVisibility\(world, n, sun\)/, 'sun visibility multiplies only the direct sun');
     assert.match(terrain, /float skyVisibility = landscapeSkyVisibility\(world, n\);/, 'sky visibility is evaluated once for the dry and submerged paths');
     assert.match(lighting, /float ems = 1\.0 - fab\.x - fab\.y, occlusion = ao \* skyVisibility;/, 'sky visibility joins the material occlusion of ambient sky light');

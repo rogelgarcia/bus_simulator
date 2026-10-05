@@ -10,6 +10,7 @@ import { LANDSCAPE_REFERENCE_PROBE_LIGHTING, LANDSCAPE_WATER_LEVEL_DISABLED, lan
     landscapeTerrainRadiance, landscapeTerrainVisibility, landscapeWaterReflectance, landscapeWaterSurfaceRoughness } from '../../../src/graphics/engine3d/landscape/LandscapeLightingModel.js';
 import { LANDSCAPE_SKY_REFLECTION, prefilterLandscapeSkyReflection, sampleLandscapeSkyReflection } from '../../../src/graphics/engine3d/landscape/LandscapeSkyReflection.js';
 import { decodeRadianceHdr, toHalfFloatImage } from '../../shared/landscape_radiance_hdr.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape/ai577/d5/lighting/e2e');
 const calibration = JSON.parse(await readFile(path.resolve('assets/public/lighting/calibrated/clear-afternoon-55.json'), 'utf8'));
@@ -49,7 +50,7 @@ test('Landscape lighting: the viewer resolves the game lighting, projects the ca
     expect(new URL(String(testInfo.project.use.baseURL)).port, 'Landscape verification uses port 8002').toBe('8002');
     const errors = observeErrors(page), warnings = observeShaderWarnings(page);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     const state = await ready(page), lighting = state.lighting;
     const settings = getResolvedLightingSettings({ includeUrlOverrides: false }), atmosphere = getResolvedAtmosphereSettings({ includeUrlOverrides: false });
     expect(lighting.status).toBe('ready'); expect(lighting.error).toBeNull(); expect(lighting.tier).toBe('standard');
@@ -106,7 +107,7 @@ test('Landscape lighting: the game URL overrides apply and every tier compiles a
     test.setTimeout(180000);
     const errors = observeErrors(page), warnings = observeShaderWarnings(page);
     await page.setViewportSize({ width: 960, height: 540 });
-    await page.goto('/screens/landscape_fabrication.html?landscapeLighting=low&sunAzimuth=200&sunElevation=12&exposure=0.03');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeLighting=low&sunAzimuth=200&sunElevation=12&exposure=0.03'));
     const low = (await ready(page)).lighting;
     expect(low.tier).toBe('low'); expect(low.haze.enabled).toBe(false); expect(low.water.column).toBe('constant-deep-water-source');
     expect(low.exposure).toBe(.03);
@@ -128,7 +129,7 @@ test('Landscape lighting: the game URL overrides apply and every tier compiles a
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
     const invalid = [];
     page.on('pageerror', error => invalid.push(error.message));
-    await page.goto('/screens/landscape_fabrication.html?landscapeLighting=ultra');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeLighting=ultra'));
     await expect.poll(() => invalid.length).toBeGreaterThan(0);
     expect(invalid[0]).toMatch(/landscapeLighting must be one of low, standard, high; received ultra/);
     expect(errors.filter(message => !/landscapeLighting must be one of/.test(message))).toEqual([]);
@@ -139,7 +140,7 @@ test('Landscape lighting: the water surface reflects the prefiltered calibrated 
     test.setTimeout(120000);
     const warnings = observeShaderWarnings(page);
     await page.setViewportSize({ width: 640, height: 360 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await ready(page);
     // low tier: no aerial perspective, so the premultiplied surface is exactly reflectance · prefiltered sky; camera above the water at y = 0
     const cameras = [[-300, 120, -500], [400, 60, -150], [40, 50, 460], [-2500, 12, 900], [30, 400, 90]];
@@ -193,7 +194,7 @@ test('Landscape lighting: the water surface reflects the prefiltered calibrated 
 test('Landscape lighting: a city binding yaw turns the game-frame sun, sky harmonics and HDR background into landscape space consistently', async ({ page }) => {
     test.setTimeout(120000);
     await page.setViewportSize({ width: 640, height: 360 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await ready(page);
     const result = await page.evaluate(async () => {
         const T = await import('three');

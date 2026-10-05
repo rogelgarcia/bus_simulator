@@ -81,7 +81,8 @@ test('Surface cache shaders: the cached frame program compiles out coverage and 
 test('Surface cache shaders: cache uniforms are counted apart from the shared coverage slot sizing', () => {
     const sizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
     assert.deepEqual(landscapeFragmentUniformVectors(terrainSource, sizes), { fixedVectors: 155, slotVectors: 4 }, 'the shared coverage slot sizing is unchanged');
-    assert.deepEqual(landscapeFragmentVariantUniformVectors(terrainSource, sizes), { variantVectors: 6 }, 'four cache samplers and two state vectors');
+    assert.deepEqual(landscapeFragmentVariantUniformVectors(terrainSource, sizes), { variantVectors: 7 },
+        'four cache samplers and two state vectors of the cached frame, and the near band of the near pass');
     assert.throws(() => landscapeFragmentVariantUniformVectors('#ifdef LANDSCAPE_SURFACE_CACHE\nuniform vec4 a[LANDSCAPE_COVERAGE_SLOTS];\n#endif\n'), /coverage slot define/);
     assert.deepEqual(landscapeFragmentVariantUniformVectors('uniform vec4 a[LANDSCAPE_COVERAGE_SLOTS];\n#ifndef LANDSCAPE_SURFACE_CACHE\nuniform vec4 b;\n#else\nuniform vec4 c[2];\n#endif\n'), { variantVectors: 2 });
     assert.deepEqual(landscapeFragmentUniformVectors('uniform vec4 a[LANDSCAPE_COVERAGE_SLOTS];\n#ifndef LANDSCAPE_SURFACE_CACHE\nuniform vec4 b;\n#else\nuniform vec4 c[2];\n#endif\n'), { fixedVectors: 8, slotVectors: 1 });
@@ -105,6 +106,29 @@ test('Surface cache shaders: the single-output generation program packs the cach
     assert.match(vertex, /vec3 transformed = position;\s+vLandscapeNormal = normalize\(normal\);/);
     assert.doesNotMatch(mainOf(vertex), /uMorph|uEdges|parentHeight|parentNormal/, 'no LOD morph or coarser-edge heights');
     assert.match(code(preprocess(vertexSource, {})), /vec3 transformed = vec3\(position\.x, mix\(parentHeight, position\.y, morph\), position\.z\);/);
+    // tile positions are world positions; each draw's model matrix is its page block's world-to-clip mapping (one identity camera for every block)
+    assert.match(mainOf(vertex), /vLandscapeWorld = transformed;\s+gl_Position = modelMatrix \* vec4\(transformed, 1\.0\);/);
+    assert.match(mainOf(code(preprocess(vertexSource, {}))), /vLandscapeWorld = \(modelMatrix \* vec4\(transformed, 1\.0\)\)\.xyz;\s+gl_Position = projectionMatrix \* modelViewMatrix \* vec4\(transformed, 1\.0\);/,
+        'the frame programs keep the camera projection');
+});
+
+test('Surface cache shaders: the near program is the uncached program plus the near weight test and alpha; the cached frame shades every fragment', () => {
+    const standard = mainOf(code(preprocess(terrainSource, baseDefines))), near = mainOf(code(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE_NEAR: '1' })));
+    assert.match(near, /float nearWeight = landscapeSurfaceCacheNearWeight\(dx, dy\);\s+if \(nearWeight <= 0\.0\) discard;\s+if \(uSurfaceCacheNear\.w > 0\.5\) \{ gl_FragColor = vec4\(1\.0, 0\.0, 1\.0, nearWeight\); return; \}/);
+    assert.match(near, /gl_FragColor = vec4\(color, nearWeight\);/);
+    // removing the weight test, the inspection marker and the alpha leaves the uncached program's main exactly
+    const stripped = near.replace(/\s*float nearWeight = landscapeSurfaceCacheNearWeight\(dx, dy\);\s+if \(nearWeight <= 0\.0\) discard;\s+if \(uSurfaceCacheNear\.w > 0\.5\) \{[^}]*\}/, '')
+        .replace('gl_FragColor = vec4(color, nearWeight);', 'gl_FragColor = vec4(color, 1.0);');
+    assert.equal(stripped.replace(/\s+/g, ' '), standard.replace(/\s+/g, ' '));
+    assert.equal(referencedSamplers(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE_NEAR: '1' })).length, 16, 'the uncached samplers, no cache texture');
+    // the cached frame shades every fragment it draws (no discard); the near pass replaces its color where it owns the fragment (alpha 1)
+    const frame = code(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE: '1' }));
+    assert.doesNotMatch(frame, /discard|uSurfaceCacheNear/);
+    assert.match(mainOf(frame), /vec2 dx = dFdx\(world\), dy = dFdy\(world\);\s+vec3 positionDx = dFdx\(vLandscapeWorld\), positionDy = dFdy\(vLandscapeWorld\);\s+vec3 color = landscapeSurfaceCacheRadiance\(/);
+    // the GLSL weight is the JavaScript mirror's metric: max(major / anisotropy, minor) through smoothstep(start, end)
+    const chunk = code(terrainSource.slice(terrainSource.indexOf('float landscapeSurfaceCacheNearWeight(')));
+    assert.match(chunk, /if \(uSurfaceCacheNear\.y <= 0\.0\) return 0\.0;\s+float a = length\(dx\), b = length\(dy\);\s+return 1\.0 - smoothstep\(uSurfaceCacheNear\.x, uSurfaceCacheNear\.y, max\(max\(a, b\) \/ uSurfaceCacheNear\.z, min\(a, b\)\)\);/);
+    assert.doesNotMatch(code(preprocess(terrainSource, baseDefines)), /uSurfaceCacheNear/, 'the default program has no near-pass code');
 });
 
 test('Surface cache shaders: the unpack program copies level 0 exactly and box-filters level 1 and the response with variance-widened roughness', async () => {

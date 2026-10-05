@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape/ai577/d5/fields/browser');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
@@ -27,7 +28,7 @@ async function settle(page) {
 
 async function open(page) {
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready || window.__landscapeTestHooks?.snapshot().lastError, null, { timeout: 90000 });
     expect((await snapshot(page)).lastError).toBeNull();
 }

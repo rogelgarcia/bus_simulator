@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d7', 'lifecycle');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks?.snapshot() ?? {});
@@ -55,7 +56,7 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
         const bytes = fixture.resources.get(key);
         return route.fulfill({ status: bytes ? 200 : 404, contentType: key.endsWith('.json') ? 'application/json' : 'application/octet-stream', body: Buffer.from(bytes ?? []) });
     });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
     await page.evaluate(() => window.addEventListener('pagehide', () => {
         sessionStorage.setItem('landscape-d7-disposed', JSON.stringify(window.__landscapeTestHooks.snapshot()));
@@ -70,7 +71,7 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
     try {
         await page.evaluate(() => window.__landscapeTestHooks.setCamera({ position: [2000, 180, 1750], target: [2000, 18, 2000], projection: 'perspective', fov: 50 }));
         await expect.poll(() => intercepted).toBe(true);
-        await page.goto('/screens/landscape_fabrication.html?landscape=/__landscape_fixture/manifest.json');
+        await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscape=/__landscape_fixture/manifest.json'));
         release();
         await expect.poll(async () => (await snapshot(page)).revision, { timeout: 20000 }).toBe(fixture.manifest.revision);
         await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
@@ -98,7 +99,7 @@ test('Landscape AI577 D4: disposing while the terrain program compiles stops wai
         const response = await route.fetch();
         await route.fulfill({ response, body: `${await response.text()}\n// lifecycle cold-compile probe ${Date.now()}\n` });
     });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await expect.poll(async () => (await snapshot(page)).terrainProgram, { timeout: 20000 }).toMatchObject({ parallel: true, pending: true });
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
     await page.waitForTimeout(250);
@@ -122,7 +123,7 @@ test('Landscape AI577 D6: diagnostics and the terrain-appearance switch link the
         await route.fulfill({ response, body: `${await response.text()}\n// D6 program-variant probe ${Date.now()}\n` });
     });
     await page.setViewportSize({ width: 960, height: 540 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await expect.poll(async () => { const state = await snapshot(page); return !!(state.ready && state.planning?.ready && state.streaming?.settled); }, { timeout: 120000 }).toBe(true);
     const initial = await snapshot(page);
     expect(initial.terrainProgramVariant).toMatchObject({ diagnostics: false, terrainAppearance: true, pending: false, switches: 0 });

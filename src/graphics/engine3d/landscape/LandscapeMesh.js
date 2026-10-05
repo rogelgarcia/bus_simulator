@@ -33,11 +33,14 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
     const variant = { ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}), ...(options?.lightingTier ? { lightingTier: options.lightingTier } : {}),
         ...landscapeProgramVariant({ diagnostics: options?.diagnostics, terrainAppearance: options?.terrainAppearance, surfaceCache: options?.surfaceCache }) };
     const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
+    // the tile's own appearance cells until the appearance binds its shared ones; the surface cache indirection placeholder among them is the tile's
+    // to release (a cached frame drawn before the binding uploads it)
+    const ownAppearance = createLandscapeAppearanceUniforms(coverageSlots), ownPlaceholder = ownAppearance.uSurfaceCacheIndirection.value;
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
         vertexColors: true,
-        uniforms: { ...sharedUniforms, ...createLandscapeAppearanceUniforms(coverageSlots), uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
+        uniforms: { ...sharedUniforms, ...ownAppearance, uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
             uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms(), ...createLandscapeLightingUniforms() }
     });
     const recompile = () => {
@@ -156,6 +159,6 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
             const boundaryBytes = boundary ? buffers.boundaryPositions.byteLength + buffers.boundaryParents.byteLength : 0;
             return { vertices: buffers.positions.length / 3, triangles: buffers.indices.length / 3, surfaceTriangles: buffers.surfaceTriangles, geometryBytes: buffers.geometryBytes, overlayBytes: wireGpuBytes + boundaryBytes, overlayCpuBytes: wireCpuBytes, estimatedGpuBytes: buffers.geometryBytes + wireGpuBytes + boundaryBytes, mode };
         },
-        dispose() { removeLine(wire); removeLine(boundary); wire = null; boundary = null; geometry.dispose(); material.dispose(); mesh.removeFromParent(); }
+        dispose() { removeLine(wire); removeLine(boundary); wire = null; boundary = null; geometry.dispose(); material.dispose(); ownPlaceholder.dispose(); mesh.removeFromParent(); }
     });
 }

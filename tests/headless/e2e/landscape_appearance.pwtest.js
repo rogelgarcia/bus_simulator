@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const root = path.resolve('.');
 const source = path.join(root, 'assets/public/landscape/coastal-city');
@@ -78,7 +79,7 @@ test.afterAll(async () => {
 
 async function open(page, address = '/screens/landscape_fabrication.html') {
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(address);
+    await page.goto(landscapeViewerUrl(address));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready || window.__landscapeTestHooks?.snapshot().lastError, null, { timeout: 60000 });
     expect((await snapshot(page)).lastError).toBeNull();
     await settle(page);

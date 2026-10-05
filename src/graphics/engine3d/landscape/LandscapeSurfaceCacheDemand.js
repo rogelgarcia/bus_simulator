@@ -1,18 +1,19 @@
 // Plans the surface cache pages a camera needs: a quadtree descent of the virtual texture by projected texel density inside the clipmap windows.
 // @ts-check
-// AI577 D6 core demand (landscape-surface-cache-demand-v1), deterministic and CPU-only. A page is desired while it intersects the view frustum
+// AI577 D6 demand (landscape-surface-cache-demand-v2), deterministic and CPU-only. A page is desired while it intersects the view frustum
 // (with the terrain height envelope of the ground it covers); it is refined while the finest filtered footprint inside it, estimated at its
 // closest point from the grazing angle plus the steepest overview slope there and the sampler anisotropy, is smaller than its texel and its
-// children lie in the next window. Every desired
-// page's ancestors are desired too (the coarser ring), so zooming keeps the previous band until finer pages replace it. Priority is the closest
-// distance in page sizes, which keeps parents ahead of children and, when the demand exceeds the atlas, drops the outer part of every mip ring
-// alike (the effect of a global LOD bias). A motion prefetch runs the same descent for the camera extrapolated half a second ahead. The
-// clipmap center follows the camera's ground position, shifted forward for narrow fields of view whose fine pages lie ahead of a centered window.
-import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCachePageBounds, landscapeSurfaceCachePageKey, landscapeSurfaceCachePageMeters, landscapeSurfaceCacheSnapCenter,
-    landscapeSurfaceCacheWindowContains } from './LandscapeSurfaceCacheLayout.js';
+// children lie in the next window. Every desired page's ancestors are desired too (the coarser ring), so zooming keeps the previous band until
+// finer pages replace it. Priority is the closest distance in page sizes, which keeps parents ahead of children and, when the demand exceeds the
+// atlas, drops the outer part of every mip ring alike (the effect of a global LOD bias). A motion prefetch runs the same descent for the camera
+// extrapolated half a second ahead. The clipmap center follows the camera's ground position, shifted forward for narrow fields of view whose fine
+// pages lie ahead of a centered window. v2: while the near pass evaluates the fragments whose footprint lies below its band start per pixel, a page
+// whose largest footprint (its farthest point at the shallowest grazing angle its envelope allows) lies below that start is never sampled and is
+// neither desired nor refined; the descent allocates nothing per visited node.
+import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCachePageBounds, landscapeSurfaceCachePageKey, landscapeSurfaceCacheSnapCenter } from './LandscapeSurfaceCacheLayout.js';
 
 export const LANDSCAPE_SURFACE_CACHE_DEMAND = Object.freeze({
-    id: 'landscape-surface-cache-demand-v1',
+    id: 'landscape-surface-cache-demand-v2',
     footprint: 'closest-point footprint max(major / anisotropy, minor), major = minor / min(1, grazing sine + steepest overview slope sine)',
     minimumGrazingSine: .02,
     prefetchSeconds: .5,
@@ -24,12 +25,15 @@ export const LANDSCAPE_SURFACE_CACHE_DEMAND = Object.freeze({
 });
 
 const DEMAND = LANDSCAPE_SURFACE_CACHE_DEMAND;
+// page keys (landscapeSurfaceCachePageKey without its validation, for the descent's inner loop)
+const KEY_COORDINATE = 2 ** 15, KEY_MIP = KEY_COORDINATE * KEY_COORDINATE;
 
 /**
  * Terrain envelope of page bounds from the always-resident overview chunk: min/max height of the overview cells a rectangle touches, widened by the
  * overview's geometric error so it bounds every native sample, and the sine of their steepest overview-cell slope. A max/min pyramid answers each
- * query from at most four cells. @param {{descriptor:{columns:number,rows:number,bounds:any,geometricError:number},heights:Float32Array}} chunk overview chunk (row 0 north)
- * @returns {(minX:number,minZ:number,maxX:number,maxZ:number)=>{min:number,max:number,slope:number}}
+ * query from at most four cells; with an output array the query writes [min, max, slope] into it instead of allocating a result.
+ * @param {{descriptor:{columns:number,rows:number,bounds:any,geometricError:number},heights:Float32Array}} chunk overview chunk (row 0 north)
+ * @returns {(minX:number,minZ:number,maxX:number,maxZ:number,out?:Float64Array)=>any}
  */
 export function createLandscapeSurfaceCacheTerrainEnvelope(chunk) {
     const { columns, rows, bounds, geometricError } = chunk.descriptor, heights = chunk.heights;
@@ -55,17 +59,21 @@ export function createLandscapeSurfaceCacheTerrainEnvelope(chunk) {
         levels.push(next);
         width = next.width; height = next.height;
     }
-    return (minX, minZ, maxX, maxZ) => {
-        const column = x => Math.min(cellsX - 1, Math.max(0, Math.floor((x - bounds.minX) / dx))), row = z => Math.min(cellsZ - 1, Math.max(0, Math.floor((bounds.maxZ - z) / dz)));
-        const c0 = column(minX), c1 = column(maxX), r0 = row(maxZ), r1 = row(minZ);
+    const minimumX = bounds.minX, maximumZ = bounds.maxZ;
+    return (minX, minZ, maxX, maxZ, out = null) => {
+        const c0 = Math.min(cellsX - 1, Math.max(0, Math.floor((minX - minimumX) / dx))), c1 = Math.min(cellsX - 1, Math.max(0, Math.floor((maxX - minimumX) / dx)));
+        const r0 = Math.min(cellsZ - 1, Math.max(0, Math.floor((maximumZ - maxZ) / dz))), r1 = Math.min(cellsZ - 1, Math.max(0, Math.floor((maximumZ - minZ) / dz)));
         let level = 0;
         while (level < levels.length - 1 && ((c1 >> level) - (c0 >> level) > 1 || (r1 >> level) - (r0 >> level) > 1)) level++;
         const grid = levels[level];
         let min = Infinity, max = -Infinity, slope = 0;
         for (let r = r0 >> level; r <= r1 >> level; r++) for (let c = c0 >> level; c <= c1 >> level; c++) {
             const i = r * grid.width + c;
-            min = Math.min(min, grid.min[i]); max = Math.max(max, grid.max[i]); slope = Math.max(slope, grid.slope[i]);
+            if (grid.min[i] < min) min = grid.min[i];
+            if (grid.max[i] > max) max = grid.max[i];
+            if (grid.slope[i] > slope) slope = grid.slope[i];
         }
+        if (out) { out[0] = min; out[1] = max; out[2] = slope; return out; }
         return { min, max, slope };
     };
 }
@@ -94,48 +102,78 @@ export function chooseLandscapeSurfaceCacheCenter({ geometry, camera, groundHeig
     return center;
 }
 
-function boxOutside(planes, minX, minY, minZ, maxX, maxY, maxZ) {
-    for (const p of planes) {
-        if (p.x * (p.x >= 0 ? maxX : minX) + p.y * (p.y >= 0 ? maxY : minY) + p.z * (p.z >= 0 ? maxZ : minZ) + p.w < 0) return true;
-    }
-    return false;
-}
-
 /**
  * Desired pages of one camera, sorted by priority and limited to capacity.
- * @param {{geometry:any,camera:any,center:{x:number,z:number},heightRange:(minX:number,minZ:number,maxX:number,maxZ:number)=>{min:number,max:number,slope:number},capacity:number,
- *   anisotropy?:number,velocity?:{x:number,y:number,z:number}|null,bounds?:{minX:number,maxX:number,minZ:number,maxZ:number}|null}} options camera is a landscapeCameraSnapshot
- *   (inward frustum planes {x,y,z,w}); heightRange gives the terrain height envelope and the sine of its steepest slope; pages outside bounds (the landscape) are never desired
- * @returns {{pages:Array<{key:number,mip:number,x:number,z:number,priority:number,distance:number,prefetch:boolean}>,desired:number,visited:number,limited:boolean,byMip:number[]}}
+ * @param {{geometry:any,camera:any,center:{x:number,z:number},heightRange:(minX:number,minZ:number,maxX:number,maxZ:number,out?:Float64Array)=>any,capacity:number,
+ *   anisotropy?:number,velocity?:{x:number,y:number,z:number}|null,bounds?:{minX:number,maxX:number,minZ:number,maxZ:number}|null,nearStart?:number}} options camera is a
+ *   landscapeCameraSnapshot (inward frustum planes {x,y,z,w}); heightRange gives the terrain height envelope and the sine of its steepest slope; pages outside bounds
+ *   (the landscape) are never desired; nearStart (meters, 0 without a near pass) prunes pages entirely below the near pass's band start; views are further
+ *   prefetch cameras (landscapeCameraSnapshot) planned after the motion prefetch; lodBias (mips, from 0) widens the refinement footprint by 2^lodBias
+ * @returns {{pages:Array<{key:number,mip:number,x:number,z:number,priority:number,distance:number,prefetch:boolean}>,desired:number,visited:number,limited:boolean,byMip:number[],
+ *   pruned:number}}
  */
-export function planLandscapeSurfaceCacheDemand({ geometry, camera, center, heightRange, capacity, anisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy, velocity = null, bounds = null }) {
+export function planLandscapeSurfaceCacheDemand({ geometry, camera, center, heightRange, capacity, anisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy, velocity = null, bounds = null,
+    nearStart = 0, views = [], lodBias = 0 }) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('[LandscapeSurfaceCache] demand capacity must be a positive integer');
     const orthographic = camera.projection === 'orthographic';
     const pixelAngle = orthographic ? 0 : 2 * Math.tan(camera.fovYRadians / 2) / camera.zoom / camera.viewportHeight;
     const orthoPixel = orthographic ? camera.orthoHeight / camera.zoom / camera.viewportHeight : 0;
-    const stretch = sine => Math.max(1, 1 / (anisotropy * Math.min(1, Math.max(sine, DEMAND.minimumGrazingSine))));
+    const minimumSine = DEMAND.minimumGrazingSine, pageTexels = LANDSCAPE_SURFACE_CACHE.pageTexels, window = LANDSCAPE_SURFACE_CACHE.windowPages;
+    const stretch = sine => Math.max(1, 1 / (anisotropy * Math.min(1, Math.max(sine, minimumSine)))), bias = 2 ** Math.max(0, lodBias);
+    // per mip: page size, pages per axis and the clipmap window origin
+    const mips = geometry.mips, sizes = new Float64Array(mips), perAxis = new Int32Array(mips), originX = new Int32Array(mips), originZ = new Int32Array(mips);
+    for (let mip = 0; mip < mips; mip++) {
+        sizes[mip] = geometry.pageMeters0 * 2 ** mip;
+        perAxis[mip] = 2 ** (geometry.rootMip - mip);
+        const last = Math.max(0, perAxis[mip] - window);
+        originX[mip] = Math.min(last, Math.max(0, Math.floor(center.x / sizes[mip]) - window / 2));
+        originZ[mip] = Math.min(last, Math.max(0, Math.floor(center.z / sizes[mip]) - window / 2));
+    }
+    const ox = geometry.originX, oz = geometry.originZ, envelope = new Float64Array(3);
     const pages = new Map();
-    let visited = 0;
+    let visited = 0, pruned = 0, stack = new Int32Array(3 * 1024);
     const descend = (eye, planes, offset, prefetch) => {
-        const stack = [[geometry.rootMip, 0, 0]];
-        while (stack.length && visited < DEMAND.maximumNodes) {
-            const [mip, x, z] = stack.pop();
+        const p = planes.map(plane => [plane.x, plane.y, plane.z, plane.w]);
+        let top = 0;
+        stack[top++] = geometry.rootMip; stack[top++] = 0; stack[top++] = 0;
+        while (top > 0 && visited < DEMAND.maximumNodes) {
+            const z = stack[--top], x = stack[--top], mip = stack[--top];
             visited++;
-            const b = landscapeSurfaceCachePageBounds(geometry, mip, x, z);
-            if (bounds && (b.minX >= bounds.maxX || b.maxX <= bounds.minX || b.minZ >= bounds.maxZ || b.maxZ <= bounds.minZ)) continue;
-            const heights = heightRange(b.minX, b.minZ, b.maxX, b.maxZ);
-            if (boxOutside(planes, b.minX, heights.min, b.minZ, b.maxX, heights.max, b.maxZ)) continue;
-            const cx = Math.min(b.maxX, Math.max(b.minX, eye.x)), cy = Math.min(heights.max, Math.max(heights.min, eye.y)), cz = Math.min(b.maxZ, Math.max(b.minZ, eye.z));
-            const distance = Math.hypot(eye.x - cx, eye.y - cy, eye.z - cz), size = landscapeSurfaceCachePageMeters(geometry, mip);
-            const key = landscapeSurfaceCachePageKey(mip, x, z), priority = distance / size + offset, previous = pages.get(key);
-            if (!previous || priority < previous.priority) pages.set(key, { key, mip, x, z, priority, distance, prefetch: prefetch && (!previous || previous.prefetch) });
+            const size = sizes[mip], minX = ox + x * size, maxX = minX + size, minZ = oz + z * size, maxZ = minZ + size;
+            if (bounds && (minX >= bounds.maxX || maxX <= bounds.minX || minZ >= bounds.maxZ || maxZ <= bounds.minZ)) continue;
+            // an envelope that fills the output array allocates nothing; a plain function may return {min, max, slope}
+            const range = heightRange(minX, minZ, maxX, maxZ, envelope), filled = range === envelope;
+            const minY = filled ? envelope[0] : range.min, maxY = filled ? envelope[1] : range.max, slope = filled ? envelope[2] : range.slope;
+            let outside = false;
+            for (let i = 0; i < p.length; i++) {
+                const [a, b, c, d] = p[i];
+                if (a * (a >= 0 ? maxX : minX) + b * (b >= 0 ? maxY : minY) + c * (c >= 0 ? maxZ : minZ) + d < 0) { outside = true; break; }
+            }
+            if (outside) continue;
+            const cx = Math.min(maxX, Math.max(minX, eye.x)), cy = Math.min(maxY, Math.max(minY, eye.y)), cz = Math.min(maxZ, Math.max(minZ, eye.z));
+            const distance = Math.hypot(eye.x - cx, eye.y - cy, eye.z - cz);
+            if (nearStart > 0) {
+                // the largest footprint in the page: its farthest corner at the shallowest grazing its envelope allows
+                const fx = Math.max(Math.abs(eye.x - minX), Math.abs(eye.x - maxX)), fy = Math.max(Math.abs(eye.y - minY), Math.abs(eye.y - maxY)), fz = Math.max(Math.abs(eye.z - minZ), Math.abs(eye.z - maxZ));
+                const far = Math.hypot(fx, fy, fz), sine = far > 0 && eye.y > maxY ? (eye.y - maxY) / far - slope : 0;
+                const largest = orthographic ? orthoPixel * stretch(Math.abs(camera.direction.y) - slope) : far * pixelAngle * stretch(sine);
+                if (largest < nearStart) { pruned++; continue; }
+            }
+            const key = mip * KEY_MIP + z * KEY_COORDINATE + x, priority = distance / size + offset, previous = pages.get(key);
+            if (!previous) pages.set(key, { key, mip, x, z, priority, distance, prefetch });
+            else if (priority < previous.priority) { previous.priority = priority; previous.distance = distance; previous.prefetch = prefetch && previous.prefetch; }
+            else if (!prefetch) previous.prefetch = false;
             if (mip === 0) continue;
-            const footprint = orthographic ? orthoPixel * stretch(Math.abs(camera.direction.y) + heights.slope)
-                : distance * pixelAngle * stretch((distance > 0 ? Math.abs(eye.y - cy) / distance : 1) + heights.slope);
-            if (footprint >= size / LANDSCAPE_SURFACE_CACHE.pageTexels) continue;
+            const footprint = orthographic ? orthoPixel * stretch(Math.abs(camera.direction.y) + slope)
+                : distance * pixelAngle * stretch((distance > 0 ? Math.abs(eye.y - cy) / distance : 1) + slope);
+            if (footprint * bias >= size / pageTexels) continue;
+            const child = mip - 1, ex = originX[child] + window, ez = originZ[child] + window, limit = perAxis[child];
+            if (top + 12 > stack.length) { const grown = new Int32Array(stack.length * 2); grown.set(stack); stack = grown; }
             for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
                 const childX = x * 2 + i, childZ = z * 2 + j;
-                if (landscapeSurfaceCacheWindowContains(geometry, mip - 1, center, childX, childZ)) stack.push([mip - 1, childX, childZ]);
+                if (childX >= originX[child] && childZ >= originZ[child] && childX < ex && childZ < ez && childX < limit && childZ < limit) {
+                    stack[top++] = child; stack[top++] = childX; stack[top++] = childZ;
+                }
             }
         }
     };
@@ -146,17 +184,19 @@ export function planLandscapeSurfaceCacheDemand({ geometry, camera, center, heig
         const eye = { x: camera.position.x + shift.x, y: camera.position.y + shift.y, z: camera.position.z + shift.z };
         descend(eye, camera.frustumPlanes.map(p => ({ x: p.x, y: p.y, z: p.z, w: p.w - (p.x * shift.x + p.y * shift.y + p.z * shift.z) })), DEMAND.prefetchPriorityOffset, true);
     }
+    // further prefetch views (the camera turned ahead), ranked like the motion prefetch
+    for (const view of views) descend(view.position, view.frustumPlanes, DEMAND.prefetchPriorityOffset, true);
     const sorted = [...pages.values()].sort((a, b) => a.priority - b.priority || b.mip - a.mip || a.key - b.key);
     const byMip = Array.from({ length: geometry.mips }, () => 0);
-    const kept = sorted.slice(0, capacity);
+    const kept = sorted.length > capacity ? sorted.slice(0, capacity) : sorted;
     for (const page of kept) byMip[page.mip]++;
-    return { pages: kept, desired: sorted.length, visited, limited: sorted.length > capacity || visited >= DEMAND.maximumNodes, byMip };
+    return { pages: kept, desired: sorted.length, visited, limited: sorted.length > capacity || visited >= DEMAND.maximumNodes, byMip, pruned };
 }
 
 /**
- * Feedback interface (D6b2): merges pages that frame feedback found missing (for example a GPU readback of the pages the cached frame wanted) into
- * a CPU plan. Requested pages and the ancestors the plan lacks are appended after the plan's own pages in request order, coarse first, so feedback
- * fills spare capacity and never displaces planned pages.
+ * Feedback interface (unused by the shipped runtime): merges pages that frame feedback found missing (for example a GPU readback of the pages the
+ * cached frame wanted) into a CPU plan. Requested pages and the ancestors the plan lacks are appended after the plan's own pages in request order,
+ * coarse first, so feedback fills spare capacity and never displaces planned pages.
  * @param {{geometry:any,plan:{pages:Array<any>,desired:number,visited:number,limited:boolean,byMip:number[]},feedback:ReadonlyArray<{mip:number,x:number,z:number}>,capacity:number}} options
  */
 export function mergeLandscapeSurfaceCacheFeedback({ geometry, plan, feedback, capacity }) {

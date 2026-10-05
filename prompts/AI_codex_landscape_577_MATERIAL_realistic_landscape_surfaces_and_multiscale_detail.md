@@ -33,8 +33,8 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. D2, D3, D4 and D5 are complete. Leave D6–D7
-  pending for later passes; D6 is next.
+  corrective D1a step are complete. D2–D6 are complete. Leave D7 pending for a later
+  pass; D7 is next.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -213,17 +213,17 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D6. Profile-guided surface caching
 
-- [ ] Profile combined material evaluation and streaming. Decide from measured
+- [x] Profile combined material evaluation and streaming. Decide from measured
   evidence whether a generated surface-page cache is justified; record a reasoned
   no-cache outcome if its costs exceed demonstrated benefits.
-- [ ] If justified, cache reusable material properties independently of camera
+- [x] If justified, cache reusable material properties independently of camera
   lighting/view, with page identity, recipe/material/source revisions, gutters,
   filtered levels, generation scheduling, invalidation and bounded CPU/GPU storage.
-- [ ] Keep coarse fallback, camera-motion prefetch, zoom response, cancellation and
+- [x] Keep coarse fallback, camera-motion prefetch, zoom response, cancellation and
   publication ordering explicit. Later roads/decals must have an extension contract.
-- [ ] Compare uncached/cached quality, frame/GPU time, generation/upload spikes,
+- [x] Compare uncached/cached quality, frame/GPU time, generation/upload spikes,
   bytes, latency and edit recovery under identical conditions.
-- [ ] Reduce the costs D4–D5 accepted for realism: the cold terrain program compile grew from
+- [x] Reduce the costs D4–D5 accepted for realism: the cold terrain program compile grew from
   5.5 s (D4) to 12–20 s on a fresh browser profile (D5), and D5 lighting, terrain fields,
   response and terrain appearance add +1.7 to +5.5 ms GPU at the four AI577 views (up to
   +6.1 ms elsewhere; medium and aerial views now exceed 16.7 ms). Keep the D5 appearance, or
@@ -236,6 +236,10 @@ visually verified improvement at each step rather than postponing verification.
   movement, FOV/zoom changes, pause, reload and repeated visits.
 - [ ] Exercise source/soil edits, pinned old revisions, natural planning infill,
   seam consistency, corrupt/delayed requests, low budgets and complete disposal.
+- [ ] Decide the runtime surface cache default after a visual review of motion: the D6 cache
+  (opt-in, 512/448 MiB) cuts terrain GPU time 56–67% at 1920×1080 within 0.4–0.9 sRGB bytes,
+  but its 2,816 slots truncate outer rings at 4K and fast motion or zooms show coarser
+  fallback pages. Scale its slots with the viewport and measure 1440p and 4K before enabling it.
 - [ ] Restore `landscape_large_editing`: its city fixture still pins the AI 576 revision
   `hierarchy-afaf934…`, so setup fails since the D1a material-only publication. Re-pin
   deliberately or rework the check around immutable snapshots, keeping strict-pin refusal.
@@ -900,6 +904,96 @@ verified by mirrors only. The tide is a fixed falling-tide look, the water is fl
 scattering. Natural-soil labels of fresh chunks next to an edit keep the original bake until it is re-run.
 `landscape_large_editing` still stops at the pre-existing stale city pin (D7). This completes D5, not the
 entire AI.
+
+### D6 completed — 2026-10-05
+
+This step uses D5 commit `83815e17` as its before baseline at 512/256 MiB: four matched views in
+`d6/shipped/before/` and 32 detail views in `d6/views/before/`, sealed with content hashes. It landed in
+three commits: the program-variant checkpoint `d9253037`, the cache core `2d334bb9` and this completion.
+D1–D5 remain completed history; D7 remains pending and is next.
+
+- Profile: the D5 terrain frame averages 12.1 ms GPU over 36 views — an unlit floor of 1.6 ms, coverage
+  reconstruction 5.0 ms (surface warp 3.3, fine pages 1.9), material evaluation 3.5 ms and lighting with
+  fields, response, atmosphere and water 2.0 ms. Overdraw is 1.00–1.07, so a depth pre-pass cannot help.
+  The cold compile is dominated by the six inlined soil evaluations (37% of 8,508 DXBC slots; each soil
+  adds 0.65–0.9 s), the coverage hierarchy (27%) and control flow rather than code size.
+- Safe wins: every inspection view moved into a separately compiled diagnostics variant and the
+  terrain-appearance switch became a compiled variant, both linked in parallel on an unrendered prototype
+  before tiles switch. The cold compile on a fresh browser profile falls from 12.3 to 8.4 s and GPU time by
+  0.3 ms on average, with output within one sRGB byte at three suns.
+- Decision: a partial surface cache of the view-independent coverage and material results is justified
+  (an emulation removed 69% of the frame); lighting, terrain fields, atmosphere and water stay per pixel.
+  Later roads and decals extend the surface through a documented layer contract (world bounds, margin,
+  order, revisions and a pure GLSL chunk; with the cache they join the page identity and composite during
+  generation).
+- Runtime surface cache (`landscape-surface-cache-v1`): a world-anchored virtual texture of 64² pages with
+  4-texel gutters (1.56 cm mip 0, mips 0–12, toroidal clipmap indirection), an LRU atlas charged to the
+  residency ledger, page identities from every input revision but never camera, light or time, monotonic
+  invalidation, a deterministic CPU demand planner with motion and turn prefetch and cancellation, GPU
+  generation by an unlit program variant under a controller that keeps batches near 1 ms, atomic
+  publication, coarse-ancestor fallback, context-loss recovery and runtime rebinding across reloads. A near
+  pass evaluates the uncached program per pixel wherever a pixel is finer than the cache texel, blended over
+  a 0.75–1.0 texel band, so close-up ground keeps its exact D5 detail.
+- Default and budget: the cache is opt-in (`landscapeSurfaceCache=on`) with its own 512/448 MiB profile
+  (2,816 slots, 158.4 MiB; the streams keep the 256 MiB of the uncached profile); 512/256 and smaller
+  profiles compile the uncached program from the start with an explicit reason. The shipped default stays
+  the exact D5 frame under the user's realism-first direction; enabling the cache by default is a D7
+  decision (see below).
+
+Verification: all 417 landscape Node tests pass (381 in D5), including the cache contract, layout, demand,
+controller, near-field reach (no fragment beyond a tile's reach can be weighted, on flat ground and 15–60°
+slopes) and shader checks. With the cache off (the default) 64 browser tests across 18 suites pass on
+the final tree: height blend 6, surface detail 8, seams 2, appearance 8, lighting 6, terrain fields 3,
+terrain appearance 4, surface cache 5, nature 1, planning 1, streaming 6, lifecycle 4, appearance
+binding 1, fabrication 2, navigation 2, authoring 3, city binding 1 and the performance gate 1. A full run
+exposed a picking race: right after a programmatic camera change such as a preset, the pick ray used the
+previous view's camera matrices, which refresh only at the next render, and the heavier D5–D6 frames
+widened that window. `pickPoint` now refreshes the matrices first; a navigation test that picks in the same
+task as a preset fails without the fix, and the authoring suite passed twice after it. Every landscape suite also passes with the cache on through
+`LANDSCAPE_TEST_SURFACE_CACHE=on`, with outcomes identical to the cache-off run. With the cache off the output
+is unchanged: the uncached programs equal the D6 core's and the 32 views match the sealed set within the
+capture noise. The four matched AI577 views with the cache off
+are identical to the sealed D5 baseline within one sRGB byte, with the same draws, triangles and memory and
+no error or denial.
+
+Cache on against off (paired in the same page, 36 views, 1920×1080, 512/448 MiB, RTX 3060 / ANGLE D3D11):
+
+| Sun | GPU off: mean (max) ms | GPU on: mean (max) ms | Full-frame mean, sRGB bytes | Near-crop mean | Pixels > 16 bytes |
+| --- | --- | --- | --- | --- | --- |
+| Calibrated (45°, 55°) | 11.79 (24.50) | 5.20 (8.09) | 0.46 | 0.48 | 0.055% |
+| Low (225°, 12°) | 11.81 (24.46) | 5.08 (8.04) | 0.86 | 1.01 | 0.32% |
+| Overhead (45°, 85°) | 12.32 (25.60) | 4.12 (7.53) | 0.36 | 0.39 | 0.050% |
+
+32 of 36 views are faster (aerial oblique 24.4 → 5.7 ms, medium distance 20.8 → 5.4 ms); the four d4 near
+views are 1.5–1.9 ms slower because the near pass redraws most of their frame, and their near crops match
+exactly. The worst full frame differs by 2.86 bytes (sand under a 12° sun) and the worst near crop by 3.50
+bytes (steep urban ground under a 12° sun), a uniform speckle of relief shading. Page seams and
+mip-transition steps match the uncached frame, and temporal sparkle and popping on the D4 camera paths are
+equal or lower. The ledger peaks at 378–402 MiB with no denial or truncated demand; generation batches have
+a p95 of 1.02–1.05 ms. In motion, missing pages show their coarser ancestors in 0–22% of frames up to 30 m/s,
+11% during a 90°/s turn and 50% during a 55° → 8° zoom, clearing within 18 ms after the camera stops (stale
+pages after turns take about 1.4 s); cache CPU stays at 0.1–0.9 ms median per frame. Cold start on a fresh
+profile: first detailed frame 9.5 s (uncached 10.4 s), settled 13.8 s (10.7 s); an edit's reload settles in
+5.2–6.4 s (uncached 3.7 s); a restored context settles 1.5 s after restoration. At 3840×2160 the demand
+exceeds the 2,816 slots (outer rings truncated, 0.3–1.1 bytes) while GPU time falls from 16–56 to 5–15 ms.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d6/`.
+
+- Profile and safe wins: `performance/` (`per-pose-final.md`, waterfall and component tables), `hlsl/`,
+  `compile/`, `equality/`.
+- Cache: `cache-core/` and `cache-final/` (`paired-cal|low225|overhead-table.md`, `matrix-summary.json`,
+  `near-cost/`, `motion/`, `temporal/`, `cold/`, `edit-final/`, `context-final/`, `paired-4k/`,
+  `suites-on|off/`); off/on sheet `d6-cache-off-on.png`.
+- Matched views: `shipped/comparisons/`; regression logs: `regression-final/`.
+
+Limitations: the cache is not pixel-identical, its 2,816 slots suit 1920×1080 only (1440p is at the edge,
+4K truncates), it needs 192 MiB more GPU budget and 0.2–0.4 ms more CPU per frame, it settles 3.1 s later on a
+cold start and regenerates every page after a reload or edit, fast motion and zooms show coarser fallback
+pages, and the four near views cost 1.5–1.9 ms more. GPU page feedback is not built (the deterministic CPU
+planner proved sufficient; the interface remains). The uncached default keeps D5's GPU cost apart from the
+0.3 ms of the safe wins. Everything was measured on one GPU, driver and browser build, where register-driven
+occupancy moves single views by ±1–5 ms between structurally equivalent programs. `landscape_large_editing`
+still stops at the pre-existing stale city pin (D7). This completes D6, not the entire AI.
 
 ## On completion
 

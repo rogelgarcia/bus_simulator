@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { LANDSCAPE_SURFACE_SOIL_COLORS, landscapeColorBytes } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd6'}/planning`);
 const source = path.resolve('assets/public/landscape/coastal-city/manifest.json');
@@ -27,7 +28,7 @@ test('Landscape D6: retained references, diagnostic modes, native report, persis
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error' && /WebGLProgram|VALIDATE_STATUS|shader error|GL_INVALID/i.test(message.text())) errors.push(message.text()); });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 60000 });
     await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
     await page.evaluate(() => window.__landscapeTestHooks.setPlanning({ districts: true, roads: true, shoreline: true, points: true, corridors: true }));

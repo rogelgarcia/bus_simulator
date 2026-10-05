@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { estimateLandscapeMeshBuffers } from '../../../src/graphics/engine3d/landscape/LandscapeMeshBuffers.js';
-import { LANDSCAPE_STREAMING_BUDGETS } from '../../../src/app/landscape/LandscapeResidencyBudget.js';
+import { landscapeShippedBudgetMiB, landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d7'}/performance`);
 const sourcePath = '/assets/public/landscape/coastal-city/manifest.json';
@@ -13,7 +13,8 @@ const sourceText = await readFile(path.resolve(`.${sourcePath}`), 'utf8');
 const manifest = JSON.parse(sourceText);
 const appearance = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/appearance/manifest.json'), 'utf8'));
 const MiB = 1024 * 1024;
-const profiles = [{ id: 'standard', cpuMiB: LANDSCAPE_STREAMING_BUDGETS.cpuBytes / MiB, gpuMiB: LANDSCAPE_STREAMING_BUDGETS.gpuBytes / MiB },
+// standard: the shipped profile of the run's surface cache mode (LANDSCAPE_TEST_SURFACE_CACHE; the reduced profiles keep the cache off by its budget policy)
+const profiles = [{ id: 'standard', ...landscapeShippedBudgetMiB() },
     { id: 'historical', cpuMiB: 128, gpuMiB: 64 }, { id: 'constrained', cpuMiB: 48, gpuMiB: 24 }];
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120;
 const details = manifest.chunks.filter(chunk => chunk.level === 2).sort((a, b) => b.geometricError - a.geometricError);
@@ -231,7 +232,7 @@ test('Landscape D7: repeatable cold and warm coastal routes stay bounded under s
             try {
                 for (const cacheState of ['cold', 'warm']) {
                     network.setPhase(`${cacheState}/${cacheState === 'warm' ? 'preparation' : 'startup'}`);
-                    if (cacheState === 'cold') await page.goto(`/screens/landscape_fabrication.html?landscapeCpuMiB=${profile.cpuMiB}&landscapeGpuMiB=${profile.gpuMiB}`);
+                    if (cacheState === 'cold') await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${profile.cpuMiB}&landscapeGpuMiB=${profile.gpuMiB}`));
                     else {
                         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), home);
                         await settled(page); network.setPhase(`${cacheState}/startup`);

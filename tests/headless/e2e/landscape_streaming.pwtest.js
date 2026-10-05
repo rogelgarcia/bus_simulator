@@ -3,6 +3,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve(process.env.LANDSCAPE_EVIDENCE_ROOT ?? `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd3'}`);
 const manifest = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/manifest.json'), 'utf8'));
@@ -17,7 +18,7 @@ const consumerLeases = (state, names) => state.budget.entries.flatMap(entry => e
 async function open(page) {
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready || window.__landscapeTestHooks?.snapshot().lastError, null, { timeout: 60000 });
     const state = await snapshot(page);
     expect(state.lastError).toBeNull();

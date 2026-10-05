@@ -76,7 +76,10 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
+| With the runtime surface cache on (AI577 D6, `LANDSCAPE_SURFACE_CACHE_BUDGETS`) | 512 MiB CPU / 448 MiB GPU; the cache atlases take at most min(3/8 of the GPU limit, GPU limit − 256 MiB), so the streams keep the 256 MiB of the uncached profile |
 | Geometric screen error goal | 1.5 pixels |
+
+URL budgets may not exceed the profile of the selected mode (surface cache off: 512/256 MiB; on: 512/448 MiB).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle

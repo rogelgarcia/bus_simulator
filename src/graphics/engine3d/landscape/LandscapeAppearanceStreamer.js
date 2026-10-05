@@ -64,6 +64,9 @@ export class LandscapeAppearanceStreamer {
         this.materialSampling = materialSampling;
         this.coverageSlots = coverageSlots;
         this.uniforms = createLandscapeAppearanceUniforms(coverageSlots?.total);
+        // AI577 D6: the surface cache indirection placeholder this appearance owns; a bound cache swaps its own texture into the cell, so disposal
+        // releases the placeholder, never the cell's current texture
+        this.surfaceCachePlaceholder = this.uniforms.uSurfaceCacheIndirection.value;
         // AI577 D5: planning-only cover excludes the graded design terrain from the terrain-driven appearance terms
         this.planningCoverMask = landscapePlanningCoverMask(loaded.manifest.landCover.catalog);
         this.uniforms.uPlanningCover.value.set(this.planningCoverMask);
@@ -330,7 +333,7 @@ export class LandscapeAppearanceStreamer {
             clumps: [...u.uSoilClumps.value, ...u.uSoilClumpSalts.value, ...u.uClumpOctaves.value, ...u.uClumpSettings.value, ...u.uClumpConfidence.value],
             sampling: [...u.uSoilStochastic.value, ...u.uSoilStochasticSalts.value, ...u.uStochasticSettings.value],
             macro: [...u.uMacroOctaves.value, ...u.uMacroSalts.value, ...u.uMacroSettings.value, ...u.uSoilMacro.value],
-            layers: [...u.uSurfaceLayers.value, ...u.uMicroSampling.value],
+            layers: [...u.uSurfaceLayers.value, ...u.uMicroSampling.value, this.layers.micro ? 1 : 0],
             warp: [u.uSurfaceWarpEnabled.value, ...u.uLandscapeWarpWaves.value, ...u.uLandscapeWarpOffsets.value, ...u.uLandscapeWarpSalts.value],
             fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value] };
         const rock = this.appearance.materials.findIndex(definition => landscapeSoilTerrainRole(definition.soilId) < 0);
@@ -520,5 +523,5 @@ export class LandscapeAppearanceStreamer {
         this.initialized = false;
     }
 
-    dispose() { this.disposed = true; this.abort.abort(); this.releaseResources(); this.uniforms.uSurfaceCacheIndirection.value?.dispose(); }
+    dispose() { this.disposed = true; this.abort.abort(); this.releaseResources(); this.surfaceCachePlaceholder.dispose(); }
 }

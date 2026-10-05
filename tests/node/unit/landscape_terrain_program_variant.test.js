@@ -43,8 +43,8 @@ test('Terrain program variant: valueless flag defines select the compiled code',
     assert.deepEqual(landscapeProgramVariantDefines({ surfaceCache: true, diagnostics: true }), { LANDSCAPE_TERRAIN_DIAGNOSTICS: true, LANDSCAPE_TERRAIN_APPEARANCE: true },
         'inspection views evaluate coverage and materials, so they take precedence over the cached frame');
     assert.deepEqual(LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defines, { diagnostics: 'LANDSCAPE_TERRAIN_DIAGNOSTICS', terrainAppearance: 'LANDSCAPE_TERRAIN_APPEARANCE', surfaceCache: 'LANDSCAPE_SURFACE_CACHE' });
-    assert.match(loader, /const variant = surfaceCacheGeneration \? \{ diagnostics: false, terrainAppearance, surfaceCache: false \} : \{ diagnostics, terrainAppearance, surfaceCache \};\s+const variantDefines = landscapeProgramVariantDefines\(variant\)/,
-        'the loader builds the terrain payload defines from the variant; the generation program never compiles the cached frame or the inspection views');
+    assert.match(loader, /const variant = surfaceCacheGeneration \|\| surfaceCacheNear \? \{ diagnostics: false, terrainAppearance, surfaceCache: false \} : \{ diagnostics, terrainAppearance, surfaceCache \};\s+const variantDefines = landscapeProgramVariantDefines\(variant\)/,
+        'the loader builds the terrain payload defines from the variant; the generation program and the near pass never compile the cached frame or the inspection views');
     assert.match(terrain, /#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS/);
     assert.match(appearance, /#ifdef LANDSCAPE_TERRAIN_APPEARANCE/);
 });

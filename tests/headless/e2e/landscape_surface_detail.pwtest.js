@@ -7,6 +7,7 @@ import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_fil
 import { validateLandscapeManifest, createLandscapeSurfaceDetailIndex, landscapeRegionIntersectsBounds } from '../../../src/app/landscape/index.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { LANDSCAPE_SURFACE_SOIL_COLORS, landscapeColorBytes } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const root = path.resolve('.');
 const source = path.join(root, 'assets/public/landscape/coastal-city');
@@ -38,7 +39,7 @@ function observe(page) {
 
 async function open(page, address = '/screens/landscape_fabrication.html', view = null) {
     const started = Date.now();
-    await page.goto(address);
+    await page.goto(landscapeViewerUrl(address));
     await page.waitForFunction(() => !!window.__landscapeTestHooks, null, { timeout: 30000 });
     if (view) await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
     await page.waitForFunction(() => window.__landscapeTestHooks.snapshot().ready || window.__landscapeTestHooks.snapshot().lastError, null, { timeout: 60000 });
@@ -249,7 +250,7 @@ test('Surface detail: landscapeSurfaceDetail off, 50cm and invalid values behave
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
     const failures = [];
     page.on('pageerror', error => failures.push(error.message));
-    await page.goto('/screens/landscape_fabrication.html?landscapeSurfaceDetail=10cm');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceDetail=10cm'));
     await expect.poll(() => failures.join('\n')).toContain('landscapeSurfaceDetail must be one of off, 50cm, 25cm; received 10cm');
     expect(issues.warnings).toEqual([]);
     await writeFile(path.join(artifacts, 'modes.json'), JSON.stringify({ off: detailOf(off), half: detailOf(half), failures }, null, 2));

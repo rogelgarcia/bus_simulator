@@ -3,11 +3,12 @@
 // Uniform usage is counted conservatively: every scalar, vector, sampler and array element occupies one
 // four-component vector and every matrix one vector per column, as in unpacked D3D register allocation.
 // Three.js adds viewMatrix, cameraPosition, isOrthographic and toneMappingExposure to each fragment shader.
-// AI577 D6: uniforms declared only inside a variant-only block (#ifdef LANDSCAPE_SURFACE_CACHE) belong to that program variant, which compiles
-// out the coverage and material evaluation; they are counted separately (landscapeFragmentVariantUniformVectors), so the shared coverage slot
-// sizing of every program is unchanged and the variant is admitted only where shared + variant vectors fit.
+// AI577 D6: uniforms declared only inside a variant-only block (#ifdef LANDSCAPE_SURFACE_CACHE, the cached frame program that compiles out the
+// coverage and material evaluation, or #ifdef LANDSCAPE_SURFACE_CACHE_NEAR, the cache's near pass) belong to those program variants; they are counted
+// separately (landscapeFragmentVariantUniformVectors, the union of both blocks), so the shared coverage slot sizing of every program is unchanged and
+// the variants are admitted only where shared + variant vectors fit.
 
-export const LANDSCAPE_VARIANT_ONLY_DEFINES = Object.freeze(['LANDSCAPE_SURFACE_CACHE']);
+export const LANDSCAPE_VARIANT_ONLY_DEFINES = Object.freeze(['LANDSCAPE_SURFACE_CACHE', 'LANDSCAPE_SURFACE_CACHE_NEAR']);
 
 export const LANDSCAPE_MASK_SLOTS = 17;
 export const LANDSCAPE_DETAIL_SLOTS_MAX = 64;

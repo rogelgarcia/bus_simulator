@@ -2,7 +2,7 @@
 // identity, residency, indirection and the CPU demand planner (landscape-surface-cache-v1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_SURFACE_CACHE, decodeLandscapeHemiOctahedral, encodeLandscapeHemiOctahedral, fitLandscapeSurfaceCache, landscapeSurfaceCacheFilterReach,
+import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS, decodeLandscapeHemiOctahedral, encodeLandscapeHemiOctahedral, fitLandscapeSurfaceCache, landscapeSurfaceCacheFilterReach,
     landscapeSurfaceCacheFootprint, landscapeSurfaceCacheFrameMip, landscapeSurfaceCacheGeometry, landscapeSurfaceCacheGutter, landscapeSurfaceCacheHash,
     landscapeSurfaceCacheIndirectionBytes, landscapeSurfaceCacheMaskLevel, landscapeSurfaceCachePageBounds, landscapeSurfaceCachePageIdentity, landscapeSurfaceCachePageKey,
     landscapeSurfaceCachePageMeters, landscapeSurfaceCachePagesPerAxis, landscapeSurfaceCacheSlotLayout, landscapeSurfaceCacheSlotPosition, landscapeSurfaceCacheSnapCenter,
@@ -11,6 +11,7 @@ import { LANDSCAPE_SURFACE_CACHE, decodeLandscapeHemiOctahedral, encodeLandscape
 import { LandscapeSurfaceCacheIndirection, LandscapeSurfaceCacheResidency } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheResidency.js';
 import { LANDSCAPE_SURFACE_CACHE_DEMAND, chooseLandscapeSurfaceCacheCenter, createLandscapeSurfaceCacheTerrainEnvelope, mergeLandscapeSurfaceCacheFeedback, planLandscapeSurfaceCacheDemand } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheDemand.js';
 import { indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheGlobalKey, landscapeSurfaceCachePageInputs } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheInputs.js';
+import { LANDSCAPE_STREAMING_BUDGETS } from '../../../src/app/landscape/LandscapeResidencyBudget.js';
 
 const MIB = 1024 * 1024;
 const coastal = landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 });
@@ -173,32 +174,40 @@ test('Surface cache: gutters keep bilinear, trilinear and 2x anisotropic fetches
     assert.ok(landscapeSurfaceCacheFilterReach({ anisotropy: 4, level: 1 }) > 2);
 });
 
-test('Surface cache: the atlas fits whole 256-slot layers under 3/8 of the GPU limit with explicit degradation reasons', () => {
-    const shipped = fitLandscapeSurfaceCache({ limits: { cpuBytes: 512 * MIB, gpuBytes: 256 * MIB }, geometry: coastal });
-    assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: 1536, layers: 6, reason: 'surface-cache-gpu-ceiling' });
-    assert.equal(shipped.ceilingBytes, 96 * MIB);
+test('Surface cache: the atlas fits whole 256-slot layers under 3/8 of the GPU limit above the streams\' reserve, with explicit degradation reasons', () => {
+    assert.equal(LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes, LANDSCAPE_STREAMING_BUDGETS.gpuBytes, 'the cache never takes the uncached shipped GPU limit from the streams');
+    assert.equal(LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes, LANDSCAPE_STREAMING_BUDGETS.cpuBytes);
+    const fit = (cpu, gpu, options = {}) => fitLandscapeSurfaceCache({ limits: { cpuBytes: cpu * MIB, gpuBytes: gpu * MIB }, geometry: coastal, ...options });
+    const brief = ({ slots, reason }) => ({ slots, reason });
+    // the cache's shipped profile (512/448 MiB) holds the 11-layer target under its 168 MiB ceiling
+    const shipped = fitLandscapeSurfaceCache({ limits: LANDSCAPE_SURFACE_CACHE_BUDGETS, geometry: coastal });
+    assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 11, reason: null });
+    assert.equal(shipped.ceilingBytes, 168 * MIB);
     assert.ok(shipped.gpuBytes <= shipped.ceilingBytes);
-    assert.equal(shipped.gpuBytes, 6 * 14598144 + 576 * 576 * 16 + 212992, 'six layers, the packed generation scratch and the indirection');
+    assert.equal(shipped.gpuBytes, 11 * 14598144 + 576 * 576 * 16 + 212992, 'eleven layers, the packed generation scratch and the indirection');
     assert.equal(shipped.scratchBytes, 5308416);
-    assert.equal(shipped.cpuBytes, 212992 + 1536 * 8);
-    const large = fitLandscapeSurfaceCache({ limits: { cpuBytes: 768 * MIB, gpuBytes: 384 * MIB }, geometry: coastal });
-    assert.deepEqual({ slots: large.slots, reason: large.reason, atlasBytes: large.atlasBytes }, { slots: 2048, reason: null, atlasBytes: 116785152 });
-    const wide = fitLandscapeSurfaceCache({ limits: { cpuBytes: 768 * MIB, gpuBytes: 384 * MIB }, geometry: coastal, targetSlots: 3072 });
-    assert.deepEqual([wide.slots, wide.reason], [2304, 'surface-cache-gpu-ceiling'], '3,072 slots need 3/8 of a 512 MiB limit');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 1024 * MIB, gpuBytes: 512 * MIB }, geometry: coastal, targetSlots: 3072 }).slots, 3072);
-    assert.deepEqual((({ slots, reason }) => ({ slots, reason }))(fitLandscapeSurfaceCache({ limits: { cpuBytes: 16 * MIB, gpuBytes: 8 * MIB }, geometry: coastal })), { slots: 0, reason: 'surface-cache-gpu-budget' });
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 768 * MIB, gpuBytes: 384 * MIB }, geometry: coastal, maxTextureSize: 1024 }).reason, 'surface-cache-device-capacity');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 768 * MIB, gpuBytes: 384 * MIB }, geometry: coastal, maxArrayLayers: 4 }).reason, 'surface-cache-device-capacity');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 100000, gpuBytes: 384 * MIB }, geometry: coastal }).reason, 'surface-cache-cpu-budget');
+    assert.equal(shipped.cpuBytes, 212992 + 2816 * 8);
+    // 768/384: the reserve leaves 128 MiB, eight layers
+    const large = fit(768, 384);
+    assert.deepEqual({ ...brief(large), ceiling: large.ceilingBytes, atlasBytes: large.atlasBytes }, { slots: 2048, reason: 'surface-cache-gpu-ceiling', ceiling: 128 * MIB, atlasBytes: 116785152 });
+    // the uncached shipped profile and the reduced profiles have no room above the reserve: no atlas, the cache stays off with its reason
+    for (const [cpu, gpu] of [[512, 256], [128, 64], [48, 24], [16, 8]]) assert.deepEqual(brief(fit(cpu, gpu)), { slots: 0, reason: 'surface-cache-gpu-budget' }, `${cpu}/${gpu} MiB`);
+    // a budget that leaves at least the minimum atlas degrades its size with the reason; below the minimum the cache stays off
+    assert.deepEqual(brief(fit(512, 320)), { slots: 1024, reason: 'surface-cache-gpu-ceiling' });
+    assert.deepEqual(brief(fit(512, 300)), { slots: 0, reason: 'surface-cache-gpu-budget' }, 'two layers would truncate most views below the uncached quality');
+    assert.deepEqual(brief(fit(512, 448, { targetSlots: 512 })), { slots: 512, reason: null }, 'an explicit small target is its own minimum');
+    assert.deepEqual(brief(fit(1024, 640, { targetSlots: 4096 })), { slots: 4096, reason: null });
+    assert.equal(fit(512, 448, { maxTextureSize: 1024 }).reason, 'surface-cache-device-capacity');
+    assert.equal(fit(512, 448, { maxArrayLayers: 4 }).reason, 'surface-cache-device-capacity');
+    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 100000, gpuBytes: 448 * MIB }, geometry: coastal }).reason, 'surface-cache-cpu-budget');
     assert.throws(() => fitLandscapeSurfaceCache({ limits: { cpuBytes: 1, gpuBytes: 1 }, geometry: coastal, targetSlots: 10 }), /target slots/);
     // switched on beside resident streams: the ledger's free bytes bound the atlas below its ceiling, with their own reason
-    const beside = fitLandscapeSurfaceCache({ limits: { cpuBytes: 512 * MIB, gpuBytes: 256 * MIB }, available: { gpuBytes: 68 * MIB }, geometry: coastal });
-    assert.deepEqual([beside.slots, beside.reason], [1024, 'surface-cache-gpu-available']);
+    const beside = fit(512, 448, { available: { gpuBytes: 68 * MIB } });
+    assert.deepEqual(brief(beside), { slots: 1024, reason: 'surface-cache-gpu-available' });
     assert.ok(beside.gpuBytes <= 68 * MIB);
-    assert.deepEqual((({ slots, reason }) => ({ slots, reason }))(fitLandscapeSurfaceCache({ limits: { cpuBytes: 512 * MIB, gpuBytes: 256 * MIB }, available: { gpuBytes: 200 * MIB }, geometry: coastal })),
-        { slots: 1536, reason: 'surface-cache-gpu-ceiling' }, 'the ceiling binds first when the ledger has room');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 512 * MIB, gpuBytes: 256 * MIB }, available: { gpuBytes: 10 * MIB }, geometry: coastal }).reason, 'surface-cache-gpu-budget');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 768 * MIB, gpuBytes: 384 * MIB }, available: { gpuBytes: 384 * MIB }, geometry: coastal }).reason, null);
+    assert.deepEqual(brief(fit(512, 448, { available: { gpuBytes: 200 * MIB }, targetSlots: 4096 })), { slots: 2816, reason: 'surface-cache-gpu-ceiling' }, 'the ceiling binds first when the ledger has room');
+    assert.equal(fit(512, 448, { available: { gpuBytes: 10 * MIB } }).reason, 'surface-cache-gpu-budget');
+    assert.equal(fit(512, 448, { available: { gpuBytes: 448 * MIB } }).reason, null);
 });
 
 test('Surface cache: hemi-octahedral normals round-trip in the geometric tangent frame within 0.6 degrees at 8 bits', () => {
@@ -230,7 +239,10 @@ test('Surface cache: identities are deterministic, order-independent, sensitive 
     assert.equal(landscapeSurfaceCachePageIdentity({ ...base, masks: ['b', 'a'] }), id, 'mask order does not matter');
     for (const changed of [{ global: 'g2' }, { mip: 4 }, { x: 11 }, { z: 21 }, { masks: ['a'] }, { soils: ['3:128:none'] }, { tiles: ['l5/c1/r2'] }]) assert.notEqual(landscapeSurfaceCachePageIdentity({ ...base, ...changed }), id);
     assert.equal(landscapeSurfaceCachePageIdentity({ ...base, tiles: [] }), id, 'no geometry source list is the empty list');
-    assert.equal(landscapeSurfaceCacheGlobalKey({ b: 1, a: new Float32Array([1, 2]) }), landscapeSurfaceCacheGlobalKey({ a: [1, 2], b: '1' }), 'global parts are keyed by name');
+    assert.equal(landscapeSurfaceCacheGlobalKey({ b: 1, a: new Float32Array([1, 2]) }), landscapeSurfaceCacheGlobalKey({ a: [1, 2], b: 1 }), 'global parts are keyed by name; typed and plain arrays hash their values');
+    assert.notEqual(landscapeSurfaceCacheGlobalKey({ a: [1, 2] }), landscapeSurfaceCacheGlobalKey({ a: [12] }), 'values are delimited');
+    assert.notEqual(landscapeSurfaceCacheGlobalKey({ a: 'x', b: 'y' }), landscapeSurfaceCacheGlobalKey({ a: 'xb', c: 'y' }), 'names are delimited');
+    assert.match(landscapeSurfaceCacheGlobalKey({ a: 1 }), /^[0-9a-f]{14}$/);
     assert.notEqual(landscapeSurfaceCacheGlobalKey({ a: new Float32Array([1, 2]) }), landscapeSurfaceCacheGlobalKey({ a: new Float32Array([1, 3]) }));
     assert.deepEqual(Object.keys(base).sort(), ['global', 'masks', 'mip', 'soils', 'x', 'z'], 'the identity has no camera, sun or time input');
 });

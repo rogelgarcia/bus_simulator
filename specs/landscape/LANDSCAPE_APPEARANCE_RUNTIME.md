@@ -646,17 +646,22 @@ its bounds behind a measured gate. Road geometry (cuts and fills) remains an aut
 
 ### Runtime surface cache (`landscape-surface-cache-v1`)
 
-Default off. `landscapeSurfaceCache=off|on`, `landscapeSurfaceCacheSlots` (a multiple of 256 from 256 to
-8192, default 2048) and `landscapeSurfaceCacheAnisotropy` (1, 2, 4, 8 or 16, default 2) select it; the
-hook `setSurfaceCache(mode)` switches it without reloading and `surfaceCacheLookup(x, z, footprint)`
-mirrors the frame's page lookup on the CPU.
+Default off: its output is not identical to the uncached frame, its 2816 slots are sized for 1920×1080 and
+it needs a 448 MiB GPU profile. `landscapeSurfaceCache=off|on`, `landscapeSurfaceCacheSlots` (a multiple of
+256 from 256 to 8192, default 2816), `landscapeSurfaceCacheAnisotropy` (1, 2, 4, 8 or 16, default 2) and
+`landscapeSurfaceCacheNear=on|off` (default on; off is A/B evidence only) select it; the hooks
+`setSurfaceCache(mode)` and `setSurfaceCacheNear(mode, band)` switch it without reloading and
+`surfaceCacheLookup(x, z, footprint)` mirrors the frame's page lookup on the CPU. The runtime is
+`landscape-surface-cache-runtime-v2`. Browser suites run with the cache on or off throughout through
+`LANDSCAPE_TEST_SURFACE_CACHE=on|off` (`tests/shared/landscape_viewer_url.js`).
 
 **Addressing.** A world-anchored virtual texture of 64×64-texel pages with 4-texel gutters (72² slots):
 mip-0 texels of 1.5625 cm, mips 0–12 on the coast, one pinned 4096 m root page. Each mip keeps a toroidal
 64-page window around a center snapped to whole mip-0 pages
 (`origin = clamp(floor(center/page) − 32, 0, pages − 64)`) that follows the camera's ground point, shifted
 forward by at most 24 m for narrow fields of view, with 2 m hysteresis. The frame samples mip
-`floor(log2(max(major/aniso, minor)/texel0))`, raised until that mip's window contains the point.
+`floor(log2(max(major/aniso, minor)/texel0))`, raised until that mip's window contains the point. A moving
+window rewrites only the strips of indirection entries that enter it.
 
 **Formats.** Three arrays of 16×16 slots per 1152² layer, 57,024 bytes per slot: albedo and AO
 (SRGB8_ALPHA8, 2 levels); a hemi-octahedral normal in the tangent frame t = normalize(n.y, −n.x, 0),
@@ -665,62 +670,125 @@ b = t × n, with roughness and micro-paired coverage (RGBA8, 2 levels); and at h
 level 0 (albedo averaged in linear space; normals averaged as vectors whose shortening adds a von
 Mises–Fisher variance to the squared GGX alpha, capped at 0.18); metalness is not stored (0 for every
 coastal material). The indirection is RGBA8UI 64×64×mips (slot low, slot high, mip, 255) whose entries hold
-the page or its parent's entry, so one fetch returns the best resident ancestor. Terrain-reflected light
-reads the 1 m mip at level 1.
-
-**Budget.** Atlases, a 576² RGBA32F scratch and the indirection are ledger kinds
-`appearance-surface-cache-atlas` and `appearance-surface-cache-indirection` (CPU: the indirection mirror plus
-8 bytes per slot). They fit in whole 256-slot layers under 3/8 of the GPU limit and the ledger's free GPU
-bytes: 768/384 MiB fits 2048 slots (122.3 MB), 512/256 MiB 1536 slots (93.1 MB,
-`surface-cache-gpu-ceiling`), and a cache switched on beside resident streams shrinks
-(`surface-cache-gpu-available`). Other reasons: `surface-cache-gpu-budget`, `-device-capacity`,
-`-cpu-budget`, `-device-webgl2`, `-device-uniforms`, `-device-float-target`. 32 slots stay outside demand so a
-stale page can regenerate beside its live copy; eviction takes the page desired longest ago, finer first on
-ties, never the root or the current demand.
-
-**Identity.** The global key (recipe, generation program and uniforms, sea level, rock gate, appearance
-revision, bindings), the page address, the mask pages at levels whose spacing exceeds texel/3 (the root
-always) within 3 m + 7 spacings, the soil tier keys (`resolved` below half a texel) plus the rock soil, and
-the geometry tiles drawn (rendered leaves below mip 9, the overview tile above). Camera, light and time
-never enter it. Fading masks, key-changing tier transitions and geometry morphs make a page unstable; a
-stale page keeps rendering until its replacement publishes. A global key change marks every page stale;
-input changes mark reachable pages, checked at most 400 per frame.
-
-**Demand.** A deterministic CPU quadtree descent on camera change (and every 30 frames): a page is desired
-while its overview-envelope box intersects the frustum and refines while the closest-point footprint
-`d·pixelAngle·max(1, 1/(aniso·min(1, grazingSine + overviewSlopeSine)))` is below its texel; ancestors are
-always desired. Priority is the distance in page sizes; demand beyond the slots less 32 drops every ring's
-outer part. Motion prefetches 0.5 s ahead at priority +8, requests absent from two plans are cancelled, and
-`requestFeedback` / `mergeLandscapeSurfaceCacheFeedback` append externally found pages after the plan.
-
-**Generation.** The unlit generation variant (`LANDSCAPE_SURFACE_CACHE_GENERATION`: no morph, no lighting,
-one packed RGBA32F output of three bytes per float) draws each tile through a top-down orthographic camera,
-so footprint-driven fades evaluate at the page texel scale. Missing pages first, then stale ones, pack in
-priority order into aligned blocks of up to 4×4 pages of one mip, shelved in the scratch and rendered in
-one array-camera call; a single-output unpack copies level 0 and box-filters level 1 and the response, one
-target per draw, because a multi-output program made ANGLE/D3D11 compile a pixel shader at its first draw
-(a 5.2 s stall). Pages publish atomically. A timer-query controller
-(`quota ← 0.7·quota + 0.3·pages·1 ms/measured ms`, at most 64 pages and 4 ms of CPU) holds about 1 ms per
-frame; a batch costs about 0.25 ms plus 0.1 ms per fine page. The program compiles in parallel; until the
-root page is resident the cached frame draws the vertex-color bootstrap.
+the page or its parent's entry, so one fetch returns the best resident ancestor (a missing page's coarse
+fallback). Terrain-reflected light reads the 1 m mip at level 1.
 
 **Frame.** `LANDSCAPE_SURFACE_CACHE` compiles out coverage, materials and the warp: one indirection fetch,
 three `textureGrad` fetches with the fragment's own gradients and the micro lattice of the micro-paired soil
-with the largest luminance scale where its fade is non-zero, then the unchanged D5 lighting. It uses 12 of
-16 samplers; its 6 uniform vectors are counted apart from the shared 155 + 4 per slot. Diagnostics take
-precedence over the cache.
+with the largest luminance scale where its fade is non-zero, then the unchanged D5 lighting. It shades every
+fragment it draws (the near pass overwrites the near field), uses 12 of 16 samplers, and its 6 uniform
+vectors and the near program's band vector are counted apart from the shared 155 + 4 per slot. Diagnostics
+take precedence over the cache. Until the root page is resident the cached frame draws the vertex-color
+bootstrap.
 
-**Measured core** (RTX 3060, 1920×1080, 36 AI577 views, paired in-page, 768/384 MiB). GPU time 11.8 → 3.6 ms
-(−68%, worst cached view 5.7 ms). Outside the near views the mean difference is 0.62 sRGB bytes (0.11% of
-pixels over 16), with no page seams or mip bands; the 1.56 cm mip 0 blurs grass, forest soil and rock at a
-1.6 m camera height (mean differences 7.5–11.9 bytes). Cold compile: cached variant 0.43 s, generation
-program 5.4 s in parallel; the first detailed frame arrives 1.7 s earlier than without the cache. With the
-cache off the output is unchanged (32 of 36 views byte-identical, the rest within one byte).
+**Near field (`landscape-surface-cache-near-v1`).** Where a pixel is finer than the cache's mip-0 texel the
+cache is magnified (alone it loses 7.5–11.9 sRGB bytes on grass, forest soil and rock at a 1.6 m eye
+height), so there coverage and materials are evaluated per pixel as without the cache. The near weight
+w = 1 − smoothstep(0.75·texel0, 1.0·texel0, max(major/aniso, minor)) of the planar position derivatives is
+computed identically by the near program and its JavaScript mirror. After the cached frame, the near pass
+draws `LANDSCAPE_SURFACE_CACHE_NEAR` — the default program plus `if (w <= 0) discard` and alpha = w — over
+the rendered tiles within reach: render order 1, depth less-or-equal with polygon offset (−1, −4), color
+blended by w (w = 1 replaces the cached color), destination alpha kept, depth written. The reach of a tile
+whose steepest slope is θ is end·(1 + t²(1 + aspect²))·1.25 / (pixelAngle·max(cos θ, 1/(√2·aniso))) with
+t = tan(fov/2)/zoom; only its native rows within the reach in z (plus its skirts) draw, and no fragment
+beyond the reach can have w > 0 (unit-tested on flat ground and 15–60° slopes). An orthographic view reaches
+every tile when its pixel footprint is below the band end, else none. The near program links in parallel
+beside the generation program, is kept by key, and `settled` waits for it. Rejected by measurement: one
+program with a per-pixel branch (20 samplers, over WebGL2's 16 per stage; an aliased variant that links was
+slower), cached coverage with per-pixel materials (0.45–0.8 ms less GPU, cannot reproduce the coverage
+edges), and skipping the near field in the cached frame by a discard or a depth prepass (both slower: the
+cached frame is bound by its geometry, not its shading). Steep faces need no extra fallback: on a raised
+block with ~79° walls the cached frame differs by 0.45–0.74 bytes and the near pass owns close walls.
+
+**Budget and admission.** Atlases, a 576² RGBA32F scratch and the indirection are ledger kinds
+`appearance-surface-cache-atlas` and `appearance-surface-cache-indirection` (CPU: the indirection mirror plus
+8 bytes per slot). They fit in whole 256-slot layers (13.9 MiB) under min(3/8 of the GPU limit, GPU limit −
+256 MiB) — the cache never takes the GPU bytes the uncached shipped profile gives the streams — and under the
+ledger's free GPU bytes; an atlas below min(1024 slots, target) is not used. With the cache on the viewer's
+shipped budget is `LANDSCAPE_SURFACE_CACHE_BUDGETS`, 512 MiB CPU / 448 MiB GPU (URL budgets may not exceed
+it; explicit budgets keep their values): 11 layers, 2816 slots, 158.4 MiB, which hold the demand of every
+AI577 view at 1920×1080 with no ledger denial (ledger peak 378–402 MiB). Profiles: 512/448 → 2816 slots;
+768/384 → 2048 (`surface-cache-gpu-ceiling`); 512/320 → 1024 (`surface-cache-gpu-ceiling`); 512/256, 128/64
+and 48/24 → no atlas (`surface-cache-gpu-budget`). Other reasons: `surface-cache-gpu-available` (switched on
+beside resident streams), `-device-capacity`, `-cpu-budget`, `-device-webgl2`, `-device-uniforms`,
+`-device-float-target`. A view decides admission (`landscapeSurfaceCacheAdmission`: the device checks and the
+profile's fit) before its tiles compile, so a view that cannot run the cache compiles the uncached program
+from the start and shows `Surface cache unavailable: <reason>`; a shortfall found only when the atlases
+allocate switches the tiles back to the uncached program. Demand scales with viewport pixels: at 3840×2160
+the oblique, top-down and medium views want 4,400–4,900 pages and the plan drops every ring's outer part
+alike. 32 slots stay outside demand so a stale page can regenerate beside its live copy; eviction takes the
+page desired longest ago, finer first on ties, never the root or the current demand.
+
+**Identity and invalidation.** The global key (recipe, generation program and uniforms, sea level, rock gate,
+appearance revision, bindings, micro layers), the page address, the mask pages at levels whose spacing
+exceeds texel/3 (the root always) within 3 m + 7 spacings, the soil tier keys (`resolved` below half a texel)
+plus the rock soil, and the geometry tiles drawn (rendered leaves below mip 9, the overview tile above).
+Camera, light and time never enter it. Invalidation is monotonic: a resident page is stale only when the
+global key or its geometry tiles changed, it now depends on a mask page that was not among its own (new,
+edited or finer), or a soil it holds binds a finer material or micro tier at its texel; evicted mask pages
+and downgraded tiers keep it. Mask arrivals and key changes mark the pages they reach, finer tiers the pages
+holding the soil at the mips whose tier key improved; checks are bounded (160 per frame, 0.3 ms). A stale
+page keeps rendering until its replacement publishes. A missing page whose inputs are still settling (mask
+fades, a tier transition, a geometry morph) generates at once as a provisional version and regenerates once
+they settle; a resident page waits for them.
+
+**Demand (`landscape-surface-cache-demand-v2`).** A deterministic, allocation-free CPU quadtree descent: a
+page is desired while its overview-envelope box intersects the frustum and refines while the closest-point
+footprint `d·pixelAngle·max(1, 1/(aniso·min(1, grazingSine + overviewSlopeSine)))·2^lodBias` is below its
+texel; ancestors are always desired; pages whose largest footprint lies below the near band start are never
+sampled and are pruned. Priority is the distance in page sizes; demand beyond the slots less 32 drops every
+ring's outer part. Prefetch: the camera extrapolated 0.5 s ahead (above 0.5 m/s, priority +8) and, above
+10°/s, the view turned a quarter of a second ahead (at most 20°). Motion LOD bias: above 6 m/s or 30°/s the
+refinement footprint grows by speed/threshold up to one mip, relaxing at 2 mips/s. Replanning: on a
+projection change, a pixel-scale change beyond 3%, movement beyond max(1 m, finest desired page/4), a turn
+beyond 4°, every 4 frames of smaller motion and every 30 frames still. Requests absent from two plans are
+cancelled. A GPU page-feedback pass is not used (`requestFeedback` / `mergeLandscapeSurfaceCacheFeedback`
+remain an interface): the CPU plan is deterministic and has no readback latency.
+
+**Generation.** The unlit generation variant (`LANDSCAPE_SURFACE_CACHE_GENERATION`: no morph, no lighting,
+one packed RGBA32F output of three bytes per float) draws each tile through a top-down orthographic mapping
+of its page block, so footprint-driven fades evaluate at the page texel scale. Missing pages first (coarse
+and near first), then stale and provisional ones, pack into aligned blocks of up to 4×4 pages of one mip,
+shelved in the scratch; every (block, tile) pair of a frame is one pooled mesh drawn in a single render
+through one identity camera (the block's world-to-clip mapping is its model matrix, its scratch rectangle its
+viewport). A single-output unpack, drawn straight through WebGL with its own vertex array, copies level 0 and
+box-filters level 1 and the response, one target per draw (a multi-output program made ANGLE/D3D11 compile a
+pixel shader at its first draw, a 5.2 s stall). Pages publish atomically. The controller
+(`landscape-surface-cache-controller-v1`) fits ms = fixed + perPage·pages over the last 24 timed batches
+(least squares once they spread over 4 pages, a 0.35 ms prior before) and sizes the next batch so the fit
+plus the 90th percentile of its residuals meets the target: 1 ms, or the headroom the view's last frame
+leaves below 16.7 − 2 ms (never below 0.3 ms); growth is at most 25% per batch, with an immediate cut to 70%
+when a batch exceeds 1.2 ms; at most 64 pages and 4 ms of CPU per frame. Linked generation programs are kept
+by key.
+
+**Context loss and reloads.** A lost WebGL context detaches the cached frame (`status: 'lost'`, the tiles draw
+the bootstrap); a restored one recreates the atlases, scratch, framebuffers and unpack buffers, relinks the
+programs and regenerates from the root page. A reload of the same landscape at the same budget (an edit's
+recovery) rebinds the runtime: atlases and linked programs carry over, the generation draws take a new
+material bound to the new load's uniform cells (three.js keeps the cells a material first linked with), and
+every page regenerates.
+
+**Measured** (RTX 3060, ANGLE/D3D11, headless Chromium, 1920×1080, 36 AI577 views × 3 suns, paired in-page
+at 512/448 MiB). GPU time 11.8–12.3 → 4.1–5.2 ms mean (−56% to −67%), worst view 24.5–25.6 → 7.5–8.1 ms;
+32 of 36 views faster, the four d4 near views 1.5–1.9 ms slower (the near pass redraws most of their
+frame). Full-frame mean difference 0.36–0.86 sRGB bytes (0.05–0.32% of pixels over 16; paired noise
+≤ 0.01); near crops of the near views ≤ 1.42 bytes (0.00 on the d4 near views and the shore); worst full
+frame 2.86 bytes (sand at a 12° sun), worst near crop 3.50 bytes (steep urban ground at a 12° sun), a
+uniform speckle of relief shading. Page seams and mip-transition steps match the uncached frame; on the D4
+camera paths temporal sparkle and popping are equal or lower. Ledger peak 378–402 MiB, no denial, no
+truncated demand; generation batches p95 1.02–1.05 ms. In motion missing pages show their coarser ancestors
+in 0–22% of frames up to 30 m/s and in 11% at 90°/s (50% during a 55° → 8° zoom); cache CPU median
+0.1–0.9 ms. At 3840×2160 the demand exceeds the slots (truncated outer rings, 0.3–1.1 bytes) while GPU time
+drops 16–56 → 5–15 ms. Cold start on a fresh browser profile: first detailed frame 9.5 s (uncached 10.4 s),
+settled 13.8 s (10.7 s); an edit's reload settles in 5.2–6.4 s (uncached 3.7 s). With the cache off the
+output is unchanged and its captures match the sealed D6 before set within the capture noise.
 
 `snapshot().appearance.surfaceCache` reports `status` (`off`, `unavailable`, `waiting`, `compiling`,
-`bootstrap`, `active`, `disposed`), `reason`, `ready`, `frameReady`, `settled`, `geometry`, `atlas`,
-`indirection`, `ledger`, `pages`, `misses`, `generation`, `demand`, `identity`, `cpu` and `uploadBytes`;
-`appearance.settled` waits for a settled cache.
+`bootstrap`, `active`, `lost`, `disposed`), `reason`, `ready`, `frameReady`, `settled`, `geometry`, `atlas`,
+`indirection`, `ledger`, `pages` (with `provisional`, `provisionalDesired`, `capacityLimited`), `misses`,
+`generation` (with the controller `model`), `demand`, `context`, `identity` (with `dirtyBy`, `staleBy`,
+`keptCoarser`), `cpu` (with per-step times), `near` and `uploadBytes`; `appearance.settled` waits for a
+settled cache.
 
 ## Natural presentation and imported reference data
 

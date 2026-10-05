@@ -10,9 +10,13 @@ varying vec3 vLandscapeWorld;
 
 void main() {
 #ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
-    // AI577 D6 surface cache generation draws each tile's own surface (no LOD morph or coarser-edge heights); pages over a morphing tile wait
+    // AI577 D6 surface cache generation draws each tile's own surface (no LOD morph or coarser-edge heights); pages over a morphing tile wait. Tile
+    // positions are world positions, and each draw's model matrix is its page block's world-to-clip mapping (one camera serves every block)
     vec3 transformed = position;
     vLandscapeNormal = normalize(normal);
+    vLandscapeColor = color;
+    vLandscapeWorld = transformed;
+    gl_Position = modelMatrix * vec4(transformed, 1.0);
 #else
     float morph = uMorph;
     if (abs(position.x - uBounds.x) < 0.002) morph = uEdges.x > 0.5 ? 0.0 : min(morph, uEdgeMorph.x);
@@ -21,8 +25,8 @@ void main() {
     if (abs(position.z - uBounds.w) < 0.002) morph = uEdges.w > 0.5 ? 0.0 : min(morph, uEdgeMorph.w);
     vec3 transformed = vec3(position.x, mix(parentHeight, position.y, morph), position.z);
     vLandscapeNormal = normalize(mix(parentNormal, normal, morph));
-#endif
     vLandscapeColor = color;
     vLandscapeWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+#endif
 }

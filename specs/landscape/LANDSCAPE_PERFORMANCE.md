@@ -22,7 +22,7 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | --- | --- |
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
-| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3) |
+| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3); 512 / 448 MiB with the AI577 D6 surface cache on (`LANDSCAPE_SURFACE_CACHE_BUDGETS`) |
 | Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |
@@ -80,7 +80,7 @@ The separate analytic inventory is exact for its stated layouts:
 - A single float32 XYZ position array and uint32 triangle-list index array require `2049² × 12 + 8,388,608 × 3 × 4 = 151,044,108` bytes before normals, materials, textures, or temporary overlap. This is a specified indexed-reference layout, not a universal lower bound across all possible compression/topology schemes.
 - Summing `estimateLandscapeMeshBuffers()` across all 64 native tiles gives the current adapter's full native geometry inventory, including skirts, normals, parent attributes, colors and indices; the measured receipt reports that arithmetic separately.
 
-Even the stated position/index-only reference (144.05 MiB) exceeds the historical 64 MiB and constrained 24 MiB GPU profiles; it fits the shipped 256 MiB profile, while the full native adapter inventory (224.41 MiB) exceeds every profile. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
+Even the stated position/index-only reference (144.05 MiB) exceeds the historical 64 MiB and constrained 24 MiB GPU profiles; it fits the shipped 256 MiB profile, and the full native adapter inventory (224.41 MiB) exceeds the historical and constrained profiles; since AI577 D4 the shipped 256 MiB GPU limit could hold that geometry alone, though not with appearance resources. The constrained profile therefore demonstrates a bounded working set on the real coastal source without a synthetic high-resolution claim.
 
 ## Recorded results
 
@@ -134,6 +134,15 @@ Selected detail-change latencies below are observed camera-to-settled seconds, c
 All overview/wide/zoom-out endpoints attained their requested coarse detail; their per-stop timings are in the receipt. The two profiles retained continuous coverage throughout. Similar paced FPS does not mean equal visual detail: the constrained profile deliberately kept fewer geometry and appearance resources.
 
 The analytic reference inventories were **144.05 MiB** for the specified full-grid position/index layout and **224.41 MiB** for all current native adapter geometry, before appearance or overlap. No full-resident performance measurement or inferred FPS is claimed.
+
+## Runtime surface cache (AI577 D6)
+
+`LANDSCAPE_TEST_SURFACE_CACHE=on` runs the route with the cache at 512/448 MiB; 128/64 and 48/24 cannot admit
+an atlas and run uncached. Run close in time to the uncached run: GPU median 4.1/3.9 ms cold/warm against
+5.6/5.6 (p95 5.8 against 11.4), CPU frame median 0.7 against 0.5 ms, estimated GPU current/peak 201/325 against
+43/167 MiB, settled startup 8.6/3.8 s against 7.4/0.8 s (a warm reload regenerates every page). Whole-run GPU
+timings drift 1–2 ms between runs; only paired measurements compare tightly. Receipts:
+`tests/artifacts/screens/landscape/ai577/d6/cache-final/suites-on|off/`.
 
 ## Verification
 

@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve('tests/artifacts/screens/landscape/navigation/step1');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
@@ -16,7 +17,7 @@ test('Landscape navigation: fixed-eye looking, camera translation, native POV, s
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     // the viewer module installs its hooks after its shader sources load, which can finish after the load event
     await page.waitForFunction(() => !!window.__landscapeTestHooks, null, { timeout: 60000 });
     // a cold browser profile compiles the AI577 D5 terrain program in about 20 s before planning is ready
@@ -24,6 +25,11 @@ test('Landscape navigation: fixed-eye looking, camera translation, native POV, s
     expect((await snapshot(page)).camera.fov).toBe(55);
     const canvas = page.locator('#game-canvas'), box = await canvas.boundingBox();
     const at = { x: box.x + box.width * .52, y: box.y + box.height * .56 };
+    // a pick in the same task as a preset change must ray-cast from the new camera, before any frame refreshes its matrices
+    const presetPick = await page.evaluate(() => { const hooks = window.__landscapeTestHooks, rect = document.querySelector('#game-canvas').getBoundingClientRect();
+        hooks.preset('top'); return hooks.pickPoint(rect.left + rect.width / 2, rect.top + rect.height / 2); });
+    expect(presetPick).not.toBeNull();
+    expect(Math.hypot(presetPick.x - 2000, presetPick.z - 2000)).toBeLessThan(5);
     await page.evaluate(() => { window.__landscapeTestHooks.preset('top'); window.__landscapeTestHooks.setSelectionRadius(0); });
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.mouse.click(at.x, at.y);

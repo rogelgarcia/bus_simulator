@@ -6,6 +6,7 @@ import { createLandscapeServer } from '../../../tools/landscape_server/Server.mj
 import { createLandscapeModelFixture } from '../../node/unit/landscape_model_fixture.js';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
 import { createLandscapeNaturalPresentation } from '../../../src/graphics/engine3d/landscape/LandscapeNaturalPresentation.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/authoring`);
@@ -33,7 +34,7 @@ test.afterAll(async () => {
 test('Landscape D2: rendering precision does not move soil queries outside fractional bounds', async ({ page }) => {
     const fixture = createLandscapeModelFixture({ minX: 1000.1, minZ: 1000.1 });
     const chunk = fixture.decoded.get(fixture.manifest.overviewId);
-    await page.goto(`${origin}/screens/landscape_fabrication.html`);
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const encodedX = await page.evaluate(async ({ manifest, descriptor, heights, landCover }) => {
         const { createLandscapeMesh } = await import('/src/graphics/engine3d/landscape/LandscapeMesh.js');
@@ -52,7 +53,7 @@ test('Landscape D2: native area, raise and sand, persistent reopen, stale refusa
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(`${origin}/screens/landscape_fabrication.html`);
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const original = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
     await page.getByLabel('Selection radius in meters').fill('80');
@@ -191,7 +192,7 @@ test.describe('Landscape D5 natural inference authoring', () => {
         };
         const view = { position: [1820, 260, 2040], target: [1900, 0, 2400], projection: 'perspective', fov: 55, zoom: 1 };
         await page.setViewportSize({ width: 1280, height: 720 });
-        await page.goto(`${naturalOrigin}/screens/landscape_fabrication.html`);
+        await page.goto(landscapeViewerUrl(`${naturalOrigin}/screens/landscape_fabrication.html`));
         await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 90000 });
         await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
         const before = await settle();

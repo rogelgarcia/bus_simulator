@@ -79,9 +79,13 @@ varying vec3 vLandscapeWorld;
 // AI577 D6 runtime surface cache: the cached frame program (LANDSCAPE_SURFACE_CACHE) reads the composited surface from the cache atlases and keeps
 // only the close-up micro lattice and the lighting; the generation program (LANDSCAPE_SURFACE_CACHE_GENERATION) evaluates the coverage and material
 // layers of a page texel without lighting and writes the cache formats. The coverage and material evaluation is compiled out of the cached frame
-// program, so its soil samplers and mask array are never active there.
+// program, so its soil samplers and mask array are never active there. The near pass (LANDSCAPE_SURFACE_CACHE_NEAR) is the uncached program limited to
+// fragments finer than the cache resolves, blended over the cached frame (landscape-surface-cache-near-v1)
 #ifdef LANDSCAPE_SURFACE_CACHE
 #include <shaderlib:landscape/surface_cache>
+#endif
+#ifdef LANDSCAPE_SURFACE_CACHE_NEAR
+#include <shaderlib:landscape/surface_cache_near>
 #endif
 
 struct SoilSurface {
@@ -1042,6 +1046,13 @@ void main() {
 #ifdef LANDSCAPE_SURFACE_CACHE
     vec3 color = landscapeSurfaceCacheRadiance(world, dx, dy, normal, positionDx, positionDy);
 #else
+#ifdef LANDSCAPE_SURFACE_CACHE_NEAR
+    // the near pass evaluates only fragments finer than the cache resolves and blends over the cached frame by their weight; its inspection view
+    // marks them instead
+    float nearWeight = landscapeSurfaceCacheNearWeight(dx, dy);
+    if (nearWeight <= 0.0) discard;
+    if (uSurfaceCacheNear.w > 0.5) { gl_FragColor = vec4(1.0, 0.0, 1.0, nearWeight); return; }
+#endif
     vec2 warped = uSurfaceWarpEnabled > 0.5 ? world + landscapeSurfaceWarp(world) : world;
     vec2 warpedDx = dFdx(warped), warpedDy = dFdy(warped);
     vec3 color = vec3(0.0);
@@ -1099,7 +1110,11 @@ void main() {
 #endif
     }
 #endif
+#ifdef LANDSCAPE_SURFACE_CACHE_NEAR
+    gl_FragColor = vec4(color, nearWeight);
+#else
     gl_FragColor = vec4(color, 1.0);
+#endif
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS

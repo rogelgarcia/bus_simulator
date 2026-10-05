@@ -171,7 +171,9 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uSurfaceCacheMaterial: { value: null },
         uSurfaceCacheResponse: { value: null },
         uSurfaceCacheFrame: { value: new THREE.Vector4(0, 0, 0, 0) },
-        uSurfaceCacheState: { value: new THREE.Vector4(0, 2, 0, -1) }
+        uSurfaceCacheState: { value: new THREE.Vector4(0, 2, 0, -1) },
+        // the cache's near pass (chunks/landscape/surface_cache_near.glsl): footprints of its hand-over band and the sampler anisotropy; disabled while y is 0
+        uSurfaceCacheNear: { value: new THREE.Vector4(0, 0, 2, 0) }
     };
     for (let i = 0; i < LANDSCAPE_SOIL_SLOTS; i++) { uniforms[`uSoilBase${i}`] = { value: null }; uniforms[`uSoilSurface${i}`] = { value: null }; }
     return uniforms;

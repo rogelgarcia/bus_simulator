@@ -4,6 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
 import { landscapeAppearanceBindingKey } from '../../../src/app/landscape/index.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const binding = createCoastalLandscapeCitySpec().landscape;
 const manifest = JSON.parse(await readFile(path.resolve(binding.manifestUrl), 'utf8'));
@@ -19,7 +20,7 @@ test('Landscape appearance binding: original city terrain pin loads its retained
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
     try {
-        await page.goto(`/screens/landscape_fabrication.html?landscape=${encodeURIComponent(`/${binding.manifestUrl}`)}`);
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscape=${encodeURIComponent(`/${binding.manifestUrl}`)}`));
         await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 60000 });
         await expect.poll(() => page.evaluate(() => {
             const state = window.__landscapeTestHooks.snapshot();

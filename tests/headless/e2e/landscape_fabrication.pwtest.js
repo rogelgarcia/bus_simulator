@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { LANDSCAPE_PLANNING_ROLES } from '../../../src/app/landscape/LandscapePlanningReferences.js';
+import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'regression'}/viewer`);
 const manifest = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/manifest.json'), 'utf8'));
@@ -15,7 +16,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     page.on('request', request => { if (request.url().includes('/assets/public/landscape/')) payloads.push(request.url()); });
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 60000 });
     await expect(page.locator('#ui-perf-bar')).toHaveCount(1);
     await expect(page.locator('.ui-perf-bar-fps')).not.toHaveText('FPS: -- (-- ms)');
@@ -100,7 +101,7 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
 });
 
 test('Landscape D1: bad update retains last valid terrain and camera', async ({ page }) => {
-    await page.goto('/screens/landscape_fabrication.html');
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const before = await page.evaluate(() => window.__landscapeTestHooks.snapshot());
     await page.route('**/assets/public/landscape/coastal-city/manifest.json', route => route.fulfill({ contentType: 'application/json', body: '{"format":"wrong"}' }));
