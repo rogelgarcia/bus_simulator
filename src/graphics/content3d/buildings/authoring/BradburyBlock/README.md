@@ -4,7 +4,8 @@
 > git-ignored under `tests/artifacts/`: the .blend files (`bradbury_portal.blend`, `ornaments/*.blend`) in
 > `tests/artifacts/blender/bradbury/portal_project/`, renders and overlays in `tests/artifacts/screens/bradbury_fix/portal_project/`.
 > Regenerate everything with `blender -b -P rebuild_portal.py -- 01 02 03 04 05 06 07 08` after
-> `blender -b -P ornaments/capital.py` and `blender -b -P ornaments/arch_leaf.py`; or open the generated blend and rerun single pieces.
+> `blender -b -P ornaments/capital.py` (its stage 2 runs the system python, numpy + PIL) and `blender -b -P ornaments/arch_leaf.py`;
+> or open the generated blend and rerun single pieces.
 > The whole building with this portal in place: `blender -b -P assemble_building.py` (see the last section).
 > Backups of earlier states remain under `tests/artifacts/blender/bradbury/portal_project_backups/`.
 
@@ -77,760 +78,114 @@ instances of it. The inner piers (piece 02) link the same mesh at 0.434 scale, r
 face the passage. Workflow: run `ornaments/capital.py` (it rebuilds and saves
 `capital.blend`), then reopen `bradbury_portal.blend` or use File > External
 Data > Reload Library, and the portal shows the new version; no portal script
-needs to run. The link is stored relative to the portal file.
+needs to run. The link is stored relative to the portal file. `capital.blend`
+holds both stages of the capital; which one the portal gets is chosen in
+`capital.py` (see "The capital file" below).
 
 | Ornament | Script / file | Stage |
 |----------|---------------|-------|
-| Pilaster capital | `ornaments/capital.py` -> `ornaments/capital.blend` (mesh `capital`, linked by pieces 07 and 02), built by `capital_v2` in `portal_lib.py` | 1: base (neck astragal + bell flaring from the 0.80 x 0.85 footprint) and support (abacus fillet + slab), no carving; engaged: it wraps the front face and runs back along the sides for 80% of the front width, ending in a straight back plane, the plain pilaster / pier continuing up behind it; renders `screens/.../ornaments/capital_*.png` (2026-09-10) |
-| Pilaster capital, editing copy | `ornaments/capital_edit.py` -> `ornaments/capital_edit.blend` (objects `capital_edit`, `leaf1_R/L`, `leaf1tip_R/L`; linked by nothing) from `ornaments/capital_drawing.svg` through `ornaments/carving.py` | 2 in progress: the carving is developed here so the linked production capital stays as it is (see "The capital's carving" below); built so far: the photo-proportioned blank and the corner acanthus leaf with its turnover, right and mirrored; renders `screens/.../ornaments/capital_edit_*.png` (2026-09-28) |
+| Pilaster capital | `ornaments/capital.py` -> `ornaments/capital.blend`: `CAPITAL_STAGE1` (`capital_stage1`, built by `capital_v2` in `portal_lib.py`), `CAPITAL_STAGE2` (`s2_*` under `capital_stage2_root`, built by `ornaments/capital_stage2/`), `CAPITAL_EXPORT` (object and mesh `capital`, linked by pieces 07 and 02) | Stage 1, the one in the portal (`PORTAL_STAGE = 1`): base (neck astragal + bell flaring from the 0.725 x 0.85 footprint) and support (abacus fillet + slab), no carving; engaged: it wraps the front face and runs back along the sides for 80% of the front width, ending in a straight back plane, the plain pilaster / pier continuing up behind it; 0.41 m. Stage 2, in progress: the carved capital cut from the PBR ornament atlas (see "The capital's stage 2" below), 0.463 m, not in the portal yet. Renders `screens/.../ornaments/capital_stage1_*.png` and `capital_stage2_*.png` (2026-10-04) |
 
-## The capital's carving: the line drawing and the editing copy (2026-09-28)
+## The capital file: two stages and the export (2026-10-04)
 
-The carving is built from lines, not sculpted or displaced: the lines you see on carved terracotta are mostly shadows
-(undercut leaf edges, V-cut flutes, drilled eyes), so a line only reads in 3D if the mesh has a step or a crease exactly
-on it. The pipeline has three parts, all next to `capital.py`:
+`ornaments/capital.py` rebuilds `ornaments/capital.blend` from scratch on every run (no `capital.blend1`: the file
+is regenerated, never edited by hand):
 
-- `ornaments/capital_drawing.svg`, the drawing: a front-elevation trace of the reference photo
-  `tests/artifacts/screens/bradbury_fix/references/capital_ref.png` (1536 x 1024; the photo is linked as a locked
-  bottom layer, so the file opens in Inkscape over it). Units are photo pixels; the right half only is traced, the
-  build mirrors it about x 767. One layer per line type: `outline` (an element's edge against what is behind it),
-  `ridge` (midribs, crests), `groove` (flutes, creases), `eye` (drilled holes), `path` (centrelines of swept bands),
-  `point` (beads and balls as ellipses), `guide` (levels, not geometry). Each path's label (else its id before the
-  first `.`) names its element: `leaf1` (the corner leaf), `leaf1tip` (its turnover, a separate shell in front),
-  `leaf2`..`leaf4`, `volute`, `cscroll`, `medallion`, `beads`, `ball`, `fleuron`, `pendant`. First trace: every leaf eye
-  lands on its dark hole; outlines are approximate where lobes overlap, and are the thing to correct in Inkscape.
-- `ornaments/overlay_drawing.py`, the check: `python ornaments/overlay_drawing.py ornaments/capital_drawing.svg
-  <photo> <out.png>` draws the drawing over the dimmed photo (and the traced half mirrored onto the other half, thin)
-  beside the drawing alone; run it after every edit of the SVG.
-- `ornaments/carving.py`, the kit: reads the drawing (plain Python, so the overlay runs outside Blender) and builds a
-  relief patch per element. Every drawn line is resampled (2.5 mm) and flanked by support offsets at the knots of its
-  cross-section (their spacing is the sharpness knob); the region is triangulated by
-  `mathutils.geometry.delaunay_2d_cdt` with the lines as constraint edges, so each drawn line is a chain of mesh edges
-  by construction, and `orig_edges` keeps its type (edge attribute `line_type`; outline, eye, ridge and groove edges are
-  marked sharp). Height per vertex = the element's own surface (a function the script passes: curl, crown) minus a
-  rounded roll at outlines and eye rims, plus a swell between cuts (the convex "pipes" of acanthus fluting), plus
-  ridges, minus the deepest groove (V-cut, 7 mm on the corner leaf); open lines run out over 12 mm at free ends. Every
-  boundary drops a thin edge and then an underside that tucks back under the material to the bell (by 60% of its height
-  off the bell, never past 45% of the local width), so a leaf that leans out is hollow behind and eyes are black
-  pockets. The flat relief (u across, v up, w out) is handed to the script's wrap, which places it along the view axis.
+- `CAPITAL_STAGE1`: `capital_stage1`, the plain capital, at x -1.2;
+- `CAPITAL_STAGE2`: the carved capital, one object per piece (`s2_front_crown`, `s2_side_R_drum_L`, ...) parented to
+  `capital_stage2_root` at x +1.2, with the seven materials `capital_s2_*` and their images packed into the file;
+- `CAPITAL_EXPORT`: object and mesh `capital` at the origin, the datablock pieces 07 and 02 link. `PORTAL_STAGE` at the
+  top of `capital.py` picks the stage copied into it (1 for now); stage 2 is joined into one mesh with its materials.
+  The mesh records the stage in its custom property `capital_stage`.
 
-Leaves that turn the corner are built flat, as objects of their own, and then wrapped (user, 2026-09-29). The corner
-leaf is generated from its spines outward, nothing of it drawn (user: its body is its spines, not a swollen palm; "the
-central boldness comes from the merging of the leafs"; seven points, one centred; the tops rounded, not pointy):
+The offsets are for viewing only: every mesh is in the capital's own frame. Commands, from this folder:
 
-- Spines: `curl_vein` in `carving.py` leaves the foot straight up and turns steadily toward its point, its tangent angle
-  growing as (length)**`VEIN_CURL` (2 = an Euler spiral, curvature growing linearly along it; the user chose 2.5, which
-  keeps the stem straight and curls late and hard), solved to land on its point (`LEAF_POINTS` in `capital_edit.py`)
-  from its slot at the foot (`LEAF_SLOTS`, 2.2 mm apart, the lowest points' spines outermost so none cross).
-- Leaflets: `grow_leaf` grows one round each spine and fuses the seven by a tight smooth union (0.8 mm) -- this gives
-  the leaf's outline: each leaflet's field runs on past its spine's end and closes there to a point, its sides only
-  slightly convex (user: "a bit less rounded", then "make all edges more pointy"). Widths (`LEAF_SHAPE`: greatest half-width, how long it stays narrow, where it is
-  widest, its width at the spine's end) were tuned to the user's outline: the centre leaflet slim, the side ones narrow
-  low down and broad toward their tips, so the notches are cut deep where the outline cuts them (user: "carve the
-  leaves a bit more"; centre/upper 0.180 m up, upper/middle 0.160, middle/lower 0.121 -- measured 0.181, 0.157, ~0.121).
-  The centre leaflet was then made bolder to the user's outline: 30 mm wide from its notches (0.186 m up; measured
-  0.187) to its point at 0.257. The bottom part is larger (user): a trumpet flare (`LEAF_FOOT`, a pseudo-leaflet on a
-  short vertical spine, no vein) 50 mm wide at the foot, curving in to meet the stem near 7 cm up with no waist. The
-  leaf, 0.160 m wide and 0.258 m tall, is cut flat at its foot.
-- Body: a somewhat flat plate, not contoured round the veins (user: "the shape is making a contour around the veins,
-  that's not the goal") -- 5 mm thick, 6.5 at the foot easing to 5 by 10 cm up, rounded over its last 3.5 mm by the true
-  distance to the outline (the roll's knots lay rows for that round-over; they are not creased).
-- Veins on it: each a fine line incised in the flat surface, a V 1.6 mm across and 1 mm deep, its edges creased
-  (`sharp_supports`) so it reads as a cut (user: the vein must not curve the shape around it; then "the vein is too
-  thick" -- the photo's veins are hairline cuts). Only the main (centre) vein reaches the foot (user): the upper pair stops where
-  its leaflets join the leaf (0.160 m up), the middle pair runs on down and finishes beside the main vein (0.070 m, 6 mm
-  from it), the lower pair stops where its leaflets join (0.110 m) -- `VEIN_STOP`; a cut strip runs out.
-- Solid: `leaf_solid` makes it a closed object, not a relief on a surface (user): that front, a gently convex back (40%
-  of the body behind the leaf's plane), a 1.6 mm rim.
+    blender -b --factory-startup -P ornaments/capital.py                         (both stages; export PORTAL_STAGE)
+    blender -b --factory-startup -P ornaments/capital.py -- export=2             (this run exports stage 2)
+    blender -b --factory-startup -P ornaments/capital.py -- build=none export=1  (re-export only, from the saved file)
 
-Current stage: the leaf flat (object `leaf`, collection `LEAF_FLAT`, beside the capital; `-- flat` renders only its
-views, `screens/.../ornaments/capital_edit_leaf*.png`) -- the inner leaves' model. Both leaves are built by `make_leaf`
-(spine ends, spine bases, leaflet shapes, vein stops, foot flare, placement).
+Stage 2 runs `capital_stage2/build.py` with the system python (numpy + PIL; Blender's python has no PIL), found on the
+PATH or given by `BRADBURY_PYTHON`. A full run takes about 20 s with the six renders.
 
-The corner leaf is a copy of it adjusted for the corner (user, 2026-09-29): five leaflets, the top one longer and larger
-(to roll over into the turnover later), the side ones short and turned up rather than out, on a straight stem
-(`CORNER_STEM`: no trumpet, user: "the bottom doesn't afunilate"). Its `CORNER_*` parameters come from the user's
-outlines drawn over the renders, in four steps (screens folder, `ornaments/corner_v1/` to `corner_v4/` keep the
-earlier versions' renders, and the first drawing; `corner_v5/` the half-turn roll):
-- Leaflets: fitted to the first drawing within 1.3 mm on average, about the drawing's own left/right difference.
-- "Twice as large": twice as wide (the user's "larger" is wide), as the reference photo's corner leaf is, about 0.18 m
-  unfolded; the bell caps the height. The parameters were refitted to that outline stretched x2 across, within 1 mm each
-  way, so the spines and pointed tips stay natural; the top leaflet keeps its proportions with its spine shortened to
-  hold the height.
-- "Make the leaflets connect more", drawn as an outline through the side points that bridges the notches: webs
-  (`carving.web_polygon`, `grow_leaf(webs=...)`) join neighbouring leaflets up to a sinus point each (`CORNER_SINUS`),
-  their notches' bottoms rounded by a softer union (3 mm).
-- "The silhouette is more squeezed as well", an outline over that version: refitted, sinus points included, within 1.3
-  mm each way (the drawing's halves differ by 3.8). The leaf is 0.75 of its width: the top leaflet narrower, the side
-  points drawn in and a little higher, the notch between them deep again.
+Before the portal can take stage 2 it has to absorb its size: 1.052 x 1.014 x 0.463 m against stage 1's 0.967 x 0.971
+x 0.41 (the photo's proportions at the "50/50" height), so the frieze band and the arch block, both built on the
+capitals' 4.08 m top, and the pier capitals' 0.434 scale need adjusting first; then set `PORTAL_STAGE = 2` and run.
 
-The flat pattern is 0.128 m wide and 0.327 m tall: a pointed top leaflet 65 mm wide on a shoulder, two side points each
-side, and a 75 mm stem. The lower side spines rise from the foot beside the midrib, the upper ones from 0.031 m up; their
-veins are cut in from 0.07 and 0.145 m. A flat copy stands beside the seven-point leaf (object `corner_leaf_flat`,
-collection `CORNER_FLAT`) to compare with the drawings.
+Checked at the restructure (2026-10-04): mesh `capital` is identical to the previous file's (vertices, faces, edges,
+sharp edges, normals, material slot) and the portal's six capitals resolve it; stage 2 is identical to the last trial
+build (v14). The material's tint is 1.8 % darker than in the previous file: `fill_sandstone` divides the target colour
+by the texture's mean, and the previous file was built 33 minutes before the sandstone pack was last written
+(2026-09-18), so any rebuild now gives the new tint (about 1-2 sRGB levels).
 
-It is wrapped round the bell's right front corner (user: "curve the leaves so that it wraps the edge of the capital,
-both vertically and horizontally"; before that it stood flat on the corner at 45 degrees). The flat frame is laid onto
-the bell (`corner_surface`, `corner_place`): across (s) becomes arc length round the bell's plan outline at that height,
-from the corner cut's midline, which stays in the diagonal plane through the pilaster's corner while the bell flares
-(+s toward the side face); up (t) becomes arc length up that midline's profile from the foot on the torus; the thickness
-goes along the surface's normal. The outline's sections are the bell loft's (`bell_outline`, straight between its
-rings), their corners rounded over `WRAP_ROUND` (4 mm) so the leaf bends round the arris instead of creasing on it; its
-mid-plane rides `WRAP_LIFT` (0.5 mm) off the surface, so its back sinks in and its edge lips it.
+## The capital's stage 2: cut from the PBR ornament atlas (2026-10-03/04)
 
-Its top leaflet rolls over (user: "roll the top of the leaf", with the reference photo, where each corner leaf's tip
-rolls forward and down into a thick lump past the bell). Only the top leaflet rolls: above the notch between it and the
-upper side points (`ROLL_T0`, found on the outline by `lobe_split`), the part on its side of the gap leaves the bell
-while the side points stay wrapped (`corner_place_rolled`). Each section turns with the midrib, so the leaf's back
-becomes the roll's outside, and relaxes from the wrap's V to flat over `ROLL_FLAT` (kept rigid, the V's sides rose like
-tulip petals). The roll is a scroll that closes on itself (user, over the profile view: "it basically crawls inside of
-itself, you'll need to expand the material a bit to create volume"; the drawn loop is centred 16 mm up and 29 mm out
-from the roll's start, ~29 mm round its outside, curling in to ~19 at the bottom). The midrib rises `ROLL_STRAIGHT`,
-then spirals a full turn round that centre, its radius shrinking from `ROLL_R0` (29 mm) to `ROLL_R1` (6 mm), so the tip
-ends inside the coil (`roll_curve`). To have the material for the turn, the rolled part is stretched along its length
-(`ROLL_STRETCH`, 1.9, computed). It keeps its full thickness until late in the turn, thinning at the tip to fit inside.
-The scroll leaves the bell 0.204 m up, tops out at 0.248 and stands ~60 mm out past the bell; its outside follows the
-drawn loop within the spread of the strokes.
+The inputs are in `assets/public/textures/bradbury_capital/` (provenance in its `source.json`): the owner's atlas
+(`atlas/`, from `capital_ornaments_PBR_atlas.zip`: one 2048 atlas of five parts -- both lower leaf banks, the left
+horn (band + volute), the heart (C-scrolls, beads, berries, calyx), the pendant, the crown -- with basecolor + alpha,
+OpenGL normal, roughness, AO, opacity and a part-id mask; an AI reconstruction from the capital photo), and the
+blank's textures: `abacus.png` and `neck.png` (moulding cut-outs from the owner's `ornaments.zip`) and `bell.png` (a
+plain patch of the capital photo).
 
-Seen from the front it is round (user: "make it more rounded when seen from the front", an arch drawn over it): the
-leaf's edges coil tighter than its midrib, drawn in toward the coil's centre as they go over (`ROLL_DOME`), so the
-scroll is barrel-shaped with an arched top that follows the drawn arch. The midrib's vein is cut into its outside too
-("and add the vein in the center"; make_leaf's `back_vein`: the same fine V as the front's, cut into the leaf's back,
-which is the scroll's outside, its edges creased as the front's are).
+The code is in `ornaments/capital_stage2/`:
 
-The coil's eye is filled by a knob merged into the leaf and hidden by the leaf's own edges (user: "fill the gap", "no
-ball ... blend them together in a smooth way", a photo of a real scroll, then "this ball should not be visible from the
-front, the edges should come inside", with lines drawn converging on the eye). The leaf's edges coil in almost to the
-centre and stay in through the inner turn (`ROLL_DOME` 0.88: the edges' coil at 12% of the midrib's), so the scroll's
-sides are whorls sloping into the eye. Each strip's thickness toward the centre is capped by its own coiled radius
-(make_leaf's `taper(s, t)`), or the tighter edges would pass through the leaf. `fill_eye`: a knob through the spiral's
-centre along the roll's axis, united with the leaf by an exact boolean, then the vertices along the join (near both
-surfaces, `EYE_BLEND` 4 mm) smoothed. The knob is a capsule (`knob_mesh`: `EYE_R` 16 mm round, `EYE_CYL` 22 mm straight
-each way, closed by `EYE_CAP` 10 mm domes whose tips reach the coil's sides at 32 mm): the earlier ellipsoid (27 mm
-half-length) ended short of the coiled edges, which converged past its tip into a small pocket with a lip at the
-whorl's centre, seen from the side (user, 2026-09-30: "the small defect on the side"); with the domed ends reaching the
-sides the whorl closes on them. The spiral runs 420 degrees, its inner end aims its thickness at the centre (a
-tightening spiral's normals miss it), and the rolled leaflet is trimmed blunt (`CORNER_CUT`, 0.30) so no point is left
-in the eye (its point made a cusp). The merged mesh is checked round the knob (open and non-manifold edges counted).
+- `build.py` (system python, about 15 s): cuts the atlas into part images (`parts.py`), builds every piece and writes
+  `stage2_mesh.json` and the drum's roll textures (`rolltex.py`) into the cache
+  `portal_project/ornaments/cache/capital_stage2/`. Its constants (`ROLL`, `ARM_*`, `BANK_ROLL`, `CURL_ROLL`, `KNOB`,
+  `ARM_TOP`, `PLACES`) are where the pieces are tuned.
+- `blender_import.py`: the objects and the materials (basecolor x AO, tangent normal map, roughness, alpha clip at
+  0.5; the drum's own texture; plain clay for the bell and the walls).
+- `bell.py`: the photo-proportioned blank -- neck, bell, abacus -- at VSCALE 0.898 (the "50/50" height between the
+  photo's 0.515 m and the production 0.41), 0.463 m tall, in stage 1's frame; `wrap()` lays a card's (s, z, depth) in
+  mm onto the bell's front, corner cut and sides.
+- the layouts: `envelope.py` (the envelope cards), `pieces.py` (the arm and the heart), `bandlayout.py` (the drum's
+  disc), `layout.py`, `quadcards.py`, `skirt.py`, `trace.py`, `gridlayout.py`, `cards3d.py` (cards, outlines,
+  meshes).
 
-A rework to three photos the user sent on 2026-09-30 (a real terracotta corner leaf, a crop of its curl labelled
-"DESIRED SHAPE", and a front view "with the carvings"; copies in `screens/.../ornaments/corner_v7_before/user_ref_*`) was
-tried and turned down: a curled sheet thinned to 55% closing on a capsule knob at the front-bottom of the roll (the
-edges converging on the knob, not on the curl's centre). The user's verdict: "the before version was actually better,
-except for the small defect on the side", so the scroll above is the one kept and only the knob's ends changed. The
-trials and their side-by-side composites are in `corner_v7a/` (a thin hoop), `corner_v7bcd/`, `corner_v7efg/`,
-`corner_v7hij/` and `corner_v7klm/`; the accepted script of that morning is `corner_v7_before/capital_edit_before.py`
-(the editing copy is not under version control). What stays from the rework: the `CornerEye` camera (the scroll's side,
-along the roll's axis, ortho 0.14 m), the `-- eye` render mode (side, profile, front, low and three-quarter views only),
-and `ROLL_VARIANT=<key>` in the environment, which applies an entry of `ROLL_VARIANTS` and suffixes the renders and the
-.blend with `_<key>`, so trials render beside the default without touching it.
+The technique (owner, 2026-10-03: "just create the silhouette of the shapes and add the texture ... if possible, to
+avoid using triangles, we can just use the texture and cut around it (but it must have volume)"): each part's
+silhouette becomes a coarse all-quad card whose boundary vertices lie on the picture's outline, extruded with its back
+on the bell (the relief is the thickness) and wrapped onto the blank. The alpha clip trims the card to the picture,
+the normal map gives the carving, short walls give the volume. The pieces:
 
-The carvings. The user's front view ("this picture was just to demo the carvings in the body") shows five pipes fanning
-from the foot with V valleys between them. A first trial of rounded ribs and rounded channels was turned down: "the
-carvings looks more like damage, then a proper carving. you need to think this as a manual work of art. where the
-artistic would create the shapes, maybe by hand. the leaves follow a superposition. and their sides may be flatten, or
-carved inside in a triangle shape." So make_leaf's `carve` option cuts PLANES: every vein runs along the crest of a
-pipe ("crest" high, 6 mm) whose flanks are planes sloping to the V valley midway to the next pipe; the pipes fan across
-the stem at the foot ("spread": 0, 14 and 28 mm from the midrib, merging into their veins by 0.12 m up); a leaflet's
-side toward the leaf's edge is "flat" (the plane runs on to the edge) or "hollow" (it dives to a V 45% of the way and
-rises to a 2 mm rim at the edge: the side carved in a triangle); "over" superposes the pipes ("out": the outer lobes
-lie over the inner, "in": the centre over the next outward), each "stack" (2.5 mm) higher than the one under it, its
-ledge running "overlap" (2.5 mm) past the valley before stepping down, the steps fading in above "stack_from" (60 mm,
-the stem's pipes stay level). The valleys are drawn as hairline grooves, and the crests below the veins' starts, the
-steps and the hollows' bottoms as zero-height ridge lines (creases), so every plane folds on a mesh edge (without the
-crest lines the flanks showed a sawtooth from the free triangles). `CORNER_CARVE` is None (the flat plate) until the
-user chooses; the variants `carveA` (flat sides), `carveB` (hollow sides), `carveC` (flat, outer over) and `carveD`
-(hollow, centre over) are compared in `capital_edit_corner_v9_compare_carve_flat.png` and `..._corner.png`. The
-rejected rounded-rib trials and the curl rework's composites are in `corner_v7_rework/`.
+- Leaf banks, crown and pendant are tight ENVELOPE cards: per pixel column the picture's top and bottom, fitted by a
+  two-sided Douglas-Peucker with the corners on the outline (the tips and the notches), three rows per column; the
+  alpha draws the finger gaps and the holes. The crown and the pendant are fitted on one half and mirrored. Leaf-by-
+  leaf layouts were tried first and were "too complex", cutting leaf tips away.
+- The cards are cushioned: their edge vertices at 35 % of the relief, so the walls are short edges, not fins. A wall
+  is built only where the picture is there 1 mm inside its edge along most of it, so none stands in a gap; the walls
+  wear the bell's plain clay at 1:1 (0.2 m repeat, darkened to 0.82).
+- Placement (`PLACES`, mm in each face's photo frame): the crown point up at 458 mm, leaning forward from 44 to 80 mm
+  proud; the heart at 200 mm, 30 proud; the pendant hanging from 222; the front banks from 76 mm, 6 to 20 proud,
+  stretched 1.15 toward the corner so their outer leaf lands on the corner cut. The side faces carry the inner leaves
+  toward the front corner (their cut edge sinking into the bell) and the whole bank toward the back.
+- The heart: the beads and berries are cut out of its card (their drawn outlines + 1.5 mm, a 5 mm spine keeping the
+  eyes apart) and stand as ellipsoids measured on the texture (`HEART_BALLS`), centred on the card's plane, with no
+  walls within 3 mm of them; its half round each eye is an envelope in polar coordinates about the eye.
+- The horns are split at the roll. The roll is a DRUM (`build_drum`): the texture's circle (fitted on the horn's
+  outline) as a face at 1:1, dished 8 mm toward the eye, a 9 mm rounded edge, 70 mm deep, 52 proud; each drum faces
+  its own face, the two of a corner meeting at the corner edge, its top touching the abacus soffit. Face, edge and
+  back wear the roll's own filled texture (no holes where the circle runs past the drawn roll); the rim wears the band
+  wound round it. The left volute's texture serves every horn, mirrored per corner.
+- The arm is a ladder between its two edges (`pieces.arm_strip3`), one texture station per row (a row never splits
+  between two depths). It is rigid with the drum at the root -- drum and arm share one rotation, the texture's band
+  levelled where it leaves the roll, so the spiral's outer turn flows into the band's ridges -- then laid along a
+  path searched per face: the lowest tail (from 190 mm) that keeps 8 mm over the placed leaves. The texture's length
+  difference goes into a uniform scale up to 1.2 (1.3 on the sides) and then into the band's flattest stretch
+  (`band_flatness`). A web strip on the roll texture fills from the band's top edge up to the drum's top tangent, so
+  drum and arm join without a notch.
+- The corner leaf's scroll is a roll lying on its side along the corner chamfer (`curl_roll`: radius 27, 76 long,
+  rounded ends, its axis 31 mm out of the chamfer, its top 3 mm into the volutes' rim); its ends wear the knob's spiral,
+  its body the scroll band wound round. The painted knob is cut out of the front banks (its own 95 mm corner only) and
+  the corner leaf is squashed (0.87) so its top runs into the roll.
 
-The user then described the leaf as strips (2026-09-30: "think of each leaflet is a strip, that was molded to become a
-leaflet. and they merge at the center bottom. the deeper carvings come from those superpositioned strips. maybe if you
-work one strip at a time, it might work better"). `carve` mode "strips": one strip per leaflet along its pipe line
-(fanned at the foot), "w_foot" (10 mm) half-wide at the foot and its leaflet's own width in the leaflet, a moulded
-half-round section "thick" (6 mm) high thinning to half at the tip, laid one at a time in the order "over" ("out": the
-centre strip first, the upper pair over it, the lower pair over those; "in": the reverse), each riding on the strips
-beneath it at its crest and keeping its own section (the composed height is the highest strip's base plus section),
-so a strip's edge lies over its neighbour with a step and a crease -- the deep carvings; "count" lays only the first
-strips, for a progression. The strips' visible edges and their crests are drawn lines (creases and veins). Variants
-`strips1`, `strips3`, `strips5` (centre first, outer over) and `stripsIn` (the reverse); compared in
-`capital_edit_corner_v10_strips_flat.png` and `..._corner.png`. A second pass of the strips folded in a design panel's findings (a real `crease`
-line type in `carving.py`: a fold line with no section and no support rows; each strip's crest one natural
-`curl_vein` from its foot point, since the blended fan wobbled inward then outward; a rigid strip resting on the highest
-point beneath its width, so it never dips under a neighbour; sections "round" / "roof" / "hollow"; a plain band at the
-foot with the cuts running out; nothing entering the roll): variants `stripsR`, `stripsF`, `stripsH`, `stripsFo`, renders
-parked in `corner_v11_strips/` with the plane trials.
+46 objects, 9,859 triangles, all quads but the drums' cap fans and the blank's hidden top.
 
-Fresh start (user, 2026-09-30 evening: "lets start new. create just the center leaf with the scroll"): `CORNER_BUILD`
-"strips" rebuilds the corner leaf strip by strip, beginning with the centre strip alone -- make_leaf's `strip` option
-(half-width at the foot, thickness at the crest, section): the leaflet's field is at least that half-wide until its
-head, so the strip runs up from the foot 24 mm wide (`CENTRE_STRIP`), swells into the accepted top leaflet and rolls
-into the accepted scroll; its body is not the plate but a moulded half-ellipse 15 mm high at the midrib (the accepted
-depth), falling to its edges, with the hairline vein on the crest. With no notch, `lobe_split` falls back to
-`ROLL_T0_DEFAULT` (0.218, the accepted notch height) and the whole strip above it rolls, so the scroll is unchanged.
-`CORNER_BUILD` "leaf" still builds the accepted five-leaflet leaf on the plate. Composite:
-`capital_edit_corner_v12_centre_strip.png`.
-
-The centre strip's scroll, reworked on the user's notes the same evening (renders of every step in
-`corner_v12_centre/` .. `corner_v15_centre/`):
-- "the problem is that ball on the sides. also, the horizontal strips. remove them", with a U drawn under the roll in
-  the front view. The bands were the wrap grid lofted straight between the bell's 14 rings and sampled every 2 mm,
-  beating with the mesh rows on the curved stalk: `corner_surface` now evaluates the bell's own outline every 0.5 mm.
-  The strip's section becomes the accepted plate through its head (`CENTRE_STRIP`'s last field, t 0.15-0.21), so the
-  rolled leaflet is the accepted one; a section thinning to the edges had let the knob's tips through as balls.
-- "that ball should not exist. it must curl inside", with the strip's two edges drawn spiralling into the centre. No
-  knob (`ROLL_KNOB` False; `fill_eye` kept for the record): the curl's inner radius `ROLL_R1` is 0.5 mm, so the strip's
-  tip spirals to the axis and is the eye's centre itself, keeping `ROLL_CORE` (3 mm) of body along its midrib there;
-  the coiled edges close on the axis (`ROLL_DOME` 0.995), completing at the front of the turn (`ROLL_DOME_RAMP` 0.08
-  from `ROLL_DOME_FROM`, the straight's end) and drawing in a fifth along the axis too (`ROLL_TUCK` 0.2, as
-  (s / half-width)**2 -- a steeper draw folded strips under each other and crumpled the roll), so the eye is a funnel
-  into the roll, not a spindle at the leaf's full width.
-- The U: the rolled leaflet's axial half-width is measured from its outline (`_half_at`; the crossing test must be the
-  half-open rule, since the outline's vertices sit on the sampling grid) and held to the dome's own width below the
-  top of the turn, narrowing to `ROLL_PINCH_END` (60%) of it by the bottom (`roll_width`), so nothing below the dome
-  stands out beyond it and the roll's sides curve in to the stalk. The knob-era parameters (a whorl to 12% plus an
-  ellipsoid in the eye) are recorded in `ROLL_KNOB`'s comment.
-- "fix the center defect. this is how the lines should go", the seam drawn as one smooth spiral of about a turn and a
-  half into the centre, ending in a small hook, plus "a render with the quads showing". The curl is now an even
-  spiral (`ROLL_SHRINK` 1: the radius falls linearly, an 18 mm pitch) reaching `ROLL_R1` 4 mm from the axis at
-  `ROLL_SHRINK_END` (500 degrees) and then holding that radius for a quarter turn to `ROLL_TURN` (590 degrees): the
-  tip's inner face, aimed at the centre and reaching 1 mm past it (`ROLL_CORE` 5 mm of body kept along the midrib),
-  wraps round the axis and covers it -- the hook. The rolled sheet is `ROLL_SHEET` (80%) of the plate, so each turn
-  clears the one under it and the seam reads. What did not work, each verified by counting background-coloured
-  pixels inside the eye (a highlight and a pinhole look alike): the tip fading to nothing at the centre (a pinhole
-  through the axis), the tip run through the axis (a knot of facets), and the spiral ending at its closest approach
-  to the centre (its end edge grazes the centre's line of sight). `CornerEye` also renders a Workbench wire proof
-  (`capital_edit_corner_eye_wire.png`): the kit's mesh is triangulated by `delaunay_2d_cdt`, so the wire shows
-  triangles, not quads. Renders of every step in `corner_v16_centre/` .. `corner_v20_centre/`.
-
-The decoration is three times deeper (user: "make this decoration 3x deeper", `CORNER_DEPTH`): a 15 mm plate, 19.5 at
-the foot (make_leaf's `depth`; `taper` thins the scroll's inner end). The veins keep their fine 1.6 x 1 mm cut.
-
-`-- corner` renders the front, out-of-the-corner, along-the-corner (profile), three-quarter, low (under the roll), the
-scroll's side (`CornerEye`, along the roll's axis, the "desired shape" view) and leaf-alone views, and the flat copy face-on, `screens/.../ornaments/capital_edit_corner*.png`. The projected corner leaf
-of the first proof is gone.
-
-`ornaments/capital_edit.py` is the editing copy: `blender -b --factory-startup -P ornaments/capital_edit.py` rebuilds
-`capital_edit.blend` and renders Cycles front (ortho, pixel-aligned with the photo), quarter, low close-up, leaf
-close-ups, a Workbench solid view and a wire proof (Workbench, the mesh wireframe with the drawn lines as coloured
-tubes: they run on its edges). Nothing links it; the production capital and its ~80 instances are untouched until the
-carving is approved and moved into `capital.py`.
-
-The photo is a true elevation (the shaft edges sit at x 248 and 1286 on every row, the abacus top at y 112, everything
-centres on x 767), so the trace needed no straightening. Its proportions differ from `capital_v2`: at the pilaster's
-width (1038 px of shaft = 0.725 m, 0.698 mm/px) the photo's capital is 0.515 m tall with a 0.396 m bell, against 0.41
-and 0.248 m. The blank is rebuilt at the photo's levels (neck base 850, fillet 800..785, torus 785..730, bell
-730..163, abacus 163..112; `capital_v2`'s construction otherwise). Height, the user's 50/50 (2026-09-28): half a taller
-capital, half a squashed design, so the whole design (blank and drawing) is scaled vertically by `VSCALE` 0.898 and the
-capital is 0.463 m tall, half-way between 0.41 and 0.515 (the composites scale the reference the same way). Promoting
-it will ask the portal for 0.053 m more capital (a shorter shaft or everything above rising). Depth is not in the photo; the relief heights in `capital_edit.py` (leaf 6 mm at its foot to 46 mm under the
-volute, turnover crest 75..85 mm) are readings to adjust. The editing copy uses a plain clay material
-(`EDIT_terracotta`) while the carving is judged, because the portal's sandstone bump drowns fine relief.
-
-Manual modelling (user, 2026-09-30 night: the formula-driven carving "is not getting anywhere ... The goal here will be
-to create that manually"; the state it reached is summed up in `screens/.../ornaments/capital_edit_status_2026-09-30.png`).
-The leaves are now modelled by hand in `tests/artifacts/blender/bradbury/portal_project/ornaments/manual_capital_leaves.blend`
-("in this file we will do all leaves. starting with the corner"). No script builds it: the file itself is the source, so
-nothing may overwrite it. It started as an empty scene in millimetres, framed as `capital_edit.py` is (x across, -y toward
-the viewer so the Front view is face on, z up), with z = 0 at the torus top where the leaves stand:
-- `REFERENCES`: `REF_corner_leaf_face_on`, the real terracotta corner leaf face on (the user's photo, copied to
-  `manual_refs/corner_leaf_front_real.webp` and packed), scaled uniformly (not distorted) so that it stands on the torus and
-  its scroll tops out 211 mm up, where the photo's corner-leaf turnover tops out on our capital (photo row 393 against the
-  torus at 730, times `VSCALE`); and `REF_capital_photo_corner`, the capital photo's right corner (photo x 1030..1536,
-  y 100..870, `manual_refs/capital_ref_right_corner.png`) beside it at the capital's scale, squashed by `VSCALE` like
-  the blank, its torus top at z = 0.
-- `CORNER_LEAF`: the corner leaf, the first to be built. `RIG`: `LeafFront`, an orthographic camera face on (hidden in
-  the viewport so its frame does not cover the leaf), plus `LeafQuarter` and `LeafSide` for checks.
-
-How the corner leaf is built (2026-09-30, steered step by step by the user, who adjusts each step by hand):
-- Lines, drawn over the photo (right half only; the left is a mirror): in `CORNER_LEAF/LEAF_LINES`, Bezier curves whose
-  points' depth toward the viewer IS the surface's height there (y = -10 mm: 10 mm high) and whose point radius widens the
-  line into a flat top (`Flat width per thickness`, 1 mm per unit). Colours are only a convention: blue a high (crest),
-  green the sharp high, red a low (carving), white the edge. The white `edge_outline_R` (traced from the photo's alpha) is
-  the edge, at its own height (2.5 mm), rounded down to the back over `Edge rounding`.
-- The surface, `leaf_relief` with the node group `leaf_surface` (Geometry Nodes, live): a membrane through every line at
-  its height -- a solve on a 0.75 mm grid (repeated Blur Attribute with the lines held by a soft grip), laid on a 0.3 mm
-  mesh and solved again briefly, `Softness` blurring the result, the outline rounding the edge, then mirrored. So a
-  ridge's width comes from where the low lines beside it are; no width or depth is a hidden setting. Any curve added to
-  `LEAF_LINES` joins the surface. The first surface (plateaus round each line with global sliders,
-  `leaf_relief_v1_plateaus`) is kept in the file, unused: the user found its depths and widths authored "in the background".
-- Each line draws as a thin tube through the shared node group `line_display` (thicker for a wider flat top); a curve
-  with a bevel reaches Geometry Nodes as a mesh only, so the lines carry no bevel and the display group joins the curve
-  itself back to its tube, which `leaf_surface` reads.
-- Sharpness, without more lines: `Softness` blurs the solved surface; lines in `LEAF_LINES_SHARP` (a child of
-  `LEAF_LINES`) keep their crease within `Sharp lines stay crisp within`, except near their own ends. A line's two end
-  points are left out of the nearest-line search (held there, they stood in for a nearby line and left a bright point on
-  the surface at every line ending inside the leaf); `Line ends fade` (0 by default) also fades the grip over a line's
-  last millimetres. `SMOOTH_SPOTS` takes sphere empties (radius = scale): inside one the lines let go and the solve
-  fills in smoothly -- it removes a bump, but sags across a ridge (a blur of the result there dug a crater instead).
-  A valley closing between two converging crests ends in a point whatever the settings (where the green starts beside
-  the centre's flat top): mend it in the lines or by hand on a baked copy.
-- Renders: `hide_render` on a line also removes it from the surface's Collection Info in the render, which then
-  renders flat; to render the surface alone, switch off the lines' `display` modifier for render instead (done: the
-  lines never show in a render).
-- Colour and light (2026-09-30): `leaf_clay` projects the user's front image (`manual_refs/corner_leaf_front_noscroll.webp`,
-  same frame as the photo, packed) along the view axis by Object coordinates, terracotta where it is transparent, a fine
-  grain bump. The scene renders in Cycles (GPU, 256 samples, OptiX denoise, AgX Medium High Contrast, exposure -0.3), lit
-  only by the clear-sky HDRI `assets/public/lighting/hdri/kloofendal_43d_clear_puresky_2k.hdr`, its sun (43 degrees up)
-  turned to the upper left (seen azimuth -150 degrees, mapping rotation 113.9) so it rakes across the relief; a
-  render-only plaster wall (`backdrop_wall`, hidden in the viewport) takes the leaf's shadows. The `Sun` lamp is kept,
-  render-disabled. F12 renders `LeafFront`, about 11 s at 1200 x 1560.
-- The scroll (2026-10-01): the relief cannot fold back over itself, so the scroll is its own object, `scroll`, a strip
-  swept along one line, `scroll_spine` (in `CORNER_LEAF`, deliberately not in `LEAF_LINES`), by the node group
-  `scroll_sweep`. The line's dots are the strip's outer face along its middle, seen from the side (x = 0); a dot's radius
-  (Alt+S) is the strip's half-width there (x `Half-width at radius 1`, 20 mm); a dot's tilt (Ctrl+T) is its roll, how far
-  the strip's edges curl in toward the spiral's centre (0 flat, about 80 a half-pipe; negative curls them back into a crest,
-  as on the leaf where it starts); `Thickness` (4.5 mm, inward, thinner toward the edges by `Edge thinning`, and capped
-  at 0.7 of the roll's radius). Each row is a closed ring (outer face, rim, inner face, rim) placed by formula: quads,
-  capped, rims creased. The default line is a smooth spiral round (y -36, z 190) mm: from the centre crest at 150 mm up the
-  leaf, over the top at 212 mm, 57 mm out at the front, down to 171 mm and in to the eye, its radius shrinking from 22 to
-  5.5 mm; the rolled edges make it a dome from the front (+-17.5 mm, as the photo's) and solid whorls from the side. Rule
-  for the roll: a dot's edges may reach in no further than about three quarters of the spiral's radius there (minus a
-  few mm near the eye), or the rolled edges of neighbouring turns pass through each other -- the first hand-placed dots
-  had 1595 crossing face pairs; the spiral-placed ones have none (checked with a BVH self-overlap). Blender's Extrude
-  Mesh pushed a rolled sheet's rims outward (and its Individual input defaults to on), hence the ring construction.
-  The strip must already be wide and rolled where it rises from the leaf behind the dome (190 mm and over the top):
-  narrow there, the scroll's sides were open at the back and the leaf showed through it from the side (user, "it seems
-  that the normals are inverted? i see the leaf through the scroll" -- the normals were fine).
-  `scroll_clay` projects the original photo, which shows the scroll from the front.
-- The box scroll (user, 2026-10-01: "what i need is a box, that rolls on the top. not becoming a ball. but becoming
-  a scroll"): every dot flat (tilt 0), 40 mm wide above the stem (radius 1), `Edge thinning` 0 -- a strip of
-  rectangular section rolled on the user's own spiral (12 dots). The sweep now also caps the thickness at half the
-  line's bend radius (measured over +-2.4 mm), so a tight tip thins instead of folding.
-- Depth and angle per dot (user: "i must be able to set the depth and angle. like if there are horizontal lines and i
-  can set a slope"; `scroll_sweep` rebuilt as v2): on `scroll_spine` a dot's radius (Alt+S) is the box's DEPTH there
-  (x `Depth at radius 1`, 4.5 mm) and its tilt (Ctrl+T) the ANGLE of the section line across the box (level at 0, the
-  section turned about the line); the width is one setting, `Half-width` (20 mm). An orange bar across the scroll at
-  each dot shows that dot's section line and slope, in the viewport only (Is Viewport). The rolled-edge curl of the
-  first version is gone (tilt meant curl then).
-- Live copies (`leaf_preview_front`, `leaf_preview_turned`, node group `leaf_preview_copy`): the leaf surface plus the
-  scroll placed in the leaf's own frame (inverse of the leaf's transform times the scroll's), so moving or editing the
-  scroll shows on both copies at once (user, 2026-10-01). `scroll_spine` is parented to `scroll`: select the scroll and
-  G moves the line with it.
-- The user's 3D sketches (2026-10-01/02): two AI-made meshes of the whole capital, unpacked beside the photos
-  (`manual_refs/sketch_model/`, the rough first one, with the user's three screenshots; `manual_refs/capital_model/`,
-  the cleaner "ornate column capital" one). They are the only source for the corner leaf's side profile and for the
-  rolled tip's volume. In the user's own words the wanted tip is "a close hand ... with the 4 fingers closed": the big
-  rounded mass of the sketch's corner (the cushion), NOT the small lip under it, and one turn only -- "this is a clay,
-  after the first turn down and inner, the shape merges, so there aren't many loops".
-- A pillow with two feet and a spiral groove of 1.25 turns on each end (v3, chosen from three parallel candidates by a
-  judge panel against the face-on photo) was applied and REJECTED the same night: "not good at all, too far from what
-  is desired. youre trying to curl it too many times". Kept only as `manual_tools/build_scroll_v3_pillow_rejected.py`.
-- The scroll now (v6, `manual_tools/build_scroll_v6_fist.py`, node group `scroll_sweep`): one solid lump. `scroll_spine`
-  is its OUTLINE seen from the side (22 dots: from under the finger tips back along the underside, up the back 1.2 mm
-  behind the leaf's ground, a square top-back corner, over the top 0.9 mm above the leaf's own top, down an upright
-  front, under, then inward). For every direction round the roll's middle a ray is shot from outside at the line
-  (flattened onto x = 0, as a ribbon closed by a chord): the first hit is the outermost part of the line, so whatever
-  the line does inside can never fold the surface -- that inner part only draws the FOLD, cut straight in from the side
-  (x only) by the distance to the line itself in the side view, fading out toward the last dot. Across the width the
-  radius follows a superellipse (exponent 2.7, closed rounded ends, no feet); a point that would still lie more than
-  8-16 mm behind the roll's middle keeps its depth, so the back is a slab that swallows the leaf's round top (the
-  outline had traced the photo's dome): no leaf point is left outside it. Dot tilt = slope of the section line, the way
-  the orange bar leans, limited to 55 degrees (outline dots only); dot radius = the fold's depth there x `Depth at
-  radius 1` (2 mm; fold dots only); inputs `Half-width`, `End rounding` (0 = nearly a box, no fold), `End droop`. No
-  dot is special; dots can be added or deleted; a dot off x = 0 changes nothing. Old lines are kept hidden as
-  `scroll_spine_before_pillow` and `scroll_spine_before_fist`. 40 x 28.9 x 35 mm (the first try, v5, was a long low
-  bean 39 deep with a ribbed fold and bars leaning the wrong way: found by a critic and a tester run in the
-  background, fixed the same night). Checked: closed, 0 crossing pairs at the defaults, for 198 single-dot edits
-  (+-5 mm, tilt to 45 degrees, depth x0.5 / x2) and at every input's limits; all dots at once +-3 mm clean, +-5 mm
-  with tilts 3 of 15 cross (the fold cut, where the outline stops being star-shaped); 22k vertices, 0.08 s per update.
-  Still not the photo face on: a plain bun, where the photo has a dome, a lip hanging in front with a crease across
-  and the ends hanging lower -- the user's "closed hand" has priority.
-- The leaf in 3D (`manual_tools/build_result_3d.py`): `corner_leaf_3d` (group `leaf_lean`) is a live copy of the leaf
-  and the scroll sheared forward by the cyan side-view line `lean_profile` (dots (forward, height) mm: (0, 0), (16, 45),
-  (36, 90), (60, 135), (90, 181); cavetto shape from the sketch's corner cut, amount from the three-quarter photo), the
-  roll carried rigidly, the back closed; from the front it is identical to the flat leaf. `REF_sketch_corner`
-  (REFERENCES) is the first sketch's corner at the leaf's scale (12.8 mm per unit). Both stand right of the capital
-  photo and 350 mm further back, clear of every view of the flat leaf. Open: the top 3 cm of the leaning leaf stands
-  upright (a kink under the roll).
-- Change of method (user, 2026-10-02, after the v6 lump: "still not good, it might be better that instead of lines, we
-  do it in extrusion blocks. also, we need it to be low poly. can we first convert the leaves in a low poly version? and
-  use the texture to finish the shape? forget that photo, this is wrong. the right one is with the green V photo"):
-  - REFERENCE: for the rolled tip the face-on picture (`corner_leaf_front_real.webp`, a dome with a lip) is WRONG; the
-    real three-quarter photo (`capital_ref_right_corner.png`, the right-most leaf under the volute) is the one that
-    is right: the leaf's tip curls forward and down once, a fat tongue with a rounded end, the fluted front going into
-    the shadow under it.
-  - LOW POLY (`manual_tools/build_lowpoly.py`, run headless on a mesh exported from the open file by
-    `live_export_leaf.py`, brought back by `live_append_lowpoly.py`): `leaf_low` (collection `LOWPOLY`, 100 mm left of
-    the line-built leaf) is the relief decimated from 180,000 to 698 triangles (Decimate collapse, symmetric), UVs =
-    the photo's own frame (front projection: u = (509 + x / S) / 1019, v = 1 - (1501 - z / S) / 1543), material
-    `leaf_low_clay` = the user's texture `corner_leaf_front_noscroll.webp` by UV + `corner_leaf_normal` (1024 x 1552
-    tangent-space normal map baked in Cycles from the high-detail leaf, selected to active, cage 4 mm; also on disk
-    as `manual_refs/baked/corner_leaf_normal.png`). The dome the outline had traced from the wrong picture is removed
-    from this mesh (pressed flat, then cut where it would stand behind the scroll). Decimating with symmetry leaves a
-    few flat faces on the centre line wound backward: they are turned, not deleted (deleting opens holes).
-  - CLEAN QUADS (user, same night: "the topology is not very clean ... similar results with 300 triangles if we do the
-    quads properly"): `leaf_low` is now rebuilt by `manual_tools/build_quad_leaf.py` from the user's own lines
-    (`lines_2026-10-02.json`, exported by `live_export_lines.py`), not decimated. The half leaf is a stem and four
-    fingers; every finger has three rails from root to tip (its two sides and its middle line: `spine_lower_semi`,
-    `spine_lower`, `spine_upper_semi`, `spine_upper`), neighbouring fingers share the valley rail between them up to
-    the notch (`low_lower_inner`, the upper part of `low_upper_valley`, one drawn by rule between fingers 1 and 2), and
-    a rail branches out of its neighbour at a row. Rows are level lines of s = z + 0.77 x (horizontal across the stem,
-    square across the fingers), so each strip between two rails is quads, with a triangle only where a rail begins and
-    at the tips; the outline gets a wall down to the ground (top edge 0.9 mm inside the outline). Heights are ray cast
-    from the detailed leaf. Result: 328 triangles (144 quads + 40 triangles, no n-gons), outline kept to 98.1 % (IoU
-    below the scroll), same UVs, textures and normal-map bake as before. The decimated 698-triangle version is gone.
-  - LEAF LIMITS and the scroll as a CONTINUATION (user, same night: "make the scroll be a continuation of the lines on
-    the top of the leaves"; "the leaves are too flatten, all the detail is lost. there should be the leaf limits ...
-    it is almost like an extruded silhuete", with red strokes from each notch down into the stem). The detailed leaf is
-    nearly flat between its ridges and valleys (1-3 mm) and a normal map does not show in Solid view, so
-    `build_quad_leaf.py` now CUTS the three valleys between the leaflets into the detailed mesh before anything else
-    (4.5 mm deep on the line, reaching 5.5 mm to each side, fading in over the first 30 % of the line and out to the
-    notch): the low-poly mesh (heights ray cast from it) and the baked normal map both get them, and the valley edges
-    are marked sharp. The valleys start one or two rows lower than before (rows 106 / 118), where the user's strokes
-    start. The scroll is no longer a separate block: its first ring IS the leaf's top edge (notch, mid point, centre,
-    mid point, notch: the V between the two upper notches) plus the ground under it, and nine more ten-sided rings
-    follow one curl (top at 211.7 mm, inside stopping short of the curl's middle); same mesh, material slot 2
-    (`block_clay`), no Subdivision Surface. `leaf_low` = 356 triangles of leaf + 188 of scroll. `scroll_block` is gone.
-    The line-built relief itself is unchanged: to make the deeper limits part of the source, lower its valley lines.
-  - HAND EDITING (user: "can i edit the mesh directly? editing one site will reflect on the other?"): `leaf_low` is a
-    compiled mesh (a snapshot; it does not follow the lines). In the file it is kept as its RIGHT HALF with a Mirror
-    modifier (X, clipping and merge on, Flip U with offset -0.000981 so the left half keeps the photo's own UVs: the
-    photo's centre is at u = 509/1019), so every edit, extrusion included, shows on both sides; the scroll's end cap
-    is a half face closed by the mirror. After a regeneration run `manual_tools/live_mirror.py` then
-    `live_mirror_cap.py` again (they refuse if the mesh is no longer symmetric). The full mesh as loaded is kept as
-    the mesh datablock `leaf_low_full_before_mirror`.
-  - BOX-MODELLING TOPOLOGY (user, same night: "the shape is not good for editing ... I would need to add rings ...
-    triangles at specific spots and not symmetric ... create a shape with the proper rings, and then extrude the
-    leaves so it has an organized quad only topology ... all leaves with same quads"): `leaf_quads` (collection
-    `LOWPOLY`, 210 mm left of the line-built leaf; `manual_tools/build_blades_leaf.py`, loaded by
-    `live_append_quads.py`). Right half + Mirror modifier. Stem: 6 columns per half (centre, mid, groove = the core's
-    side, shoulder, ridge, shoulder, outline) x 6 rows. Core above 95 mm: 2 columns; its side edge carries the leaflet
-    roots, 4 edges each (rows 95-117, 117-145, 145-165), then 3 rows of the tongue's base up to the top row (centre
-    190 mm, mid, upper notch). Each leaflet: 5 rails (side, shoulder, ridge, shoulder, side) x 5 rows = 20 quads of
-    top, a blunt 4-edge tip; leaflet 1 continues the stem's outer 4 columns. Neighbouring leaflets are SEPARATE blades
-    with a V groove (1.8 mm wide at the top, 5 mm deep) along the user's valley line between them, the ridge rails on
-    the user's ridge lines, heights from the detailed leaf (side edges 1.6 mm lower, shoulders 0.3 lower: convex
-    blades). Walls: outline down to the ground, grooves down to the groove's bottom (material slot 3 = colour only, no
-    normal map, so the grooves stay visible in lit views). The scroll continues the core's top row: 9 six-vertex
-    half rings, the tip closed with two quads. 516 quads, 0 triangles, 0 n-gons (1032 triangles when triangulated),
-    one 5-pole at each stem/leaflet corner, 6- and 7-poles at the leaflet roots. The bake's gotcha: Selected-to-Active
-    bakes into the ACTIVE image node of EVERY material of the active object -- give the other materials a throwaway
-    image node, or the colour texture gets overwritten with normals (happened once, caught before it reached the file).
-  - EXTRUSION BLOCKS: `scroll_block` (child of `leaf_low`) is a plain mesh, a tongue of clay the leaf's own
-    thickness: 10 eight-sided sections (74 faces) from inside the stem's top, up, over (top at 211.5 mm), down the
-    front and tucked under once, the inside stopping short of the curl's middle; a Subdivision Surface modifier
-    (level 2) smooths it for display. The user edits its cage in Edit Mode (move a ring, extrude the end face).
-  - The line-built relief (`leaf_relief` and its lines) stays as the source the low-poly leaf is made from; the
-    line-built scroll (`scroll`, `scroll_spine`) is hidden, not deleted.
-- Working copies of the scripts that build these node groups live in `tests/artifacts/blender/bradbury/portal_project/
-  ornaments/manual_tools/` (gitignored, like the .blend): run them inside the open file (`blender_live.py` sends a
-  script to the running Blender through its MCP add-on's socket when the MCP tools are not in the session).
-- THE WHOLE CAPITAL, LOW POLY FROM THE CUT-OUTS (user 2026-10-02 night, `ornaments.zip`: 23 AI-separated terracotta
-  pieces with alpha -- corner leaf, S-scrolls with their volutes, palmette, tall and fan leaves, C-shaped heart bands,
-  drop, knot leaf, balls, two mouldings; "recreate the full capital ... low poly meshes, rely mostly in the texture ...
-  the contour extruded ... topology as clean as possible, following clean loops"): `capital_lowpoly/capital_lowpoly.blend`
-  (collection `CAPITAL_LOWPOLY`, 62 objects, 14.6k triangles, all quads but one hidden triangle on the abacus top),
-  loaded into the live file at x = +1.6 by `manual_tools/capital_lowpoly/live_append_capital.py` (parent empty
-  `capital_lowpoly_root`). Built by `manual_tools/capital_lowpoly/build_capital.py` (system python: numpy + PIL,
-  no OpenCV) then `blender_make.py` (headless). How: each cut-out's alpha is traced (`trace.py`: Moore tracing,
-  Douglas-Peucker to about 0.8 mm) and laid out as clean quads from the outline alone (`layout.py`): `tree` = a
-  two-column trunk whose rows are the outline's notches (convexity defects, merged when no lobe lies between two of
-  them) with every lobe a 3-rail ladder closed by one kite quad at its tip, symmetric pieces built from their right
-  half and mirrored; `bandlayout.band` = a 3-rail ladder along a hand-drawn midline (scroll bands, the C-shaped
-  heart bands) with lobes on the convex side; the corner roll a 16-point Coons disc. Cards are extruded (front cap,
-  back cap, walls) and wrapped onto the photo-proportioned bell blank (`bell.py`, capital_edit.py's blank at low
-  LOD: VSCALE 0.898, 0.463 m tall) by arc length along the plan outline at each height: `anchor` centre of the front,
-  the right corner cut, or a side face's middle; `flat` keeps a piece on its face's plane past the corner (the
-  rolls). Places and sizes read off `capital_ref.png` (0.6985 mm/px, vertical x 0.898); the side faces repeat the
-  front's composition about their middle (the back bands end at the back plane, no roll). Relief: leaves 14 -> 44-52
-  mm leaning out (power 1.5), bands 32 mm rising to 62 at the roll, corner roll 74 mm proud and 110 deep (a 45-degree
-  drum in the cut, one per corner), palmette 80, balls as cube-spheres (54 quads). Textures: one 4096 atlas of the
-  unique cut-outs at 0.85 scale (`atlas.png`, colour bled into the transparent area, enclosed holes painted dark),
-  caps with alpha clip (so the pierced holes are see-through and the texture's own silhouette cuts the card), walls
-  the same atlas without clip sampled 4 mm inside the outline; mouldings `abacus_tex.png` / `neck_tex.png` (the
-  bars cropped to their middle 80 %, mirror-tiled, one length per 0.30 m); the bell a softened patch of the photo.
-  Gotchas: PIL premultiplies RGBA on resize (resize colour and alpha apart or the bled colour goes black); Blender
-  premultiplies straight-alpha images on load the same way -- the atlas image is CHANNEL_PACKED; the rolls' caps must
-  not alpha-clip (the texture's roll is not a circle). Check: `screens/.../ornaments/manual/step32_capital_lowpoly_*`
-  (front, quarter, low, the cards' outlines over the photo, and reference | result).
-  - v2 (user 2026-10-03: "fix the edges. the drum orientation (one on each side, merging in the centre). the scroll
-    on the leaf on the side. squash the leaves at the bottom (only leaves, no background). reduce the depth. the
-    flower in the centre is upside down. all decorations are glued to the surface, they don't float"): every card's
-    back now lies ON the bell (no back caps, no thickness of its own: the relief is the thickness), reliefs halved
-    (leaves 6 -> 20 mm, bands 28 -> 44 at the roll, rolls 50 proud and 62 deep, flower 50, heart bands 26, drop 30,
-    balls with their centres 6-12 mm off the face); one roll per FACE again, centred on the corner and facing its
-    own face, so the front and side rolls cross at the corner; the flower (#3) turned 180 degrees, hanging point-down
-    from the abacus with the balls under its point; the lower leaves stretched sideways (fans x 1.4 / 1.35, tall
-    x 1.25, corner x 1.15) and a BACK ROW of small fan leaves (0.85, 3 -> 12 mm) between the front ones so the foot
-    is solid leaf; the bands stand in front of the leaf tips; card walls wear the plain clay with arc-length UVs
-    (no more smeared texture edges), the clay toned to the pieces' own terracotta. 76 objects, 14.1k triangles.
-    `step33_capital_lowpoly_v2_*` (front, quarter, low, compare).
-  - v3 (user 2026-10-03, three sketches: "make the roll in the corner leaf ... the drums should meet at the edge,
-    and they align with their respective face"; "TOP / BOTTOM" on the heart leaf; "NO LEAF UNDER"; "SAME HERE" on
-    the side face and "MORE LEAVES"): each roll is centred 20 mm beyond its own face's end on that face's plane
-    (`x_corner`; the flat continuation now uses the face's normal, not the cut's 45-degree one, which had folded the
-    side rolls' discs), so the front and side rolls cross and merge over the corner cut; the bands are shortened
-    toward their tail (`su` 0.9) so their cut end sits inside the roll. The corner leaf's top 72 mm roll forward and
-    down round a horizontal axis (`roll`: R 22 mm, a 12 mm sheet, 180 degrees, glued below the roll). The heart
-    C-leaf is flipped vertically (its leaflets rise, the pointed end under the flower, the curl at the knot). The
-    lower leaves' feet are widened to 2.0-2.3 x (easing to the normal squash by 45 % of the height) and dipped 3 mm
-    into the torus, a third back-row leaf added at 1262 px and, on the longer side faces only, a fan leaf by each
-    corner. Side faces: their left half is now mirrored ALONG the face about its middle (`uflip`) instead of through
-    x (which had thrown those pieces onto the opposite side), so each side has both heart bands and both C-leaves;
-    the back band stays low and ends at the back plane. Bell UVs planar per face (x on the front, y on the sides).
-    86 objects, 16.0k triangles. `step34_capital_lowpoly_v3_*` (front, quarter, right quarter, corner, side, compare).
-  - v4 (user 2026-10-03: "fix the spots. and the scroll supports the drums. they must touch each other"; then on
-    the flipped heart leaf: "this is upside down. and on depth, it must be on top of the drums"): the rolls are
-    centred 40 mm past their face ends and 70 deep, so the front and side discs reach each other's roll plane and
-    the two drums touch along the corner line; their rims wear the spiral's outer turn (wall UVs pulled toward the
-    disc centre with depth) instead of plain clay; the band is tucked into the roll (`su` 0.87, top 4 mm lower) so
-    its end no longer shows above the rim. The corner leaf is taller (250 mm) with finer rows (9 mm) and its roll
-    (R 24, 66 mm, the sides starting higher: `edge` 0.55, a dome rather than a rolled plank) reaches the drums'
-    underside and carries them. The heart C-leaf's vertical flip of v3 is undone (the curl under the flower, the knot
-    end below -- the flipped one was the upside-down one) and it stands 36 mm proud, in front of the band's 28.
-    86 objects, 16.6k triangles. `step35_capital_lowpoly_v4_*` (front, right quarter, corner).
-  - v5 (user 2026-10-03, after moving the two left-corner drums by hand: "they need to be fine tuned and connect
-    with the rod. the left one must be mirrored ... also rotate them a little bit"): each roll is now hung on its own
-    band's end (`from_band`): centre 0.85 r past the band's cut end along the face, r below the band's top edge (so
-    the rim is tangent to the band and the band's end tucks under it), 62 mm proud, 70 deep, the disc yawed 15
-    degrees toward the corner about its own vertical axis; built straight in 3D (place_roll), not through the wrap.
-    The side rolls show the spiral mirrored (seen from a side, the band arrives from the right and curls into the roll
-    on the left, the mirror of the front), and the side's front band is stretched by the side/front half-length ratio
-    so it still ends at its face's end; the front bands end at the face's end (`su` 0.80). The two drums of a corner
-    touch along the corner edge, each facing its own face a little turned to the diagonal, over the corner leaf's
-    roll. The user's hand-moved drums (left corner: front +23/-30/-15 mm, side -21/+57/+28 mm, 2-3 degree tilts)
-    were the brief for this; the reload replaces them. 86 objects, 16.6k triangles. `step36_capital_lowpoly_v5_*`.
-  - v6 (user 2026-10-03, four sketches on v5: "FLIP" the left corner's side drum, "CONNECT" the band to the drum,
-    "IMPLEMENT" the corner leaf's hook (outline drawn: the leaf widening up to a curl under the drum), "DEFECT" on the
-    heart leaf's lower leg, "ROTATE" from above with the drums' far edges swinging toward the viewer): handedness
-    fixed -- the texture (#10) is the RIGHT front roll; the left front roll is its mirror (the photo's), and a side
-    roll is the mirror of the front roll of the same corner (`mirror_tex = side XOR left`); v5 had the left corner's
-    two drums swapped (both rolls of a corner the same way round). One band texture (#10) for all four roll bands,
-    mirrored geometrically (through x on the front, along the face on the sides), so the two corners are exact
-    mirrors (with #2 on the left they differed by 30 mm and one corner gaped). Each drum is hung on its band: the
-    band is scaled toward its tail (`to_roll`) so its cut end sits 0.70 r before the drum's centre and 0.50 r above
-    it, the centre standing 10 mm past the face's end (the user's hand placement), 50 mm proud, 70 deep; the band's
-    last 80 mm rise to the drum's face plane and dive 1.5 mm under it, so the band runs into the roll's outer turn
-    with no cut showing. Drums yawed 25 degrees toward the corner and leaning back 4 (the user's "rotate" sketch
-    and hand tilt); the two of a corner interpenetrate and read as one merged mass over the corner cut, resting on
-    the corner leaf's hook. The corner leaf: 282 mm tall, its top 85 mm rolled forward and down into a hook (R 28,
-    174 degrees, 14 mm sheet, the sides starting higher) whose top meets the drums' underside. The heart C-leaf 30 mm
-    proud over the band's 24, and the cards' sides wear a dark clay (slot 5 `cap_lp_sides`) instead of the bright
-    bell patch: the lit flat ledge along the heart's lower leg (the "defect") was its 36 mm side wall. 86 objects,
-    16.7k triangles. `step37_capital_lowpoly_v6_*` (front, right quarter, both corners side by side, corner, heart).
-- THE PBR ATLAS CAPITAL (user 2026-10-03, `capital_ornaments_PBR_atlas.zip`: one 2048 atlas, five parts -- both
-  lower leaf banks, the left horn (band + volute), the centre ornament (C-scrolls, beads, berries, calyx), the
-  pendant, the crown -- with basecolor+alpha, OpenGL normal, roughness, AO, 16-bit height, opacity and a part-id
-  mask; "just create the silhouette of the shapes and add the texture ... the side leaf must have the scroll ... if
-  possible to avoid using triangles, just use the texture and cut around it (but it must have volume)"):
-  `capital_pbr/capital_pbr.blend` (collection `CAPITAL_PBR`, 26 objects, 9.8k triangles), loaded into the live file
-  at x = +2.9 beside the earlier copies by `manual_tools/capital_pbr/live_append_pbr.py`, which also points the 3D
-  views at it. The technique is the "cut around the texture" one: each part's silhouette (from the part-id mask;
-  the leaf banks split in two) becomes an all-quad GRID card (`gridlayout.py`: a 16 mm lattice keeping the cells the
-  silhouette covers by 30 % or more, the kept set's boundary vertices snapped to the outline -- vertices outside
-  the picture always, so no wall ever shows beyond it; the silhouette's holes become holes in the card, so the
-  C-scrolls' and leaves' inner edges get walls too), extruded with its back on the bell (the relief is the
-  thickness) and wrapped onto the blank; alpha clip at 0.5 trims the card to the picture, the normal map gives the
-  carving, the dark clay sides give the volume. Pieces: crown (rotated 180: the texture draws it point up, it hangs
-  point down) 50 mm proud, heart 30, pendant 28, leaf banks 6 -> 20 leaning out, the horn's band 24 -> 40 landing on
-  the drum's face. The horn is split at its roll: the band cells end on the roll's circle (least-squares fit to its
-  outline) and the circle is a 16-point Coons disc hung as a drum (50 proud, 70 deep, yawed 25 degrees toward the
-  corner, leaning back 4) at the face's end + 10 mm; the band is placed so the texture's circle centre lands on the
-  drum centre, so band and roll stay in register; the horn texture is the LEFT volute, mirrored for the right and
-  for the sides' halves. The corner leaf ("the side leaf must have the scroll"): the banks' outer leaf is the
-  texture's rolled tip drawn in 3/4; the front banks are stretched 1.15 so that leaf lands on the corner cut's
-  middle, and its blob (card u > 282, v > 186 mm) is raised as a solid half-roll (R 39, a cylinder along the leaf's
-  width the blob is projected onto frontally, tangent to the leaf at the top, its belly's underside sloping back)
-  -- not an unrolled sheet, because the drawing already shows the roll's front and a bit of its side. The side
-  faces carry the inner leaves only toward the front corner (`bank_L_inner`, the outer leaf masked off, its cut
-  edge sinking into the bell over 40 mm so no wall shows), the whole bank toward the back. The atlas is
-  CHANNEL_PACKED (the RGB padding under the alpha is kept), normal map Non-Color tangent space +Y, roughness and AO
-  Non-Color (AO multiplied into the base colour at 0.7). Height map unused (the normals carry it). Check:
-  `step38_capital_pbr_*` (front, quarter, right quarter, front-low, corner, compare, quarter+frontlow).
-  - v2 (user 2026-10-03, two "fix" screenshots: a plain crescent and plates beside the drums, and small plates
-    jutting from the pendant's sprigs): the crescent was the band card's ring of cells round the roll (the roll's
-    outline bulges up to 20 mm past the fitted circle) landed on the drum's face with an 80 mm wall under it -- a
-    cell near the circle is now kept only where the silhouette goes on 45 mm past the circle in its direction (the
-    band's root), the rest is dropped (`horn_exclude`). The plates were lattice cells bridging two features (30 %
-    covered by one sprig, snapped to the nearest outline of another), whose walls crossed the gap: the walls are now
-    alpha-clipped like the caps, sampled 1.5 mm inside their top edge and constant down the depth (`pbr_sides`: the
-    picture's colour darkened, no normal map), so a wall exists only where the picture is opaque along that edge.
-    9.3k triangles. `step39_capital_pbr_v2_*` (front, right quarter, drum + pendant close-ups).
-  - v3 (user 2026-10-03, "ROTATE" arrows on both drums of a corner pointing each back toward its own face, and
-    "CONNECT" at the band's end): the drums' yaw is 0 again (tilt 2), each facing its face and the two meeting at
-    the corner edge (the 25-degree turn had put the side drum face-on to a viewer at the side and left the band
-    rising 30 mm to meet its swung-out face, in a dark block); the drum stands 46 proud and the band rises to 44 at
-    the roll, so it runs flush into the drum's face and dives under it. `step40_capital_pbr_v3_drums_side_corner.png`.
-  - v4 (user 2026-10-03, a sketch "CYLINDER + ARM: the cylinder curved at the edges, its inner centre deeper (it
-    scrolls inside), align the texture, separate texture coordinates for the scroll if needed", then "connect the horn
-    to the arm", "texture defect" on the drum's rim, "MOVE" the band's tail to the heart's knot, "several holes" on
-    the heart's and pendant's sides): the roll is now a proper cylinder (`build_drum`): the texture's circle as a
-    Coons face scaled in by the 9 mm fillet and dished 8 mm toward the eye, a quarter-round fillet, the 70 mm side,
-    a back cap; face and fillet carry the spiral, the rim carries the band itself wound round it (a point `s` along
-    the rim samples the band's own midline `s` along the band, across its width down the depth -- the midline and
-    half-width read column by column from the mask; the radial smear was the "defect"). The band is stretched 1.17
-    toward the face's middle about the roll (its tail at 40 mm, under the heart's knot), its root cells reach the
-    circle (the sector test now at 26 and 45 mm past the circle) and its last 60 mm follow the drum's surface,
-    fillet included, 3 mm under it. The sides: no lattice walls any more -- a SKIRT (`skirt.py`) traced from the
-    picture's own outline and holes (Douglas-Peucker 2.5 mm), from the card's surface (+0.3) down to the bell, UVs
-    1.5 mm inside the picture (slot 5, unclipped, darkened); the excluded regions (the roll's circle) are cleared
-    from the skirt's mask, so the band's end wall lies inside the drum. 26 objects, 8.8k triangles.
-    `step41_capital_pbr_v4_*` (drum from the user's view, front, pendant).
-  - v5 (user 2026-10-03: the crown "upside down ... the top should be above the edge, incline it forward"; "holes
-    in the texture" on the drums; "rotate the horn arm up a bit so it leaves more room for the leaves, make the base
-    (centre area) of the arm less protruded"): the crown is point up again (as the texture draws it; the v1 turn was
-    the mistake), its point at 458 mm over the abacus's lower edge, leaning forward from 44 mm proud at its foot to 80
-    at its point, in front of the abacus band (68). The drum's face, fillet and back use their OWN texture set
-    (`rolltex.py`: the horn's roll cropped from the atlas maps round the fitted circle, every pixel the picture leaves
-    transparent filled from the opaque ones; material `pbr_roll`, unclipped, own UVs) -- the circle runs past the
-    drawn roll in places, which the clipped atlas showed as holes. The arm is turned up 5 degrees about the roll
-    (`ARM_ROT`), its stretch toward the centre ramping in from the circle (so the junction stays on the drum's rim),
-    and its depth falls from 50 mm at the roll to 12 at the tail (was 44 -> 24). Two collisions fixed on the way: the
-    corner's two drums cross, and with the 8 mm dish the other drum's rim poked through each face (the dark bar in the
-    spiral) -- the faces now stand 52 proud and the dish is confined to the eye (smoothstep inside 0.8 of the face);
-    the corner leaf's rolled blob poked through the drum's lower face -- it is capped 6 mm behind it.
-    `step42_capital_pbr_v5_*` (arm + front + crown, drums, front).
-  - v6 TOPOLOGY (user 2026-10-03, the arm in wireframe: "fix the topology. it seems to have duplicate lines. the face
-    doesn't need that many subdivisions, the sides don't have it. create a basic shape, add loops for the curves, and
-    move them to match the texture. do the same for the other shapes"): the 16 mm lattice faces and the separately
-    traced skirts are gone (the skirt's top loop ran beside the face's snapped edge without sharing it: the doubled
-    lines). Every piece is now a box-modelling layout whose boundary vertices lie on the picture's outline, and the
-    walls are built from that boundary (shared vertices, one wall quad per boundary edge, holes included):
-    * the arm (`pieces.arm_strip`): one 2-rail strip, its root row on the roll's circle (inside the drum), rows
-      perpendicular to its midline spaced by arc length + 40 mm per radian of turning, a quad round the tail: 15 quads;
-    * the leaf banks and the crown (`quadcards_hub.comb2`): a base strip whose top rail runs corner - deep notch -
-      ... - corner, every leaf grown from its root chord on it; a leaf is a band along its spine (`regions.region`:
-      the main body traced level by level parallel to the chord) with its fingers as lobes, a finger a ladder of rows
-      parallel to its root chord spanning the outline's outermost crossings plus rows at the outline's extremes
-      (`lobes.add_lobe`): banks 73-79 quads, crown 37 (7 leaves at notch depth 4 mm);
-    * the pendant: a band down its centre with the side groups and the main leaf's side lobes as lobes (59 quads);
-    * the heart (`pieces.heart_ring`): its right half a closed ring round the eye -- the ring's centre line is the
-      line of equal distance to the eye and to the nearest other boundary (outline, axis, other eye), the rows run
-      from the eye's edge to the outline or the axis, the C-scroll's fingers are lobes -- mirrored and welded on the
-      axis, so the eyes are real holes with walls (152 quads). The berries are cut from the card and the four beads
-      and two berries are ellipsoids measured on the texture (beads 30 mm proud on the card, berries sunk into the
-      bell), textured by the card's own front projection.
-    All quads (the only triangles left are the drums' cap fans and the blank's hidden top). 44 objects, 9.2k
-    triangles. Layout sheets and the wireframe: `step43_capital_pbr_v6_*`. The layouts are generic but the inputs
-    are per piece (notch depths, row lengths, the heart's ball table) in `build_pbr.py` / `pieces.py`.
-  - v7 (user 2026-10-03, the reference photo marked TOUCH at the volute's top and under it, CYLINDER on the corner leaf's
-    curl, GAP over the leaves at the arm's tail, and red lines on the model for the arm's new edges: "rotate the arm so
-    that it touches the top, leaves gaps for the leaves and starts at the right position in the centre area"): the
-    drums' tops touch the abacus soffit (centre at soffit - r - 1: 355 mm; the photo's volute spans 282-430 mm, r 74).
-    The arm is RE-PATHED, not rotated (a rotation cannot keep both its root on the drum and its tail at the centre
-    while lifting its middle): every card point keeps its place along the texture's centre line and its offset across
-    it, and is laid on a new centre line -- a cubic from inside the drum just under its top (so the arm's top edge
-    runs along the soffit) that stays level for 40 % of the way (`ARM_LEVEL`) and dives to its tail at 45 mm from the
-    face's middle, 222 mm high (`ARM_TAIL`: under the heart's lower C curl, over the leaves), arriving at 35 degrees;
-    its relief 50 at the root (hidden under the drum's face inside the rim) to 12 at the tail. The front banks' corner
-    leaf is squashed vertically (inner leaves untouched, 70 mm ramp) so its curl's top meets the drum's underside
-    (`drum_touch`), the curl a half-cylinder standing up to 2 mm short of the drum's face. `step44_capital_pbr_v7_*`.
-  - v8 (user 2026-10-03, the leaf banks in wireframe: "too complex. and it is cutting away leaves from the image"):
-    the leaf layouts of v6 (base strip + leaves grown from root chords + finger lobes) both cut leaf tips off (where a
-    leaf was not detected between two notches, the base strip's straight top edge ran through it) and tangled. The
-    leaf banks, the crown and the pendant are now ENVELOPE cards (`envelope.py`): per pixel column the picture's top
-    and bottom, each fitted by a two-sided Douglas-Peucker (4 mm on the banks: vertices at the tips AND in the notches),
-    vertices closer than 5 mm merged, then every segment lifted until it clears the profile (+0.6 mm) -- so the card
-    covers every opaque pixel (checked: 0 missed) and hugs the outline from outside; columns at the polylines'
-    vertices, gaps over 40 mm split, 3 rows as fractions of each column (2 on the crown). Banks 99 quads, crown 44,
-    pendant 72, card area 1.06-1.16 x the picture. The alpha clip draws the fine silhouette (finger gaps, holes);
-    the walls follow the card's boundary and are alpha-clipped now (`pbr_sides`), sampled 5 mm inside, so a wall shows
-    only where the picture comes within ~5 mm of the boundary (notch crossings vanish). The bump is gone: the front
-    corner leaf's curl is a small cylinder (`curl_drum`: the knob's circle fitted on the bank's outline, r 42 mm,
-    drawn at 0.85 r; face 44 mm proud facing out of the corner cut, 6 mm fillet, 5 mm dish, 34 deep, the knob's own
-    texture on the unclipped atlas), its top on the volute's lower rim at its own position along the face, 3 mm into
-    it. `step45_capital_pbr_v8_*` (front + wireframe, the envelope layouts, the corner curl).
-  - v9 (user 2026-10-03: "connect the horn to the arm. and align the textures" with the spiral's outer turn and the
-    arm's ridges marked at different heights; "the bottom leaves are unnecessarily complex" on the pendant): the
-    band leaves the roll at about -30 degrees in the texture, while v7's re-path made the arm leave level from the
-    drum's top -- so the drum's (unrotated) spiral and the arm's ridges no longer met. Now drum and arm share one
-    rotation: alpha levels the texture's band direction where it leaves the roll (measured on its centre line over
-    the first 30 mm); the drum's face, fillet and back are built rotated by alpha (texture fixed, `build_drum(rot=)`),
-    and the arm's first stretch is mapped RIGIDLY with the drum (texture point -> rotated about the roll's centre ->
-    the face), blending into the re-path over its first 60 mm (the path starts at the rigidly mapped root, level, and
-    maps arc length 1:1 at the root, the length difference absorbed toward the tail). After alpha the band's top edge
-    leaves the circle at its top, i.e. along the soffit. The arm's root is moved 10 mm inside the circle
-    (`inset` = fillet + 1) so it covers the drum's rounded edge at the face's height (no groove), and its depth is
-    the drum's face plane at the root easing to its own relief over 120 mm along the arm (blending by distance to the
-    rim twisted the first quads: the bell recedes downward, the plane did not). The arm strip is `arm_strip2`: rows
-    whose direction turns from the root chord's (the band leaves the roll obliquely) to the centre line's
-    perpendicular over the first 70 mm, close rows there (12, 28, 46, 66 mm), so no two rows cross (band2's
-    perpendicular rows folded near the roll). Pendant and crown: symmetric envelopes (`envelope_card_sym`: the
-    silhouette united with its mirror, fitted on the right half, mirrored), the pendant at 6 mm / 2 rows: 28 quads,
-    the crown 20. 8.7k triangles. `step46_capital_pbr_v9_*`.
-  - v10 (user 2026-10-03, "several artifacts/holes" circled on the banks' tips, beside the beads, round the berries and
-    under the pendant, then dark lines round the crown): every one was a wall standing where the picture is not. (1)
-    The envelope cards stood up to 4.6 mm OUTSIDE the outline (built to cover every pixel) and their walls, textured
-    from inside, showed as dark slivers: now TIGHT envelopes (`envelope_card_tight` / `_sym_tight`): corners exactly ON
-    the outline (two-sided DP; merged clusters keep their outermost corner at its own x; any edge that would trim more
-    than the tolerance gets its worst sample back as a corner; bottom corners snapped to top columns only where the
-    bottom does not change there), trims at most ~2.7 mm. (2) The heart's eye outline ran round every bead and berry:
-    the beads are now cut out of the heart card entirely (+1.5 mm; only the top bead's lower half, the connector bar
-    runs behind its upper half), with a 5 mm spine down the middle that keeps the eyes apart and hides behind the 3D
-    beads; the berries get smaller holes (-4 mm: the C-scrolls pass under them); no walls within 3 mm of a bead or
-    berry (`wall_skip`); berries centred on the card's plane (30 mm) so they fill their holes. The heart's layout is
-    now a POLAR envelope round each eye (`polar_ring`: per 0.5 degree the eye's edge and the outline's farthest
-    crossing about the eye's centroid, capped at the symmetry line, tight DP on both, rays at the corners: rays from
-    one centre cannot cross; the medial-loop ring dipped into the eye once the beads were cut). (3) A wall is built
-    only where the picture is there 1 mm inside its edge along most of it (checked on the alpha mask), so no wall
-    stands in a gap; walls no longer alpha-clip and are a lighter tone (x 0.66 instead of 0.45). (4) The cards are
-    CUSHIONED (`edge_factor` 0.35): their edge vertices at 35 % of the relief, the inner rows at full relief (3 rows
-    everywhere: with 2 the cushion was a tent whose ridge showed), so the remaining walls are short edges, not 20 mm
-    fins. Banks 99 / 123 / 87 quads, crown 78, pendant 48, heart 276. 9.8k triangles. `step47_capital_pbr_v10_*`.
-  - v11 (user 2026-10-04: "lower the base of the arm, the maximum possible without touching the leaves. connect the
-    arm to the drum. align the textures. reorganize the texture so that it is not stretched, try to find a flatter
-    texture area"; red lines at the drum-arm joint and a stretched wall under the abacus marked TEXTURE):
-    * the arm's path is SEARCHED per face: for level-run fractions 0.25-0.55 and dive angles 25-45 degrees, the
-      lowest tail (from 190 mm up, 3 mm steps) whose whole outline -- every boundary vertex and edge middle, mapped
-      through the real arm mapping -- stays ARM_GAP (8 mm) above the placed leaf banks' top edges (recorded by
-      place_card, the corner leaf's squash included). Front tails 205 mm (were 222), sides 193-196;
-    * the arm is a LADDER BETWEEN ITS TWO EDGES (`pieces.arm_strip3`): each row pairs the points at the same fraction
-      of the upper and the lower edge's length, closer rows near the root; rows cannot fan or cross (arm_strip2's
-      perpendiculars twisted the second quad by 14 mm; worst non-planarity now ~6 mm); its root 10 mm inside the
-      circle; each row has ONE texture station (`row_te`) that drives its depth and its rigid-to-path blend, so a row
-      never splits between two depths;
-    * the texture along the arm: a uniform scale (the same along and across) growing from 1 at the drum to at most 1.2
-      (1.3 on the longer side faces) by 40 % of the length, the rest of the length difference distributed along the
-      band's FLATTEST stretch (`band_flatness`: the luminance gradient along the centre line at five offsets, smoothed
-      over 20 mm, weight = 1 / gradient squared, none within 60 mm of the roll or 50 mm of the tip) -- never stretched
-      one way only where the texture has detail;
-    * the drum's face now maps the texture at 1:1 (it was squeezed by (R - f) / R so the whole circle fitted inside
-      the fillet, and its outer turn could not meet the arm's); the fillet's outer ring stays on the roll texture (it
-      used atlas UVs under the roll material: the smear on the drum's side);
-    * walls: plain clay (the bell's flat patch) at 1:1 (0.2 m repeat along the edge and down the wall, x 0.82), no
-      longer one texel row of the picture stretched down the wall. `step48_capital_pbr_v11_*`.
-  - v12 (user 2026-10-04, a horizontal cylinder sketched over the corner curl: "the scroll is in the wrong angle"): the
-    corner leaf's curl is a ROLL LYING ON ITS SIDE (`curl_roll`), its axis horizontal along the corner chamfer (the
-    tangent of the cut), centred on the corner 40 mm out of the chamfer, radius 27, length 76, 4 mm rounded ends, its
-    top 3 mm into the volutes' lowest rim -- as the texture draws it (both banks' knobs show the spiral end on the inner
-    side and the body running back to the corner edge, a 45-degree roll seen from the front) and as a Corinthian corner
-    leaf curls (out of the corner, round an axis along the chamfer). Its ends wear the knob's own spiral at 1:1 in the
-    cap's plane (eye at 52 mm from the outer edge, 228 up), carried out over the rounded ends; its rolled surface the
-    scroll band wound round at 1:1 (as the drums' rims), its centre at the roll's middle, folded inside the band's
-    edges, the seam at the back. The painted knob is cut out of the front banks' cards (`bank_R_front` /
-    `bank_L_front`: the connected picture above v 196 mm at the outer top corner, flood-filled from the knob), no walls
-    round the cut (`wall_skip`), and the corner leaf's squash is now set so its top (v 196) reaches into the roll (0.87,
-    was 0.77: less vertical stretch). The band sampling for both the roll and the drums' rims now stays inside the
-    band's TRUE half-width (hw x cos(slope) x 0.75: hw is the band's vertical half-extent and the band slopes ~40
-    degrees, so the old 0.9 hw ran past its edges into the texture's padding: streaks). `step49_capital_pbr_v12_*`.
-  - v13 (user 2026-10-04: "the leaves were cut out. and the arm is still not connected to the horn", the notch between
-    the drum's top and the arm circled, an arrow along the soffit): (1) the knob cut's flood fill ran through the
-    neighbouring leaf tips joined to the knob above v 196 mm and cut their tops too; it is now confined to the knob's
-    own corner (95 mm from the outer edge). (2) The horn texture's band leaves its spiral at about 2 o'clock, 43 mm
-    above the drum's centre, while the drum's top touches the abacus at 75: a deep V the rigid mapping reproduced
-    faithfully, plus the drum's 9 mm rounded edge dropping right at the joint. The photo's band runs on from the
-    volute's top under the abacus. The arm's top edge is now lifted near the drum onto the drum's top tangent: its
-    root's top corner on the tangent point 12 mm past the drum's top, the next top-edge vertices raised to the tangent
-    line (descending 9 degrees), held to 70 mm along the arm and eased back to their own line by 140 (`ARM_TOP`); the
-    lift happens before the depth landing, so the raised web sits just behind the drum's face plane. The drum's
-    rounded edge is flattened (0.5 mm) over the arc the arm covers -- from the band's lower edge to the tangent point,
-    eased over 15 degrees -- so drum face and arm meet flush (`build_drum`, `fil(a)` per angle). The band texture
-    stretches upward in the lifted web (it has no content above its own top edge there). `step50_capital_pbr_v13_*`.
-  - v14 (user 2026-10-04: "align the textures and connect the leaf to the scroll", the drum-arm joint and the roll's
-    inner end circled): lifting the band's own top edge (v13) dragged its texture away from the drum's outer turn. The
-    band is back on its drum-aligned mapping (as v11: rigid with the drum at the root, the spiral's outer turn flowing
-    into its ridges), and the filling above it is a separate WEB strip in the same object: from the band's own top
-    edge up to the drum's top tangent line (`ARM_TOP`), its bottom on the band's own texture points and its top
-    continued outward from them along the band's normal by the lift, both on the drum's filled roll texture (slot 6,
-    the same crop of the atlas the drum's face uses, its gaps filled), so the web joins the band below and the drum
-    beside it without a seam; the web's top edge gets a plain clay wall down to the bell. The depth landing near the
-    drum is a helper (`land_w`) shared by band and web. The corner roll is seated back onto the leaf (its axis 31 mm
-    out of the chamfer, was 40: its back now 4 mm out, the leaf's cushioned top edge ~7 mm proud runs into it).
-    `step51_capital_pbr_v14_*`.
-At that height the real leaf is 66 mm wide with a 29 mm stem. The photo's corner leaf is roughly twice as wide seen from
-the corner (about 140 mm at its upper leaflets, 60 mm at the stem, by the trace's approximate `leaf1`/`leaf2` boundary
-and the bell's corner line), and its turnover tops out about 35 mm lower than the rolled scroll of `capital_edit.py`
-(0.211 against 0.245 m).
+History. The carving began as a line trace of the photo (`capital_drawing.svg`) carved through a leaf toolkit
+(`carving.py`) in an editing copy (`capital_edit.py`, 2026-09-28 to 09-30); then came hand-built leaves in a working
+file (`manual_capital_leaves.blend`, 2026-09-30 to 10-02), a low-poly capital from the owner's ornament cut-outs
+(`ornaments.zip`, 2026-10-02/03), and this atlas capital, versions v1 to v14, each steered by the owner's annotated
+screenshots (2026-10-03/04). On 2026-10-04 the trials were removed and stage 2 moved into the repo; their scripts and
+the version-by-version notes are in git history at e8fafbf7 (this README, "The capital's carving").
 
 ## Rendering without opening Blender
 
