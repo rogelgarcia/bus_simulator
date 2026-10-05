@@ -186,7 +186,8 @@ test('Lighting model: terrain and water shaders read only the lighting uniforms,
     // AI577 D5: the appearance and fallback paths share one lighting call site, which halves the inlined lighting code
     assert.equal((main.match(/color = terrainRadiance\(/g) || []).length, 1, 'the appearance and fallback paths are lit through one call site');
     assert.equal((main.match(/terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/g) || []).length, 1, 'the fields are evaluated once per lit fragment, right before its radiance');
-    assert.match(main, /if \(uAppearanceReady < 0\.5 \|\| uDiagnostic < 5\) \{\s+terrainVisibility\(world, dx, dy, normal\);/, 'unlit diagnostics skip the lighting');
+    assert.match(main, /#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+if \(uAppearanceReady < 0\.5 \|\| uDiagnostic < 5\)\s+#endif\s+\{\s+terrainVisibility\(world, dx, dy, normal\);/,
+        'unlit diagnostics of the AI577 D6 diagnostics program skip the lighting; the default program lights every fragment');
     const conditions = [...main.matchAll(/if \(([^)]*)\)/g)].map(match => match[1]);
     assert.ok(conditions.length > 0 && conditions.every(condition => /^(uDiagnostic|uAppearanceReady)\b/.test(condition)), `main branches on uniforms only, so the evaluation stays in uniform control flow: ${conditions.join(' | ')}`);
     assert.match(lighting, /uLandscapeSunIrradiance\.rgb \* landscapeSunVisibility\(world, n, sun\)/, 'sun visibility multiplies only the direct sun');

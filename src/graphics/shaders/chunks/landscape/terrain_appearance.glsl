@@ -5,7 +5,8 @@
 // planning-graded terrain excluded) is the last layer of the terrain-field array, sampled while uTerrainFieldsState.z holds the fields (bit 0)
 // and the layer (bit 1). Parameters are compile-time defines of landscapeTerrainAppearanceDefines(); each soil's terrain role rides in
 // uSoilScale.x (development in [0, 1] scaling rock exposure and the catena terms, negative for the exposed-rock substrate); uPlanningCover
-// (planning-only land-cover bitmask) serves the dressing diagnostics. With the switch off every function returns its neutral value exactly.
+// (planning-only land-cover bitmask) serves the dressing diagnostics. With the switch off every function returns its neutral value exactly: since
+// AI577 D6 the switch is compile-time (LANDSCAPE_TERRAIN_APPEARANCE, defined while it is on) and uLandscapeResponse.w still gates the rock factor.
 uniform uvec4 uPlanningCover;
 
 struct LandscapeTerrainAppearance {
@@ -78,12 +79,14 @@ float landscapeRunupHeight(float slopeDegrees) {
 }
 
 // the terrain-driven inputs of one fragment from the appearance layer and its own height and slope; without the layer the coastal reach falls
-// back to the runup at the fragment's slope and every broad term stays neutral. The switch gates a loop of uniform trip count (0 or 1) rather
-// than an if: the D3D11 compiler behind ANGLE then neither flattens the body nor hoists its layer fetches across the soil lattices, which
-// measured 4.9 ms cheaper at d5-hollow-inland on the RTX 3060 with identical output (AI577 D5 cost isolation)
+// back to the runup at the fragment's slope and every broad term stays neutral. AI577 D6: the switch is a compile-time define and the body runs
+// unconditionally while it is on. With the diagnostics compiled out of the default program, the former D5 loop of uniform trip count (and an if)
+// measured +3 to +5 ms GPU at the inland views d5-hollow-inland, d5-forest-inland and d5-plateau on the RTX 3060, while the unconditional body
+// measured 0.3-1.4 ms cheaper than the D5 program there, with identical output (tests/artifacts/screens/landscape/ai577/d6/performance)
 LandscapeTerrainAppearance landscapeTerrainAppearance(vec3 position, vec3 normal, float footprint) {
     LandscapeTerrainAppearance result = LandscapeTerrainAppearance(vec2(0.0), 0.0, 0.0, 0.0, 0.0);
-    for (int enabled = 0; enabled < int(uLandscapeResponse.w + 0.5); enabled++) {
+#ifdef LANDSCAPE_TERRAIN_APPEARANCE
+    {
         float height = position.y - uLandscapeSun.w, slope = degrees(acos(clamp(normal.y, -1.0, 1.0)));
         float availability = 0.0;
         vec4 layer = vec4(0.5, 0.0, 0.0, 0.0);
@@ -101,6 +104,7 @@ LandscapeTerrainAppearance landscapeTerrainAppearance(vec3 position, vec3 normal
         result.exposure = weight * LANDSCAPE_TERRAIN_ROCK_EXPOSURE.z * smoothstep(LANDSCAPE_TERRAIN_ROCK_EXPOSURE.x, LANDSCAPE_TERRAIN_ROCK_EXPOSURE.y, slope) * layer.a;
         result.reach = mix(landscapeRunupHeight(slope) + LANDSCAPE_TERRAIN_COASTAL.x, layer.b * LANDSCAPE_TERRAIN_COASTAL.y, availability);
     }
+#endif
     return result;
 }
 

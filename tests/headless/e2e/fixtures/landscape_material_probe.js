@@ -14,7 +14,9 @@ import { buildLandscapeContourCoverage } from '/src/graphics/engine3d/landscape/
 
 // materialSampling selects the compiled production mode (recipe default when omitted); stochastic uniforms and the AI577 D4 layers
 // (macro variation, slope projection, normal filtering, micro detail) start disabled. AI577 D5: material measurements use the fixed reference
-// probe illumination (pre-D5 magnitudes) and the low lighting tier, so no aerial perspective or water column enters a material probe.
+// probe illumination (pre-D5 magnitudes) and the low lighting tier, so no aerial perspective or water column enters a material probe. AI577 D6:
+// the reference illumination is the D5b response (uLandscapeResponse.w 0), whose compiled form is the program without the terrain-driven
+// appearance (terrainAppearance: false), so no catena, rock exposure or coastal wetting enters a material probe either.
 export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, materialSampling } = {}) {
     const renderer = new T.WebGLRenderer({ canvas: document.getElementById('surface-probe'), antialias: false, preserveDrawingBuffer: true, powerPreference: 'low-power' });
     renderer.setSize(size, size, false); renderer.setPixelRatio(1);
@@ -23,7 +25,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     renderer.outputColorSpace = toneMapping ? T.SRGBColorSpace : T.LinearSRGBColorSpace;
     const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
     const coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
-    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'low', ...(materialSampling ? { materialSampling } : {}) });
+    const uniforms = createLandscapeAppearanceUniforms(coverageSlots), payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'low', terrainAppearance: false, ...(materialSampling ? { materialSampling } : {}) });
     // terrain vertex normals are world normals (identity model matrix), so tilted probe planes rotate their geometry
     const plane = (normal = new T.Vector3(0, 1, 0), pivot = [1024, 1024]) => {
         const value = new T.PlaneGeometry(4096, 4096).rotateX(-Math.PI / 2).applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), normal)).translate(pivot[0], 0, pivot[1]);
@@ -112,7 +114,7 @@ export function createLandscapeMaterialProbe({ size = 512, toneMapping = false, 
     }
 
     function setMaterialSampling(mode) {
-        const next = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling: mode, lightingTier: 'low' });
+        const next = createLandscapeShaderPayload('terrain', { coverageSlots, materialSampling: mode, lightingTier: 'low', terrainAppearance: false });
         material.vertexShader = next.vertexSource; material.fragmentShader = next.fragmentSource; material.needsUpdate = true;
     }
 

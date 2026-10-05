@@ -50,11 +50,15 @@ uniform vec4 uSoilState[6];
 uniform vec4 uSoilResponse[6];
 uniform float uBlendResolution;
 uniform vec3 uSurfaceSoilColors[6];
+// AI577 D6: the inspection views (uDiagnostic 1-12) exist only in the diagnostics program, compiled when a diagnostic is selected
+// (LANDSCAPE_TERRAIN_DIAGNOSTICS); the default program draws the shaded surface alone
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
 // surface-level diagnostic tints are compile-time constants (LandscapeTerrainDiagnostics), so they occupy no uniform vectors
 #ifndef LANDSCAPE_SURFACE_LEVEL_COLOR_LIST
 #error LANDSCAPE_SURFACE_LEVEL_COLOR_LIST must be defined by LandscapeShaderLoader
 #endif
 const vec3 landscapeSurfaceLevelColors[8] = vec3[8](LANDSCAPE_SURFACE_LEVEL_COLOR_LIST);
+#endif
 uniform float uSurfaceWarpEnabled;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
@@ -756,6 +760,7 @@ Coverage hierarchyCoverage(vec2 world, vec2 dx, vec2 dy, vec2 warped, vec2 warpe
     return coverage;
 }
 
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
 vec3 surfaceLevelColor(vec2 world, vec2 warped) {
     int nativeStart = maskAt(warped, false);
     int current = maskAt(world, true);
@@ -772,6 +777,7 @@ vec3 surfaceCoverageColor(Coverage coverage) {
     return uSurfaceSoilColors[0] * coverage.low.x + uSurfaceSoilColors[1] * coverage.low.y + uSurfaceSoilColors[2] * coverage.low.z
         + uSurfaceSoilColors[3] * coverage.high.x + uSurfaceSoilColors[4] * coverage.high.y + uSurfaceSoilColors[5] * coverage.high.z;
 }
+#endif
 
 // footprints: the planar major axis drives the established relief fades, the anisotropic mip footprint fades micro detail and the 3D major
 // axis low-passes the landscape-scale field; projection weights and the field are shared by every soil of the fragment. AI577 D5c: the
@@ -870,6 +876,7 @@ void terrainVisibility(vec2 world, vec2 dx, vec2 dy, vec3 geometricNormal) {
 #endif
 }
 
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
 // unlit diagnostic palettes keep their established display: the exposure they were designed under replaces the scene exposure
 vec3 diagnosticDisplay(vec3 color) {
 #ifdef TONE_MAPPING
@@ -921,6 +928,7 @@ vec3 terrainInputDiagnostic(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec
     }
     return color;
 }
+#endif
 
 void main() {
     vec3 normal = normalize(vLandscapeNormal);
@@ -930,6 +938,7 @@ void main() {
     vec2 warped = uSurfaceWarpEnabled > 0.5 ? world + landscapeSurfaceWarp(world) : world;
     vec2 warpedDx = dFdx(warped), warpedDy = dFdy(warped);
     vec3 color = vec3(0.0);
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
     if (uDiagnostic == 1) {
         float elevation = clamp((vLandscapeWorld.y - uDiagnosticRange.x) / max(0.001, uDiagnosticRange.y - uDiagnosticRange.x), 0.0, 1.0);
         vec3 low = mix(vec3(0.10, 0.27, 0.29), vec3(0.43, 0.54, 0.28), smoothstep(0.0, 0.45, elevation));
@@ -946,22 +955,32 @@ void main() {
     } else if (uDiagnostic == 3) {
         float depth = max(0.0, uDiagnosticRange.z - vLandscapeWorld.y);
         color = diagnosticDisplay(depth > 0.0 ? mix(vec3(0.18, 0.63, 0.72), vec3(0.04, 0.12, 0.33), clamp(depth / 10.0, 0.0, 1.0)) : vec3(0.46, 0.48, 0.37));
-    } else {
+    } else
+#endif
+    {
         // the vertex-color fallback until the appearance is ready; both share one lighting call site (AI577 D5: halves the inlined lighting code)
         vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vec3(0.0), groundAlbedo = albedo;
         float roughness = 0.9, metalness = 0.0, ao = 1.0, reach = 0.0;
         if (uAppearanceReady > 0.5) {
             Coverage coverage = hierarchyCoverage(world, dx, dy, warped, warpedDx, warpedDy);
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
             if (uDiagnostic == 5) color = surfaceCoverageColor(coverage);
             else if (uDiagnostic >= 6) color = terrainInputDiagnostic(coverage, world, dx, dy, normal, positionDx, positionDy);
-            else {
+            else
+#endif
+            {
                 SoilSurface surface = appearanceSurface(coverage, world, dx, dy, normal, positionDx, positionDy, groundAlbedo, response, reach);
                 albedo = mix(surface.albedo, uTint, uLodColor);
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
                 if (uDiagnostic == 4) albedo = mix(albedo, surfaceLevelColor(world, warped), 0.5);
+#endif
                 surfaceNormal = surface.normal; roughness = surface.roughness; metalness = surface.metalness; ao = surface.ao;
             }
         }
-        if (uAppearanceReady < 0.5 || uDiagnostic < 5) {
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
+        if (uAppearanceReady < 0.5 || uDiagnostic < 5)
+#endif
+        {
             terrainVisibility(world, dx, dy, normal);
             color = terrainRadiance(albedo, surfaceNormal, normal, roughness, metalness, ao, response, groundAlbedo, reach);
         }
@@ -969,5 +988,7 @@ void main() {
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
     if (uDiagnostic >= 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 1.0);
+#endif
 }

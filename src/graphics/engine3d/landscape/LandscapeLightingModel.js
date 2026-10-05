@@ -57,7 +57,8 @@ export function landscapeTerrainVisibility(sample, sunDirection, { marginWidth =
 
 /**
  * @param {{model?:boolean,bounce?:boolean,terrainVisibility?:boolean,terrainAppearance?:boolean}|undefined} response
- * @returns {number[]} uLandscapeResponse (absent: the D5b model without terrain-driven appearance)
+ * @returns {number[]} uLandscapeResponse (absent: the D5b model without terrain-driven appearance; since AI577 D6 that appearance is also a
+ * compiled program variant, so a terrain program rendering w = 0 is compiled with terrainAppearance: false)
  */
 export function landscapeResponseUniformValue(response) {
     if (response === undefined) return [0, 0, 0, 0];
@@ -502,5 +503,6 @@ export function createLandscapeLightingUniforms(state) {
         uLandscapeResponse: { value: values.uLandscapeResponse } };
 }
 
-/** Uniform cells of LANDSCAPE_REFERENCE_PROBE_LIGHTING (the D5b response) for isolated material probes (compile them with the low tier: no haze, no water). */
+/** Uniform cells of LANDSCAPE_REFERENCE_PROBE_LIGHTING (the D5b response) for isolated material probes (compile them with the low tier and
+ * terrainAppearance: false: no haze, no water, no terrain-driven appearance). */
 export function createLandscapeReferenceProbeLightingUniforms() { return createLandscapeLightingUniforms({ ...LANDSCAPE_REFERENCE_PROBE_LIGHTING }); }

@@ -23,6 +23,34 @@ const expandedShader = shader.replace('#include <shaderlib:landscape/surface_war
 const warpSizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
 const count = (pattern) => (shader.match(pattern) ?? []).length;
 
+/**
+ * Resolves only the AI577 D6 diagnostics conditionals (#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS ... #endif) of a shader source; every other preprocessor
+ * block passes through unchanged. @param {string} source @param {boolean} defined
+ */
+function resolveTerrainDiagnostics(source, defined) {
+    const out = [], stack = [];
+    let active = true;
+    for (const line of source.split('\n')) {
+        const directive = line.trim();
+        if (/^#ifdef\s+LANDSCAPE_TERRAIN_DIAGNOSTICS\b/.test(directive)) { stack.push({ mine: true, outer: active }); active = active && defined; continue; }
+        if (/^#if/.test(directive)) { stack.push({ mine: false, outer: active }); if (active) out.push(line); continue; }
+        if (/^#else\b/.test(directive)) {
+            const top = stack.at(-1);
+            if (top.mine) active = top.outer && !defined; else if (active) out.push(line);
+            continue;
+        }
+        if (/^#endif\b/.test(directive)) {
+            const top = stack.pop();
+            active = top.outer;
+            if (!top.mine && active) out.push(line);
+            continue;
+        }
+        if (active) out.push(line);
+    }
+    assert.equal(stack.length, 0, 'balanced conditionals');
+    return out.join('\n');
+}
+
 test('Coverage slots: the native mask count is unchanged and fine pages may add at most 64 slots', () => {
     assert.equal(LANDSCAPE_MASK_SLOTS, 17);
     assert.equal(LANDSCAPE_DETAIL_SLOTS_MAX, 64);
@@ -77,13 +105,33 @@ test('Coverage slots: unsupported uniform declarations fail instead of undercoun
     for (const sizes of [{ COUNT: 0 }, { COUNT: 1.5 }, { [LANDSCAPE_COVERAGE_SLOT_DEFINE]: 4 }]) assert.throws(() => landscapeFragmentUniformVectors(`${slots}uniform float f[COUNT];`, sizes), /Terrain array size/);
 });
 
+test('Terrain diagnostics: the default program carries no inspection code and LANDSCAPE_TERRAIN_DIAGNOSTICS compiles every view (AI577 D6)', () => {
+    const shaded = resolveTerrainDiagnostics(shader, false), inspected = resolveTerrainDiagnostics(shader, true);
+    // the selector and review uniforms stay declared (conservative uniform accounting) but the default program never reads them
+    assert.doesNotMatch(shaded.replace(/\/\/[^\n]*/g, '').replace(/\buniform\b[^;]*;/g, ''), /\b(uDiagnostic|uDiagnosticRange|uSurfaceSoilColors)\b/,
+        'no diagnostic selector or palette is read by the default program');
+    for (const name of ['surfaceLevelColor', 'surfaceCoverageColor', 'diagnosticDisplay', 'terrainInputDiagnostic', 'landscapeSurfaceLevelColors', 'landscapeDressingInputs']) {
+        assert.doesNotMatch(shaded, new RegExp(`\\b${name}\\b`), `${name} is compiled only into the diagnostics program`);
+        assert.match(inspected, new RegExp(`\\b${name}\\b`));
+    }
+    const main = shaded.slice(shaded.indexOf('void main() {'));
+    assert.match(main, /vec3 color = vec3\(0\.0\);\s+\{\s+\/\/ the vertex-color fallback/, 'the default program enters the shaded path directly');
+    assert.match(main, /\{\s+terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/, 'and lights every fragment');
+    assert.match(main, /#include <colorspace_fragment>\s+\}\s*$/, 'and writes the tone-mapped output');
+    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(inspected, new RegExp(`uDiagnostic == ${index}\\b`), `${name} is a branch of the diagnostics program`);
+    assert.ok(inspected.replace(/\s+/g, ' ').includes('if (uAppearanceReady < 0.5 || uDiagnostic < 5) { terrainVisibility(world, dx, dy, normal);'), 'unlit diagnostics skip the lighting');
+    assert.equal(count(/#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS/g), 8,
+        'the level tints, the two diagnostic helper groups and five points of main (unlit views, unlit coverage and inputs, level tint, lighting condition, unlit output)');
+});
+
 test('Terrain diagnostics: shader branches, palettes and soil review colors match the selector catalog', () => {
     assert.deepEqual(LANDSCAPE_DIAGNOSTICS, ['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage', 'terrain-appearance',
         'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris']);
     for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
     assert.match(shader, /if \(uDiagnostic == 5\) color = surfaceCoverageColor\(coverage\);/, 'surface coverage shows unlit weights');
     assert.match(shader, /else if \(uDiagnostic >= 6\) color = terrainInputDiagnostic\(coverage, world, dx, dy, normal, positionDx, positionDy\);/, 'the AI577 D5 inspection views are unlit');
-    assert.match(shader, /#include <colorspace_fragment>\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 1\.0\);/, 'unlit diagnostics bypass tone mapping');
+    assert.match(shader, /#include <colorspace_fragment>\s+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 1\.0\);\s+#endif/,
+        'unlit diagnostics bypass tone mapping');
     assert.equal(count(/hierarchyCoverage\(world, dx, dy, warped, warpedDx, warpedDy\)/g), 1, 'the inlined hierarchy reconstruction is evaluated once, keeping FXC compile time unchanged');
     assert.match(shader, /vec2 warped = uSurfaceWarpEnabled > 0\.5 \? world \+ landscapeSurfaceWarp\(world\) : world;\s+vec2 warpedDx = dFdx\(warped\), warpedDy = dFdy\(warped\);/,
         'warped coordinates and their footprint derivatives are taken in uniform control flow at the top of main');

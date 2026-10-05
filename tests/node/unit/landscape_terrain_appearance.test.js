@@ -291,7 +291,11 @@ test('Terrain appearance: compile-time defines mirror the model and are all cons
     const dressingChunk = await readFile(path.resolve('src/graphics/shaders/chunks/landscape/dressing_inputs.glsl'), 'utf8');
     for (const name of Object.keys(defines)) assert.ok(chunk.includes(name), `${name} is consumed`);
     for (const name of Object.keys(dressing)) assert.ok(dressingChunk.includes(name), `${name} is consumed`);
-    for (const name of new Set(chunk.match(/LANDSCAPE_TERRAIN_[A-Z_]+/g))) assert.ok(name in defines || /^LANDSCAPE_TERRAIN_FIELD/.test(name), `${name} is defined`);
+    for (const name of new Set(chunk.match(/LANDSCAPE_TERRAIN_[A-Z_]+/g))) assert.ok(name in defines || /^LANDSCAPE_TERRAIN_FIELD/.test(name) || name === 'LANDSCAPE_TERRAIN_APPEARANCE', `${name} is defined`);
+    // AI577 D6: the switch is the loader's compile-time program variant; the body runs unconditionally while it is defined
+    assert.match(chunk, /LandscapeTerrainAppearance result = LandscapeTerrainAppearance\(vec2\(0\.0\), 0\.0, 0\.0, 0\.0, 0\.0\);\s+#ifdef LANDSCAPE_TERRAIN_APPEARANCE\s+\{/);
+    assert.doesNotMatch(chunk, /for \(int enabled = 0; enabled < int\(uLandscapeResponse\.w/, 'no loop of uniform trip count remains');
+    assert.match(chunk, /vec3 factor = vec3\(1\.0\);\s+if \(uLandscapeResponse\.w > 0\.5\) \{/, 'the rock factor keeps its uniform gate');
     // the layer is read only while the fields and the layer are both resident; one uniform (the planning bitmask), no sampler
     assert.match(chunk, /\(uTerrainFieldsState\.z & 3u\) == 3u/);
     assert.deepEqual([...chunk.replace(/\/\/[^\n]*/g, '').matchAll(/\buniform\s+(\w+)\s+(\w+)\s*;/g)].map(match => `${match[1]} ${match[2]}`), ['uvec4 uPlanningCover']);

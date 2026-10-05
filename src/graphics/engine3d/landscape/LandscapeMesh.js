@@ -7,14 +7,16 @@ import { withLandscapeMorphedPositions } from './LandscapeTileEdges.js';
 import { createLandscapeAppearanceUniforms } from './LandscapeAppearanceUniforms.js';
 import { createLandscapeDiagnosticUniforms } from './LandscapeTerrainDiagnostics.js';
 import { createLandscapeLightingUniforms } from './LandscapeLightingModel.js';
+import { landscapeProgramVariant, sameLandscapeProgramVariant } from './LandscapeTerrainProgramVariant.js';
 
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
 export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
 /**
  * @param {any} buffers @param {Float32Array} sourceHeights
- * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string}} options view-wide compile-time coverage slot count, material sampling
- *   mode and lighting tier; a tile renders with the calibrated sun and no sky light until setLighting binds the view lighting
+ * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string,diagnostics?:boolean,terrainAppearance?:boolean}} options view-wide compile-time
+ *   coverage slot count, material sampling mode, lighting tier and (AI577 D6) program variant: diagnostics compiles the inspection views, terrainAppearance
+ *   (default true) the terrain-driven natural appearance; a tile renders with the calibrated sun and no sky light until setLighting binds the view lighting
  * @returns {any}
  */
 export function createLandscapeMesh(buffers, sourceHeights, options) {
@@ -27,7 +29,8 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         uBounds: { value: new THREE.Vector4(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ) }
     };
     const coverageSlots = options?.coverageSlots;
-    const variant = { ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}), ...(options?.lightingTier ? { lightingTier: options.lightingTier } : {}) };
+    const variant = { ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}), ...(options?.lightingTier ? { lightingTier: options.lightingTier } : {}),
+        ...landscapeProgramVariant({ diagnostics: options?.diagnostics, terrainAppearance: options?.terrainAppearance }) };
     const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
@@ -101,6 +104,13 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         setMaterialSampling(materialSampling) { variant.materialSampling = materialSampling; recompile(); },
         /** @param {string} lightingTier compile-time lighting tier; the program recompiles on the next draw */
         setLightingTier(lightingTier) { variant.lightingTier = lightingTier; recompile(); },
+        /** @param {{diagnostics:boolean,terrainAppearance:boolean}} next AI577 D6 program variant; the program recompiles on the next draw unless already linked */
+        setProgramVariant(next) {
+            const resolved = landscapeProgramVariant(next);
+            if (sameLandscapeProgramVariant(variant, resolved)) return;
+            Object.assign(variant, resolved); recompile();
+        },
+        get programVariant() { return landscapeProgramVariant(variant); },
         setEdges(edges, morph = [1, 1, 1, 1]) { sharedUniforms.uEdges.value.set(...edges); sharedUniforms.uEdgeMorph.value.set(...morph); },
         setLodColors(enabled) { material.uniforms.uLodColor.value = enabled ? .78 : 0; },
         setMode(value) {

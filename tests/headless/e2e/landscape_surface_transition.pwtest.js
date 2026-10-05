@@ -10,14 +10,14 @@ const root = path.resolve('.'), source = path.join(root, 'assets/public/landscap
 const phase = process.env.LANDSCAPE_SURFACE_PHASE ?? null;
 if (phase !== null && !['before', 'after'].includes(phase)) throw new Error('LANDSCAPE_SURFACE_PHASE must be before or after');
 const deliverable = process.env.LANDSCAPE_SURFACE_DELIVERABLE ?? 'd1';
-if (!['d1', 'd1a', 'd2', 'd3', 'd4', 'd5'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2, d3, d4 or d5');
+if (!['d1', 'd1a', 'd2', 'd3', 'd4', 'd5', 'd6'].includes(deliverable)) throw new Error('LANDSCAPE_SURFACE_DELIVERABLE must be d1, d1a, d2, d3, d4, d5 or d6');
 const profile = process.env.LANDSCAPE_SURFACE_PROFILE ?? 'default';
 const budgetProfiles = { default: { cpuMiB: 128, gpuMiB: 64 }, quality: { cpuMiB: 256, gpuMiB: 128 }, realism: { cpuMiB: 384, gpuMiB: 192 }, shipped: { cpuMiB: 512, gpuMiB: 256 } };
 if (!budgetProfiles[profile]) throw new Error('LANDSCAPE_SURFACE_PROFILE must be default, quality, realism or shipped');
 const { cpuMiB, gpuMiB } = budgetProfiles[profile];
 const artifactPrefix = `/tests/artifacts/screens/landscape/ai577/${deliverable}${profile === 'default' ? '' : `/${profile}`}`;
 const artifacts = path.join(root, artifactPrefix.slice(1), phase ?? 'unselected');
-const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling', d4: 'D4 · Distinct macro, local and micro detail', d5: 'D5 · Terrain-driven natural appearance and lighting' }[deliverable];
+const deliveryLabel = { d1: 'D1 · Visual surface transitions', d1a: 'D1a · Homogeneous materials and height transitions', d2: 'D2 · Fine surface coverage pages', d3: 'D3 · Non-repeating material sampling', d4: 'D4 · Distinct macro, local and micro detail', d5: 'D5 · Terrain-driven natural appearance and lighting', d6: 'D6 · Profile-guided surface caching' }[deliverable];
 const manifestText = await readFile(path.join(source, 'manifest.json'), 'utf8'), manifest = JSON.parse(manifestText);
 const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, MiB = 1024 * 1024;
 const lightingDescription = 'Terrain shader illuminate(): fixed GGX sun direction [-0.44,0.87,-0.22], RGB [2.7,2.6,2.3], hemisphere ambient factor 0.68. LandscapeView fixed hemisphere 0xdceef4/0x536047 intensity 2.3 and directional 0xfff4dd intensity 2.2 at [-2000,4000,-1000].';
@@ -234,10 +234,9 @@ test('Landscape surface: four native coastal transitions retain identical captur
             report.materialComparison = { before: JSON.parse(await readFile(path.join(artifacts, '../before/material-inputs.json'), 'utf8')), after: report.materialInputs };
         } else expect(report.dataset).toEqual(before.dataset);
         expect(report.route).toEqual(before.route); expect(report.viewport).toEqual(before.viewport);
-        if (lightingChanges) {
-            const { lighting: beforeLighting, ...beforeConditions } = before.captureConditions, { lighting: afterLighting, ...afterConditions } = report.captureConditions;
-            expect(afterConditions).toEqual(beforeConditions);
-        } else expect(report.captureConditions).toEqual(before.captureConditions);
+        // the lighting description is resolved from the running view (describeLighting), so it is compared once the page reports it
+        const { lighting: beforeLighting, ...beforeConditions } = before.captureConditions, { lighting: afterLighting, ...afterConditions } = report.captureConditions;
+        expect(afterConditions).toEqual(beforeConditions);
     }
     const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 }), page = await context.newPage();
     await writeFile(path.join(artifacts, 'browser-errors.json'), '[]');
@@ -286,7 +285,7 @@ test('Landscape surface: four native coastal transitions retain identical captur
             expect(report.metadata.renderer).toEqual(before.metadata.renderer);
             if (lightingChanges) report.lightingComparison = { before: { description: before.captureConditions.lighting, rendererSettings: before.metadata.rendererSettings },
                 after: { description: report.captureConditions.lighting, rendererSettings: report.metadata.rendererSettings } };
-            else expect(report.metadata.rendererSettings).toEqual(before.metadata.rendererSettings);
+            else { expect(report.captureConditions.lighting).toBe(before.captureConditions.lighting); expect(report.metadata.rendererSettings).toEqual(before.metadata.rendererSettings); }
             expect(report.metadata.budgets).toEqual(before.metadata.budgets);
         }
         for (const stop of route) {

@@ -44,7 +44,7 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
             renderer.setSize(size, size, false); renderer.setPixelRatio(1); renderer.toneMapping = T.NoToneMapping; renderer.outputColorSpace = T.LinearSRGBColorSpace;
             const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
             const coverageSlots = chooseLandscapeCoverageSlots(renderer);
-            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low' });
+            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low', terrainAppearance: false });
             const geometry = new T.PlaneGeometry(64, 64).rotateX(-Math.PI / 2);
             geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4), 1));
             geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
@@ -204,7 +204,7 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
             renderer.setSize(size, size, false); renderer.setPixelRatio(1); renderer.toneMapping = T.NoToneMapping; renderer.outputColorSpace = T.LinearSRGBColorSpace;
             const gl = renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
             const coverageSlots = chooseLandscapeCoverageSlots(renderer);
-            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low' });
+            const appearance = createLandscapeAppearanceUniforms(coverageSlots.total), payload = createLandscapeShaderPayload('terrain', { coverageSlots: coverageSlots.total, lightingTier: 'low', terrainAppearance: false });
             const warpUniforms = landscapeSurfaceWarpUniforms(recipe, seed);
             const jsWarp = createLandscapeSurfaceWarp({ seed, wavelengths: [...recipe.warp.wavelengths], amplitudes: [...recipe.warp.amplitudes], shaping: recipe.warp.shaping }), warpOut = new Float64Array(2);
             const geometry = new T.PlaneGeometry(256, 256).rotateX(-Math.PI / 2);

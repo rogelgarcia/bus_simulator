@@ -109,3 +109,66 @@ test('Landscape AI577 D4: disposing while the terrain program compiles stops wai
     expect(errors).toEqual([]);
     await writeFile(path.join(artifacts, 'dispose-during-compile.json'), JSON.stringify({ disposed: { ready: disposed.ready, budget: disposed.budget, lastError: disposed.lastError }, errors }, null, 2));
 });
+
+test('Landscape AI577 D6: diagnostics and the terrain-appearance switch link their program variant in parallel without stalling frames', async ({ page }) => {
+    test.setTimeout(240000);
+    await mkdir(artifacts, { recursive: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /WebGLProgram|VALIDATE_STATUS|shader error|GL_INVALID/i.test(message.text())) errors.push(message.text()); });
+    // a unique source line keeps every variant cold in the GPU process program cache, so each switch really compiles
+    await page.route('**/src/graphics/shaders/materials/landscape/terrain.frag.glsl', async route => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: `${await response.text()}\n// D6 program-variant probe ${Date.now()}\n` });
+    });
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.goto('/screens/landscape_fabrication.html');
+    await expect.poll(async () => { const state = await snapshot(page); return !!(state.ready && state.planning?.ready && state.streaming?.settled); }, { timeout: 120000 }).toBe(true);
+    const initial = await snapshot(page);
+    expect(initial.terrainProgramVariant).toMatchObject({ diagnostics: false, terrainAppearance: true, pending: false, switches: 0 });
+    // longest interval between animation frames while a variant links: a synchronous link of the cold program would freeze the page for seconds
+    const switchVariant = async (call, expected) => page.evaluate(async ({ call, expected }) => {
+        const hooks = window.__landscapeTestHooks, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+        await frame();
+        let last = performance.now(), longest = 0, pendingSeen = false;
+        const started = performance.now();
+        new Function('hooks', call)(hooks);
+        for (;;) {
+            await frame();
+            const now = performance.now();
+            longest = Math.max(longest, now - last); last = now;
+            const variant = hooks.snapshot().terrainProgramVariant;
+            pendingSeen ||= variant.pending;
+            if (!variant.pending && Object.entries(expected).every(([key, value]) => variant[key] === value)) return { longestFrameGapMs: longest, ms: now - started, pendingSeen, variant };
+            if (now - started > 120000) throw new Error(`variant switch did not complete: ${JSON.stringify(variant)}`);
+        }
+    }, { call, expected });
+    const diagnostics = await switchVariant("hooks.setPlanning({ diagnostic: 'elevation' })", { diagnostics: true });
+    const shaded = await switchVariant("hooks.setPlanning({ diagnostic: 'none' })", { diagnostics: false });
+    const appearanceOff = await switchVariant('hooks.setTerrainAppearance(false)', { terrainAppearance: false });
+    const appearanceOn = await switchVariant('hooks.setTerrainAppearance(true)', { terrainAppearance: true });
+    // a request superseded while it links settles silently: the newer request applies at once, no switch happens and no stale linking notice remains
+    const superseded = await page.evaluate(async () => {
+        const hooks = window.__landscapeTestHooks, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+        hooks.setPlanning({ diagnostic: 'elevation' });
+        const linking = hooks.snapshot().terrainProgramVariant.pending;
+        hooks.setPlanning({ diagnostic: 'none' });
+        for (let index = 0; index < 30; index++) await frame();
+        const notices = [...document.querySelectorAll('[data-field="notice"]')].map(element => (element.hidden ? '' : element.textContent));
+        return { linking, variant: hooks.snapshot().terrainProgramVariant, notices };
+    });
+    expect(superseded.linking, 'the superseded diagnostics request had started linking').toBe(true);
+    expect(superseded.variant).toMatchObject({ diagnostics: false, terrainAppearance: true, pending: false, switches: 4 });
+    expect(superseded.notices.filter(text => /Linking the terrain program variant/.test(text))).toEqual([]);
+    const results = { diagnostics, shaded, appearanceOff, appearanceOn };
+    await writeFile(path.join(artifacts, 'program-variant-switches.json'), JSON.stringify({ ...results, superseded }, null, 2));
+    expect(diagnostics.pendingSeen, 'the cold diagnostics variant links asynchronously').toBe(true);
+    for (const [name, result] of Object.entries(results)) expect(result.longestFrameGapMs, `${name}: frames keep flowing while the variant links`).toBeLessThan(1500);
+    expect(appearanceOn.variant.switches).toBe(4);
+    const final = await snapshot(page);
+    expect([final.terrainAppearance, final.planning.diagnostic]).toEqual(['on', 'none']);
+    await page.evaluate(() => window.__landscapeTestHooks.dispose());
+    const disposed = await snapshot(page);
+    expect([disposed.budget.cpuBytes, disposed.budget.gpuBytes]).toEqual([0, 0]);
+    expect(errors).toEqual([]);
+});

@@ -521,10 +521,18 @@ at the rock mid view falls from 1.14 to 0.83.
 
 **Interface and cost.** `uPlanningCover` (155 of the 156 fixed vectors; 17 native slots at the WebGL2
 minimum); no sampler; constants are compile-time defines (`landscapeTerrainAppearanceDefines`,
-`landscapeDressingDefines`). The switch `uLandscapeResponse.w` (`setLighting({response: {terrainAppearance}})`,
-viewer `landscapeTerrainAppearance`) gates a loop of uniform trip count, which the D3D compiler handles far
-better than an `if` (d5-hollow-inland +6.9 → +1.5 ms); switched off, all 32 D5 views match the build
-without it within one sRGB byte. The mirror `terrainAppearanceSample(x, z, {height, slopeDegrees, footprint})`
+`landscapeDressingDefines`). Since AI577 D6 the switch is a compiled program variant:
+`LANDSCAPE_TERRAIN_APPEARANCE` is defined while it is on and compiles the body of `landscapeTerrainAppearance`,
+which then runs unconditionally; without it the inputs are exactly neutral. `setLighting({response:
+{terrainAppearance}})`, `setTerrainAppearance` and the viewer option `landscapeTerrainAppearance` set
+`uLandscapeResponse.w` and the JavaScript mirrors at once and switch the tiles' program variant
+asynchronously (see the diagnostics paragraph); `uLandscapeResponse.w` still gates the rock weathering
+factor. A program compiled with the appearance applies it whatever w holds, so isolated probes that render
+the reference response (w = 0, `LANDSCAPE_REFERENCE_PROBE_LIGHTING`) compile with `terrainAppearance: false`.
+With the diagnostics out of the default program, the D5 loop of uniform trip count (and an `if`) measured
++3 to +5 ms GPU at d5-hollow-inland, d5-forest-inland and d5-plateau, while the unconditional body was
+0.3–1.4 ms faster than the D5 program there with identical output. Switched off, all 32 D5 views match the
+build without it within one sRGB byte. The mirror `terrainAppearanceSample(x, z, {height, slopeDegrees, footprint})`
 returns the layer values, availability, tone, chroma, exposure, reach, moisture, weight, per-soil
 {share, tone, chroma} and rockFactor, within 2e-6 relative of the GPU. Standard-tier cost over the build
 without it: +1.0 to +2.7 ms GPU per view at 512/256 MiB.
@@ -588,6 +596,53 @@ instead of 4.1–4.2 s, but the page no longer freezes (longest main-thread gap 
 response code) a cold browser profile needs 12–20 s to compile the terrain program on this machine,
 while Chromium's GPU program cache serves later loads in about 50 ms; the page stays responsive
 throughout, and reducing the cold compile belongs to D6.
+
+AI577 D6 measured the cold compile on a fresh browser profile per run (temporary user-data directory)
+and offline with the system `d3dcompiler_47` on ANGLE's final HLSL (ps_5_0, optimization level 2), which
+reproduces the browser compile within 0.1–0.3 s. The D5 program is 8,508 DXBC instruction slots with 77
+temporary registers: 37% the six inlined soil evaluations (each soil adds about 490 slots and 0.65–0.9 s,
+from 5.0 s with one soil to 9.1 s with six), 27% the coverage hierarchy (two inlined reconstructions), 7%
+lighting, 6% terrain fields, 5% two copies of the terrain-driven appearance and about 3% inspection code,
+which also duplicates the fields and appearance. Control flow inflates the compile more than code size:
+removing the appearance (629 slots, 8 loops) saved 1.9 s, removing all lighting (1,144 slots) 1.4 s. GLSL ES
+3.00 indexes sampler arrays only with constant expressions, so a soil loop requires array textures. Moving
+the inspection views into the diagnostics variant and evaluating the appearance unconditionally gives 7,523
+slots and 74 temporaries: the offline compile falls from 10.9 to 7.7 s (interleaved, 4 rounds) and the cold
+viewer compile from 12.3 to 8.4 s (median of 3 fresh profiles, same session), with GPU time 0.3 ms lower on
+average over 36 views and output within one sRGB byte at three suns. Selecting a diagnostic or switching
+the appearance off costs one parallel link of its variant (9.2 and 7.6 s offline; tens of milliseconds once
+Chromium's program cache holds it).
+
+## Profile-guided surface caching (AI577 D6)
+
+**Profile.** RTX 3060 through ANGLE/D3D11, 1920×1080, 512/256 MiB, the 32 D5 views and 4 AI577 views,
+paired in-page program variants. The D5 frame averages 12.1 ms GPU: an unlit floor (geometry, raster,
+sky, water plane) of 1.6 ms, coverage reconstruction 5.0 ms, material evaluation (lattices, clumps,
+competition, macro, terrain appearance) 3.5 ms, and lighting with fields, response, atmosphere and water
+2.0 ms. The largest single components are the surface warp (3.3 ms), the generated fine pages (1.9 ms),
+terrain fields (1.1), bounce (1.1) and terrain appearance (1.1). Shaded terrain overdraw is 1.00–1.07
+fragments per covered pixel, so a depth pre-pass cannot help. Costs are not additive: the program runs at
+an occupancy set by its peak register use, and structural changes that leave the output identical move
+single views by ±1–5 ms.
+
+**Decision.** A partial surface cache of the view-independent coverage and material evaluation is
+justified. An emulation that replaces them with one indirection and three filtered page fetches (lighting,
+fields, atmosphere, water and the sand micro lattice unchanged) measured 3.8 ms on average (−69%) and at
+most 5.0 ms at every view, and compiles in 0.5 s. Generation costs 2.0–3.3 ns per texel (0.01–0.02 ms per
+64×64 page with 4-texel gutters). A page-feedback prototype measured 1,047–2,495 visible 64×64 pages per
+view at 2× anisotropy and 1.56 cm minimum texels (41–99 MiB at 8 bytes per texel) and 114–144 new pages per
+meter of forward motion (about 0.2–0.4 ms of generation per frame at 10 m/s). Risks: a mip-filtered cache is
+not pixel-identical to per-pixel analytic filtering, near views reach 2–4 mm pixels, steep faces, memory
+above the shipped 256 MiB unless budgets are rebalanced, and a large implementation.
+
+**Surface-layer extension contract** (later roads and decals, with or without the cache). A surface layer
+is a view-independent modifier of the composited ground (albedo, normal, roughness, AO, response, wetness,
+optionally coverage) evaluated from world position and terrain inputs only. Each item declares world
+bounds, an influence margin, an order, data revisions and a pure GLSL chunk. With the cache, layer revisions
+and item bounds join the page identity, so an edit regenerates only intersecting resident pages; layers
+composite during generation, gutters included, and lighting-dependent looks (wet sheen) stay in the
+lighting pass from the cached roughness and wetness. Without the cache, a layer runs per pixel only inside
+its bounds behind a measured gate. Road geometry (cuts and fills) remains an authoritative height edit.
 
 ## Natural presentation and imported reference data
 
@@ -766,7 +821,17 @@ L1 cyan, L2 green, L3 yellow (coastal native), L4 orange, L5 red, L6 violet, L7 
 coverage after hierarchy availability and before height competition, after tone mapping so
 pure regions reproduce exact bytes: unknown 210,60,210 · seabed 96,124,138 · sand 217,197,143 ·
 loam 118,160,78 · forest 104,76,48 · rock 186,183,176. These are the same colors as the
-generator review images. Both branches run only when selected; the default path is unchanged.
+generator review images. Since AI577 D6 every inspection view (`uDiagnostic` 1–12: elevation, slope,
+water, surface-level, surface-coverage, terrain-appearance and the dressing views) exists only in the
+diagnostics program variant (`LANDSCAPE_TERRAIN_DIAGNOSTICS`, `LandscapeTerrainProgramVariant.js`); the
+default terrain program contains no inspection code and ignores `uDiagnostic`. Selecting a diagnostic first
+links the diagnostics variant on an unrendered prototype tile through `KHR_parallel_shader_compile`
+(`LandscapeStreamer.setProgramVariant`); the page keeps drawing the current program and every tile switches
+once the link is ready. A newer request supersedes a pending one, and returning to `none` switches back
+the same way. `snapshot().terrainProgramVariant` reports `{diagnostics, terrainAppearance, target, pending,
+milliseconds, timedOut, switches}`, and `streaming.settled` stays false while a switch is pending. The
+selector and review uniforms stay declared, so coverage slot sizing is unchanged; the diagnostics variant
+renders every inspection view identically to the D5 program (same page and state, 8 views × 4 poses).
 
 Pure budget transaction/mip tests live in
 `tests/node/unit/landscape_appearance_budget.test.js`. The browser acceptance suite

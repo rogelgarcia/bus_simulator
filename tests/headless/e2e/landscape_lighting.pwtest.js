@@ -280,7 +280,7 @@ test('Landscape lighting: the production terrain shader reproduces the JavaScrip
             const results = [];
             try {
                 for (const probe of cases) {
-                    const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: probe.tier });
+                    const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: probe.tier, terrainAppearance: false });
                     const geometry = new T.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2).translate(0, probe.height, 0);
                     geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4).fill(probe.height), 1));
                     geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());
@@ -385,7 +385,7 @@ test('Landscape lighting: the production terrain shader reproduces the D5c mater
                         appearance.uTerrainFields.value = fieldTexture; appearance.uTerrainFieldsState.value.set([0, 0, 1, 4]); appearance.uMaskMeta.value[0].w = 1.25;
                     } else { appearance.uTerrainFields.value = null; appearance.uTerrainFieldsState.value.fill(0); appearance.uMaskMeta.value[0].w = 1; }
                     const lighting = Object.fromEntries(Object.entries(uniformsByCase[index]).map(([name, value]) => [name, { value: Float32Array.from(value) }]));
-                    const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'standard' });
+                    const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'standard', terrainAppearance: uniformsByCase[index].uLandscapeResponse[3] > .5 });
                     const geometry = new T.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2).rotateX(probe.tilt * Math.PI / 180).translate(...probe.camera.target);
                     const heights = new Float32Array(4).map((_, vertex) => geometry.attributes.position.getY(vertex));
                     geometry.setAttribute('parentHeight', new T.BufferAttribute(heights, 1));

@@ -60,13 +60,16 @@ test('Landscape D5 terrain appearance: the worker derives the layer with the roo
     const beach = await page.evaluate(() => window.__landscapeTestHooks.terrainAppearanceSample(1062, 1372));
     expect(beach.reach).toBeGreaterThan(model.coastal.tidalMeters);
     expect(beach.reach).toBeLessThanOrEqual(model.coastal.maximumReachMeters);
-    // the A/B switch: neutral inputs at once, restored on demand
+    // the A/B switch: neutral inputs at once, restored on demand; since AI577 D6 it selects a compiled program variant, linked in parallel
+    expect(state.terrainProgramVariant).toMatchObject({ diagnostics: false, terrainAppearance: true, pending: false });
     await page.evaluate(() => window.__landscapeTestHooks.setTerrainAppearance(false));
     const off = await page.evaluate(() => window.__landscapeTestHooks.terrainAppearanceSample(2633, 711));
     expect([off.enabled, off.tone, off.chroma, off.exposure, off.reach]).toEqual([false, 0, 0, 0, 0]);
     expect((await snapshot(page)).terrainAppearance).toBe('off');
+    await expect.poll(async () => (await snapshot(page)).terrainProgramVariant, { timeout: 60000 }).toMatchObject({ terrainAppearance: false, pending: false });
     await page.evaluate(() => window.__landscapeTestHooks.setTerrainAppearance(true));
     expect((await snapshot(page)).terrainAppearance).toBe('on');
+    await expect.poll(async () => (await snapshot(page)).terrainProgramVariant, { timeout: 60000 }).toMatchObject({ terrainAppearance: true, pending: false });
     // natural dressing inputs: planning-only cover keeps the v1 suppression and reports its inferred natural ground; natural ground has none
     const planned = await page.evaluate(() => window.__landscapeTestHooks.dressingSample(2050, 2150)), natural = await page.evaluate(() => window.__landscapeTestHooks.dressingSample(2633, 711));
     expect(planned.planningShare).toBe(1);
@@ -91,6 +94,7 @@ test('Landscape D5 terrain appearance: viewer options select the switch, terrain
         const state = await ready(page);
         expect([state.terrainAppearance, state.terrainFields, state.naturalInference]).toEqual(['off', 'off', 'overview']);
         expect(state.lighting.response.switches.terrainAppearance).toBe(false);
+        expect(state.terrainProgramVariant, 'AI577 D6: the off switch loads the program variant without the terrain-driven appearance').toMatchObject({ terrainAppearance: false, pending: false });
         expect(state.appearance.terrainFields.status).toBe('disabled');
         expect(await page.evaluate(() => window.__landscapeTestHooks.terrainAppearanceSample(2633, 711))).toMatchObject({ enabled: false, layer: null, availability: 0, tone: 0 });
         expect(errors).toEqual([]);
@@ -150,7 +154,8 @@ async function renderProbes(page, cases, shared) {
                 appearance.uTerrainFields.value = fieldTexture; appearance.uTerrainFieldsState.value.set([0, 0, probe.layer ? 3 : 1, 4]); appearance.uMaskMeta.value[0].w = 1.25;
                 appearance.uPlanningCover.value.set(shared.planningCover);
                 const lighting = Object.fromEntries(Object.entries(probe.lighting).map(([name, value]) => [name, { value: Float32Array.from(value) }]));
-                const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'standard' });
+                // AI577 D6: inspection views and the terrain-appearance switch are compiled program variants
+                const payload = createLandscapeShaderPayload('terrain', { coverageSlots, lightingTier: 'standard', diagnostics: probe.diagnostic > 0, terrainAppearance: probe.enabled !== false });
                 const geometry = new T.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2).translate(0, probe.height, 0);
                 geometry.setAttribute('parentHeight', new T.BufferAttribute(new Float32Array(4).fill(probe.height), 1));
                 geometry.setAttribute('parentNormal', geometry.attributes.normal.clone());

@@ -101,9 +101,10 @@ export class LandscapeLighting {
     }
 
     /**
-     * Switches the natural-ground material response, terrain-reflected light and terrain-field visibility for A/B evidence; omitted keys keep their
-     * state. Runtime uniforms only: no program recompiles.
-     * @param {{model?:boolean,bounce?:boolean,terrainVisibility?:boolean}} response
+     * Switches the natural-ground material response, terrain-reflected light, terrain-field visibility and terrain-driven appearance for A/B
+     * evidence; omitted keys keep their state. Runtime uniforms only: no program recompiles. Since AI577 D6 terrainAppearance is also a compiled
+     * terrain program variant, which the owner switches (LandscapeView.setLighting and setTerrainAppearance call LandscapeStreamer.setProgramVariant).
+     * @param {{model?:boolean,bounce?:boolean,terrainVisibility?:boolean,terrainAppearance?:boolean}} response
      */
     setResponse(response) {
         landscapeResponseUniformValue(response);

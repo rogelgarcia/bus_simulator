@@ -84,6 +84,7 @@ export class LandscapeView {
         this.waterVisible = true;
         this.planningVisibility = { districts: false, roads: false, shoreline: false, points: false, corridors: false };
         this.diagnostic = 'none';
+        this.programRequests = 0;
         this.report = { status: 'idle', pending: false, result: null, error: null };
         this.reportSequence = 0;
         this.budget = new LandscapeResidencyBudget(budgets);
@@ -174,7 +175,8 @@ export class LandscapeView {
             if (this.disposed || sequence !== this.loadSequence) return;
             this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
             const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, materialSampling: this.materialSampling,
-                lighting: this.lighting, lightingTier: this.lighting.tier, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, naturalInference: this.naturalInference });
+                lighting: this.lighting, lightingTier: this.lighting.tier, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, naturalInference: this.naturalInference,
+                diagnostics: this.diagnostic !== 'none', terrainAppearance: this.lighting.response.terrainAppearance });
             this.loadingStream = stream;
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
@@ -301,14 +303,21 @@ export class LandscapeView {
             this.backdrop.setLightingTier(tier);
         }
         if (response !== undefined) this.lighting.setResponse(response);
+        // AI577 D6: the terrain-driven appearance switch is a compiled program variant; uLandscapeResponse.w keeps gating the rock factor
+        if (response?.terrainAppearance !== undefined) this.syncTerrainProgram({ terrainAppearance: this.lighting.response.terrainAppearance });
         if (calibration !== undefined) this.appearance.materials.setCalibration(calibration);
         return { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot(), calibration: this.appearance?.materials?.calibrationSwitches ? { ...this.appearance.materials.calibrationSwitches } : null };
     }
 
-    /** AI577 D5 A/B of the terrain-driven natural appearance (uLandscapeResponse.w; no recompile, kept across reloads). @param {boolean} enabled */
+    /**
+     * AI577 D5 A/B of the terrain-driven natural appearance, kept across reloads. Since AI577 D6 the switch selects a compiled terrain program variant
+     * (LANDSCAPE_TERRAIN_APPEARANCE), linked in parallel before the tiles switch, and sets uLandscapeResponse.w and the JavaScript mirrors at once.
+     * @param {boolean} enabled
+     */
     setTerrainAppearance(enabled) {
         if (typeof enabled !== 'boolean') throw new Error('[Landscape] Terrain appearance enablement must be boolean');
         this.lighting.setResponse({ terrainAppearance: enabled });
+        this.syncTerrainProgram({ terrainAppearance: enabled });
         return { ...this.lighting.snapshot().response.switches };
     }
 
@@ -413,9 +422,29 @@ export class LandscapeView {
         if (!this.planning) throw new Error('Planning references are still loading');
         this.planning.set(options);
         this.planningVisibility = { ...this.planning.visible }; this.diagnostic = this.planning.diagnostic;
+        this.syncTerrainDiagnostics();
         this.panel.root.querySelector('[data-field="planning-panel"]').open = true;
         this.syncPlanningPanel();
         return this.planning.snapshot();
+    }
+
+    // AI577 D6: the default terrain program carries no inspection code; selecting any diagnostic links the diagnostics program in parallel and the
+    // tiles switch once it is ready (snapshot().terrainProgramVariant, streaming.settled waits for it), returning to 'none' switches back
+    syncTerrainDiagnostics() { this.syncTerrainProgram({ diagnostics: this.diagnostic !== 'none' }); }
+
+    /** @param {{diagnostics?:boolean,terrainAppearance?:boolean}} changes compiled program variant of every terrain tile (LandscapeStreamer.setProgramVariant) */
+    syncTerrainProgram(changes) {
+        const streams = [this.loadingStream, this.stream].filter(Boolean), requests = streams.map(stream => stream.setProgramVariant(changes, this.camera));
+        const sequence = ++this.programRequests, linkingNotice = 'Linking the terrain program variant; the current view stays interactive.';
+        // the notice follows the latest request (a superseded link settles silently) and never clears another message shown meanwhile
+        const settle = () => { if (!this.disposed && sequence === this.programRequests && this.panel.root.querySelector('[data-field="notice"]')?.textContent === linkingNotice) this.panel.notice(''); };
+        if (streams.some(stream => stream.programVariantState().pending)) this.panel.notice(linkingNotice);
+        else settle();
+        Promise.all(requests).then(settle, error => {
+            if (error.name === 'AbortError' || this.disposed) return;
+            this.lastError = error.message;
+            this.panel.notice(`Terrain program variant unavailable: ${error.message}`);
+        });
     }
 
     syncPlanningPanel() {
@@ -784,6 +813,7 @@ export class LandscapeView {
             selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray(), projection: this.projection, fov: this.perspectiveFov, orthoHeight: this.orthoHeight, zoom: this.camera.zoom },
             source: this.source, lastError: this.lastError ?? null, frameIndex: this.frameIndex,
             loadTiming: this.loadTiming ? { ...this.loadTiming } : null, terrainProgram: (this.loadingStream ?? this.stream)?.programCompile ?? null,
+            terrainProgramVariant: (this.loadingStream ?? this.stream)?.programVariantState() ?? null,
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),

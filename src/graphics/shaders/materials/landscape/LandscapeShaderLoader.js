@@ -3,7 +3,9 @@
 // The terrain variant compiles the shared surface warp of the generated surface-detail recipe; its octave count and
 // shaping are recipe constants, so every terrain material and the slot sizing use the same compile-time warp. The material
 // sampling mode and the lighting tier are compile-time defines as well, so a view compiles only the variant it renders; the
-// calibrated atmosphere and water constants of the lighting tier are defines, not uniforms.
+// calibrated atmosphere and water constants of the lighting tier are defines, not uniforms. AI577 D6: the terrain inspection views are
+// compiled only into the diagnostics variant (LANDSCAPE_TERRAIN_DIAGNOSTICS), so the default program carries no diagnostic code, and the
+// terrain-driven natural appearance is compiled in (LANDSCAPE_TERRAIN_APPEARANCE) unless its switch is off.
 import { createShaderPayload, loadShaderSourceSet } from '../../core/ShaderLoader.js';
 import { assertLandscapeCoverageSlots, landscapeFragmentUniformVectors, LANDSCAPE_COVERAGE_SLOT_DEFINE } from '../../../engine3d/landscape/LandscapeCoverageSlots.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceWarpDefines } from '../../../engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
@@ -11,6 +13,7 @@ import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_DEFINE, landsc
 import { LANDSCAPE_LIGHTING, landscapeLightingDefines } from '../../../engine3d/landscape/LandscapeLightingModel.js';
 import { landscapeSurfaceLevelColorDefine } from '../../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
 import { landscapeDressingDefines, landscapeTerrainAppearanceDefines } from '../../../engine3d/landscape/LandscapeTerrainAppearance.js';
+import { LANDSCAPE_TERRAIN_PROGRAM_VARIANT, landscapeProgramVariantDefines } from '../../../engine3d/landscape/LandscapeTerrainProgramVariant.js';
 
 const [terrain, lines, water, backdrop] = await Promise.all([
     loadShaderSourceSet({ vertexPath: 'materials/landscape/terrain.vert.glsl', fragmentPath: 'materials/landscape/terrain.frag.glsl' }),
@@ -36,12 +39,15 @@ export function landscapeTerrainWarpDefines() { return warpDefines; }
 
 /**
  * @param {'terrain'|'lines'|'water'|'backdrop'} kind
- * @param {{coverageSlots?:number,materialSampling?:string,lightingTier?:string,reflection?:boolean}} [options] terrain requires its compile-time
- *   coverage slot count; materialSampling defaults to the recipe mode and lightingTier to the lighting default; water samples the prefiltered
- *   sky reflection map when reflection is true and the sky harmonics otherwise
+ * @param {{coverageSlots?:number,materialSampling?:string,lightingTier?:string,reflection?:boolean,diagnostics?:boolean,terrainAppearance?:boolean}} [options]
+ *   terrain requires its compile-time coverage slot count; materialSampling defaults to the recipe mode and lightingTier to the lighting default;
+ *   diagnostics (terrain only, default false) compiles the inspection views selected by uDiagnostic, without it uDiagnostic is ignored and the shaded
+ *   surface is drawn; terrainAppearance (terrain only, default true) compiles the terrain-driven natural appearance, false keeps its inputs neutral;
+ *   water samples the prefiltered sky reflection map when reflection is true and the sky harmonics otherwise
  * @returns {any}
  */
-export function createLandscapeShaderPayload(kind, { coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, reflection = false } = {}) {
+export function createLandscapeShaderPayload(kind, { coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, reflection = false,
+    diagnostics = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.diagnostics, terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance } = {}) {
     if (kind === 'lines') return createShaderPayload({ shaderId: 'landscape/lines', sourceSet: lines });
     if (kind === 'backdrop') return createShaderPayload({ shaderId: 'landscape/backdrop', sourceSet: backdrop, defines: { ...landscapeLightingDefines(lightingTier), LANDSCAPE_BACKDROP_HORIZON_BAND: String(BACKDROP_HORIZON_BAND) } });
     if (kind === 'water') {
@@ -51,5 +57,6 @@ export function createLandscapeShaderPayload(kind, { coverageSlots, materialSamp
     if (kind !== 'terrain') throw new Error(`Unknown landscape shader ${kind}`);
     // parenthesized because the shared define builder turns the literal value 1 into a valueless flag define
     return createShaderPayload({ shaderId: 'landscape/terrain', sourceSet: terrain, defines: { [LANDSCAPE_COVERAGE_SLOT_DEFINE]: assertLandscapeCoverageSlots(coverageSlots), ...warpDefines,
-        [LANDSCAPE_MATERIAL_SAMPLING_DEFINE]: `(${landscapeMaterialSamplingMode(materialSampling)})`, ...landscapeLightingDefines(lightingTier), ...levelColorDefine, ...terrainAppearanceDefines } });
+        [LANDSCAPE_MATERIAL_SAMPLING_DEFINE]: `(${landscapeMaterialSamplingMode(materialSampling)})`, ...landscapeLightingDefines(lightingTier), ...levelColorDefine, ...terrainAppearanceDefines,
+        ...landscapeProgramVariantDefines({ diagnostics, terrainAppearance }) } });
 }

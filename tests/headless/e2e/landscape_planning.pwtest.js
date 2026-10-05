@@ -39,9 +39,11 @@ test('Landscape D6: retained references, diagnostic modes, native report, persis
     expect(planned.planning.features.some(feature => feature.id === 'point/bus-stop-reservation')).toBe(true);
     expect(planned.planning.features.filter(feature => feature.kind === 'road').every(feature => Number.isFinite(feature.firstPoint.y))).toBe(true);
     await page.screenshot({ path: path.join(artifacts, '01-coastal-planning-overview.png') });
+    expect(planned.terrainProgramVariant, 'AI577 D6: the default terrain program carries no inspection code').toMatchObject({ diagnostics: false, pending: false });
     for (const diagnostic of ['elevation', 'slope', 'water', 'surface-level', 'surface-coverage']) {
         await page.evaluate(diagnostic => window.__landscapeTestHooks.setPlanning({ diagnostic }), diagnostic);
         const state = await settle(page); expect(state.planning.diagnostic).toBe(diagnostic);
+        expect(state.terrainProgramVariant, 'streaming settles once the diagnostics program is linked and bound').toMatchObject({ diagnostics: true, pending: false });
         captures.push({ phase: diagnostic, state });
         await page.screenshot({ path: path.join(artifacts, `02-diagnostic-${diagnostic}.png`) });
     }
@@ -53,7 +55,7 @@ test('Landscape D6: retained references, diagnostic modes, native report, persis
     expect(exactSoils.size, `Pure coverage regions without the translucent water reference reproduce review colors exactly: ${[...exactSoils].join(', ')}`).toBeGreaterThanOrEqual(3);
     await page.evaluate(() => window.__landscapeTestHooks.setPlanning({ diagnostic: 'none' }));
     await page.evaluate(() => window.__landscapeTestHooks.focusReference('point/bus-stop-reservation'));
-    await settle(page);
+    expect((await settle(page)).terrainProgramVariant, 'returning to none rebinds the default program').toMatchObject({ diagnostics: false, pending: false });
     await page.evaluate(() => window.__landscapeTestHooks.saveBookmark('Beach planning study'));
     const saved = await snapshot(page), bookmark = saved.bookmarks.find(item => item.name === 'Beach planning study');
     expect(bookmark).toBeTruthy();

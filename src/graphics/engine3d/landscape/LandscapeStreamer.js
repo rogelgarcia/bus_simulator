@@ -11,6 +11,7 @@ import { LANDSCAPE_NATURAL_INFERENCE, acquireLandscapeNaturalInference, landscap
 import { assertLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from './LandscapeMaterialSampling.js';
 import { LANDSCAPE_LIGHTING, landscapeLightingTier } from './LandscapeLightingModel.js';
+import { LANDSCAPE_TERRAIN_PROGRAM_VARIANT, landscapeProgramVariant, sameLandscapeProgramVariant } from './LandscapeTerrainProgramVariant.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
@@ -38,11 +39,13 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 export class LandscapeStreamer {
     /**
      * @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,lightingTier?:string,lighting?:any,mode?:string,lodColors?:boolean,boundaries?:boolean,
-     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview'}} options naturalInference is the view's natural display policy of planning-only cover,
-     *   shared with the appearance stream of the same load
+     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview',diagnostics?:boolean,terrainAppearance?:boolean}} options naturalInference is the view's
+     *   natural display policy of planning-only cover, shared with the appearance stream of the same load; diagnostics and terrainAppearance (AI577 D6) select
+     *   the compiled terrain program variant the tiles start with (see setProgramVariant)
      */
     constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, lighting = null, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5,
-        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode }) {
+        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, diagnostics = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.diagnostics,
+        terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance }) {
         this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
@@ -77,6 +80,12 @@ export class LandscapeStreamer {
         this.peakUploadBytes = 0;
         this.frameCostMs = 0;
         this.programCompile = null;
+        // AI577 D6: compile-time program variant of every tile (inspection views, terrain-driven appearance), switched by setProgramVariant
+        this.programVariant = landscapeProgramVariant({ diagnostics, terrainAppearance });
+        this.programTarget = this.programVariant;
+        this.programSwitch = { pending: false, milliseconds: null, timedOut: false, switches: 0 };
+        this.programSequence = 0;
+        this.programPrototype = null;
         this.degradationReason = null;
         this.disposed = false;
         this.poolKey = `${this.instance}/worker-context`;
@@ -158,8 +167,8 @@ export class LandscapeStreamer {
         } catch (error) { this.dispose(); throw error; }
     }
 
-    createModel(record) {
-        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling, lightingTier: this.lightingTier });
+    createModel(record, { variant = this.programVariant, attach = true } = {}) {
+        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling, lightingTier: this.lightingTier, ...variant });
         if (this.lighting) model.setLighting(this.lighting.uniforms);
         if (this.appearance) model.setAppearance(this.appearance.uniforms);
         if (this.planning) model.setPlanning(this.planning.uniforms);
@@ -167,7 +176,7 @@ export class LandscapeStreamer {
         model.setBoundaries(this.boundaries);
         model.setLodColors(this.lodColors);
         model.mesh.visible = false;
-        this.scene.add(model.mesh);
+        if (attach) this.scene.add(model.mesh);
         return model;
     }
 
@@ -178,11 +187,16 @@ export class LandscapeStreamer {
      * @param {any} model @param {any} camera
      */
     async compileProgram(model, camera) {
+        this.programCompile = { parallel: this.renderer.extensions.has('KHR_parallel_shader_compile'), pending: true, milliseconds: null, timedOut: false };
+        this.programCompile = { ...await this.linkProgram(model, camera), pending: false };
+    }
+
+    /** @param {any} model @param {any} camera @returns {Promise<{parallel:boolean,milliseconds:number,timedOut:boolean}>} */
+    async linkProgram(model, camera) {
         const started = performance.now(), parallel = this.renderer.extensions.has('KHR_parallel_shader_compile');
         this.renderer.compile(model.mesh, camera, this.scene);
         const program = this.renderer.properties.get(model.mesh.material).currentProgram;
         if (typeof program?.isReady !== 'function') throw new Error('[Landscape] The renderer did not create a terrain program to compile');
-        this.programCompile = { parallel, pending: true, milliseconds: null, timedOut: false };
         const gl = this.renderer.getContext();
         gl.flush(); // submits the queued compile and link so the driver progresses while nothing else is drawn
         while (!this.disposed && !program.isReady()) {
@@ -191,8 +205,53 @@ export class LandscapeStreamer {
             await new Promise(resolve => setTimeout(resolve, 16));
         }
         if (this.disposed) throw new DOMException('Landscape stream disposed while its terrain program compiled', 'AbortError');
-        this.programCompile = { parallel, pending: false, milliseconds: performance.now() - started, timedOut: !program.isReady() };
+        return { parallel, milliseconds: performance.now() - started, timedOut: !program.isReady() };
     }
+
+    /**
+     * AI577 D6: switches every tile to another compiled program variant: diagnostics adds the inspection views selected by uDiagnostic (the default
+     * program carries no inspection code), terrainAppearance false compiles the terrain-driven natural appearance out (its switch). The target
+     * program is linked first on an unrendered prototype tile through KHR_parallel_shader_compile, so the page keeps drawing the current program and
+     * never waits on the driver; the tiles then switch together and reuse the linked program, which the prototype keeps referenced until the next
+     * switch. A newer request supersedes a pending one; streaming reports unsettled until the switch completes.
+     * @param {{diagnostics?:boolean,terrainAppearance?:boolean}} changes @param {any} camera @returns {Promise<boolean>} true when this request is the applied state
+     */
+    async setProgramVariant(changes, camera) {
+        const target = landscapeProgramVariant({ ...this.programTarget, ...changes });
+        const sequence = ++this.programSequence, root = this.records.get(this.manifest.overviewId);
+        this.programTarget = target;
+        if (sameLandscapeProgramVariant(target, this.programVariant) || !root?.model) {
+            // already in place, or nothing drawn yet (the first program compiles with the requested variant)
+            this.programVariant = target;
+            this.programSwitch = { ...this.programSwitch, pending: false };
+            return true;
+        }
+        this.programSwitch = { ...this.programSwitch, pending: true };
+        const prototype = this.createModel(root, { variant: target, attach: false });
+        let link;
+        try { link = await this.linkProgram(prototype, camera); }
+        catch (error) {
+            prototype.dispose();
+            if (sequence === this.programSequence && !this.disposed) { this.programTarget = this.programVariant; this.programSwitch = { ...this.programSwitch, pending: false }; }
+            throw error;
+        }
+        if (this.disposed || sequence !== this.programSequence) { prototype.dispose(); return false; }
+        this.releaseProgramPrototype();
+        this.programPrototype = prototype;
+        this.programVariant = target;
+        for (const record of this.records.values()) record.model?.setProgramVariant(target);
+        this.programSwitch = { pending: false, milliseconds: link.milliseconds, timedOut: link.timedOut, switches: this.programSwitch.switches + 1 };
+        return true;
+    }
+
+    /** @returns {{diagnostics:boolean,terrainAppearance:boolean,target:{diagnostics:boolean,terrainAppearance:boolean},pending:boolean,milliseconds:number|null,timedOut:boolean,switches:number}} */
+    programVariantState() { return { ...this.programVariant, target: { ...this.programTarget }, ...this.programSwitch }; }
+
+    /** @param {boolean} enabled @param {any} camera */
+    setDiagnostics(enabled, camera) { return this.setProgramVariant({ diagnostics: enabled }, camera); }
+
+    /** @param {boolean} enabled @param {any} camera */
+    setTerrainAppearance(enabled, camera) { return this.setProgramVariant({ terrainAppearance: enabled }, camera); }
 
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;
@@ -222,6 +281,7 @@ export class LandscapeStreamer {
     /** Recompiles every terrain material for a lighting tier; tiles uploaded later use it too. @param {string} lightingTier */
     setLightingTier(lightingTier) {
         this.lightingTier = landscapeLightingTier(lightingTier);
+        this.releaseProgramPrototype();
         for (const record of this.records.values()) record.model?.setLightingTier(this.lightingTier);
     }
 
@@ -229,8 +289,12 @@ export class LandscapeStreamer {
     setMaterialSampling(materialSampling) {
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
+        this.releaseProgramPrototype();
         for (const record of this.records.values()) record.model?.setMaterialSampling(materialSampling);
     }
+
+    // the prototype only keeps a switched program variant referenced until the tiles draw with it; other recompiles make it stale
+    releaseProgramPrototype() { this.programPrototype?.dispose(); this.programPrototype = null; }
 
     evict(record) {
         if (!record || this.leaves.has(record.id) || record.id === this.manifest.overviewId) return false;
@@ -548,14 +612,14 @@ export class LandscapeStreamer {
         if (this.task?.phase === 'morph' && this.lastPlan?.visibilityById[this.task.parentId]) achievedErrorPixels = Math.max(achievedErrorPixels, this.lastPlan.errorsById[this.task.parentId]);
         const pending = this.pool.snapshot();
         return {
-            settled: this.schedulerIdle === true && !this.task && !pending.active && !pending.queued && !this.inspectionUpload,
+            settled: this.schedulerIdle === true && !this.task && !pending.active && !pending.queued && !this.inspectionUpload && !this.programSwitch.pending,
             desiredLeafIds: this.lastPlan?.desiredLeafIds ?? [this.manifest.overviewId], residentLeafIds: [...this.leaves],
             residentIds: records.map(record => record.id), residentSourceIds: records.filter(record => record.chunk).map(record => record.id),
             materialSampling: this.materialSampling, targetErrorPixels: this.targetErrorPixels, desiredErrorPixels: this.lastPlan?.desiredErrorPixels ?? null, achievedErrorPixels,
             targetMet: achievedErrorPixels <= this.targetErrorPixels, degradationReason: this.degradationReason ?? (this.task ? 'loading-detail' : null),
             pending: pending.active + pending.queued, canceled: pending.canceled, loaded: this.loadedCount, evicted: this.evictedCount,
             queueDepth: pending.queued, activeWorkers: pending.active, uploadedBytesPerFrame: this.uploadedBytes, peakUploadedBytesPerFrame: this.peakUploadBytes, uploadLimitBytes: UPLOAD_BYTES_PER_FRAME, frameCostMs: this.frameCostMs,
-            prefetchIds: [...this.prefetchIds], programCompile: this.programCompile,
+            prefetchIds: [...this.prefetchIds], programCompile: this.programCompile, programVariant: this.programVariantState(),
             errors: [...this.failures].map(([id, value]) => ({ id, ...value })), budget: this.budget.snapshot(),
             sourceBytes: records.reduce((sum, record) => sum + (record.chunk ? sourceBytes(record.descriptor) : 0), 0),
             vertices: metrics.reduce((sum, metric) => sum + metric.vertices, 0), triangles: metrics.reduce((sum, metric) => sum + metric.triangles, 0),
@@ -572,6 +636,7 @@ export class LandscapeStreamer {
         this.disposed = true;
         for (const release of [...this.interests]) release();
         this.pool.dispose();
+        this.releaseProgramPrototype();
         for (const record of this.records.values()) {
             record.abort.abort();
             record.model?.dispose();
