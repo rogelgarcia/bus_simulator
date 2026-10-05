@@ -14,9 +14,10 @@ export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
 /**
  * @param {any} buffers @param {Float32Array} sourceHeights
- * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string,diagnostics?:boolean,terrainAppearance?:boolean}} options view-wide compile-time
+ * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string,diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} options view-wide compile-time
  *   coverage slot count, material sampling mode, lighting tier and (AI577 D6) program variant: diagnostics compiles the inspection views, terrainAppearance
- *   (default true) the terrain-driven natural appearance; a tile renders with the calibrated sun and no sky light until setLighting binds the view lighting
+ *   (default true) the terrain-driven natural appearance, surfaceCache the cached frame program; a tile renders with the calibrated sun and no sky light
+ *   until setLighting binds the view lighting
  * @returns {any}
  */
 export function createLandscapeMesh(buffers, sourceHeights, options) {
@@ -30,7 +31,7 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
     };
     const coverageSlots = options?.coverageSlots;
     const variant = { ...(options?.materialSampling ? { materialSampling: options.materialSampling } : {}), ...(options?.lightingTier ? { lightingTier: options.lightingTier } : {}),
-        ...landscapeProgramVariant({ diagnostics: options?.diagnostics, terrainAppearance: options?.terrainAppearance }) };
+        ...landscapeProgramVariant({ diagnostics: options?.diagnostics, terrainAppearance: options?.terrainAppearance, surfaceCache: options?.surfaceCache }) };
     const terrainPayload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
@@ -104,7 +105,7 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         setMaterialSampling(materialSampling) { variant.materialSampling = materialSampling; recompile(); },
         /** @param {string} lightingTier compile-time lighting tier; the program recompiles on the next draw */
         setLightingTier(lightingTier) { variant.lightingTier = lightingTier; recompile(); },
-        /** @param {{diagnostics:boolean,terrainAppearance:boolean}} next AI577 D6 program variant; the program recompiles on the next draw unless already linked */
+        /** @param {{diagnostics:boolean,terrainAppearance:boolean,surfaceCache?:boolean}} next AI577 D6 program variant; the program recompiles on the next draw unless already linked */
         setProgramVariant(next) {
             const resolved = landscapeProgramVariant(next);
             if (sameLandscapeProgramVariant(variant, resolved)) return;

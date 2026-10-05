@@ -3,6 +3,11 @@
 // Uniform usage is counted conservatively: every scalar, vector, sampler and array element occupies one
 // four-component vector and every matrix one vector per column, as in unpacked D3D register allocation.
 // Three.js adds viewMatrix, cameraPosition, isOrthographic and toneMappingExposure to each fragment shader.
+// AI577 D6: uniforms declared only inside a variant-only block (#ifdef LANDSCAPE_SURFACE_CACHE) belong to that program variant, which compiles
+// out the coverage and material evaluation; they are counted separately (landscapeFragmentVariantUniformVectors), so the shared coverage slot
+// sizing of every program is unchanged and the variant is admitted only where shared + variant vectors fit.
+
+export const LANDSCAPE_VARIANT_ONLY_DEFINES = Object.freeze(['LANDSCAPE_SURFACE_CACHE']);
 
 export const LANDSCAPE_MASK_SLOTS = 17;
 export const LANDSCAPE_DETAIL_SLOTS_MAX = 64;
@@ -16,6 +21,58 @@ const SINGLE_VECTOR_TYPES = ['float', 'int', 'uint', 'bool', 'vec2', 'vec3', 've
 const UNIFORM_VECTORS = Object.freeze({ ...Object.fromEntries(SINGLE_VECTOR_TYPES.map(type => [type, 1])), mat2: 2, mat3: 3, mat4: 4 });
 const DECLARATION = /^\s*(?:(?:lowp|mediump|highp)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([A-Za-z0-9_]+)\s*\])?\s*$/;
 
+// splits comment-free shader code into the lines every program shares and the lines of variant-only blocks (#ifdef of a variant-only define, or
+// the #else branch of its #ifndef); other preprocessor blocks pass through as shared
+function splitVariantOnlyCode(code) {
+    const shared = [], variant = [], stack = [];
+    let excluded = false;
+    for (const line of code.split('\n')) {
+        const directive = line.trim(), ifdef = /^#ifdef\s+(\w+)/.exec(directive), ifndef = /^#ifndef\s+(\w+)/.exec(directive);
+        if (ifdef || ifndef || /^#if\b/.test(directive)) {
+            const name = (ifdef ?? ifndef)?.[1], mine = !!name && LANDSCAPE_VARIANT_ONLY_DEFINES.includes(name);
+            stack.push({ mine, negated: !!ifndef, outer: excluded });
+            if (mine && ifdef) excluded = true;
+            continue;
+        }
+        if (/^#(else|elif)\b/.test(directive)) {
+            const top = stack.at(-1);
+            if (top?.mine) excluded = top.outer || top.negated;
+            continue;
+        }
+        if (/^#endif\b/.test(directive)) { const top = stack.pop(); if (top) excluded = top.outer; continue; }
+        (excluded ? variant : shared).push(line);
+    }
+    return { shared: shared.join('\n'), variant: variant.join('\n') };
+}
+
+function countUniformVectors(code, arraySizes) {
+    let fixedVectors = 0, slotVectors = 0;
+    for (const statement of code.matchAll(/\buniform\b([^;]*);/g)) {
+        const declaration = DECLARATION.exec(statement[1]);
+        if (!declaration) throw new Error(`[Landscape] Unsupported terrain uniform declaration: uniform${statement[1]};`);
+        const [, type, name, size] = declaration, vectors = UNIFORM_VECTORS[type];
+        if (!vectors) throw new Error(`[Landscape] Terrain uniform ${name} has unsupported type ${type}`);
+        if (size === LANDSCAPE_COVERAGE_SLOT_DEFINE) slotVectors += vectors;
+        else if (size === undefined) fixedVectors += vectors;
+        else if (/^[1-9][0-9]*$/.test(size)) fixedVectors += vectors * Number(size);
+        else if (Object.hasOwn(arraySizes, size)) fixedVectors += vectors * arraySizes[size];
+        else throw new Error(`[Landscape] Terrain uniform ${name} has unsupported array size ${size}`);
+    }
+    return { fixedVectors, slotVectors };
+}
+
+/**
+ * Conservative vectors of the uniforms declared only inside variant-only blocks (AI577 D6 surface cache variant).
+ * @param {string} source terrain fragment shader source (includes expanded) @param {Readonly<Record<string, number>>} [arraySizes]
+ * @returns {Readonly<{variantVectors:number}>}
+ */
+export function landscapeFragmentVariantUniformVectors(source, arraySizes = {}) {
+    if (typeof source !== 'string' || !source.length) throw new Error('[Landscape] Terrain fragment source is required to count variant uniforms');
+    const counted = countUniformVectors(splitVariantOnlyCode(source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')).variant, arraySizes);
+    if (counted.slotVectors) throw new Error('[Landscape] Variant-only terrain uniforms cannot be sized by the coverage slot define');
+    return Object.freeze({ variantVectors: counted.fixedVectors });
+}
+
 /**
  * @param {string} source terrain fragment shader source (includes expanded) before Three.js prefixing
  * @param {Readonly<Record<string, number>>} [arraySizes] compile-time array-size defines other than the coverage slot count
@@ -26,7 +83,7 @@ export function landscapeFragmentUniformVectors(source, arraySizes = {}) {
     for (const [name, value] of Object.entries(arraySizes)) {
         if (name === LANDSCAPE_COVERAGE_SLOT_DEFINE || !Number.isSafeInteger(value) || value < 1) throw new Error(`[Landscape] Terrain array size ${name} must be a positive integer other than the coverage slot define; received ${value}`);
     }
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const code = splitVariantOnlyCode(source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')).shared;
     let fixedVectors = LANDSCAPE_THREE_FRAGMENT_UNIFORM_VECTORS, slotVectors = 0;
     for (const statement of code.matchAll(/\buniform\b([^;]*);/g)) {
         const declaration = DECLARATION.exec(statement[1]);

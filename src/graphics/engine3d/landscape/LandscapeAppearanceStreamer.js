@@ -44,6 +44,7 @@ import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailCapacity, lands
 import { LANDSCAPE_TERRAIN_APPEARANCE, decodeLandscapeAppearanceLayer, landscapeAppearanceLayerUnits, landscapePlanningCover, landscapePlanningCoverMask, landscapeRockFactor,
     landscapeSoilCatenaShare, landscapeSoilTerrainRole, landscapeTerrainAppearanceInputs, landscapeTerrainFreshness } from './LandscapeTerrainAppearance.js';
 import { sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
+import { LANDSCAPE_SURFACE_CACHE_OFF } from './LandscapeSurfaceCache.js';
 
 export class LandscapeAppearanceStreamer {
     /**
@@ -297,6 +298,45 @@ export class LandscapeAppearanceStreamer {
         this.frameCostMs = performance.now() - start + this.prepareCostMs;
     }
 
+    /**
+     * Inputs of the AI577 D6 runtime surface cache (LandscapeSurfaceCacheInputs): every resident and uniform mask page with its identity, level,
+     * bounds, fade progress and soils; each soil's bound tier, paired micro period and arriving tier; and the generation-relevant shared values,
+     * without the per-slot arrays, the tier transition, the resident resolutions or the micro pairing, which pages carry themselves.
+     */
+    surfaceCacheInputs() {
+        if (!this.initialized || this.disposed) return null;
+        const manifest = this.loaded.manifest, u = this.uniforms, rootSpacing = this.loaded.chunk.descriptor.sampleStride * manifest.grid.spacingX;
+        const levelSpacings = Array.from({ length: manifest.grid.maxLevel + 1 + (this.masks.detail ? this.detailLevels : 0) }, (_, level) => rootSpacing / 2 ** level);
+        const slots = [], prefixLength = this.prefix.length + 1;
+        for (const record of this.masks.records.values()) {
+            if (record.status !== 'resident' && record.status !== 'uniform') continue;
+            const uniform = record.status === 'uniform';
+            slots.push({ id: record.id, key: record.kind === 'detail' ? `detail/${record.identity}` : record.key.slice(prefixLength), level: record.descriptor.level,
+                bounds: record.descriptor.bounds, progress: uniform ? 1 : record.progress, soils: uniform ? [record.soil] : [...record.soils] });
+        }
+        const transition = this.materials.transition;
+        const soils = this.materials.materials.map(material => {
+            const tiling = u.uSoilTiling.value[material.index];
+            return { index: material.index, soilId: material.definition.soilId, tileMeters: tiling.x, resolution: material.current?.resolution ?? 32, microTileMeters: tiling.y,
+                microResolution: material.current?.resolution ?? 32, microLuminance: tiling.w, transitionResolution: transition?.material === material ? transition.target.resolution : null };
+        });
+        const vectors = list => list.flatMap(value => value.toArray()), rootField = landscapeTerrainFieldProgress(u.uMaskMeta.value[0].w);
+        const global = { revision: this.appearance.revision, landscape: `${manifest.id}/${this.seed}`, natural: this.natural.active ? this.natural.snapshot().policy : 'overview',
+            bindings: this.appearance.materials.map(definition => `${definition.soilId}=${definition.materialId}`),
+            coverage: [...u.uCoverageSettings.value.toArray(), ...u.uCoverageFilter.value.toArray(), u.uCoveragePositiveClamp.value, u.uContourDistanceRange.value, ...u.uMaskDimensions.value.toArray()],
+            soilScale: vectors(u.uSoilScale.value), soilTiling: u.uSoilTiling.value.map(value => value.x), soilAlbedo: vectors(u.uSoilAlbedo.value),
+            soilRoughness: vectors(u.uSoilRoughness.value), soilRange: vectors(u.uSoilRange.value), soilState: u.uSoilState.value.flatMap(value => [value.x, value.w]),
+            soilResponse: vectors(u.uSoilResponse.value), blend: [u.uSurfaceBlendEnabled.value, ...u.uSurfaceBlendSettings.value.toArray()],
+            clumps: [...u.uSoilClumps.value, ...u.uSoilClumpSalts.value, ...u.uClumpOctaves.value, ...u.uClumpSettings.value, ...u.uClumpConfidence.value],
+            sampling: [...u.uSoilStochastic.value, ...u.uSoilStochasticSalts.value, ...u.uStochasticSettings.value],
+            macro: [...u.uMacroOctaves.value, ...u.uMacroSalts.value, ...u.uMacroSettings.value, ...u.uSoilMacro.value],
+            layers: [...u.uSurfaceLayers.value, ...u.uMicroSampling.value],
+            warp: [u.uSurfaceWarpEnabled.value, ...u.uLandscapeWarpWaves.value, ...u.uLandscapeWarpOffsets.value, ...u.uLandscapeWarpSalts.value],
+            fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value] };
+        const rock = this.appearance.materials.findIndex(definition => landscapeSoilTerrainRole(definition.soilId) < 0);
+        return { levelSpacings, slots, soils, rock, global, fieldsFading: rootField > 0 && rootField < 1, uniforms: u };
+    }
+
     sample(x, z) { return this.masks?.sample(x, z) ?? null; }
 
     /** Exact JavaScript terrain-field sample (mirror of terrain_fields.glsl) over the resident field pages. @param {number} x @param {number} z @param {any} [options] */
@@ -431,8 +471,11 @@ export class LandscapeAppearanceStreamer {
         const masks = this.masks?.snapshot(), materials = this.materials?.snapshot(), budget = this.budget?.snapshot(), detail = this.detailSnapshot(masks), fields = this.fields?.snapshot();
         const pending = (masks?.pending ?? 0) + (materials?.pending ?? 0) + detail.pending;
         const errors = [...this.errors, ...(masks?.errors ?? []), ...(materials?.errors ?? [])];
+        const surfaceCache = this.surfaceCache?.snapshot() ?? LANDSCAPE_SURFACE_CACHE_OFF;
         return { ready: this.uniforms.uAppearanceReady.value === 1,
-            settled: this.initialized ? pending === 0 && !masks?.transitioning && !masks?.missingWork && materials?.settled === true && !detail.missingWork && !detail.transitioning && (fields?.settled ?? true) : errors.length > 0,
+            settled: this.initialized ? pending === 0 && !masks?.transitioning && !masks?.missingWork && materials?.settled === true && !detail.missingWork && !detail.transitioning && (fields?.settled ?? true)
+                && surfaceCache.settled : errors.length > 0,
+            surfaceCache,
             desiredMaskIds: this.lastPlan?.desiredMaskIds ?? [], visibleMaskIds: this.lastPlan?.visibleMaskIds ?? [], residentMaskIds: masks?.residentMaskIds ?? [], maskLods: masks?.maskLods ?? [], maskCapacity: masks?.capacity ?? 0,
             materials: materials?.materials ?? [], desiredTier: this.lastPlan?.desiredTier ?? '32', desiredMaskPixels: this.lastPlan?.desiredMaskPixels ?? 0,
             cpuBytes: budget?.cpuBytes ?? 0, gpuBytes: budget?.gpuBytes ?? 0, reserved: budget?.reserved ?? { cpuBytes: 0, gpuBytes: 0 }, peakCpuBytes: budget?.peakCpuBytes ?? 0, peakGpuBytes: budget?.peakGpuBytes ?? 0,
@@ -462,6 +505,7 @@ export class LandscapeAppearanceStreamer {
 
     releaseResources() {
         this.uniforms.uAppearanceReady.value = 0;
+        this.surfaceCache = null;
         this.fields?.dispose();
         this.fields = null;
         this.materials?.dispose();
@@ -476,5 +520,5 @@ export class LandscapeAppearanceStreamer {
         this.initialized = false;
     }
 
-    dispose() { this.disposed = true; this.abort.abort(); this.releaseResources(); }
+    dispose() { this.disposed = true; this.abort.abort(); this.releaseResources(); this.uniforms.uSurfaceCacheIndirection.value?.dispose(); }
 }

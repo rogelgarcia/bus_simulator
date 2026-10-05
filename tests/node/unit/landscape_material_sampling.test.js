@@ -225,5 +225,9 @@ test('Material sampling: the GLSL chunk mirrors the JavaScript constants and the
     assert.match(terrain, /encodedNormal = microNormal\(texel\) \* 0\.5 \+ 0\.5;/, 'micro normals run through the same lattice body and blend as inverse-rotated slopes');
     assert.match(terrain, /if \(micro && hex\) stochastic = uMicroSampling;/, 'micro lattices use their own catalog parameters');
     assert.match(terrain, /if \(bound < uStochasticSettings\.y\) continue;\s+weight \*= smoothstep\(uStochasticSettings\.y, 2\.0 \* uStochasticSettings\.y, bound\);/, 'skipped samples fade in continuously');
-    assert.equal((terrain.match(/soilLattice\(soil, /g) ?? []).length, 1, 'one inlined lattice call per soil surface serves every projection and the micro layer');
+    // AI577 D6: the cached frame program (LANDSCAPE_SURFACE_CACHE, which compiles out soilSurface) has its own single micro lattice call
+    const cacheMicroStart = terrain.indexOf('void landscapeSurfaceCacheMicro('), cacheMicro = terrain.slice(cacheMicroStart, terrain.indexOf('\n}\n', cacheMicroStart));
+    const uncached = terrain.replace(cacheMicro, '');
+    assert.equal((uncached.match(/soilLattice\(soil, /g) ?? []).length, 1, 'one inlined lattice call per soil surface serves every projection and the micro layer');
+    assert.equal((cacheMicro.match(/soilLattice\(soil, true, /g) ?? []).length, 1, 'the cached frame evaluates one micro lattice');
 });

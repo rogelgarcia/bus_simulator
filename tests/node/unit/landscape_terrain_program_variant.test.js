@@ -25,21 +25,26 @@ function resolveFlag(source, name, defined) {
 }
 
 test('Terrain program variant: the default draws the shaded surface with the terrain-driven appearance and no inspection views', () => {
-    assert.deepEqual(LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults, { diagnostics: false, terrainAppearance: true });
-    assert.deepEqual(landscapeProgramVariant(), { diagnostics: false, terrainAppearance: true });
-    assert.deepEqual(landscapeProgramVariant({ diagnostics: true }), { diagnostics: true, terrainAppearance: true });
+    assert.deepEqual(LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults, { diagnostics: false, terrainAppearance: true, surfaceCache: false });
+    assert.deepEqual(landscapeProgramVariant(), { diagnostics: false, terrainAppearance: true, surfaceCache: false });
+    assert.deepEqual(landscapeProgramVariant({ diagnostics: true }), { diagnostics: true, terrainAppearance: true, surfaceCache: false });
     assert.ok(Object.isFrozen(landscapeProgramVariant()));
-    for (const invalid of [{ diagnostics: 1 }, { terrainAppearance: 'off' }, { diagnostics: null }]) assert.throws(() => landscapeProgramVariant(invalid), /switches must be boolean/);
-    assert.equal(sameLandscapeProgramVariant(landscapeProgramVariant(), { diagnostics: false, terrainAppearance: true }), true);
+    for (const invalid of [{ diagnostics: 1 }, { terrainAppearance: 'off' }, { diagnostics: null }, { surfaceCache: 'on' }]) assert.throws(() => landscapeProgramVariant(invalid), /switches must be boolean/);
+    assert.equal(sameLandscapeProgramVariant(landscapeProgramVariant(), { diagnostics: false, terrainAppearance: true }), true, 'an omitted surface cache switch is off');
     assert.equal(sameLandscapeProgramVariant(landscapeProgramVariant(), landscapeProgramVariant({ terrainAppearance: false })), false);
+    assert.equal(sameLandscapeProgramVariant(landscapeProgramVariant(), landscapeProgramVariant({ surfaceCache: true })), false);
 });
 
 test('Terrain program variant: valueless flag defines select the compiled code', () => {
     assert.deepEqual(landscapeProgramVariantDefines({}), { LANDSCAPE_TERRAIN_APPEARANCE: true });
     assert.deepEqual(landscapeProgramVariantDefines({ diagnostics: true }), { LANDSCAPE_TERRAIN_DIAGNOSTICS: true, LANDSCAPE_TERRAIN_APPEARANCE: true });
     assert.deepEqual(landscapeProgramVariantDefines({ terrainAppearance: false }), {});
-    assert.deepEqual(LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defines, { diagnostics: 'LANDSCAPE_TERRAIN_DIAGNOSTICS', terrainAppearance: 'LANDSCAPE_TERRAIN_APPEARANCE' });
-    assert.match(loader, /\.\.\.landscapeProgramVariantDefines\(\{ diagnostics, terrainAppearance \}\)/, 'the loader builds the terrain payload defines from the variant');
+    assert.deepEqual(landscapeProgramVariantDefines({ surfaceCache: true }), { LANDSCAPE_TERRAIN_APPEARANCE: true, LANDSCAPE_SURFACE_CACHE: true });
+    assert.deepEqual(landscapeProgramVariantDefines({ surfaceCache: true, diagnostics: true }), { LANDSCAPE_TERRAIN_DIAGNOSTICS: true, LANDSCAPE_TERRAIN_APPEARANCE: true },
+        'inspection views evaluate coverage and materials, so they take precedence over the cached frame');
+    assert.deepEqual(LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defines, { diagnostics: 'LANDSCAPE_TERRAIN_DIAGNOSTICS', terrainAppearance: 'LANDSCAPE_TERRAIN_APPEARANCE', surfaceCache: 'LANDSCAPE_SURFACE_CACHE' });
+    assert.match(loader, /const variant = surfaceCacheGeneration \? \{ diagnostics: false, terrainAppearance, surfaceCache: false \} : \{ diagnostics, terrainAppearance, surfaceCache \};\s+const variantDefines = landscapeProgramVariantDefines\(variant\)/,
+        'the loader builds the terrain payload defines from the variant; the generation program never compiles the cached frame or the inspection views');
     assert.match(terrain, /#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS/);
     assert.match(appearance, /#ifdef LANDSCAPE_TERRAIN_APPEARANCE/);
 });

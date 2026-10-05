@@ -25,6 +25,8 @@ import { LandscapePerformanceCapture } from './LandscapePerformanceCapture.js';
 import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerrainReports.js';
 import { LANDSCAPE_TERRAIN_FIELD_RUNTIME } from '../../engine3d/landscape/LandscapeTerrainFieldPages.js';
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
+import { LANDSCAPE_SURFACE_CACHE_RUNTIME, LandscapeSurfaceCache } from '../../engine3d/landscape/LandscapeSurfaceCache.js';
+import { LANDSCAPE_SURFACE_CACHE } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
 
@@ -43,6 +45,9 @@ export const LANDSCAPE_TERRAIN_APPEARANCE_MODES = Object.freeze(['on', 'off']);
 /** Natural display policy of planning-only cover (AI577 D5d): terrain-driven inference or the former 15.625 m overview infill. */
 export const LANDSCAPE_NATURAL_INFERENCE_MODES = LANDSCAPE_NATURAL_INFERENCE.modes;
 
+/** Runtime surface cache (AI577 D6 core, landscape-surface-cache-v1): off (default, the uncached program) or on. */
+export const LANDSCAPE_SURFACE_CACHE_MODES = LANDSCAPE_SURFACE_CACHE_RUNTIME.modes;
+
 /** @param {string} name @param {readonly string[]} modes @param {string} value */
 function requireViewMode(name, modes, value) {
     if (!modes.includes(value)) throw new Error(`[Landscape] ${name} must be one of ${modes.join(', ')}; received ${value}`);
@@ -53,20 +58,26 @@ export class LandscapeView {
     /**
      * @param {HTMLCanvasElement} canvas
      * @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string,multiscale?:'auto'|'off',lightingTier?:string,cityBinding?:any,
-     *   naturalInference?:'terrain'|'overview',terrainFields?:'auto'|'off',terrainAppearance?:'on'|'off'}} options multiscale 'off' keeps the
-     *   schema-1 material tiers without requesting the companion multiscale sidecar; lightingTier selects the compiled lighting tier (low, standard,
+     *   naturalInference?:'terrain'|'overview',terrainFields?:'auto'|'off',terrainAppearance?:'on'|'off',surfaceCache?:'off'|'on',surfaceCacheSlots?:number,surfaceCacheAnisotropy?:number}} options
+     *   multiscale 'off' keeps the schema-1 material tiers without requesting the companion multiscale sidecar; lightingTier selects the compiled lighting tier (low, standard,
      *   high); cityBinding (a validated city landscape binding) rotates the game-frame sun and sky into landscape space by its yaw; naturalInference is
      *   the natural display policy of planning-only cover forwarded to both streams of every load (AI577 D5d); terrainFields 'off' never streams
-     *   terrain-field pages (AI577 D5a); terrainAppearance 'off' keeps the terrain-driven natural appearance neutral (AI577 D5 A/B)
+     *   terrain-field pages (AI577 D5a); terrainAppearance 'off' keeps the terrain-driven natural appearance neutral (AI577 D5 A/B); surfaceCache 'on' draws the
+     *   ground from the runtime surface cache (AI577 D6 core; default 'off'), with its target slot count and sampler anisotropy
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
-        lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on' } = {}) {
+        lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
+        surfaceCache = 'off', surfaceCacheSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy } = {}) {
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
         this.naturalInference = requireViewMode('naturalInference', LANDSCAPE_NATURAL_INFERENCE_MODES, naturalInference);
         this.terrainFields = requireViewMode('terrainFields', LANDSCAPE_TERRAIN_FIELD_MODES, terrainFields);
         requireViewMode('terrainAppearance', LANDSCAPE_TERRAIN_APPEARANCE_MODES, terrainAppearance);
+        this.surfaceCache = requireViewMode('surfaceCache', LANDSCAPE_SURFACE_CACHE_MODES, surfaceCache);
+        this.surfaceCacheOptions = { targetSlots: surfaceCacheSlots, anisotropy: surfaceCacheAnisotropy };
+        this.surfaceCacheRuntime = null;
+        this.surfaceCacheSequence = 0;
         this.materialSampling = materialSampling;
         this.multiscale = multiscale;
         this.surfaceLayers = null;
@@ -176,7 +187,7 @@ export class LandscapeView {
             this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
             const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, materialSampling: this.materialSampling,
                 lighting: this.lighting, lightingTier: this.lighting.tier, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, naturalInference: this.naturalInference,
-                diagnostics: this.diagnostic !== 'none', terrainAppearance: this.lighting.response.terrainAppearance });
+                diagnostics: this.diagnostic !== 'none', terrainAppearance: this.lighting.response.terrainAppearance, surfaceCache: this.surfaceCache === 'on' });
             this.loadingStream = stream;
             await stream.initialize(this.camera);
             if (this.disposed || sequence !== this.loadSequence) { stream.dispose(); return; }
@@ -196,6 +207,7 @@ export class LandscapeView {
                 terrainFields: this.terrainFields, naturalInference: this.naturalInference });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
+            if (this.surfaceCache === 'on') this.attachSurfaceCache(loaded, stream, appearance);
             this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, lighting: this.lighting, visible: this.waterVisible });
             await appearance.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
@@ -230,6 +242,48 @@ export class LandscapeView {
             if (sequence === this.loadSequence) this.reloading = false;
         }
     }
+
+    // AI577 D6: a runtime surface cache per load, bound to its geometry and appearance streams; a cache that cannot be admitted (device, budget)
+    // reports why and the tiles return to the uncached program, so the view never waits on an absent cache
+    attachSurfaceCache(loaded, stream, appearance) {
+        this.surfaceCacheRuntime?.dispose();
+        this.surfaceCacheRuntime = new LandscapeSurfaceCache({ renderer: this.renderer, budget: this.budget, loaded, coverageSlots: this.coverageSlots.total, ...this.surfaceCacheOptions });
+        this.surfaceCacheRuntime.bind({ stream, appearance });
+        if (!this.surfaceCacheRuntime.available) {
+            this.panel.notice(`Surface cache unavailable: ${this.surfaceCacheRuntime.reason}`);
+            stream.setSurfaceCache(false, this.camera).catch(error => { if (error.name !== 'AbortError') this.lastError = error.message; });
+        }
+        return this.surfaceCacheRuntime;
+    }
+
+    /**
+     * AI577 D6 runtime surface cache switch (test hook). 'on' creates and binds the cache and switches the tiles to the cached frame program once its root
+     * page is resident (until then they keep their current program); 'off' switches them back to the uncached program and then disposes the cache, so
+     * the ledger returns its bytes. Resolves with the cache snapshot once the request is applied (or superseded).
+     * @param {'off'|'on'} mode
+     */
+    async setSurfaceCache(mode) {
+        requireViewMode('surfaceCache', LANDSCAPE_SURFACE_CACHE_MODES, mode);
+        const sequence = ++this.surfaceCacheSequence;
+        this.surfaceCache = mode;
+        if (!this.loaded || !this.stream || !this.appearance) return this.appearance?.snapshot().surfaceCache ?? null;
+        if (mode === 'on') {
+            const runtime = this.surfaceCacheRuntime?.available && this.surfaceCacheRuntime.stream === this.stream ? this.surfaceCacheRuntime : this.attachSurfaceCache(this.loaded, this.stream, this.appearance);
+            const started = performance.now();
+            while (runtime.available && !runtime.ready && sequence === this.surfaceCacheSequence && !this.disposed) {
+                if (performance.now() - started > LANDSCAPE_SURFACE_CACHE_RUNTIME.compileWaitMs + 30000) throw new Error('[Landscape] The surface cache root page was not generated in time');
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            if (sequence === this.surfaceCacheSequence && runtime.available) await this.syncTerrainProgram({ surfaceCache: true });
+        } else {
+            await this.syncTerrainProgram({ surfaceCache: false });
+            if (sequence === this.surfaceCacheSequence) { this.surfaceCacheRuntime?.dispose(); this.surfaceCacheRuntime = null; if (this.appearance) this.appearance.surfaceCache = null; }
+        }
+        return this.appearance?.snapshot().surfaceCache ?? null;
+    }
+
+    /** CPU mirror of the cached frame's page lookup at a world position for a footprint in meters (AI577 D6 inspection). @param {number} x @param {number} z @param {number} footprint */
+    surfaceCacheLookup(x, z, footprint) { return this.surfaceCacheRuntime?.lookup(x, z, footprint) ?? null; }
 
     // the content-addressed fine-page cache outlives appearance instances so reloads and edits reuse unaffected pages
     ensureDetailCache(loaded) {
@@ -432,7 +486,10 @@ export class LandscapeView {
     // tiles switch once it is ready (snapshot().terrainProgramVariant, streaming.settled waits for it), returning to 'none' switches back
     syncTerrainDiagnostics() { this.syncTerrainProgram({ diagnostics: this.diagnostic !== 'none' }); }
 
-    /** @param {{diagnostics?:boolean,terrainAppearance?:boolean}} changes compiled program variant of every terrain tile (LandscapeStreamer.setProgramVariant) */
+    /**
+     * @param {{diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} changes compiled program variant of every terrain tile (LandscapeStreamer.setProgramVariant)
+     * @returns {Promise<void>} settles once every stream applied (or superseded) the request
+     */
     syncTerrainProgram(changes) {
         const streams = [this.loadingStream, this.stream].filter(Boolean), requests = streams.map(stream => stream.setProgramVariant(changes, this.camera));
         const sequence = ++this.programRequests, linkingNotice = 'Linking the terrain program variant; the current view stays interactive.';
@@ -440,7 +497,7 @@ export class LandscapeView {
         const settle = () => { if (!this.disposed && sequence === this.programRequests && this.panel.root.querySelector('[data-field="notice"]')?.textContent === linkingNotice) this.panel.notice(''); };
         if (streams.some(stream => stream.programVariantState().pending)) this.panel.notice(linkingNotice);
         else settle();
-        Promise.all(requests).then(settle, error => {
+        return Promise.all(requests).then(settle, error => {
             if (error.name === 'AbortError' || this.disposed) return;
             this.lastError = error.message;
             this.panel.notice(`Terrain program variant unavailable: ${error.message}`);
@@ -563,6 +620,7 @@ export class LandscapeView {
         this.appearance = null;
         this.water?.dispose();
         this.water = null;
+        this.surfaceCacheRuntime?.dispose(); this.surfaceCacheRuntime = null;
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;
         this.planning?.dispose(); this.planning = null;
         this.invalidateReport();
@@ -820,7 +878,7 @@ export class LandscapeView {
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null }, lighting: { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot() },
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
-            terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off',
+            terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off', surfaceCache: this.surfaceCache,
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
@@ -880,7 +938,10 @@ export class LandscapeView {
                 this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
                 const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0);
                 const planningUploads = this.planning?.update(Math.max(0, uploadLimit - terrainUploads)) ?? 0;
-                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads);
+                // AI577 D6: surface cache demand and page generation run on the GPU before the frame, the indirection uploads with them
+                const cacheUploads = this.surfaceCacheRuntime?.update({ dt: rawDt, camera: this.camera, viewportHeight: this.canvas.height,
+                    uploadAllowance: Math.max(0, uploadLimit - terrainUploads - planningUploads) }) ?? 0;
+                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads + cacheUploads);
             }
             if (this.stream && (!this.lastTelemetryUpdate || now - this.lastTelemetryUpdate > 250)) {
                 const stats = this.stream.snapshot();
@@ -931,6 +992,7 @@ export class LandscapeView {
         this.resizeObserver.disconnect();
         this.controls.dispose();
         this.loadingStream?.dispose();
+        this.surfaceCacheRuntime?.dispose(); this.surfaceCacheRuntime = null;
         this.loadingAppearance?.dispose();
         this.appearance?.dispose();
         this.appearance = null;

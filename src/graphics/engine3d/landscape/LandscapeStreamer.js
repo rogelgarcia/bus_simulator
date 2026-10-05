@@ -39,13 +39,13 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 export class LandscapeStreamer {
     /**
      * @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,lightingTier?:string,lighting?:any,mode?:string,lodColors?:boolean,boundaries?:boolean,
-     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview',diagnostics?:boolean,terrainAppearance?:boolean}} options naturalInference is the view's
-     *   natural display policy of planning-only cover, shared with the appearance stream of the same load; diagnostics and terrainAppearance (AI577 D6) select
-     *   the compiled terrain program variant the tiles start with (see setProgramVariant)
+     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview',diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} options naturalInference is the view's
+     *   natural display policy of planning-only cover, shared with the appearance stream of the same load; diagnostics, terrainAppearance and surfaceCache (AI577 D6)
+     *   select the compiled terrain program variant the tiles start with (see setProgramVariant)
      */
     constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, lighting = null, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5,
         naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, diagnostics = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.diagnostics,
-        terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance }) {
+        terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance, surfaceCache = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.surfaceCache }) {
         this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
@@ -80,8 +80,8 @@ export class LandscapeStreamer {
         this.peakUploadBytes = 0;
         this.frameCostMs = 0;
         this.programCompile = null;
-        // AI577 D6: compile-time program variant of every tile (inspection views, terrain-driven appearance), switched by setProgramVariant
-        this.programVariant = landscapeProgramVariant({ diagnostics, terrainAppearance });
+        // AI577 D6: compile-time program variant of every tile (inspection views, terrain-driven appearance, surface cache), switched by setProgramVariant
+        this.programVariant = landscapeProgramVariant({ diagnostics, terrainAppearance, surfaceCache });
         this.programTarget = this.programVariant;
         this.programSwitch = { pending: false, milliseconds: null, timedOut: false, switches: 0 };
         this.programSequence = 0;
@@ -213,8 +213,9 @@ export class LandscapeStreamer {
      * program carries no inspection code), terrainAppearance false compiles the terrain-driven natural appearance out (its switch). The target
      * program is linked first on an unrendered prototype tile through KHR_parallel_shader_compile, so the page keeps drawing the current program and
      * never waits on the driver; the tiles then switch together and reuse the linked program, which the prototype keeps referenced until the next
-     * switch. A newer request supersedes a pending one; streaming reports unsettled until the switch completes.
-     * @param {{diagnostics?:boolean,terrainAppearance?:boolean}} changes @param {any} camera @returns {Promise<boolean>} true when this request is the applied state
+     * switch. A newer request supersedes a pending one; streaming reports unsettled until the switch completes. surfaceCache selects the cached frame
+     * program, which reads the runtime surface cache instead of evaluating coverage and materials.
+     * @param {{diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} changes @param {any} camera @returns {Promise<boolean>} true when this request is the applied state
      */
     async setProgramVariant(changes, camera) {
         const target = landscapeProgramVariant({ ...this.programTarget, ...changes });
@@ -244,7 +245,7 @@ export class LandscapeStreamer {
         return true;
     }
 
-    /** @returns {{diagnostics:boolean,terrainAppearance:boolean,target:{diagnostics:boolean,terrainAppearance:boolean},pending:boolean,milliseconds:number|null,timedOut:boolean,switches:number}} */
+    /** @returns {{diagnostics:boolean,terrainAppearance:boolean,surfaceCache:boolean,target:{diagnostics:boolean,terrainAppearance:boolean,surfaceCache:boolean},pending:boolean,milliseconds:number|null,timedOut:boolean,switches:number}} */
     programVariantState() { return { ...this.programVariant, target: { ...this.programTarget }, ...this.programSwitch }; }
 
     /** @param {boolean} enabled @param {any} camera */
@@ -252,6 +253,21 @@ export class LandscapeStreamer {
 
     /** @param {boolean} enabled @param {any} camera */
     setTerrainAppearance(enabled, camera) { return this.setProgramVariant({ terrainAppearance: enabled }, camera); }
+
+    /** @param {boolean} enabled AI577 D6 cached frame program of every tile @param {any} camera */
+    setSurfaceCache(enabled, camera) { return this.setProgramVariant({ surfaceCache: enabled }, camera); }
+
+    /**
+     * Geometry the AI577 D6 surface cache generates pages from: the rendered leaves (their models and descriptors), the always-resident overview
+     * tile, and the bounds of tiles in a level transition (their heights morph, so pages over them wait). Generation draws each tile's own surface.
+     * @returns {{root:any,leaves:Array<{model:any,descriptor:any}>,transitions:Array<{minX:number,maxX:number,minZ:number,maxZ:number}>}}
+     */
+    surfaceCacheTiles() {
+        const root = this.records.get(this.manifest.overviewId)?.model ?? null;
+        const leaves = [...this.leaves].map(id => this.records.get(id)).filter(record => record?.model && record.uploaded).map(record => ({ model: record.model, descriptor: record.descriptor }));
+        const transitions = this.task?.phase === 'morph' ? [this.task.parentId, ...this.task.ids].map(id => this.descriptors.get(id).bounds) : [];
+        return { root, leaves, transitions };
+    }
 
     uploadRecord(record, camera) {
         if (record.uploaded) return 0;

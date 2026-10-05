@@ -92,6 +92,22 @@ export function setLandscapeMacroVariationUniforms(uniforms, macro, enabled) {
  */
 export function setLandscapeSurfaceLayerUniforms(uniforms, layers) { copyUniformArrays(uniforms, layers, LAYER_ARRAYS, 'Surface layer'); }
 
+/**
+ * One-texel RGBA8UI array the surface cache indirection sampler binds while no cache is attached: an integer sampler must never see a normalized
+ * placeholder texture, and its zero entry is never read because uSurfaceCacheState.x stays 0 (AI577 D6).
+ */
+export function createLandscapeSurfaceCacheIndirectionPlaceholder() {
+    const texture = new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1);
+    texture.format = THREE.RGBAIntegerFormat;
+    texture.type = THREE.UnsignedByteType;
+    texture.internalFormat = 'RGBA8UI';
+    texture.magFilter = texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    return texture;
+}
+
 /** @param {number} coverageSlots compile-time terrain coverage slot count @returns {any} */
 export function createLandscapeAppearanceUniforms(coverageSlots) {
     const slots = assertLandscapeCoverageSlots(coverageSlots), octaves = landscapeTerrainWarpDefines().LANDSCAPE_SURFACE_WARP_OCTAVES;
@@ -148,7 +164,14 @@ export function createLandscapeAppearanceUniforms(coverageSlots) {
         uTerrainFields: { value: null },
         uTerrainFieldsState: { value: new Uint32Array(4) },
         // AI577 D5 terrain-driven appearance (chunks/landscape/terrain_appearance.glsl): bitmask of the planning-only land-cover IDs 0..127
-        uPlanningCover: { value: new Uint32Array(4) }
+        uPlanningCover: { value: new Uint32Array(4) },
+        // AI577 D6 runtime surface cache (chunks/landscape/surface_cache.glsl), read only by the cached frame program; LandscapeSurfaceCache binds them
+        uSurfaceCacheIndirection: { value: createLandscapeSurfaceCacheIndirectionPlaceholder() },
+        uSurfaceCacheAlbedo: { value: null },
+        uSurfaceCacheMaterial: { value: null },
+        uSurfaceCacheResponse: { value: null },
+        uSurfaceCacheFrame: { value: new THREE.Vector4(0, 0, 0, 0) },
+        uSurfaceCacheState: { value: new THREE.Vector4(0, 2, 0, -1) }
     };
     for (let i = 0; i < LANDSCAPE_SOIL_SLOTS; i++) { uniforms[`uSoilBase${i}`] = { value: null }; uniforms[`uSoilSurface${i}`] = { value: null }; }
     return uniforms;

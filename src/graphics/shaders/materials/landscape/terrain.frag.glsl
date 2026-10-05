@@ -76,6 +76,13 @@ varying vec3 vLandscapeWorld;
 #include <shaderlib:landscape/water_optics>
 #include <shaderlib:landscape/terrain_appearance>
 #include <shaderlib:landscape/dressing_inputs>
+// AI577 D6 runtime surface cache: the cached frame program (LANDSCAPE_SURFACE_CACHE) reads the composited surface from the cache atlases and keeps
+// only the close-up micro lattice and the lighting; the generation program (LANDSCAPE_SURFACE_CACHE_GENERATION) evaluates the coverage and material
+// layers of a page texel without lighting and writes the cache formats. The coverage and material evaluation is compiled out of the cached frame
+// program, so its soil samplers and mask array are never active there.
+#ifdef LANDSCAPE_SURFACE_CACHE
+#include <shaderlib:landscape/surface_cache>
+#endif
 
 struct SoilSurface {
     vec3 albedo;
@@ -91,6 +98,7 @@ SoilSurface emptySurface() {
     return SoilSurface(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.5, 0.0);
 }
 
+#ifndef LANDSCAPE_SURFACE_CACHE
 bool detailSlot(int slot) {
     return uMaskMeta[slot].w > 1.5;
 }
@@ -156,6 +164,7 @@ void soilTextures(int soil, vec2 uv, vec2 dx, vec2 dy, out vec3 albedo, out vec3
         orm = mix(orm, textureGrad(uBlendSurface, vec3(uv, 1.0), dx, dy), uMaterialBlend);
     }
 }
+#endif
 
 // the paired micro-detail layer of a soil's surface array, following an arriving tier
 vec4 soilMicroTexture(int soil, vec2 uv, vec2 dx, vec2 dy) {
@@ -193,7 +202,13 @@ void latticeTexel(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, out vec3 albe
         albedo = vec3(texel.a);
         encodedNormal = microNormal(texel) * 0.5 + 0.5;
         orm = vec4(0.0, 0.0, 0.0, texel.b);
-    } else soilTextures(soil, uv, dx, dy, albedo, encodedNormal, orm);
+    }
+#ifndef LANDSCAPE_SURFACE_CACHE
+    else soilTextures(soil, uv, dx, dy, albedo, encodedNormal, orm);
+#else
+    // the cached frame program samples micro lattices only
+    else { albedo = vec3(0.5); encodedNormal = vec3(0.5, 0.5, 1.0); orm = vec4(0.0, 0.0, 0.0, 0.5); }
+#endif
 }
 
 #if LANDSCAPE_MATERIAL_SAMPLING == 0
@@ -207,6 +222,7 @@ LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint 
     return result;
 }
 #else
+#ifndef LANDSCAPE_SURFACE_CACHE
 // exact material means from the one-texel mip, following an arriving tier
 void soilMeans(int soil, out vec3 albedo, out vec4 orm) {
     const float coarsest = 16.0;
@@ -221,6 +237,7 @@ void soilMeans(int soil, out vec3 albedo, out vec4 orm) {
         orm = mix(orm, textureLod(uBlendSurface, vec3(0.5, 0.5, 1.0), coarsest), uMaterialBlend);
     }
 }
+#endif
 
 // one world-anchored lattice: the rotated, offset samples of its grid triangle share one weight set for every surface channel; the
 // paired micro layer runs through the same body with its own lattice parameters and its neutral mean 0.5; soils without stochastic
@@ -242,7 +259,9 @@ LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint 
 #if LANDSCAPE_MATERIAL_SAMPLING == 3
     vec3 meanAlbedo = vec3(0.5);
     vec4 meanOrm = vec4(0.0, 0.0, 0.0, 0.5);
+#ifndef LANDSCAPE_SURFACE_CACHE
     if (!micro) soilMeans(soil, meanAlbedo, meanOrm);
+#endif
 #else
     vec3 meanAlbedo = vec3(0.0);
     vec4 meanOrm = vec4(0.0);
@@ -294,6 +313,7 @@ LatticeSample soilLattice(int soil, bool micro, vec2 uv, vec2 dx, vec2 dy, uint 
 }
 #endif
 
+#ifndef LANDSCAPE_SURFACE_CACHE
 // a soil's mean base color from its one-texel mip, following an arriving tier
 vec3 soilMeanAlbedo(int soil) {
     const float coarsest = 16.0;
@@ -371,10 +391,17 @@ SoilSurface soilSurface(int soil, vec3 position, vec3 positionDx, vec3 positionD
         vec2 slope = transpose(rotation) * lattice.slope * scale.y * (microLayer ? tiling.z * micro : 1.0);
         vec3 direction = p == 0 ? tangent * slope.x + north * slope.y : axisU * slope.x + axisV * slope.y;
         if (p > 0) direction -= normal * dot(normal, direction);
+#ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
+        // cache pages keep the micro relief of the competition; the cached frame program adds micro slope and luminance at its own footprint
+        if (!microLayer) perturbation += weight * direction;
+#else
         perturbation += weight * direction;
+#endif
         if (microLayer) {
             microHeight += weight * (lattice.orm.a - 0.5) * state.z * micro;
+#ifndef LANDSCAPE_SURFACE_CACHE_GENERATION
             luminance += weight * (lattice.albedo.r * 2.0 - 1.0) * tiling.w * micro;
+#endif
         } else {
             albedo += weight * lattice.albedo;
             orm += weight * lattice.orm;
@@ -786,6 +813,10 @@ vec3 surfaceCoverageColor(Coverage coverage) {
 // measured 0.4-2 ms cheaper on the RTX 3060 (register pressure). AI577 D5 terrain-driven appearance (landscape-terrain-appearance-v1): the terrain
 // inputs join the landscape-scale field and reveal rock before the soil lattices, so only the coastal reach stays live through them; the rock
 // weathering and splash biofilm factor is evaluated once and applied to the exposed-rock soil and its share of the ground albedo
+#ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
+// AI577 D6: final coverage of the micro-paired soils, whose micro slope and luminance the cached frame program adds at its own footprint
+float landscapeSurfaceCacheMicroCoverage = 0.0;
+#endif
 SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy, out vec3 groundAlbedo, out vec3 response, out float reach) {
     float footprint = max(length(dx), length(dy));
     float major = max(length(positionDx), length(positionDy)), detailFootprint = max(0.25 * major, min(length(positionDx), length(positionDy)));
@@ -815,6 +846,10 @@ SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, v
     addSurface(surface, a, coverage.low.x); addSurface(surface, b, coverage.low.y); addSurface(surface, c, coverage.low.z);
     addSurface(surface, d, coverage.high.x); addSurface(surface, e, coverage.high.y); addSurface(surface, f, coverage.high.z);
     surface.normal = normalize(surface.normal);
+#ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
+    landscapeSurfaceCacheMicroCoverage = 0.0;
+    for (int soil = 0; soil < 6; soil++) if (uSoilTiling[soil].y > 0.0) landscapeSurfaceCacheMicroCoverage += coverageWeight(coverage, soil);
+#endif
     // constant soil indices let the compiler resolve each soil's sampler; a loop over the soil index measured 1.4-2.5 ms slower
     groundAlbedo = vec3(0.0);
     if (coverage.low.x > 0.0) groundAlbedo += coverage.low.x * soilGroundAlbedo(0, soilMacroField(0, macroField, catena)) * (rock == 0 ? rockFactor : vec3(1.0));
@@ -827,6 +862,7 @@ SoilSurface appearanceSurface(Coverage coverage, vec2 world, vec2 dx, vec2 dy, v
         + coverage.high.x * soilResponse(3) + coverage.high.y * soilResponse(4) + coverage.high.z * soilResponse(5);
     return surface;
 }
+#endif
 
 // AI577 D5 terrain radiance before tone mapping, lit like the game. Dry fragments take the calibrated sun and sky and then the aerial
 // perspective of their view path. Submerged fragments (below the optical water level) take Fresnel-transmitted, refracted and attenuated
@@ -875,6 +911,74 @@ void terrainVisibility(vec2 world, vec2 dx, vec2 dy, vec3 geometricNormal) {
     landscapeEvaluateTerrainVisibility(world, dx, dy, geometricNormal);
 #endif
 }
+
+#ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
+// three bytes of [0, 1] values as one exactly representable float (below 2^24)
+float landscapeSurfaceCachePack(vec3 values) {
+    vec3 bytes = floor(clamp(values, 0.0, 1.0) * 255.0 + 0.5);
+    return bytes.x + bytes.y * 256.0 + bytes.z * 65536.0;
+}
+
+vec3 landscapeSurfaceCacheSrgb(vec3 linear) {
+    vec3 value = clamp(linear, 0.0, 1.0);
+    return mix(value * 12.92, 1.055 * pow(value, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), value));
+}
+
+// AI577 D6 cache formats of one page texel, packed into the single float output of the generation program (a multiple-output program would make
+// ANGLE's D3D11 backend compile another pixel shader executable at the first draw, stalling the GPU process for seconds): sRGB albedo; AO and the
+// surface normal in the geometric tangent frame as a hemi-octahedral pair; roughness, micro-paired coverage and the coastal reach; the natural-ground
+// response. LandscapeSurfaceCache unpacks the bytes into the albedo, material and response atlases
+void landscapeSurfaceCacheWrite(SoilSurface surface, vec3 geometricNormal, vec3 response, float reach, float microWeight) {
+    vec3 tangent = normalize(vec3(geometricNormal.y, -geometricNormal.x, 0.0)), north = normalize(cross(tangent, geometricNormal));
+    vec3 local = vec3(dot(surface.normal, tangent), dot(surface.normal, north), max(dot(surface.normal, geometricNormal), 0.0));
+    vec2 p = local.xy / (abs(local.x) + abs(local.y) + local.z), octahedral = vec2(p.x + p.y, p.x - p.y) * 0.5 + 0.5;
+    gl_FragColor = vec4(landscapeSurfaceCachePack(landscapeSurfaceCacheSrgb(surface.albedo)), landscapeSurfaceCachePack(vec3(surface.ao, octahedral)),
+        landscapeSurfaceCachePack(vec3(surface.roughness, microWeight, reach / LANDSCAPE_SURFACE_CACHE_REACH_SCALE)), landscapeSurfaceCachePack(response));
+}
+#endif
+
+#ifdef LANDSCAPE_SURFACE_CACHE
+// close-up micro detail of the micro-paired soil on the cached surface: pages keep the micro relief of the competition but no micro slope or
+// luminance, so the frame adds them at its own footprint like the D4 soil lattices (surface-gradient slope sum, luminance ratio), weighted by the
+// cached micro-paired coverage; one lattice of the selected soil (top projection) serves every micro-paired soil
+void landscapeSurfaceCacheMicro(inout vec3 albedo, inout vec3 mapped, float weight, vec2 world, vec3 tangent, vec3 north, vec3 positionDx, vec3 positionDy) {
+    int soil = int(uSurfaceCacheState.w);
+    if (soil < 0 || weight <= 0.0) return;
+    vec4 tiling = uSoilTiling[soil];
+    if (tiling.y <= 0.0) return;
+    float detailFootprint = max(0.25 * max(length(positionDx), length(positionDy)), min(length(positionDx), length(positionDy)));
+    float micro = landscapeMicroFade(tiling.y, detailFootprint, uSoilState[soil].y);
+    if (soil == uMaterialBlendIndex) micro = mix(micro, landscapeMicroFade(tiling.y, detailFootprint, uBlendResolution), uMaterialBlend);
+    if (micro <= 0.0) return;
+    float c = cos(uSoilRange[soil].w), s = sin(uSoilRange[soil].w);
+    mat2 rotation = mat2(c, s, -s, c);
+    LatticeSample lattice = soilLattice(soil, true, rotation * world / tiling.y, rotation * positionDx.xz / tiling.y, rotation * positionDy.xz / tiling.y,
+        landscapeMicroSalt(landscapeStochasticSalt(soil)), vec2(0.0));
+    vec2 slope = transpose(rotation) * lattice.slope * uSoilScale[soil].y * tiling.z * micro * weight;
+    mapped += tangent * slope.x + north * slope.y;
+    albedo *= 1.0 + (lattice.albedo.r * 2.0 - 1.0) * tiling.w * micro * weight;
+}
+
+// the cached frame: one cache lookup replaces the coverage and material evaluation, the micro lattice restores close-up detail, and the
+// unchanged lighting (terrain fields, natural-ground response, bounce, atmosphere, water) shades it; natural landscape materials have metalness 0.
+// The vertex-color fallback stays until both the appearance and the cache's root page are ready.
+vec3 landscapeSurfaceCacheRadiance(vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy) {
+    vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vec3(0.0), groundAlbedo = albedo;
+    float roughness = 0.9, ao = 1.0, reach = 0.0;
+    if (uAppearanceReady > 0.5 && uSurfaceCacheState.x > 0.5) {
+        LandscapeCachedSurface cached = landscapeSurfaceCacheSample(world, dx, dy);
+        vec3 tangent = normalize(vec3(normal.y, -normal.x, 0.0)), north = normalize(cross(tangent, normal));
+        // the cached normal with a unit geometric component, so micro slopes add like the D4 per-soil perturbations
+        vec3 mapped = normal + (tangent * cached.normal.x + north * cached.normal.y) / max(cached.normal.z, 0.05);
+        vec3 surfaceAlbedo = cached.albedo;
+        landscapeSurfaceCacheMicro(surfaceAlbedo, mapped, cached.microWeight, world, tangent, north, positionDx, positionDy);
+        albedo = mix(surfaceAlbedo, uTint, uLodColor);
+        surfaceNormal = normalize(mapped); roughness = cached.roughness; ao = cached.ao; response = cached.response; reach = cached.reach; groundAlbedo = cached.groundAlbedo;
+    }
+    terrainVisibility(world, dx, dy, normal);
+    return terrainRadiance(albedo, surfaceNormal, normal, roughness, 0.0, ao, response, groundAlbedo, reach);
+}
+#endif
 
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
 // unlit diagnostic palettes keep their established display: the exposure they were designed under replaces the scene exposure
@@ -935,6 +1039,9 @@ void main() {
     vec2 world = vLandscapeWorld.xz;
     vec2 dx = dFdx(world), dy = dFdy(world);
     vec3 positionDx = dFdx(vLandscapeWorld), positionDy = dFdy(vLandscapeWorld);
+#ifdef LANDSCAPE_SURFACE_CACHE
+    vec3 color = landscapeSurfaceCacheRadiance(world, dx, dy, normal, positionDx, positionDy);
+#else
     vec2 warped = uSurfaceWarpEnabled > 0.5 ? world + landscapeSurfaceWarp(world) : world;
     vec2 warpedDx = dFdx(warped), warpedDy = dFdy(warped);
     vec3 color = vec3(0.0);
@@ -970,6 +1077,10 @@ void main() {
 #endif
             {
                 SoilSurface surface = appearanceSurface(coverage, world, dx, dy, normal, positionDx, positionDy, groundAlbedo, response, reach);
+#ifdef LANDSCAPE_SURFACE_CACHE_GENERATION
+                landscapeSurfaceCacheWrite(surface, normal, response, reach, landscapeSurfaceCacheMicroCoverage);
+                return;
+#endif
                 albedo = mix(surface.albedo, uTint, uLodColor);
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
                 if (uDiagnostic == 4) albedo = mix(albedo, surfaceLevelColor(world, warped), 0.5);
@@ -977,6 +1088,7 @@ void main() {
                 surfaceNormal = surface.normal; roughness = surface.roughness; metalness = surface.metalness; ao = surface.ao;
             }
         }
+#ifndef LANDSCAPE_SURFACE_CACHE_GENERATION
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
         if (uAppearanceReady < 0.5 || uDiagnostic < 5)
 #endif
@@ -984,7 +1096,9 @@ void main() {
             terrainVisibility(world, dx, dy, normal);
             color = terrainRadiance(albedo, surfaceNormal, normal, roughness, metalness, ao, response, groundAlbedo, reach);
         }
+#endif
     }
+#endif
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
