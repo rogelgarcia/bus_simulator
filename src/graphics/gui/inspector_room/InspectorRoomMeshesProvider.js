@@ -9,6 +9,8 @@ import {
 } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
 import { loadTreeTemplates } from '../../assets3d/generators/TreeGenerator.js';
 import { loadUrbanVegetation } from '../../engine3d/vegetation/UrbanVegetationLoader.js';
+import { loadUrbanVegetationLod0 } from '../../engine3d/vegetation/UrbanVegetationLod0Loader.js';
+import { bindVegetationLeafTransmission } from '../../engine3d/vegetation/VegetationLeafMaterial.js';
 import {
     getTreeMeshCollections,
     getTreeMeshEntryById,
@@ -57,8 +59,9 @@ function cloneTreeLeafMaterial(source) {
     const copySource = Object.create(source);
     copySource.userData = { ...source.userData };
     delete copySource.userData.aoAlphaMap;
-    const material = new THREE.MeshStandardMaterial().copy(copySource);
+    const material = new source.constructor().copy(copySource);
     if (source.userData.aoAlphaMap?.isTexture) material.userData.aoAlphaMap = source.userData.aoAlphaMap;
+    if (source.userData.leafDiffuseTransmission !== undefined) bindVegetationLeafTransmission(material, source.userData.leafDiffuseTransmission);
     return material;
 }
 
@@ -365,7 +368,8 @@ export class InspectorRoomMeshesProvider {
         if (!entry || !this.root) return;
 
         const token = ++this._loadToken;
-        const original = entry.family === 'urban-vegetation';
+        const lod0 = entry.family === 'urban-vegetation-lod0';
+        const original = entry.family === 'urban-vegetation' || lod0;
         const placeholderRoot = new THREE.Group();
         placeholderRoot.name = original ? `tree_asset_${entry.species}_${entry.variant}` : `tree_asset_${entry.quality}_${entry.index}`;
         if (original) {
@@ -395,7 +399,9 @@ export class InspectorRoomMeshesProvider {
         this.root.add(placeholderRoot);
 
         const asset = this._asset;
-        const pending = original ? loadUrbanVegetation({ species: entry.species }) : loadTreeTemplates(entry.quality);
+        const pending = lod0
+            ? loadUrbanVegetationLod0({ species: entry.species, renderer: this.engine.renderer })
+            : original ? loadUrbanVegetation({ species: entry.species }) : loadTreeTemplates(entry.quality);
         asset.readyPromise = pending.then((assets) => {
             if (token !== this._loadToken) return;
             const template = assets?.templates?.[entry.index] ?? null;
@@ -409,7 +415,7 @@ export class InspectorRoomMeshesProvider {
             tree.scale.setScalar(scale);
             tree.position.set(0, -baseY * scale, 0);
 
-            const shared = assets?.materials ?? null;
+            const shared = assets?.materialsByVariant?.[entry.index] ?? assets?.materials ?? null;
             const leaf = cloneTreeLeafMaterial(shared?.leaf ?? null);
             leaf.userData.isFoliage = true;
             const trunk = shared?.trunk?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9a188, roughness: 0.95, metalness: 0.0 });

@@ -124,6 +124,8 @@ export class InspectorRoomScene {
         this.sun.shadow.mapSize.height = 1024;
         this.sun.shadow.camera.near = 0.1;
         this.sun.shadow.camera.far = 80;
+        this.sun.shadow.bias = -0.0001;
+        this.sun.shadow.normalBias = 0.025;
         this.root.add(this.sun);
 
         this.sky = createGradientSkyDome({

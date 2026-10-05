@@ -9,7 +9,12 @@ export const TREE_MESH_COLLECTION = Object.freeze({
     SILVER_LINDEN: 'mesh_collection.silver_linden',
     NORTHERN_RED_OAK: 'mesh_collection.northern_red_oak',
     ARROWWOOD_VIBURNUM: 'mesh_collection.arrowwood_viburnum',
-    AMERICAN_ELM: 'mesh_collection.american_elm'
+    AMERICAN_ELM: 'mesh_collection.american_elm',
+    LOD0_LONDON_PLANE: 'mesh_collection.lod0_london_plane',
+    LOD0_SILVER_LINDEN: 'mesh_collection.lod0_silver_linden',
+    LOD0_NORTHERN_RED_OAK: 'mesh_collection.lod0_northern_red_oak',
+    LOD0_ARROWWOOD_VIBURNUM: 'mesh_collection.lod0_arrowwood_viburnum',
+    LOD0_AMERICAN_ELM: 'mesh_collection.lod0_american_elm'
 });
 
 export const URBAN_VEGETATION_VARIANTS = Object.freeze([
@@ -25,6 +30,15 @@ export const URBAN_VEGETATION_SPECIES = Object.freeze([
     Object.freeze({ id: 'arrowwood-viburnum', label: 'Arrowwood viburnum', folder: 'arrowwood_viburnum', kind: 'shrub', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.ARROWWOOD_VIBURNUM, assetRevision: 'arrowwood-viburnum-v6' }),
     Object.freeze({ id: 'american-elm', label: 'American elm', folder: 'american_elm', kind: 'tree', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.AMERICAN_ELM, assetRevision: 'american-elm-v1' })
 ]);
+
+export const URBAN_VEGETATION_LOD0_SPECIES = Object.freeze(URBAN_VEGETATION_SPECIES.map(species => Object.freeze({
+    ...species,
+    label: `${species.label} (LOD0)`,
+    collectionId: TREE_MESH_COLLECTION[`LOD0_${species.folder.toUpperCase()}`],
+    family: 'urban-vegetation-lod0',
+    foliageSidedness: 'double-sided',
+    assetRevision: 'core-canopy-lod0-v1'
+})));
 
 function normalizeQuality(value) {
     const v = String(value ?? '').toLowerCase();
@@ -75,13 +89,13 @@ function buildUrbanVegetationCollection(species) {
         id: species.collectionId,
         label: species.label,
         entries: Object.freeze(URBAN_VEGETATION_VARIANTS.map((variant, index) => Object.freeze({
-            id: `tree.${species.id}.${variant.id}`,
+            id: `tree.${species.family === 'urban-vegetation-lod0' ? 'lod0.' : ''}${species.id}.${variant.id}`,
             label: `${species.label}: ${variant.label}`,
             collectionId: species.collectionId,
             collectionLabel: species.label,
             fileName: `${variant.id}.glb`,
             species: species.id,
-            family: 'urban-vegetation',
+            family: species.family ?? 'urban-vegetation',
             vegetationKind: species.kind,
             growthStage: 'mature',
             assetRevision: species.assetRevision,
@@ -97,7 +111,8 @@ function buildUrbanVegetationCollection(species) {
 const COLLECTIONS = Object.freeze([
     buildCollection({ quality: 'desktop', id: TREE_MESH_COLLECTION.TREES_DESKTOP, label: 'Trees (Desktop)' }),
     buildCollection({ quality: 'mobile', id: TREE_MESH_COLLECTION.TREES_MOBILE, label: 'Trees (Mobile)' }),
-    ...URBAN_VEGETATION_SPECIES.map(buildUrbanVegetationCollection)
+    ...URBAN_VEGETATION_SPECIES.map(buildUrbanVegetationCollection),
+    ...URBAN_VEGETATION_LOD0_SPECIES.map(buildUrbanVegetationCollection)
 ]);
 
 const COLLECTION_OPTIONS = Object.freeze(COLLECTIONS.map((c) => ({ id: c.id, label: c.label })));

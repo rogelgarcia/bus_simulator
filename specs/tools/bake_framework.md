@@ -1,5 +1,12 @@
 # Offline bake framework
 
+AI592 adds explicit `vegetation/lod0-library` publication of the accepted AI591
+core canopy set. It externalizes authenticated KTX2 maps without changing mesh
+data, validates all 15 models, and uses the shared rollback publisher to install
+`assets/public/vegetation_lod0/`. It is excluded from production and authoring
+parents. The review-only `vegetation/lod0` guard is unchanged. See the
+[catalog contract](../graphics/vegetation_lod0_catalog.md).
+
 AI590 extends `vegetation/lod0` with `placement=spatial`, `spatial-build`, and
 `revision-gallery`. The explicit baseline input is authenticated, declared for
 input-stability checks, and protected against overlapping output paths. Accepted

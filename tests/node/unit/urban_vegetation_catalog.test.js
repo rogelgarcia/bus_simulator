@@ -8,7 +8,8 @@ import {
     getTreeMeshOptionsForCollection,
     isTreeMeshId,
     TREE_MESH_COLLECTION,
-    URBAN_VEGETATION_SPECIES
+    URBAN_VEGETATION_SPECIES,
+    URBAN_VEGETATION_LOD0_SPECIES
 } from '../../../src/graphics/content3d/catalogs/TreeMeshCatalog.js';
 
 test('Vegetation: original library preserves legacy collections, filenames, tiers, and selection order', () => {
@@ -33,7 +34,7 @@ test('Vegetation: original library preserves legacy collections, filenames, tier
 test('Vegetation: five species each expose exactly three mature models without quality tiers', () => {
     const ids = new Set();
     assert.deepEqual(URBAN_VEGETATION_SPECIES.map(species => species.id), ['london-plane', 'silver-linden', 'northern-red-oak', 'arrowwood-viburnum', 'american-elm']);
-    assert.equal(getTreeMeshCollections().length, 7);
+    assert.equal(getTreeMeshCollections().length, 12);
     for (const species of URBAN_VEGETATION_SPECIES) {
         const collectionId = species.collectionId;
         const options = getTreeMeshOptionsForCollection(collectionId);
@@ -66,4 +67,26 @@ test('Vegetation: five species each expose exactly three mature models without q
 test('Vegetation: every species uses closed modeled leaf shells', () => {
     assert.ok(URBAN_VEGETATION_SPECIES.every(species => species.foliageSidedness === 'closed-shell'));
     assert.equal(URBAN_VEGETATION_SPECIES.find(species => species.id === 'arrowwood-viburnum').kind, 'shrub');
+});
+
+test('Vegetation: LOD0 entries are opt-in, uniquely addressable and separate from detailed references', () => {
+    const ids = new Set();
+    for (const species of URBAN_VEGETATION_LOD0_SPECIES) {
+        assert.equal(species.foliageSidedness, 'double-sided');
+        assert.equal(species.assetRevision, 'core-canopy-lod0-v1');
+        assert.ok(Object.values(TREE_MESH_COLLECTION).includes(species.collectionId));
+        const options = getTreeMeshOptionsForCollection(species.collectionId);
+        assert.equal(options.length, 3);
+        for (const [index, option] of options.entries()) {
+            const entry = getTreeMeshEntryById(option.id);
+            assert.equal(entry.id, `tree.lod0.${species.id}.mature_0${index + 1}`);
+            assert.equal(entry.family, 'urban-vegetation-lod0');
+            assert.equal(entry.quality, undefined);
+            assert.equal(entry.collectionId, species.collectionId);
+            assert.equal(entry.index, index);
+            assert.equal(getTreeMeshEntryById(entry.id.replace('.lod0.', '.')).family, 'urban-vegetation');
+            ids.add(entry.id);
+        }
+    }
+    assert.equal(ids.size, 15);
 });
