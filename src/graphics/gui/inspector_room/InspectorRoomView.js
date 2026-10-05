@@ -388,6 +388,11 @@ export class InspectorRoomView {
         this._updateCameraFromKeys(dt);
         this.room.update(dt);
         this.meshes.update();
+        const subject = this._active?.getMeasurementObject3d?.();
+        if (subject?.userData?._meshInspectorNeedsFocusRefresh) {
+            subject.userData._meshInspectorNeedsFocusRefresh = false;
+            this._syncFocusToRoom({ fitCamera: true });
+        }
         this.textures.update();
         this._syncLightMapBasis();
         this._syncViewportOverlays();

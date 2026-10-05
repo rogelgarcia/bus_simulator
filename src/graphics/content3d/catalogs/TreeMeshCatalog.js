@@ -1,11 +1,30 @@
 // src/graphics/content3d/catalogs/TreeMeshCatalog.js
-// Defines stable ids/options for tree FBX models.
+// Defines stable ids/options for legacy trees and original urban tree models.
 import { TREE_CONFIG } from '../../assets3d/generators/TreeConfig.js';
 
 export const TREE_MESH_COLLECTION = Object.freeze({
     TREES_DESKTOP: 'mesh_collection.trees_desktop',
-    TREES_MOBILE: 'mesh_collection.trees_mobile'
+    TREES_MOBILE: 'mesh_collection.trees_mobile',
+    LONDON_PLANE: 'mesh_collection.london_plane',
+    SILVER_LINDEN: 'mesh_collection.silver_linden',
+    NORTHERN_RED_OAK: 'mesh_collection.northern_red_oak',
+    ARROWWOOD_VIBURNUM: 'mesh_collection.arrowwood_viburnum',
+    AMERICAN_ELM: 'mesh_collection.american_elm'
 });
+
+export const URBAN_VEGETATION_VARIANTS = Object.freeze([
+    Object.freeze({ id: 'mature_01', label: 'Mature 01' }),
+    Object.freeze({ id: 'mature_02', label: 'Mature 02' }),
+    Object.freeze({ id: 'mature_03', label: 'Mature 03' })
+]);
+
+export const URBAN_VEGETATION_SPECIES = Object.freeze([
+    Object.freeze({ id: 'london-plane', label: 'London plane', folder: 'london_plane', kind: 'tree', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.LONDON_PLANE, assetRevision: 'london-plane-v6' }),
+    Object.freeze({ id: 'silver-linden', label: 'Silver linden', folder: 'silver_linden', kind: 'tree', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.SILVER_LINDEN, assetRevision: 'silver-linden-v5' }),
+    Object.freeze({ id: 'northern-red-oak', label: 'Northern red oak', folder: 'northern_red_oak', kind: 'tree', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.NORTHERN_RED_OAK, assetRevision: 'northern-red-oak-v5' }),
+    Object.freeze({ id: 'arrowwood-viburnum', label: 'Arrowwood viburnum', folder: 'arrowwood_viburnum', kind: 'shrub', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.ARROWWOOD_VIBURNUM, assetRevision: 'arrowwood-viburnum-v6' }),
+    Object.freeze({ id: 'american-elm', label: 'American elm', folder: 'american_elm', kind: 'tree', foliageSidedness: 'closed-shell', collectionId: TREE_MESH_COLLECTION.AMERICAN_ELM, assetRevision: 'american-elm-v1' })
+]);
 
 function normalizeQuality(value) {
     const v = String(value ?? '').toLowerCase();
@@ -51,9 +70,34 @@ function buildCollection({ quality, id, label }) {
     };
 }
 
+function buildUrbanVegetationCollection(species) {
+    return Object.freeze({
+        id: species.collectionId,
+        label: species.label,
+        entries: Object.freeze(URBAN_VEGETATION_VARIANTS.map((variant, index) => Object.freeze({
+            id: `tree.${species.id}.${variant.id}`,
+            label: `${species.label}: ${variant.label}`,
+            collectionId: species.collectionId,
+            collectionLabel: species.label,
+            fileName: `${variant.id}.glb`,
+            species: species.id,
+            family: 'urban-vegetation',
+            vegetationKind: species.kind,
+            growthStage: 'mature',
+            assetRevision: species.assetRevision,
+            variant: variant.id,
+            index,
+            rot: Object.freeze([0, 0, 0]),
+            baseY: 0,
+            height: null
+        })))
+    });
+}
+
 const COLLECTIONS = Object.freeze([
     buildCollection({ quality: 'desktop', id: TREE_MESH_COLLECTION.TREES_DESKTOP, label: 'Trees (Desktop)' }),
-    buildCollection({ quality: 'mobile', id: TREE_MESH_COLLECTION.TREES_MOBILE, label: 'Trees (Mobile)' })
+    buildCollection({ quality: 'mobile', id: TREE_MESH_COLLECTION.TREES_MOBILE, label: 'Trees (Mobile)' }),
+    ...URBAN_VEGETATION_SPECIES.map(buildUrbanVegetationCollection)
 ]);
 
 const COLLECTION_OPTIONS = Object.freeze(COLLECTIONS.map((c) => ({ id: c.id, label: c.label })));

@@ -1,0 +1,129 @@
+{
+  "schema": "bus-sim-accepted-wood-v1",
+  "species": {
+    "london-plane": {
+      "assetRevision": "london-plane-v5",
+      "variants": {
+        "mature_01": {
+          "positions": "88df5ceffc478bfae8d2d7146a68dcdd62b2bb895e45c1dcc020451ec93e9df5",
+          "uvs": "82597736195f692c0974ace72c19e4d9b5fc65c27a4810b05e874d70e55b0901",
+          "indices": "8f232d682b4581b21f19525a536c52c23854968ebd3f9505250b0488714a3d63",
+          "normals": "0c33b1e33f6be37cb37c89d296ac20d2c727b9f4e39ecfe542137ca538b3ffa4",
+          "colors": "2b759f0f56673ae51c165764ea4f716de742d4cb02d88c9ab06e4c0b83a09392"
+        },
+        "mature_02": {
+          "positions": "6f2550acbcf4bfa4a33fcbdb26883d183d3bba3fea21744cb5076580bcabeaf6",
+          "uvs": "aa893e5266fe2cb96888ea49ca17cb76a65bf12050571b6cbab34825893bce14",
+          "indices": "331021ff2db6c927f4a915f40a12f699401475dd9d4509b9bc188f9558bdb1ea",
+          "normals": "91df16aa0c02a5394801e0ac1228161ca90c47a1ab42be13acb9b5a137d3692c",
+          "colors": "eee70bb60f25f434c6bb922645e9f4c3b82d69abe4eeb1310b78949082166ab5"
+        },
+        "mature_03": {
+          "positions": "251bcf87099afaca79e0bfe74bb32ae40091226f7e34e87e5305bdc20ceeada9",
+          "uvs": "45fd766d88434df4d9eb2be8c02bf01af1b24cee57db4ed255dfd9194b1ce31d",
+          "indices": "be57f494112887fabcc405108ff790ee50e9a7744880e2a0ee9c95f24aa541c2",
+          "normals": "756d2d1706201a1c28c3fd83807b026c393fade4c0e85f24a2d689ef5f3a6559",
+          "colors": "29dc443c1bb3b3c44fafe118380069539c07ad75c0550077bbf4b80a941a2024"
+        }
+      },
+      "textures": {
+        "bark_basecolor.png": "ac41c2c622de50c35b7757d6c7a12ca9c5b8a5cd16464f101c4f91230ed673a2",
+        "bark_normal.png": "adb4f2981344123b619f2c213de01160ae1a2be541f698f25a526bd744ab59ed",
+        "bark_orm.png": "178b174532d3931251f5b515308d6be1fb1639568f0eb63b6f2b8d37e58f4806"
+      }
+    },
+    "silver-linden": {
+      "assetRevision": "silver-linden-v4",
+      "variants": {
+        "mature_01": {
+          "positions": "4ba23fc0ca7b51fffd9e704d3dbee549a07443a1ebd888386e349bee187daa0e",
+          "uvs": "ac9c4f3614a9600d4043e39d6ce2030261fe8678ccfccae281c182615840b625",
+          "indices": "e9048aee9c27ab3500cc786cd2e51fdf24cd2d6a37890fd3bb0a4e524ba52304",
+          "normals": "e654b827908c4189f5f3db9a76325bb970f385cba4a54026032387cc91773d89",
+          "colors": "09371b24a6e1f9ff4de83ccd205acdfe6c07ff30348dc1aaa7b60b1fb5b6d13e"
+        },
+        "mature_02": {
+          "positions": "27691a3bff949992f1fec5d50a8593bc1b5e235d977e45f2a0b715ca70e6a27a",
+          "uvs": "d5b3643030407e5c5c07e2c30fa70e2d6dbe81e2efc22d7af9585b1c71fb1560",
+          "indices": "9316c17a67d300eabf25e456d971540fecefe5bff438577bb0f8b368467ca71f",
+          "normals": "d4c7cd36aa9966d11ea8c32beb8763989ac9d8670d31b7e1c19fa6470a912290",
+          "colors": "ef37d2ed8efcf5f94ee075e32b6c5da828897df06d4a53882e7d88affe098c6c"
+        },
+        "mature_03": {
+          "positions": "5a1edc54e3775a07117d23f3405582c572dca4d4b7d79329290e3fcd774574ab",
+          "uvs": "59f43d10e18bcf320d5ff54a574c65cb53351e72d0ac4b3b6616332a6435f832",
+          "indices": "c4889167e2156b7e7df11c7431b1fc1074f63209b973ce0818b34994765f043a",
+          "normals": "dc794ceea0646ec104d5f76c243781c70a1a526a06f98326bc5e548364bd7978",
+          "colors": "8108011abded9f50a5457730c00efedc1e8c450c3974f72323ede63b79a03588"
+        }
+      },
+      "textures": {
+        "bark_basecolor.png": "1b7345889c194de6d8c7424ea2d99cc23d906052bf4a4065898664e3454d6926",
+        "bark_normal.png": "c0515df72a33157d25806cb7550bfa2003cceae54cb44aaa94616a202c331ca5",
+        "bark_orm.png": "1c874562bc7b043b2f4df03eb60f4f1354d05ec2b64c9b09df06676e4bc8a338"
+      }
+    },
+    "northern-red-oak": {
+      "assetRevision": "northern-red-oak-v4",
+      "variants": {
+        "mature_01": {
+          "positions": "5a5ca19ca7f1c0b2e0383bae3928635d971d74cf5f44e215b8e036da05945298",
+          "uvs": "eefecab0dbd522b4569c038be729a57d912a17c7d3806ecd00fbedf8eaac9b16",
+          "indices": "72124e6659edd97df31d65b19490b707ba13250ca5fa1397e74ef6deadcc44a4",
+          "normals": "660daf93801e754ad00fc0fc37ae0ba022445c6b8cc2562e57a628a25c909621",
+          "colors": "f2da34c4a9ea3c6c68acc8c0afb3f8f0911845f31283571c0af51329724455ea"
+        },
+        "mature_02": {
+          "positions": "8e78c0786e77f5a94df32645e132cb7c76064a4b26732e3b8ea829102e03352d",
+          "uvs": "5a8e5cbd1d924219fbf1cf54570412bd505ae7f9db6ea064f127625247669491",
+          "indices": "1cd545087a3265994dbf3834dfa97f6eaed1ad46009a92c4726f78ce4416efaf",
+          "normals": "86f6a3b8ae867af34b35e107afe33174b0bfc73c8d4c1919f6f3c6df8192cadb",
+          "colors": "feac46917c2118c3ca98ad2908b091ac8ed8fd34a7d18eaa7319df81e515ccdd"
+        },
+        "mature_03": {
+          "positions": "67ee1323b5e7fe5a7a545fb62dd6fd2ab07d4a923ce9a52704cff4ca8961183c",
+          "uvs": "3d4cafccfe56a6b897d96fc8c100a510f6502501e6462c10803e671af6070ae1",
+          "indices": "5105245961d476835240f4a3f1633688e3379ec535073334244193ec1d6debd1",
+          "normals": "76b1469b40e42f4e25c70fb746f900411596c35ac1e01b23bcca69f3c8f2e558",
+          "colors": "99994494a1292e700c1141ac813cb78990f68336f600bfe8660ead06e7696920"
+        }
+      },
+      "textures": {
+        "bark_basecolor.png": "8f3a815f03f680907916e281f4ceb8b0d06b40cb1f7957c41867aabacb1d1132",
+        "bark_normal.png": "1c91e17d10a5e68b33728a6b164995400c9c6e9f13e7fc8cf7869b1f5bdf296d",
+        "bark_orm.png": "14c0e64738f7d1a0f77db4a6cd5be961a65055c4724bb0f40102bada8171fb2c"
+      }
+    },
+    "arrowwood-viburnum": {
+      "assetRevision": "arrowwood-viburnum-v5",
+      "variants": {
+        "mature_01": {
+          "positions": "b53865434707d8268a99f274f96ac74e2aa8e320950853aa8c0d4904f1e46ce6",
+          "uvs": "292b69f3fa7befb9231c611049e9686ef427eb6be806416ffdb464a3dbd8d7fe",
+          "indices": "4f022887a8b224aae43e240dedf00fabaa03062fea016ac4f01e8243827b0d06",
+          "normals": "7db5f4392b2837cb8f363bc643baf9d501e793fad1ec1c75f60a9a13f6c61f6d",
+          "colors": "661a26c09b1ad3d4407b1b14140afe7936ab41abc36dfcb2989c7b5143e2b58f"
+        },
+        "mature_02": {
+          "positions": "cb65fd9b8109c97e6d1d0f2bb18a7cacb97aada83a3c66d6590b93c3115f103b",
+          "uvs": "e52ca69022aa27984d1661ac72ff5d85f11de35a7452538a7a43f1688cf79ddc",
+          "indices": "0d9cbad86fb803057fb178072e59cdff3500fd981b6189616a446f42638aa067",
+          "normals": "338127fe073a8be632835b40f45d5520e7181b610c3c46db42660f2db97ba287",
+          "colors": "d43200cad1778eb3861fa3d0140c9df4ec5a1d88b85f60c57b4d123cafe169d0"
+        },
+        "mature_03": {
+          "positions": "abf8dc52f6683e0e2ae20115bb67ee6ebfe8e441eda74bf6769c702c24795e38",
+          "uvs": "8570b3f667e1777ab27026c9419cb00d8aca848860ea925696b67e25ebcc7adb",
+          "indices": "9b4aa1ce6a70eae21b1e8124b40818d2edc5a50e53f684cfb08e6b2962879e07",
+          "normals": "9e45975c1c7b4f2e698e95f899b534f8f4df56eb35aa1cbc663dfde601de4fac",
+          "colors": "1876423e3e589b5ec1bd9f566d7498e70141c80c366dba58640447e0f13bc226"
+        }
+      },
+      "textures": {
+        "bark_basecolor.png": "5e49ec8dc056d82d7c6a9fef10b86110fb6757e4e41d843b6df3cbd126910c03",
+        "bark_normal.png": "ef6967926ee51f425b2ae1661b2be6293f290c1acfc3313411f4d86d19045d4b",
+        "bark_orm.png": "f0f279dd013c22124a54238615008c7826df6f216ce5fe25f24577d7d1f7dfda"
+      }
+    }
+  }
+}

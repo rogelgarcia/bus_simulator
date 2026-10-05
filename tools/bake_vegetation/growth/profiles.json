@@ -1,0 +1,7 @@
+{
+  "london_plane": {"sweepMetres":0.68,"turnDegrees":7,"crownFan":0.065,"habit":"Broad, irregular spreading framework; visible but gentle trunk sweep"},
+  "silver_linden": {"sweepMetres":0.29,"turnDegrees":2.5,"crownFan":0.025,"habit":"Upright leader with restrained sweep and ascending branches"},
+  "northern_red_oak": {"sweepMetres":0.39,"turnDegrees":3.5,"crownFan":0.04,"habit":"Relatively upright bole with modest sweep; broader open-grown framework"},
+  "american_elm": {"sweepMetres":0.58,"turnDegrees":5,"crownFan":0.16,"habit":"Swept upright bole and outward arching vase-shaped scaffolds"},
+  "arrowwood_viburnum": {"sweepMetres":0.095,"turnDegrees":4,"crownFan":0.23,"habit":"Multiple ascending canes that bow outward with height"}
+}

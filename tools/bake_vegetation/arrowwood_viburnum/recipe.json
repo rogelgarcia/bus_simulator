@@ -1,0 +1,107 @@
+{
+  "schema": "bus-sim-vegetation-recipe-v3",
+  "revision": 6,
+  "textureSize": 1024,
+  "alphaCutoff": 0.5,
+  "id": "arrowwood-viburnum",
+  "species": "Viburnum dentatum",
+  "commonName": "Arrowwood viburnum",
+  "kind": "shrub",
+  "references": [
+    "https://plants.ces.ncsu.edu/plants/viburnum-dentatum/"
+  ],
+  "texture": {
+    "bark": "shrub_bark",
+    "photographicBark": "arrowwood_viburnum/source",
+    "leaf": "viburnum",
+    "seed": 57840,
+    "baseColor": [
+      43,
+      82,
+      29
+    ],
+    "leafRadius": [
+      0.13,
+      0.17
+    ],
+    "leafRoughness": 139,
+    "leafCount": 13
+  },
+  "growth": {
+    "habit": "shrub",
+    "cardSize": 0.48,
+    "leafWidthMetres": [
+      0.05,
+      0.1
+    ],
+    "twigLength": [
+      0.25,
+      0.5
+    ],
+    "jitter": 0.19
+  },
+  "profile": {
+    "radialSegments": 5,
+    "branchSegments": 4,
+    "secondarySides": 3,
+    "twigSides": 0,
+    "cardKeep": 1,
+    "cardFold": false,
+    "twoSidedAtlas": false,
+    "peelFins": 0
+  },
+  "variants": [
+    {
+      "id": "mature_01",
+      "morphology": "Mature rounded dense multistem shrub",
+      "seed": 57841,
+      "height": 2.5,
+      "radius": 1.65,
+      "stemCount": 11,
+      "spread": [
+        1,
+        1
+      ],
+      "secondary": 7,
+      "cardsPerTwig": 12,
+      "asymmetry": 0.08
+    },
+    {
+      "id": "mature_02",
+      "morphology": "Mature informal arching asymmetric shrub",
+      "seed": 57853,
+      "height": 2.9,
+      "radius": 1.8,
+      "stemCount": 13,
+      "spread": [
+        1.08,
+        0.92
+      ],
+      "secondary": 7,
+      "cardsPerTwig": 12,
+      "asymmetry": 0.27
+    },
+    {
+      "id": "mature_03",
+      "morphology": "Mature low broad informal hedge clump",
+      "seed": 57869,
+      "height": 2.1,
+      "radius": 1.6,
+      "stemCount": 15,
+      "spread": [
+        1.65,
+        0.75
+      ],
+      "secondary": 7,
+      "cardsPerTwig": 12,
+      "asymmetry": 0.1
+    }
+  ],
+  "barkTextureSize": 2048,
+  "woodyDetail": {
+    "voxelSizeMetres": 0.003,
+    "reliefMetres": 0.005,
+    "scarCount": 0,
+    "safetyTriangleLimit": 6000000
+  }
+}

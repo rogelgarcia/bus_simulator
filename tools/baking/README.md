@@ -46,6 +46,12 @@ The first implementation executes sequentially, including Blender and browser jo
 
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
+| `vegetation/showcase` | Packed outdoor scene with all 15 mature models in species plots; warm brown bark and 21 headless Cycles views, including trunk/root close-ups | Explicit review only, outside authoring and production parents; rejects publication; [workflow](../bake_vegetation/showcase/README.md) |
+| `vegetation/surfaces` | Photo PBR replacement review: rebuilt wood, scanned leaf tissue, 15 mature models, 26 Cycles views | Explicit stage-only; authenticated CC0 scans and retained canopy anchors; [workflow](../bake_vegetation/surfaces/README.md) |
+| `vegetation/junctions` | Refine photographic-tree branch collars, bark ridges and descending shoulders; retain foliage and render fork close-ups | Explicit stage-only; manifold wood and unchanged foliage checks; [workflow](../bake_vegetation/junctions/README.md) |
+| `vegetation/growth` | Bend trunks by documented species habit and recover physical London plane crevices from the original EXR scan | Explicit stage-only; pinned roots, oriented closed wood and retained leaf forms; [workflow](../bake_vegetation/growth/README.md) |
+| `vegetation/{london-plane,silver-linden,northern-red-oak,arrowwood-viburnum,american-elm}` | Original species geometry, detailed wood, solid leaves, tissue maps, three mature forms each, editable specimen sources and provenance | Explicit asset-library authoring, outside `all`; stage, validate and optionally publish assets; no gameplay replacement or city bake certification; [workflow](../bake_vegetation/README.md) |
+| `vegetation/{prototype-oak,prototype-plane,prototype-shrub,prototype-elm}` | First mature form for material, trunk and root review | Stage only; same shared configuration, input authentication and validation; publication rejected |
 | `materials/<material>` | Eight procedural PBR sets from the existing bank, Bradbury and AI491 recipes; albedo, normal, packed AO/roughness/metalness | 1024px, deterministic recipes; stage and validate |
 | `materials/grass` | Grass V2 far maps and separate blade/clump atlases, including their AO maps | Existing calibrated 1024px recipe; validated proposal, existing gameplay review retained |
 | `lighting/source` | Current BigCity2 resolved source, ready textures and repeated deterministic BSIB export | Always refresh; once for the requested tree |

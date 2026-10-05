@@ -1,0 +1,355 @@
+{
+  "schema": "vegetation-photo-source-v1",
+  "credit": "Powered by Poly Haven; ambientCG / Lennart Demes",
+  "retrieved": "2026-10-03",
+  "sources": {
+    "bark_platanus": {
+      "provider": "Poly Haven",
+      "author": {
+        "Dimitrios Savva": "All"
+      },
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_platanus",
+      "maps": {
+        "bark_platanus_diff_4k.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/bark_platanus/bark_platanus_diff_4k.jpg",
+          "bytes": 12086472,
+          "sha256": "3fc2d62f737973d1ba3a57293d5be23ba7dc0e9dd099eb9473e8f9e2a6eca9b0",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/bark_platanus/bark_platanus_diff_4k.jpg"
+        },
+        "bark_platanus_disp_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_platanus/bark_platanus_disp_4k.exr",
+          "bytes": 1151052,
+          "sha256": "17f4807168198518e089a24eb975c3b18d36420a027090e6cd6d01451242ccff",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_platanus/bark_platanus_disp_4k.exr"
+        },
+        "bark_platanus_nor_gl_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_platanus/bark_platanus_nor_gl_4k.exr",
+          "bytes": 36684970,
+          "sha256": "44c1a2abd33c08b3c3ffad107fc11a8ad24638c20d8ccbc6484f26136958badf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_platanus/bark_platanus_nor_gl_4k.exr"
+        },
+        "bark_platanus_rough_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_platanus/bark_platanus_rough_4k.exr",
+          "bytes": 4140814,
+          "sha256": "31f326081c48bdf3e4e0b1848458bcb5a1e41e924ea6fb2d69ddddf16a9b1335",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_platanus/bark_platanus_rough_4k.exr"
+        }
+      }
+    },
+    "bark_brown_01": {
+      "provider": "Poly Haven",
+      "author": {
+        "Rob Tuytel": "All"
+      },
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_brown_01",
+      "maps": {
+        "bark_brown_01_diff_4k.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/bark_brown_01/bark_brown_01_diff_4k.jpg",
+          "bytes": 8193578,
+          "sha256": "545d3c48d3ad237d9fbb7eeaf7e5251cbf9520840e37e28e4e325d833c34bc0b",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/bark_brown_01/bark_brown_01_diff_4k.jpg"
+        },
+        "bark_brown_01_disp_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_brown_01/bark_brown_01_disp_4k.exr",
+          "bytes": 3963369,
+          "sha256": "cb68fb039dab6b89d20e8bcc309f6a8e45be2bced15c72efcf7c86061e661f9d",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_brown_01/bark_brown_01_disp_4k.exr"
+        },
+        "bark_brown_01_nor_gl_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_brown_01/bark_brown_01_nor_gl_4k.exr",
+          "bytes": 36515278,
+          "sha256": "1239decdacd343ef10964a275bf267c1e7b452132b08933d269707b42dd6ba36",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_brown_01/bark_brown_01_nor_gl_4k.exr"
+        },
+        "bark_brown_01_rough_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_brown_01/bark_brown_01_rough_4k.exr",
+          "bytes": 13776298,
+          "sha256": "03ec6a0730274658b6782b65d9db56b71c19ae878db4f0a6cba7c3057768fcb5",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_brown_01/bark_brown_01_rough_4k.exr"
+        }
+      }
+    },
+    "jolcham_oak_bark_01": {
+      "provider": "Poly Haven",
+      "author": {
+        "Charlotte Baglioni": "All"
+      },
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/jolcham_oak_bark_01",
+      "maps": {
+        "jolcham_oak_bark_01_diff_4k.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/jolcham_oak_bark_01/jolcham_oak_bark_01_diff_4k.jpg",
+          "bytes": 28356845,
+          "sha256": "030866e13b959d93073bff31ea13c3a0c5f2a5dca5452e7840d5e50ab7d85ab8",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/jolcham_oak_bark_01/jolcham_oak_bark_01_diff_4k.jpg"
+        },
+        "jolcham_oak_bark_01_disp_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/jolcham_oak_bark_01/jolcham_oak_bark_01_disp_4k.exr",
+          "bytes": 7972003,
+          "sha256": "738d998b70c85b59c239dc382827c7d12151d6bf37eaf48ad73225f872a9adb5",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/jolcham_oak_bark_01/jolcham_oak_bark_01_disp_4k.exr"
+        },
+        "jolcham_oak_bark_01_nor_gl_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/jolcham_oak_bark_01/jolcham_oak_bark_01_nor_gl_4k.exr",
+          "bytes": 73901157,
+          "sha256": "7497c4adbf0a52ee9c0baedb57da26acd14ca097f9212add19d3dd23b3cf9c73",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/jolcham_oak_bark_01/jolcham_oak_bark_01_nor_gl_4k.exr"
+        },
+        "jolcham_oak_bark_01_rough_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/jolcham_oak_bark_01/jolcham_oak_bark_01_rough_4k.exr",
+          "bytes": 11369381,
+          "sha256": "1cc9e9bf345f824669d0609ca85c89250c4e2f5ca414edec04e504451dfa313b",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/jolcham_oak_bark_01/jolcham_oak_bark_01_rough_4k.exr"
+        }
+      }
+    },
+    "bark_willow_02": {
+      "provider": "Poly Haven",
+      "author": {
+        "Charlotte Baglioni": "All"
+      },
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_willow_02",
+      "maps": {
+        "bark_willow_02_diff_4k.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/bark_willow_02/bark_willow_02_diff_4k.jpg",
+          "bytes": 16154740,
+          "sha256": "c43752aedf4d10fb55479223d4935368c407af8834a7450c52a6dba13308ef8e",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/bark_willow_02/bark_willow_02_diff_4k.jpg"
+        },
+        "bark_willow_02_disp_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_willow_02/bark_willow_02_disp_4k.exr",
+          "bytes": 15378741,
+          "sha256": "aa764bebddb256fff593cfb8e246a5e8405faaf9b9d787aff33ef08cf20924fb",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_willow_02/bark_willow_02_disp_4k.exr"
+        },
+        "bark_willow_02_nor_gl_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_willow_02/bark_willow_02_nor_gl_4k.exr",
+          "bytes": 36225566,
+          "sha256": "f5ac406e3e5ddd5dedef715f930d5ab2ae3c8668cbf3119739b7b96164d86d4d",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_willow_02/bark_willow_02_nor_gl_4k.exr"
+        },
+        "bark_willow_02_rough_4k.exr": {
+          "file": "assets/public/vegetation_sources/ai586/bark_willow_02/bark_willow_02_rough_4k.exr",
+          "bytes": 9313879,
+          "sha256": "178bf5db7ae56c640de87cc72ffb59427ec90585c70983fc5ebe8fbe57b513d6",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/exr/4k/bark_willow_02/bark_willow_02_rough_4k.exr"
+        }
+      }
+    },
+    "LeafSet027": {
+      "provider": "ambientCG",
+      "author": "Lennart Demes",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/a/LeafSet027",
+      "maps": {
+        "LeafSet027_4K-JPG_Color.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_Color.jpg",
+          "bytes": 7866641,
+          "sha256": "216f87dbbbd50803e436b260871ec4d24091bf4179a1b8561b595d3fd921cbbb"
+        },
+        "LeafSet027_4K-JPG_Displacement.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_Displacement.jpg",
+          "bytes": 1858718,
+          "sha256": "9920ac590c61c45a8ccce28af1e0850f1c3c2b6524bd37dbe42e1644e63af43a"
+        },
+        "LeafSet027_4K-JPG_NormalGL.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_NormalGL.jpg",
+          "bytes": 6979205,
+          "sha256": "2f02d29eec2367060e32a0d447b94201d4859330b613205984dd10a2b86a80d1"
+        },
+        "LeafSet027_4K-JPG_Opacity.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_Opacity.jpg",
+          "bytes": 537188,
+          "sha256": "df1b6b889231a48f6f63d4a5c311902d946d30a2a4c7e262f4f3fd4f96155f11"
+        },
+        "LeafSet027_4K-JPG_Roughness.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_Roughness.jpg",
+          "bytes": 3066029,
+          "sha256": "e22dcfc64c708bfa014d860ae1455598e02a8544daba41296d522f43e5afb04a"
+        },
+        "LeafSet027_4K-JPG_Scattering.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet027/LeafSet027_4K-JPG_Scattering.jpg",
+          "bytes": 8016157,
+          "sha256": "26edaf22ac7b0c8ce3e6d8bd7383bb2d92f6f9be8944bac64001dd99d264ae2a"
+        }
+      },
+      "downloadUrl": "https://ambientcg.com/get?file=LeafSet027_4K-JPG.zip"
+    },
+    "LeafSet023": {
+      "provider": "ambientCG",
+      "author": "Lennart Demes",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/a/LeafSet023",
+      "maps": {
+        "LeafSet023_4K-JPG_Color.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_Color.jpg",
+          "bytes": 9556573,
+          "sha256": "694cb192f29f5ec75bfda943cff6b4779e6e02d48ae8ce5203f8d94968256154"
+        },
+        "LeafSet023_4K-JPG_Displacement.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_Displacement.jpg",
+          "bytes": 2124740,
+          "sha256": "c3dfd5fb2440f81ff68e73ef4d4d1f775605e3be1204c18b6ce361f2265b1a81"
+        },
+        "LeafSet023_4K-JPG_NormalGL.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_NormalGL.jpg",
+          "bytes": 14234856,
+          "sha256": "218641f75309ff0cd8e4e4bdb45e7e15813bf3f10316fce32726475ef0ea8889"
+        },
+        "LeafSet023_4K-JPG_Opacity.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_Opacity.jpg",
+          "bytes": 405528,
+          "sha256": "f598126b4bf10360626bcef2225acd5304eebbbe9cd1719c41d785f3f4608a76"
+        },
+        "LeafSet023_4K-JPG_Roughness.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_Roughness.jpg",
+          "bytes": 3182508,
+          "sha256": "af6e5bd9da604160e11da0246e80ae754639f3d7df3e96ada6c289556cf5581d"
+        },
+        "LeafSet023_4K-JPG_Scattering.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet023/LeafSet023_4K-JPG_Scattering.jpg",
+          "bytes": 10766724,
+          "sha256": "efbcb6c34b9078905997b23451a7693366cd46d76f190215d9ec7c9c652a4a6e"
+        }
+      },
+      "downloadUrl": "https://ambientcg.com/get?file=LeafSet023_4K-JPG.zip"
+    },
+    "LeafSet016": {
+      "provider": "ambientCG",
+      "author": "Lennart Demes",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/a/LeafSet016",
+      "maps": {
+        "LeafSet016_4K-JPG_Color.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet016/LeafSet016_4K-JPG_Color.jpg",
+          "bytes": 8242612,
+          "sha256": "6900c6ee3a4a8778055c940b6d2fa52592221406aca0ea78aba9ffe5cbeb9a05"
+        },
+        "LeafSet016_4K-JPG_Displacement.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet016/LeafSet016_4K-JPG_Displacement.jpg",
+          "bytes": 1502097,
+          "sha256": "6e94785c6bd84c83e51c906fd1aa85ff1e5d13916c7c1800536e24fbd82ba948"
+        },
+        "LeafSet016_4K-JPG_NormalGL.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet016/LeafSet016_4K-JPG_NormalGL.jpg",
+          "bytes": 16330638,
+          "sha256": "e4efab2ec97df6cc33dfe35c559c2ed9d2a1a8d743462fd5825604d9a0a81cc0"
+        },
+        "LeafSet016_4K-JPG_Opacity.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet016/LeafSet016_4K-JPG_Opacity.jpg",
+          "bytes": 495787,
+          "sha256": "85b9ce5b69f22235351ae5c833cb3044e7ce734f54c50c9bfefc9580b55031b0"
+        },
+        "LeafSet016_4K-JPG_Roughness.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet016/LeafSet016_4K-JPG_Roughness.jpg",
+          "bytes": 5645869,
+          "sha256": "98cd9e9bc7881b32cef9e8c056b2f3ca5ed0f728e49ef5320fb8100a52679de1"
+        }
+      },
+      "downloadUrl": "https://ambientcg.com/get?file=LeafSet016_4K-JPG.zip"
+    },
+    "LeafSet014": {
+      "provider": "ambientCG",
+      "author": "Lennart Demes",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/a/LeafSet014",
+      "maps": {
+        "LeafSet014_4K-JPG_Color.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet014/LeafSet014_4K-JPG_Color.jpg",
+          "bytes": 7827390,
+          "sha256": "9917a06f1c90580280c421a1dce767bd940997edf8be06324fb76a7844eec7b2"
+        },
+        "LeafSet014_4K-JPG_Displacement.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet014/LeafSet014_4K-JPG_Displacement.jpg",
+          "bytes": 1431382,
+          "sha256": "168fe2775e040b717fbd91aed54f08598df5eadd7dac5b3555d290d01f52d73b"
+        },
+        "LeafSet014_4K-JPG_NormalGL.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet014/LeafSet014_4K-JPG_NormalGL.jpg",
+          "bytes": 11053706,
+          "sha256": "f959cdced478981219075f82ef988864d06b68b41ad3dfa0c87c0054487bcaae"
+        },
+        "LeafSet014_4K-JPG_Opacity.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet014/LeafSet014_4K-JPG_Opacity.jpg",
+          "bytes": 486521,
+          "sha256": "e6a12609cd50a9416d0f5dab9578b0cee6d798aa0da4f13ceb739214b4ea5479"
+        },
+        "LeafSet014_4K-JPG_Roughness.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet014/LeafSet014_4K-JPG_Roughness.jpg",
+          "bytes": 3601282,
+          "sha256": "accf2b8e86c545671bf5e373a36f814da6a421ca37a9192ef28d9497729893b9"
+        }
+      },
+      "downloadUrl": "https://ambientcg.com/get?file=LeafSet014_4K-JPG.zip"
+    },
+    "LeafSet024": {
+      "provider": "ambientCG",
+      "author": "Lennart Demes",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/a/LeafSet024",
+      "maps": {
+        "LeafSet024_4K-JPG_Color.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet024/LeafSet024_4K-JPG_Color.jpg",
+          "bytes": 13470974,
+          "sha256": "cada98761c37afc098007021a34bdb6e70674d1d69a07f5a46329f179f0ba375"
+        },
+        "LeafSet024_4K-JPG_Displacement.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet024/LeafSet024_4K-JPG_Displacement.jpg",
+          "bytes": 2394180,
+          "sha256": "f4ee6f22c68d157a1e779c3648c23d5f75cec24b67e2b9387dce422b27e1cc92"
+        },
+        "LeafSet024_4K-JPG_NormalGL.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet024/LeafSet024_4K-JPG_NormalGL.jpg",
+          "bytes": 15216811,
+          "sha256": "e0f9170a653110c3200559bf1fcffb8dc94ebcee721d0c99430acee6e77116d4"
+        },
+        "LeafSet024_4K-JPG_Opacity.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet024/LeafSet024_4K-JPG_Opacity.jpg",
+          "bytes": 437274,
+          "sha256": "bd62783e6bb0aaf5283d6f32872b89c10913dc80a6982b8140503cb1f70f40da"
+        },
+        "LeafSet024_4K-JPG_Roughness.jpg": {
+          "file": "assets/public/vegetation_sources/ai586/LeafSet024/LeafSet024_4K-JPG_Roughness.jpg",
+          "bytes": 4888062,
+          "sha256": "c1342d74ef67b4776439e8faba24dea9db660c2106b38a10bbdeb31886e5328e"
+        }
+      },
+      "downloadUrl": "https://ambientcg.com/get?file=LeafSet024_4K-JPG.zip"
+    },
+    "bark_brown_02": {
+      "provider": "Poly Haven",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_brown_02",
+      "maps": {
+        "bark_brown_02_diff_2k.png": {
+          "file": "assets/public/vegetation_sources/bark_brown_02/bark_brown_02_diff_2k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_diff_2k.png",
+          "sha256": "e2c2563e4149bf06386f8e8db590d5c2d7e8f2459e3e08132fe616acb2d07085",
+          "bytes": 8514206
+        },
+        "bark_brown_02_nor_gl_2k.png": {
+          "file": "assets/public/vegetation_sources/bark_brown_02/bark_brown_02_nor_gl_2k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_nor_gl_2k.png",
+          "sha256": "d37078fc9b058f60b9445e53f8fef7c74caf8065b325a07521152b6033229456",
+          "bytes": 9323032
+        },
+        "bark_brown_02_rough_2k.png": {
+          "file": "assets/public/vegetation_sources/bark_brown_02/bark_brown_02_rough_2k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_rough_2k.png",
+          "sha256": "e36caff0fcb15dc78998d83fae32b83c5afe711a086e342af34b417d8104ac76",
+          "bytes": 2827131
+        },
+        "bark_brown_02_disp_2k.png": {
+          "file": "assets/public/vegetation_sources/bark_brown_02/bark_brown_02_disp_2k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_disp_2k.png",
+          "sha256": "9428b672837475fac8fbd4377e5b10a8b344fa3f2a5ee8fed66cccff9c0e67d8",
+          "bytes": 6555476
+        }
+      }
+    }
+  }
+}

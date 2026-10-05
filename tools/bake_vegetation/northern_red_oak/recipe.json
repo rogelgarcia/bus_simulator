@@ -1,0 +1,112 @@
+{
+  "schema": "bus-sim-vegetation-recipe-v3",
+  "revision": 5,
+  "textureSize": 1024,
+  "alphaCutoff": 0.5,
+  "id": "northern-red-oak",
+  "species": "Quercus rubra",
+  "commonName": "Northern red oak",
+  "kind": "tree",
+  "references": [
+    "https://plants.ces.ncsu.edu/plants/quercus-rubra/"
+  ],
+  "texture": {
+    "bark": "oak_furrows",
+    "leaf": "oak",
+    "seed": 57800,
+    "baseColor": [
+      51,
+      86,
+      33
+    ],
+    "leafRadius": [
+      0.14,
+      0.18
+    ],
+    "leafRoughness": 155,
+    "leafCount": 17
+  },
+  "growth": {
+    "habit": "oak",
+    "leaderFraction": 0.61,
+    "crownBand": [
+      0.39,
+      0.42
+    ],
+    "crownCenter": 0.61,
+    "crownHalfHeight": 0.3,
+    "branchBase": 0.17,
+    "branchStep": 0.045,
+    "cardSize": 0.83,
+    "leafWidthMetres": [
+      0.09,
+      0.15
+    ],
+    "twigLength": [
+      0.65,
+      1.15
+    ],
+    "jitter": 0.36
+  },
+  "profile": {
+    "radialSegments": 8,
+    "branchSegments": 5,
+    "secondarySides": 4,
+    "twigSides": 0,
+    "cardKeep": 1,
+    "cardFold": false,
+    "twoSidedAtlas": false,
+    "peelFins": 0
+  },
+  "variants": [
+    {
+      "id": "mature_01",
+      "morphology": "Broad rounded mature oak; four heavy scaffold limbs",
+      "seed": 57803,
+      "height": 16,
+      "radius": 6.6,
+      "trunkRadius": 0.54,
+      "mainLimbs": 4,
+      "scaffolds": 15,
+      "secondary": 7,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.23
+    },
+    {
+      "id": "mature_02",
+      "morphology": "Wide mature oak with low spreading lateral forks",
+      "seed": 57817,
+      "height": 14,
+      "radius": 7.1,
+      "trunkRadius": 0.6,
+      "mainLimbs": 5,
+      "scaffolds": 16,
+      "secondary": 7,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.19
+    },
+    {
+      "id": "mature_03",
+      "morphology": "Tall asymmetric mature oak; three dominant limbs",
+      "seed": 57829,
+      "height": 17.5,
+      "radius": 6.1,
+      "trunkRadius": 0.51,
+      "mainLimbs": 3,
+      "scaffolds": 17,
+      "secondary": 6,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.25
+    }
+  ],
+  "barkTextureSize": 2048,
+  "woodyDetail": {
+    "voxelSizeMetres": 0.009,
+    "reliefMetres": 0.018,
+    "scarCount": 6,
+    "safetyTriangleLimit": 6000000
+  }
+}

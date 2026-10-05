@@ -1,0 +1,119 @@
+{
+  "schema": "bus-sim-vegetation-recipe-v3",
+  "revision": 5,
+  "textureSize": 1024,
+  "alphaCutoff": 0.5,
+  "id": "silver-linden",
+  "species": "Tilia tomentosa",
+  "commonName": "Silver linden",
+  "kind": "tree",
+  "references": [
+    "https://mortonarb.org/plant-and-protect/trees-and-plants/silver-linden/"
+  ],
+  "texture": {
+    "bark": "ridged_gray",
+    "leaf": "linden",
+    "seed": 57770,
+    "baseColor": [
+      46,
+      86,
+      31
+    ],
+    "backColor": [
+      156,
+      170,
+      144
+    ],
+    "leafRadius": [
+      0.12,
+      0.15
+    ],
+    "leafRoughness": 170,
+    "leafCount": 20
+  },
+  "growth": {
+    "habit": "pyramidal",
+    "leaderFraction": 0.88,
+    "crownBand": [
+      0.44,
+      0.47
+    ],
+    "crownCenter": 0.64,
+    "crownHalfHeight": 0.34,
+    "branchBase": 0.24,
+    "branchStep": 0.027,
+    "secondaryStart": 0.25,
+    "cardSize": 0.65,
+    "leafWidthMetres": [
+      0.065,
+      0.125
+    ],
+    "twigLength": [
+      0.5,
+      0.85
+    ],
+    "jitter": 0.28
+  },
+  "profile": {
+    "radialSegments": 7,
+    "branchSegments": 4,
+    "secondarySides": 4,
+    "twigSides": 0,
+    "cardKeep": 0.64,
+    "cardFold": false,
+    "twoSidedAtlas": true,
+    "peelFins": 0
+  },
+  "variants": [
+    {
+      "id": "mature_01",
+      "morphology": "Mature pyramidal central-leader crown",
+      "seed": 57771,
+      "height": 17,
+      "radius": 3.8,
+      "trunkRadius": 0.34,
+      "mainLimbs": 16,
+      "scaffolds": 16,
+      "secondary": 6,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.26
+    },
+    {
+      "id": "mature_02",
+      "morphology": "Broad mature ovoid linden crown",
+      "seed": 57783,
+      "height": 15.6,
+      "radius": 4,
+      "trunkRadius": 0.39,
+      "mainLimbs": 17,
+      "scaffolds": 17,
+      "secondary": 6,
+      "tertiary": 7,
+      "cardsPerTwig": 4,
+      "crownBase": 0.24
+    },
+    {
+      "id": "mature_03",
+      "morphology": "Tall mature upright linden with irregular laterals",
+      "seed": 57797,
+      "height": 18.2,
+      "radius": 3.6,
+      "trunkRadius": 0.37,
+      "mainLimbs": 18,
+      "scaffolds": 18,
+      "secondary": 5,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.28
+    }
+  ],
+  "barkTextureSize": 2048,
+  "woodyDetail": {
+    "voxelSizeMetres": 0.01,
+    "reliefMetres": 0.012,
+    "scarCount": 5,
+    "safetyTriangleLimit": 6000000,
+    "seatDetachedOrigins": true
+  }
+}

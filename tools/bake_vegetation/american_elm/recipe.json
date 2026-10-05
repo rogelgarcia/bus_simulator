@@ -1,0 +1,49 @@
+{
+  "schema": "bus-sim-vegetation-recipe-v3",
+  "revision": 1,
+  "woodContract": "original-authoring-v1",
+  "textureSize": 1024,
+  "alphaCutoff": 0.5,
+  "id": "american-elm",
+  "species": "Ulmus americana",
+  "commonName": "American elm",
+  "kind": "tree",
+  "references": [
+    "https://plants.ces.ncsu.edu/plants/ulmus-americana/",
+    "https://mortonarb.org/explore/activities/explore-grounds/elm-collection/",
+    "https://burkeherbarium.org/imagecollection/taxon.php?Taxon=Ulmus+americana"
+  ],
+  "texture": {
+    "bark": "elm_ridges", "leaf": "elm", "seed": 58300,
+    "baseColor": [48, 79, 29], "leafRoughness": 172, "leafCount": 18
+  },
+  "growth": {
+    "habit": "vase", "leaderFraction": 0.76,
+    "crownBand": [0.57, 0.33], "crownCenter": 0.74, "crownHalfHeight": 0.245,
+    "branchBase": 0.365, "branchStep": 0.014, "secondaryStart": 0.45,
+    "cardSize": 0.63, "leafWidthMetres": [0.062, 0.083],
+    "twigLength": [0.55, 1.0], "jitter": 0.36
+  },
+  "profile": {
+    "radialSegments": 8, "branchSegments": 7, "secondarySides": 4,
+    "twigSides": 0, "cardKeep": 1, "cardFold": false,
+    "twoSidedAtlas": false, "peelFins": 0
+  },
+  "variants": [
+    {"id": "mature_01", "morphology": "Tall clear trunk with eight arching limbs and a broad elevated vase crown",
+      "seed": 58303, "height": 20, "radius": 6.7, "trunkRadius": 0.62,
+      "mainLimbs": 8, "scaffolds": 34, "secondary": 7, "tertiary": 7, "cardsPerTwig": 4, "crownBase": 0.44},
+    {"id": "mature_02", "morphology": "Wide umbrella-shaped mature elm with an open stem and spreading arched forks",
+      "seed": 58317, "height": 18.6, "radius": 7.4, "trunkRadius": 0.68,
+      "mainLimbs": 7, "scaffolds": 36, "secondary": 7, "tertiary": 7, "cardsPerTwig": 4, "crownBase": 0.44},
+    {"id": "mature_03", "morphology": "High asymmetric vase crown carried above a long mature stem",
+      "seed": 58329, "height": 20.5, "radius": 6.5, "trunkRadius": 0.60,
+      "mainLimbs": 6, "scaffolds": 35, "secondary": 7, "tertiary": 7, "cardsPerTwig": 4, "crownBase": 0.44}
+  ],
+  "barkTextureSize": 2048,
+  "foliageSafetyTriangleLimit": 40000000,
+  "woodyDetail": {
+    "voxelSizeMetres": 0.01, "reliefMetres": 0.015, "scarCount": 3,
+    "seatDetachedOrigins": true, "safetyTriangleLimit": 6000000
+  }
+}

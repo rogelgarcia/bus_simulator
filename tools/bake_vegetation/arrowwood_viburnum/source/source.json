@@ -1,0 +1,39 @@
+{
+  "asset": "Bark Brown 02",
+  "author": "Rob Tuytel",
+  "provider": "Poly Haven",
+  "source": "https://polyhaven.com/a/bark_brown_02",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://polyhaven.com/license",
+  "retrieved": "2026-10-03",
+  "nativeTileMetres": 1,
+  "usage": "Generic photographed bark adapted in scale for mature shrub stems; not a species-specific Viburnum scan.",
+  "apiCredit": "Powered by Poly Haven",
+  "maps": {
+    "color": {
+      "file": "bark_brown_02_diff_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_diff_2k.png",
+      "sha256": "e2c2563e4149bf06386f8e8db590d5c2d7e8f2459e3e08132fe616acb2d07085",
+      "bytes": 8514206
+    },
+    "normal": {
+      "file": "bark_brown_02_nor_gl_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_nor_gl_2k.png",
+      "sha256": "d37078fc9b058f60b9445e53f8fef7c74caf8065b325a07521152b6033229456",
+      "bytes": 9323032
+    },
+    "roughness": {
+      "file": "bark_brown_02_rough_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_rough_2k.png",
+      "sha256": "e36caff0fcb15dc78998d83fae32b83c5afe711a086e342af34b417d8104ac76",
+      "bytes": 2827131
+    },
+    "height": {
+      "file": "bark_brown_02_disp_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/bark_brown_02/bark_brown_02_disp_2k.png",
+      "sha256": "9428b672837475fac8fbd4377e5b10a8b344fa3f2a5ee8fed66cccff9c0e67d8",
+      "bytes": 6555476
+    }
+  },
+  "inputDirectory": "assets/public/vegetation_sources/bark_brown_02"
+}

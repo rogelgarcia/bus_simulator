@@ -1,5 +1,69 @@
 # Offline bake framework
 
+AI588 adds `vegetation/growth`, an explicit stage-only leaf for species-informed
+trunk sweeps and calibrated photographic crevice relief. It uses the shared
+Blender configuration and authenticates the original scans, retained canopy
+forms, pinned roots and oriented closed geometry. See its
+[workflow](../../tools/bake_vegetation/growth/README.md).
+
+AI587 adds `vegetation/junctions`, an explicit stage-only leaf that refines branch
+attachment anatomy in a saved photographic scene. It reuses the shared Blender
+configuration, authenticates stable inputs, checks closed wood and unchanged
+foliage, and renders species-isolated fork views. It cannot publish gameplay
+assets; see [workflow](../../tools/bake_vegetation/junctions/README.md).
+
+AI586 adds the explicit stage-only `vegetation/surfaces` leaf for the
+[photographic surface revision](../trees/photographic_vegetation_surfaces.md).
+It authenticates all scan inputs, reuses the shared isolated Blender runner,
+checks closed wood/leaves and retained canopy anchors, rejects publication, and
+does not weaken the existing accepted-wood contracts.
+
+AI584 adds `vegetation/showcase`, an explicit headless Cycles review leaf outside
+the authoring and production parents. It authenticates installed sources, builds
+one packed scene with five separate species plots and 15 mature models, and
+renders eleven cameras. It reuses the shared Blender configuration, preserves
+input stability checks and rejects publication. See the
+[scene contract](../trees/raytraced_vegetation_showcase.md) and
+[workflow](../../tools/bake_vegetation/showcase/README.md).
+
+AI585 extends the same leaf with warm brown bark scene materials and ten trunk
+and root close-ups, for 21 cameras. It preserves source geometry authentication,
+the original foliage reconstruction checks and the artifact-only publication
+boundary. Version 1 saved scenes remain renderable; new version 2 scenes record
+their bark grading and validate the complete close-up set.
+
+## Original vegetation authoring (AI577–AI583)
+
+The explicit `vegetation` domain under `tools/bake_vegetation/` contains the
+`london-plane`, `silver-linden`, `northern-red-oak`, `arrowwood-viburnum` and `american-elm` leaves.
+Each creates three mature original GLBs with one geometry profile, texture maps,
+editable Blender sources and provenance, validates the species family, and publishes only through its
+explicit publication path. It reuses
+the shared ignored Blender configuration and runs isolated headless authoring as
+requested for this task. It is not a dependency of the default `all` production
+bake. These are asset-library/Inspector Room outputs; current city trees are not
+replaced. Asset publication does not certify or install city lighting/shadow or
+visibility bakes. Any future gameplay migration requires the existing production
+regeneration/validation/publication gates. See
+[`urban_vegetation_assets.md`](../trees/urban_vegetation_assets.md) and the AI578
+[detailed trunk contract](../trees/detailed_tree_trunks.md). AI578 prioritizes
+physical woody detail over the historical v2 triangle caps; optimization is a
+separate future pass. AI582 adds opaque modeled leaves, petioles and editable
+specimen scenes for later alpha-plate baking; see the
+[solid foliage contract](../trees/solid_species_leaves.md). Its authenticated
+`accepted_wood.json` input freezes the preceding bark geometry and maps while
+the foliage is deliberately replaced.
+AI583 adds American elm v1 with an explicit original-wood contract restricted to
+that initial species/revision. Existing accepted wood remains immutable; the new
+family passes normal topology, source/map hashes, input stability and rollback
+publication checks. See [American elm](../trees/american_elm.md).
+
+`vegetation/prototype-oak`, `vegetation/prototype-plane` and
+`vegetation/prototype-shrub` and `vegetation/prototype-elm` stage only `mature_01` for visual review. They share
+the normal authoring configuration and validation and reject publication.
+The shrub recipe authenticates retained CC0 bark source PNGs alongside code and
+recipe inputs; the published provenance retains source URLs, hashes and license.
+
 AI 549 registers the explicit `lighting/illumination/glass-transmission` leaf.
 It validates a bounded thin-sheet profile, uses the common configuration and
 receipts, writes ignored evidence and rejects publication. The analytic CPU

@@ -8,6 +8,7 @@ import {
     getProceduralMeshOptionsForCollection
 } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
 import { loadTreeTemplates } from '../../assets3d/generators/TreeGenerator.js';
+import { loadUrbanVegetation } from '../../engine3d/vegetation/UrbanVegetationLoader.js';
 import {
     getTreeMeshCollections,
     getTreeMeshEntryById,
@@ -49,6 +50,16 @@ function makeTreePlaceholderMesh() {
     mesh.receiveShadow = true;
     mesh.position.y = 3;
     return mesh;
+}
+
+function cloneTreeLeafMaterial(source) {
+    if (!source) return new THREE.MeshStandardMaterial({ color: 0xb9c86c, roughness: 0.9, metalness: 0.0, alphaTest: 0.5, side: THREE.DoubleSide });
+    const copySource = Object.create(source);
+    copySource.userData = { ...source.userData };
+    delete copySource.userData.aoAlphaMap;
+    const material = new THREE.MeshStandardMaterial().copy(copySource);
+    if (source.userData.aoAlphaMap?.isTexture) material.userData.aoAlphaMap = source.userData.aoAlphaMap;
+    return material;
 }
 
 export class InspectorRoomMeshesProvider {
@@ -158,7 +169,7 @@ export class InspectorRoomMeshesProvider {
     }
 
     getMeshOptions() {
-        if (this._collectionId === TREE_MESH_COLLECTION.TREES_DESKTOP || this._collectionId === TREE_MESH_COLLECTION.TREES_MOBILE) {
+        if (Object.values(TREE_MESH_COLLECTION).includes(this._collectionId)) {
             return getTreeMeshOptionsForCollection(this._collectionId);
         }
         return getProceduralMeshOptionsForCollection(this._collectionId);
@@ -217,7 +228,11 @@ export class InspectorRoomMeshesProvider {
 
     getSelectedMeshMeta() {
         if (!this._asset) return null;
-        return { id: this._asset.id, name: this._asset.name };
+        return { id: this._asset.id, name: this._asset.name, loading: this._asset.loading === true, error: this._asset.error ?? null };
+    }
+
+    whenSelectedMeshReady() {
+        return this._asset?.readyPromise ?? Promise.resolve(this._asset?.mesh ?? null);
     }
 
     getPickMesh() {
@@ -350,38 +365,52 @@ export class InspectorRoomMeshesProvider {
         if (!entry || !this.root) return;
 
         const token = ++this._loadToken;
+        const original = entry.family === 'urban-vegetation';
         const placeholderRoot = new THREE.Group();
-        placeholderRoot.name = `tree_asset_${entry.quality}_${entry.index}`;
+        placeholderRoot.name = original ? `tree_asset_${entry.species}_${entry.variant}` : `tree_asset_${entry.quality}_${entry.index}`;
+        if (original) {
+            placeholderRoot.userData.treeSpecies = entry.species;
+            placeholderRoot.userData.treeVariant = entry.variant;
+            placeholderRoot.userData.treeGrowthStage = entry.growthStage;
+            placeholderRoot.userData.treeAssetRevision = entry.assetRevision;
+            placeholderRoot.userData.vegetationKind = entry.vegetationKind;
+        }
         const placeholderMesh = makeTreePlaceholderMesh();
         placeholderRoot.add(placeholderMesh);
 
         this._asset = {
             id: entry.id,
             name: entry.label,
-            source: { type: 'TreeFBX', version: 1, quality: entry.quality, fileName: entry.fileName },
+            source: original
+                ? { type: 'TreeGLTF', version: 2, species: entry.species, fileName: entry.fileName, assetRevision: entry.assetRevision }
+                : { type: 'TreeFBX', version: 1, quality: entry.quality, fileName: entry.fileName },
             regions: [],
             mesh: placeholderRoot,
             kind: 'tree',
+            loading: true,
+            error: null,
             materials: null,
             _placeholder: { mesh: placeholderMesh, geometry: placeholderMesh.geometry, material: placeholderMesh.material }
         };
         this.root.add(placeholderRoot);
 
-        loadTreeTemplates(entry.quality).then((assets) => {
+        const asset = this._asset;
+        const pending = original ? loadUrbanVegetation({ species: entry.species }) : loadTreeTemplates(entry.quality);
+        asset.readyPromise = pending.then((assets) => {
             if (token !== this._loadToken) return;
             const template = assets?.templates?.[entry.index] ?? null;
-            if (!template) return;
+            if (!template) throw new Error(`[InspectorRoomMeshesProvider] Tree '${entry.id}' did not load.`);
 
             const tree = template.clone(true);
             const baseY = Number(template.userData?.treeBaseY) || 0;
             const baseHeight = Math.max(0.001, Number(template.userData?.treeHeight) || 1);
-            const targetHeight = 6;
+            const targetHeight = original ? baseHeight : 6;
             const scale = targetHeight / baseHeight;
             tree.scale.setScalar(scale);
             tree.position.set(0, -baseY * scale, 0);
 
             const shared = assets?.materials ?? null;
-            const leaf = shared?.leaf?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9c86c, roughness: 0.9, metalness: 0.0, alphaTest: 0.5, side: THREE.DoubleSide });
+            const leaf = cloneTreeLeafMaterial(shared?.leaf ?? null);
             leaf.userData.isFoliage = true;
             const trunk = shared?.trunk?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9a188, roughness: 0.95, metalness: 0.0 });
             const solid = new THREE.MeshStandardMaterial({ color: 0xd7dde7, metalness: 0.0, roughness: 0.7 });
@@ -394,13 +423,26 @@ export class InspectorRoomMeshesProvider {
 
             placeholderRoot.clear();
             placeholderRoot.add(tree);
+            placeholderRoot.userData.treeBounds = template.userData.treeBounds ?? null;
+            placeholderRoot.userData.treeMetrics = template.userData.treeMetrics ?? null;
+            if (original) placeholderRoot.userData._meshInspectorNeedsFocusRefresh = true;
             this._asset.mesh = placeholderRoot;
             this._asset.materials = { semantic: { leaf, trunk }, solid };
             this._asset._placeholder = null;
+            this._asset.loading = false;
 
             this._syncMeshMaterials();
             this._syncPivotGizmo();
-        }).catch(() => {});
+            return placeholderRoot;
+        });
+        asset.readyPromise.catch((error) => {
+            if (token !== this._loadToken) return;
+            asset.loading = false;
+            asset.error = error.message;
+            placeholderRoot.userData.loadError = error.message;
+            placeholderMesh.visible = false;
+            console.error('[InspectorRoomMeshesProvider] Tree asset loading failed:', error);
+        });
     }
 
     _syncMeshMaterials() {

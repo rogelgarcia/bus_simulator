@@ -1,0 +1,125 @@
+{
+  "schema": "bus-sim-accepted-foliage-v1",
+  "species": {
+    "london-plane": {
+      "variants": {
+        "mature_01": {
+          "positions": "2c47f00bc3bb4b6c9ae7cee265c5ed44a94a3d4f5fb7631bf5e361b7a33bbd4b",
+          "uvs": "3f7ab650f9b46034b6db155c600f65f47b848154530b48c1377ae6832cd122a1",
+          "indices": "ef839748dbd075d24a43cab83095d567447efc0e64caa89284cb5555ef366c8d",
+          "normals": "e174ca91c4594c1446087a6389edbf78152fd30554fbd78067351901344c63a0",
+          "colors": "b1767844de19f39c251a3432d6a3acd52780af9281ffe7300716459ea11418d1"
+        },
+        "mature_02": {
+          "positions": "94544a47358e786343d6b3f38972fe135d885ced030828790eaf9a0efc87d1db",
+          "uvs": "45e0df1dd08c7816b44c767f04d71f933d8ecc1fb63619956e8ba76cc877c526",
+          "indices": "f86e337512fc7050e953a3223317e187a7f64a464395d20039a25ef649441bc6",
+          "normals": "d816934007003485c48a6bd4e84ed30d7c7e1185bff92c4ec5242d4565573601",
+          "colors": "5f1ef874be10f8e27e4124ecb613b67f19283e5f4ca93494d175e6ea032534b4"
+        },
+        "mature_03": {
+          "positions": "54ed5514d57caa45cb6cb6d3af5cf36be135e4595c9c0771fbeb796fc2f6fd7c",
+          "uvs": "d44bfe696b2463290143e746a659ac9cb0479966ef921ee051cd37086c66a985",
+          "indices": "3550f84c4b1a6f76ec3448bd85837b86a3e914398595f85337218e70bb4ad28d",
+          "normals": "e78765869220d2ea4d9450358c056301ce799ca5b8c671977cf1da4428f4a098",
+          "colors": "e9eeb22243c7b6778a95731da0845a1a6659b758ce54d20766e3650452ef204c"
+        }
+      },
+      "textures": {
+        "foliage_basecolor.png": "098f5d30a3939515bf14f93b21bb56dd6f5fc9d58dae9eaffda9d3ba946d7584",
+        "foliage_normal.png": "a2d1c2dceea3c3b8857a71781fdae74a3525a2c16b57736313838734b87174f8",
+        "foliage_orm.png": "71e6b121c7376ff4124985cb75218c0575cbd440c703dca241c1e10f5ec87dc3"
+      }
+    },
+    "silver-linden": {
+      "variants": {
+        "mature_01": {
+          "positions": "dc05539af187d844a564120c750cd920197fa450de99f5040f26beb15b0039cb",
+          "uvs": "dcaa00969733e0e9d07da00beef8834e7bb2c52e8d2b44257cab2215efee230e",
+          "indices": "f3aed1a92eb36dc6fbd19104301b24d81e2b05f50d3df0608035dbd329338a71",
+          "normals": "50e451b7585da7ca08d468cee8f5ac6893eadded094cdac155db2e0371b04473",
+          "colors": "1dec54174a531aed09f11a83b0eca61f78a701021bedef1fba714c745db6cd36"
+        },
+        "mature_02": {
+          "positions": "3b612b9aa844ffaa6655b3dc7649e715a6345fcf95f6928329dbc9c66f3c0aef",
+          "uvs": "ebed8e5b41cf134dfc23cad5a6746772a9e554ebaa05c8aff71509f49de835ac",
+          "indices": "d39a89be02522e349774c30a2048314301cbb0255589cce10d12ba574bf32f59",
+          "normals": "e1549835d1c926259fb04955504c2ec2ea1a3ce2a5cf47b6596a7313059fe9d0",
+          "colors": "ea88643eb365b63489134b76d3cae95fedc6c9d39f411b8c39137a1d97ab50c6"
+        },
+        "mature_03": {
+          "positions": "85511c4046d8065818b3a293f6bdda64a2f087b46d6a03b11e3369c1ca565f07",
+          "uvs": "5d3c9eb03b393189682560f18187778421c13d371025fa313cb37a091b8c4140",
+          "indices": "63096df51e4384c6be2080bb21b63fca74be1b7b5b8ec10d5b008ad0d0bd5c54",
+          "normals": "37ce2a21baa9b9f32227844e9b8982568b40504ef7933d5d247993feee35dae5",
+          "colors": "5cb5ea4f3f24eb9a6eb9ff1b4968f6697c0d3034f82573f88e0cb0ad9af3fb36"
+        }
+      },
+      "textures": {
+        "foliage_basecolor.png": "1f1d6cbac0d1d6cfb0ae98f5219f1511bc3a12ee6afc7a385fa643f5c648aa8e",
+        "foliage_normal.png": "6f02d121b2603f1109fa1cfdba6cd5d2554bb5c50368d19092e7fb56614e750d",
+        "foliage_orm.png": "3e8238ed3c4e0a6d9dd46bbbb36bc0e3440eed537e65f653cb8832c599744d7e"
+      }
+    },
+    "northern-red-oak": {
+      "variants": {
+        "mature_01": {
+          "positions": "8b29bfea9a61f2d8c5e55ea195bebbd6389c66af5f2830b30132559afcd1a564",
+          "uvs": "4801cce5855c783ce57cd68628c39720773e327140587092de1db4b9f6d1e9e4",
+          "indices": "ef839748dbd075d24a43cab83095d567447efc0e64caa89284cb5555ef366c8d",
+          "normals": "abf750918a124047dfb09fe6ef016ee1493da7304ab54136ae00ac21a11e43b6",
+          "colors": "b1767844de19f39c251a3432d6a3acd52780af9281ffe7300716459ea11418d1"
+        },
+        "mature_02": {
+          "positions": "0979bca6e10e7a372fce622dff69d2087250126d480689a975c223db44c91b0e",
+          "uvs": "c4dcef3c0bd5b0f080d51d3ba1ed6be06240b1748e3025f8b48629f1dc8de774",
+          "indices": "f86e337512fc7050e953a3223317e187a7f64a464395d20039a25ef649441bc6",
+          "normals": "41ad4bc3037a92720cc6119d9e944f8f883307d9caf01bf9ef3054aaa2cbdec7",
+          "colors": "5f1ef874be10f8e27e4124ecb613b67f19283e5f4ca93494d175e6ea032534b4"
+        },
+        "mature_03": {
+          "positions": "744a6486a12edce05dcebf79a0f36bf815e935ea71c0f48957c71eea5f736e94",
+          "uvs": "13be8dd2ada6d205feb1b0b2b9f0b9dffa99b54ef27e6cdd1152d77ad7842480",
+          "indices": "03331b079d44ed763e89c32c1620bda44423b04d7bd81163f7a4324bf57b252e",
+          "normals": "c54db2b6aa01dc6b4283977ab1d8b4d04a27c9b8c2b06d8251ec93eff9f82a3b",
+          "colors": "1b4d9ca49baf6efecb5799533181fb35827ee7e7df9bdd68c2919720dc00e760"
+        }
+      },
+      "textures": {
+        "foliage_basecolor.png": "269225c6db856ac40f45ac571887427b96934482c148da8ecce38e40586dba56",
+        "foliage_normal.png": "88ec7f72537671c645befb6eea9dd754cd8d46498052dbcbefd8695371a389e5",
+        "foliage_orm.png": "e047fdc35391f9357fe959ec6bb4932e53cfefb4020c555dfb574c531ed76974"
+      }
+    },
+    "arrowwood-viburnum": {
+      "variants": {
+        "mature_01": {
+          "positions": "aca5093d9c474af91dc5671781523da776de05958a368187042db6dcea3b3915",
+          "uvs": "8fc7ceebbc0b74a10245544b387ca52ef72b90661520d524519648ed0535fdf3",
+          "indices": "c1713dc34e376779b4b405fc355487c4161fff58d369aaf5f785974bf6709ba2",
+          "normals": "2d207ef0a51eca4ab498f74df6311a2d278077a39abcacbe5e9bdfd0d26e50ab",
+          "colors": "5084e63a43a17a0f23c3062148a78175cf6468fcdbad513cec3991292b0be5c6"
+        },
+        "mature_02": {
+          "positions": "6a15b19a9e754217324144d8988e86c101f0a6d16e0145e2d0633b234dd7fc67",
+          "uvs": "130c2099b7bbff6972fcf05f058b3e4203904340de5c82a75930d4fd6631d606",
+          "indices": "c0b957efa83047b577d8db1c691b903a21104f961821f66b95819b6d6c89c2bc",
+          "normals": "281e2a40554edb19317a7344d7712999dd53096fb6767f1f189dc440ddc36bbb",
+          "colors": "e48c5cef21ca399e67bdaefd7c3296b55a2608cd9d498ce9b7a6a759fbe339ee"
+        },
+        "mature_03": {
+          "positions": "60df9395d372b710ab59354f68c72172382cd1a53a7f1ec8b74385c069f6c6cf",
+          "uvs": "67fe55ebd98e278682d3b7c07e4e1211debe1ce7750d7e6c50e0632c746d832f",
+          "indices": "d4799e30f2070db52b8d09632588185ba8ebd0c6e2ac7b5a36107e49cb494b04",
+          "normals": "197782b949e2cd47db56d63baca4b08216ed5d7993b634e51e8354da6cb842fe",
+          "colors": "a76558db006763419ce34f1fdda45533329e8f8d6d1566d0013fc7a13e563af0"
+        }
+      },
+      "textures": {
+        "foliage_basecolor.png": "eb34c909a27a8147813a891331f6d6427738d36326b30ce427f586463f8f2c65",
+        "foliage_normal.png": "a88f22078c4218390576e3dac235a9979848a945a5a49fca694217cdea23f907",
+        "foliage_orm.png": "a2e0750eea7e7ac28a1ac225fb2b9c31be464f72aa15555d31b4b4fd8e2c2912"
+      }
+    }
+  }
+}

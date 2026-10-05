@@ -1,0 +1,113 @@
+{
+  "schema": "bus-sim-vegetation-recipe-v3",
+  "revision": 6,
+  "textureSize": 1024,
+  "alphaCutoff": 0.5,
+  "id": "london-plane",
+  "species": "Platanus × acerifolia",
+  "commonName": "London plane",
+  "kind": "tree",
+  "references": [
+    "https://mortonarb.org/plant-and-protect/trees-and-plants/london-planetree/",
+    "https://www.publicdomainpictures.net/en/view-image.php?image=78912&picture=plane-tree-trunk"
+  ],
+  "texture": {
+    "bark": "mottled",
+    "leaf": "plane",
+    "seed": 57750,
+    "baseColor": [
+      56,
+      94,
+      28
+    ],
+    "leafRadius": [
+      0.132,
+      0.165
+    ],
+    "leafRoughness": 158,
+    "leafCount": 13
+  },
+  "growth": {
+    "habit": "rounded",
+    "leaderFraction": 0.67,
+    "crownBand": [
+      0.43,
+      0.36
+    ],
+    "crownCenter": 0.6,
+    "crownHalfHeight": 0.25,
+    "branchBase": 0.22,
+    "branchStep": 0.04,
+    "cardSize": 0.76,
+    "leafWidthMetres": [
+      0.15,
+      0.22
+    ],
+    "twigLength": [
+      0.55,
+      1.1
+    ],
+    "jitter": 0.38
+  },
+  "profile": {
+    "radialSegments": 7,
+    "branchSegments": 4,
+    "secondarySides": 4,
+    "twigSides": 0,
+    "cardKeep": 1,
+    "cardFold": false,
+    "twoSidedAtlas": false,
+    "peelFins": 0
+  },
+  "variants": [
+    {
+      "id": "mature_01",
+      "morphology": "Broad rounded mature crown; five major forks",
+      "seed": 57723,
+      "height": 15,
+      "radius": 5.9,
+      "trunkRadius": 0.39,
+      "mainLimbs": 5,
+      "scaffolds": 15,
+      "secondary": 7,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.27
+    },
+    {
+      "id": "mature_02",
+      "morphology": "Low spreading mature park crown; six major forks",
+      "seed": 57737,
+      "height": 13,
+      "radius": 6.4,
+      "trunkRadius": 0.44,
+      "mainLimbs": 6,
+      "scaffolds": 16,
+      "secondary": 7,
+      "tertiary": 8,
+      "cardsPerTwig": 4,
+      "crownBase": 0.23
+    },
+    {
+      "id": "mature_03",
+      "morphology": "Tall asymmetric mature crown; four dominant forks",
+      "seed": 57761,
+      "height": 17,
+      "radius": 5.8,
+      "trunkRadius": 0.43,
+      "mainLimbs": 4,
+      "scaffolds": 17,
+      "secondary": 7,
+      "tertiary": 7,
+      "cardsPerTwig": 4,
+      "crownBase": 0.29
+    }
+  ],
+  "barkTextureSize": 2048,
+  "woodyDetail": {
+    "voxelSizeMetres": 0.01,
+    "reliefMetres": 0.005,
+    "scarCount": 4,
+    "safetyTriangleLimit": 6000000
+  }
+}
