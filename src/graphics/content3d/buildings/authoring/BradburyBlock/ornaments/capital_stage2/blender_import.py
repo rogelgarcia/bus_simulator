@@ -1,7 +1,10 @@
 """Stage 2 into Blender: stage2_mesh.json (build.py) -> one object per piece, `s2_<piece>`, with the atlas materials
 (basecolor x AO, tangent normal map, roughness, alpha clipped at 0.5), the blank's textured mouldings and plain clay
-bell, the cards' walls in a darker plain clay and the drum's face on its own filled roll texture. The images are packed
-into the .blend, so the capital file does not depend on the build cache. Used by ../capital.py."""
+bell, the cards' walls in a darker plain clay and the drum's face on its own filled roll texture. The pieces every
+placement shares (the front, the blank) go into the given collection, each placement's side faces into a child
+collection `<collection>_<placement>` (build.py SIDES) that records its wall (`side_wall_mm`) and its crest
+(`side_crest`, the atlas piece over its leaves, or empty). The images are packed into the .blend, so the capital file does not depend on the build cache. Used by
+../capital.py."""
 import bpy, bmesh, json, os, math
 
 PREFIX = "capital_s2_"                                                    # materials and images
@@ -77,6 +80,10 @@ def materials(T):
     roll = (_image(os.path.join(R, "roll_basecolor.png"), "roll_basecolor"), _image(os.path.join(R, "roll_ao.png"), "roll_ao", True),
             _image(os.path.join(R, "roll_normal.png"), "roll_normal", True), _image(os.path.join(R, "roll_roughness.png"), "roll_roughness", True))
     bell = _image(T["bell"], "bell")
+    F = T["flower_dir"]
+    fbase = _image(os.path.join(F, "basecolor_rgba.png"), "flower_basecolor"); fbase.alpha_mode = "CHANNEL_PACKED"
+    flower = (fbase, _image(os.path.join(F, "ambient_occlusion.png"), "flower_ao", True),
+              _image(os.path.join(F, "normal_opengl.png"), "flower_normal", True), _image(os.path.join(F, "roughness.png"), "flower_roughness", True))
     return {
         "atlas": _mat_atlas("atlas", atlas, clip=True),                   # the cards' faces, cut out by the picture's alpha
         "atlas_noclip": _mat_atlas("atlas_noclip", atlas, clip=False),
@@ -85,14 +92,21 @@ def materials(T):
         "bell": _mat_textured("bell", bell),
         "sides": _mat_flat_clay("sides", bell, 0.82),                     # the walls: the bell's plain clay, 1:1, a little darker
         "roll": _mat_atlas("roll", roll, clip=False),                     # the drum's face: its own filled texture, unclipped
+        "flower": _mat_atlas("flower", flower, clip=True),                # the sides' scroll (wall_flower): its own maps, cut out by its alpha
     }
 
 
 def import_stage2(json_path, coll, parent=None):
-    """Build the stage-2 objects into `coll` (linked to the scene), parented to `parent`; returns (objects, triangles)."""
+    """Build the stage-2 objects into `coll` (linked to the scene) and its placements' child collections, parented to
+    `parent`; returns (objects, triangles, {placement: collection})."""
     data = json.load(open(json_path))
     mats = materials(data["textures"])
     mat_list = [mats[k] for k in data["materials"]]
+    sides = {}
+    for name, spec in data.get("sides", {}).items():
+        c = bpy.data.collections.new("%s_%s" % (coll.name, name)); coll.children.link(c)
+        c["side_wall_mm"] = float(spec["wall"]); c["side_crest"] = spec.get("crest", "")
+        sides[name] = c
     objs, tris = [], 0
     for ob in data["objects"]:
         name = "s2_" + ob["name"]
@@ -106,11 +120,11 @@ def import_stage2(json_path, coll, parent=None):
         for f, mi in zip(me.polygons, ob["mats"]): f.material_index = mi
         bm = bmesh.new(); bm.from_mesh(me); bmesh.ops.recalc_face_normals(bm, faces=bm.faces); bm.to_mesh(me); bm.free()
         for p in me.polygons: p.use_smooth = True
-        o = bpy.data.objects.new(name, me); coll.objects.link(o); o.parent = parent
+        o = bpy.data.objects.new(name, me); (sides[ob["variant"]] if ob.get("variant") else coll).objects.link(o); o.parent = parent
         objs.append(o); tris += sum(len(p.vertices) - 2 for p in me.polygons)
     for o in bpy.context.view_layer.objects: o.select_set(False)
     for o in objs:                                                        # creases sharp past 35 degrees, on the mesh itself
         bpy.context.view_layer.objects.active = o; o.select_set(True)
         bpy.ops.object.shade_smooth_by_angle(angle=math.radians(35.0))
         o.select_set(False)
-    return objs, tris
+    return objs, tris, sides

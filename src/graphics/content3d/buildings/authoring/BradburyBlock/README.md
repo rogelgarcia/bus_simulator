@@ -74,17 +74,19 @@ script that builds at the origin with close-up cameras, so every iteration is
 fast and the portal file stays untouched. The portal LINKS the ornament's mesh
 datablock (Blender library link, not append): piece 07 links the mesh
 `capital` from `ornaments/capital.blend` and makes both pilaster capitals
-instances of it. The inner piers (piece 02) link the same mesh at 0.434 scale, rotated to
-face the passage. Workflow: run `ornaments/capital.py` (it rebuilds and saves
+instances of it. The inner piers (piece 02) link `capital_pier`, the same capital with its sides carved to the
+piers' recess wall, at 0.469 scale, rotated to face the passage (each placement has its own capital: "The capital's
+stage 2" below). Workflow: run `ornaments/capital.py` (it rebuilds and saves
 `capital.blend`), then reopen `bradbury_portal.blend` or use File > External
 Data > Reload Library, and the portal shows the new version; no portal script
 needs to run. The link is stored relative to the portal file. `capital.blend`
-holds both stages of the capital; which one the portal gets is chosen in
-`capital.py` (see "The capital file" below).
+holds both stages of the capital; which one the portal and the block get is
+`CAPITAL_STAGE` in `portal_lib.py` (see "The capital stage in the portal and
+the block" below).
 
 | Ornament | Script / file | Stage |
 |----------|---------------|-------|
-| Pilaster capital | `ornaments/capital.py` -> `ornaments/capital.blend`: `CAPITAL_STAGE1` (`capital_stage1`, built by `capital_v2` in `portal_lib.py`), `CAPITAL_STAGE2` (`s2_*` under `capital_stage2_root`, built by `ornaments/capital_stage2/`), `CAPITAL_EXPORT` (object and mesh `capital`, linked by pieces 07 and 02) | Stage 1, the one in the portal (`PORTAL_STAGE = 1`): base (neck astragal + bell flaring from the 0.725 x 0.85 footprint) and support (abacus fillet + slab), no carving; engaged: it wraps the front face and runs back along the sides for 80% of the front width, ending in a straight back plane, the plain pilaster / pier continuing up behind it; 0.41 m. Stage 2, in progress: the carved capital cut from the PBR ornament atlas (see "The capital's stage 2" below), 0.463 m, not in the portal yet. Renders `screens/.../ornaments/capital_stage1_*.png` and `capital_stage2_*.png` (2026-10-04) |
+| Pilaster capital | `ornaments/capital.py` -> `ornaments/capital.blend`: `CAPITAL_STAGE1` (`capital_stage1`, built by `capital_v2` in `portal_lib.py`), `CAPITAL_STAGE2` (`s2_*` under `capital_stage2_root`, built by `ornaments/capital_stage2/`), `CAPITAL_EXPORT` (one mesh per placement: `capital` linked by piece 07, `capital_pier` by piece 02, `capital_column` and `capital_springing` by `assemble_building.py`) | Stage 1: base (neck astragal + bell flaring from the 0.725 x 0.85 footprint) and support (abacus fillet + slab), no carving; engaged: it wraps the front face and runs back along the sides for 80% of the front width, ending in a straight back plane, the plain pilaster / pier continuing up behind it; 0.41 m. Stage 2, in progress: the carved capital cut from the PBR ornament atlas (see "The capital's stage 2" below), 0.463 m; the one in the portal and the block since 2026-10-05 (`CAPITAL_STAGE = 2`). Renders `screens/.../ornaments/capital_stage1_*.png` and `capital_stage2_*.png` (2026-10-04) |
 
 ## The capital file: two stages and the export (2026-10-04)
 
@@ -92,24 +94,32 @@ holds both stages of the capital; which one the portal gets is chosen in
 is regenerated, never edited by hand):
 
 - `CAPITAL_STAGE1`: `capital_stage1`, the plain capital, at x -1.2;
-- `CAPITAL_STAGE2`: the carved capital, one object per piece (`s2_front_crown`, `s2_side_R_drum_L`, ...) parented to
-  `capital_stage2_root` at x +1.2, with the seven materials `capital_s2_*` and their images packed into the file;
-- `CAPITAL_EXPORT`: object and mesh `capital` at the origin, the datablock pieces 07 and 02 link. `PORTAL_STAGE` at the
-  top of `capital.py` picks the stage copied into it (1 for now); stage 2 is joined into one mesh with its materials.
-  The mesh records the stage in its custom property `capital_stage`.
+- `CAPITAL_STAGE2`: the carved capital, one object per piece parented to `capital_stage2_root` at x +1.2, with the
+  eight materials `capital_s2_*` and their images packed into the file. The front and the blank (`s2_front_crown`,
+  `s2_blank`, ...) are in the collection itself; the side faces are each placement's own, in a child collection per
+  placement (`CAPITAL_STAGE2_pilaster`, `_column`, `_pier`, `_springing`; `s2_pier_side_R_bank_0`, ...), which records
+  the wall its sides reach (`side_wall_mm`). The viewport shows the pilasters'; tick another's eye in the outliner;
+- `CAPITAL_EXPORT`: one mesh per placement (`portal_lib.CAPITAL_MESHES`), each with an object of its name, side by
+  side along +y: `capital` (the pilasters, piece 07), `capital_pier` (piece 02), `capital_column` (the block's brick
+  columns) and `capital_springing` (its narrow piers). `CAPITAL_STAGE` in `portal_lib.py` picks the stage copied into
+  them: stage 1 the plain capital under every name, stage 2 the shared pieces joined with that placement's side faces,
+  with their materials. Each mesh records its stage (`capital_stage`), its placement (`capital_kind`), the abacus's top
+  (`capital_top`, m over the neck's foot) and, carved, its sides' wall (`side_wall_mm`). The placements set a capital
+  by `capital_top`, not by the mesh's highest point: the carved crown stands 22 mm above the abacus (counting it once
+  moved every capital down by that much, 2026-10-05). Being copies of one stage, the collection is excluded from the view layer, so the
+  viewport shows the two stages; tick it in the outliner to see what the portal and the block get.
 
 The offsets are for viewing only: every mesh is in the capital's own frame. Commands, from this folder:
 
-    blender -b --factory-startup -P ornaments/capital.py                         (both stages; export PORTAL_STAGE)
-    blender -b --factory-startup -P ornaments/capital.py -- export=2             (this run exports stage 2)
-    blender -b --factory-startup -P ornaments/capital.py -- build=none export=1  (re-export only, from the saved file)
+    blender -b --factory-startup -P ornaments/capital.py                 (both stages; export CAPITAL_STAGE)
+    blender -b --factory-startup -P ornaments/capital.py -- build=none   (re-export only, from the saved file)
+
+`BRADBURY_CAPITAL_STAGE=1` (or 2) in the environment overrides `CAPITAL_STAGE` for one run; the shafts under the
+capital depend on it too, so switch with `use_capital_stage.py` (below).
 
 Stage 2 runs `capital_stage2/build.py` with the system python (numpy + PIL; Blender's python has no PIL), found on the
-PATH or given by `BRADBURY_PYTHON`. A full run takes about 20 s with the six renders.
-
-Before the portal can take stage 2 it has to absorb its size: 1.052 x 1.014 x 0.463 m against stage 1's 0.967 x 0.971
-x 0.41 (the photo's proportions at the "50/50" height), so the frieze band and the arch block, both built on the
-capitals' 4.08 m top, and the pier capitals' 0.434 scale need adjusting first; then set `PORTAL_STAGE = 2` and run.
+PATH or given by `BRADBURY_PYTHON`. A full run takes about 30 s with the ten renders (the last four
+`capital_stage2_side_<placement>.png`, each placement's right side face).
 
 Checked at the restructure (2026-10-04): mesh `capital` is identical to the previous file's (vertices, faces, edges,
 sharp edges, normals, material slot) and the portal's six capitals resolve it; stage 2 is identical to the last trial
@@ -117,13 +127,65 @@ build (v14). The material's tint is 1.8 % darker than in the previous file: `fil
 by the texture's mean, and the previous file was built 33 minutes before the sandstone pack was last written
 (2026-09-18), so any rebuild now gives the new tint (about 1-2 sRGB levels).
 
+## The capital stage in the portal and the block (2026-10-05)
+
+One setting chooses the capital everywhere: `CAPITAL_STAGE` in `portal_lib.py` (2, the carved capital, since
+2026-10-05; 1 the plain one), overridden for one run by `BRADBURY_CAPITAL_STAGE`. `ornaments/capital.py` exports that
+stage as one mesh per placement; `portal_lib.linked_capital(kind, wall)` links one for pieces 02 and 07, returns its
+height to the abacus's top (`capital_top`) and refuses a capital file that exports another stage, or a carved capital whose sides were carved to another
+wall than the placement's. One command rebuilds everything that depends on it:
+
+    python use_capital_stage.py 2 [view ...]      (or 1; no number: CAPITAL_STAGE)
+
+It runs, each in a headless Blender with the stage set: `ornaments/capital.py`, `rebuild_portal.py -- 02 07`,
+`assemble_building.py --no-render`, `wear_layer.py` and `build_scene.py [view ...]` (about 25 minutes with
+five views, the renders 15 of them); `--from portal|block|wear|scene` starts further down. Each step's log goes to `%TEMP%/bradbury_capital_stage/`.
+
+The rule (user 2026-10-05: "the stage2 is taller; reduce the pillars height in order for the stage2 to fit", then on
+the first renders "the side ornaments were squeezed to fit ... keep it proportional", "adjust the size so it uses the
+width of the pillar", "looks like this was stretched, reduce it to normal proportions"): every capital keeps its top,
+and the pillar under it takes up whatever height it has. The plain capital is stretched to fit as it always was. The
+carved one is never distorted (`portal_lib.CAPITAL_PROPORTIONAL`, stage 2): it is scaled alike on every axis, its neck
+as wide as its pillar, and what does not fit runs into the wall (or, on the narrow piers, is cut at the wall's back);
+its sides carry whole leaves as far as the wall beside each placement ("The capital's stage 2", below):
+
+| where | plain capital (stage 1) | carved capital (stage 2) |
+|---|---|---|
+| the pilasters (piece 07, `capital`), top 4.16 | scale 1, shaft to 3.75 | scale 1, shaft to 3.697 (panel and shaft 0.053 shorter) |
+| the portal piers (piece 02, `capital_pier`), top 2.15 (the impost) | 0.469 x 0.278 x 0.585, 0.24 tall, shaft to 1.91 | 0.469 on every axis, 0.217 tall, shaft to 1.933; its neck on the passage face (shifted 0.081 toward the wall), the rest of its depth in the recess wall |
+| the brick columns (`ge_capital`, from `capital_column`), top 15.632 | 0.951 on every axis, fitted to the band: column and capital meet at 15.242 | 1.097, its neck as wide as the 0.80 column (abacus 1.154): the column stops at 15.124 |
+| the narrow piers (`ge_capital5`, from `capital_springing`), top on the springing | 0.514 / 0.487 x 0.296 x 0.780: 0.320 tall, as the impost moulding | 0.514 / 0.487 on every axis: 0.238 / 0.225 tall; its back cut 2 cm inside the 0.32 wall's back (`cut_back`) |
+
+The band's brackets keep clear of the column capitals: where a capital's abacus comes within 0.06 of a bay's first
+bracket -- the carved capital at its column's width reaches 0.177 past the column's face, within 1 to 3 cm of most
+first brackets -- the bay's brackets are spaced between the capitals' ends, 0.06 clear (`CAP_OV`, `BRK_CAP_GAP`),
+instead of from the columns' faces. 0.06 is the least the plain capital (0.06 past) leaves, so stage 1's brackets
+stand where they always did.
+
+The stage-1 placements are unchanged by construction: pieces 02 and 07 rebuilt with stage 1 reproduce every shaft,
+plinth, panel and capital placement of the earlier portal (checked 2026-10-05). `assemble_building.py` reads the
+exported capital's height before it builds the brick columns, and refuses a portal whose pilaster shafts do not end at
+the capital's foot (one built for the other stage). The brick columns' and narrow piers'
+capitals take the band's terracotta (`TRIM_PBR`) only when the capital has one material, so the carved capital keeps
+its own textured materials there; the wear layer leaves the `capital_s2_*` materials alone (an unrecognised class),
+so the carved capitals render unweathered. Piece 08 is not part of the chain: it sizes the lettering so its ends stand
+`CAP_GAP` inside the pilaster capitals' inner edges, and rerun with the carved capital's wider abacus it would shrink
+the row about 3 %.
+
+The carved capital is 0.085 m wider than the plain one (1.052 against 0.967) and 0.043 m deeper: on the pilasters its
+abacus reaches 0.113 m past the frieze band's ends (the plain one's 0.071), and its inner side runs further over the arch block. Renders of
+the first stage-2 build: `screens/.../portal_project/scene/` (`hero_3q`, `st_corner`, `st_portal`, `st_along`,
+`st_up`) and the close-ups in `screens/.../portal_project/capital_stage2/`.
+
 ## The capital's stage 2: cut from the PBR ornament atlas (2026-10-03/04)
 
 The inputs are in `assets/public/textures/bradbury_capital/` (provenance in its `source.json`): the owner's atlas
 (`atlas/`, from `capital_ornaments_PBR_atlas.zip`: one 2048 atlas of five parts -- both lower leaf banks, the left
 horn (band + volute), the heart (C-scrolls, beads, berries, calyx), the pendant, the crown -- with basecolor + alpha,
-OpenGL normal, roughness, AO, opacity and a part-id mask; an AI reconstruction from the capital photo), and the
-blank's textures: `abacus.png` and `neck.png` (moulding cut-outs from the owner's `ornaments.zip`) and `bell.png` (a
+OpenGL normal, roughness, AO, opacity and a part-id mask; an AI reconstruction from the capital photo), the owner's
+wall-facing floral scroll for the sides (`wall_flower/`, from `wall_flower_ornament_PBR.zip`, 2026-10-05: one 2048 x
+1024 set -- basecolor + alpha, OpenGL normal, roughness, AO -- AI artwork from their red sketch, its right stem a flush
+end made to meet the wall), and the blank's textures: `abacus.png` and `neck.png` (moulding cut-outs from the owner's `ornaments.zip`) and `bell.png` (a
 plain patch of the capital photo).
 
 The code is in `ornaments/capital_stage2/`:
@@ -133,7 +195,7 @@ The code is in `ornaments/capital_stage2/`:
   `portal_project/ornaments/cache/capital_stage2/`. Its constants (`ROLL`, `ARM_*`, `BANK_ROLL`, `CURL_ROLL`, `KNOB`,
   `ARM_TOP`, `PLACES`) are where the pieces are tuned.
 - `blender_import.py`: the objects and the materials (basecolor x AO, tangent normal map, roughness, alpha clip at
-  0.5; the drum's own texture; plain clay for the bell and the walls).
+  0.5; the drum's own texture; the sides' scroll on its own maps; plain clay for the bell and the walls).
 - `bell.py`: the photo-proportioned blank -- neck, bell, abacus -- at VSCALE 0.898 (the "50/50" height between the
   photo's 0.515 m and the production 0.41), 0.463 m tall, in stage 1's frame; `wrap()` lays a card's (s, z, depth) in
   mm onto the bell's front, corner cut and sides.
@@ -151,13 +213,18 @@ the normal map gives the carving, short walls give the volume. The pieces:
   two-sided Douglas-Peucker with the corners on the outline (the tips and the notches), three rows per column; the
   alpha draws the finger gaps and the holes. The crown and the pendant are fitted on one half and mirrored. Leaf-by-
   leaf layouts were tried first and were "too complex", cutting leaf tips away.
-- The cards are cushioned: their edge vertices at 35 % of the relief, so the walls are short edges, not fins. A wall
+- The cards are cushioned: their edge vertices at 35 % of the relief (a plate's: 35 % of its thickness over its own
+  back), so the walls are short edges, not fins. A wall
   is built only where the picture is there 1 mm inside its edge along most of it, so none stands in a gap; the walls
   wear the bell's plain clay at 1:1 (0.2 m repeat, darkened to 0.82).
-- Placement (`PLACES`, mm in each face's photo frame): the crown point up at 458 mm, leaning forward from 44 to 80 mm
-  proud; the heart at 200 mm, 30 proud; the pendant hanging from 222; the front banks from 76 mm, 6 to 20 proud,
-  stretched 1.15 toward the corner so their outer leaf lands on the corner cut. The side faces carry the inner leaves
-  toward the front corner (their cut edge sinking into the bell) and the whole bank toward the back.
+- Placement (`PLACES`, mm in each face's photo frame): the crown point up, 1.3 times its size from its foot on the
+  heart's top bead (368 mm) to 485, standing 22 mm over the abacus's top edge and leaning out in front of it (user
+  2026-10-05: "it should show above the top edge ... incline it forward so it outstands over the top edge"; up to
+  then it ended at 458, its cushioned tips sunk in the abacus band): a plate, its face 44 mm proud at the foot to 105
+  at the top (37 in front of the band's 68), 30 mm thick at the foot thinning to 10 at its tips, closed behind (a body
+  down to the bell read as blocks on the abacus top); the heart at 200 mm, 30 proud; the pendant hanging from 222; the
+  front banks from 76 mm, 6 to 20 proud, stretched 1.15 toward the corner so their outer leaf lands on the corner cut.
+  The side faces are each placement's own (below).
 - The heart: the beads and berries are cut out of its card (their drawn outlines + 1.5 mm, a 5 mm spine keeping the
   eyes apart) and stand as ellipsoids measured on the texture (`HEART_BALLS`), centred on the card's plane, with no
   walls within 3 mm of them; its half round each eye is an envelope in polar coordinates about the eye.
@@ -177,8 +244,42 @@ the normal map gives the carving, short walls give the volume. The pieces:
   rounded ends, its axis 31 mm out of the chamfer, its top 3 mm into the volutes' rim); its ends wear the knob's spiral,
   its body the scroll band wound round. The painted knob is cut out of the front banks (its own 95 mm corner only) and
   the corner leaf is squashed (0.87) so its top runs into the roll.
+- The side faces are each placement's own (`SIDES`; user 2026-10-05, on a pier capital's plain side: "this one should
+  be completed till the wall ... don't do a blind cut where ornaments are cut in places where the piece is not
+  complete. put the flowers ... arrange in a way that the full or at least a natural seam (in between flowers) is
+  where it is cut", and "you can resize a bit ... the side doesn't need to be the same drawing as the front"). Each
+  carries its corner's drum and a run of whole leaves (`side_run`) from under the corner to the wall beside the
+  capital: slices of the banks from one notch between two leaves to another (`BANK_SEAMS`: the deepest dip of the top
+  edge between two leaf tips) or to the picture's own end, laid end to end at one stretch along the side (1.16 to
+  1.18, near the front banks' 1.15) and at the front banks' height and relief. The run's first 40 mm grow out of the
+  bell from the corner's edge at every height (the bell flares: the side starts further forward higher up); its end
+  stops 3 mm short of the wall, so the last leaf meets it whole or at its notch. Every side carries the drum's whole
+  arm: its tail over the valley between the run's two slices, or, on a one-slice side, 12 mm short of the wall over
+  its last leaf, the search trying dives down to 75 degrees for it (`ARM_WALL`; user, the same day, an arm sketched on
+  the pilaster's side from the drum down to the wall: "complete the arm there"). The two-slice sides also carry a crest
+  over the leaves by the wall (`side_crest`; user: "get another ornament to put above the flowers", on the pier's
+  plain side there): the owner's floral scroll (`wall_flower/`; the atlas's crown, tried first, was "too stand alone;
+  it doesn't integrate well"), its flush stem end at the run's end by the wall, as large as fits under the abacus --
+  its underside, column by column of the picture, 6 mm over whatever is below it (the leaves' top edges, the arm, its
+  web and the drum), its top at least 4 mm under the soffit -- and sitting on them as low as that allows, 12 mm proud,
+  on its own material (`capital_s2_flower`):
 
-46 objects, 9,859 triangles, all quads but the drums' cap fans and the blank's hidden top.
+  | placement | wall: mm behind the neck's front | leaves, corner to wall | arm, crest |
+  |---|---|---|---|
+  | `pilaster` (piece 07, mesh `capital`) | 180, the wall beside the pilaster (the arch block on its inner side, 200) | bank_L's three inner leaves, ending on the bank's own last leaf; 1.175 | to the wall, its path 0.77 of the band |
+  | `column` (the brick columns) | 273: the brick 0.30 behind the column's face, at 1.097 | bank_L's four inner leaves; 1.183 | to the wall, 1.02 |
+  | `pier` (piece 02) | 504: the recess wall, the pier's 0.2365 at 0.469 | bank_L's three inner leaves, then bank_R's four, the last ending at the notch before its corner leaf; 1.163 | to the valley, 0.82; the scroll at 1.04: 399 x 151 mm over 102..501, its loop on the leaves |
+  | `springing` (the narrow piers) | 593: their cut, 2 cm inside the wall's back, at the widest pier's 0.514 | bank_L's four inner leaves, then bank_R's four; 1.161 | to the valley, 1.07; the scroll at 1.13: 433 x 164 mm over 157..590 |
+
+  The walls are checked where each capital is placed: `linked_capital(kind, wall)` (pieces 02 and 07) and
+  `check_capital_wall` (`assemble_building.py`) refuse a capital whose sides were carved to a wall more than 12 mm off
+  the placement's own (`side_wall_mm` on the mesh), naming the entry of `SIDES` to change. Before this (the same day)
+  every side was cut at one plane 0.18 behind the front (`cut_behind`), leaves and arm cut through wherever it fell
+  and the deeper placements' sides left plain.
+
+The pilasters' capital: 24 objects, 5,367 triangles; the brick columns' 24 and 5,479, the piers' 28 and 6,459, the
+narrow piers' 28 and 6,571 (the front and the blank, 18 objects and 4,427 triangles, are in all four). All quads but
+the drums' cap fans and the blank's hidden top.
 
 History. The carving began as a line trace of the photo (`capital_drawing.svg`) carved through a leaf toolkit
 (`carving.py`) in an editing copy (`capital_edit.py`, 2026-09-28 to 09-30); then came hand-built leaves in a working
@@ -625,7 +726,9 @@ scaled whole -- 0.951, so the carving keeps its proportions. It starts where the
 (the panels' own top, read off them), and the column stops there too rather than running past it. Its base sits on the
 column's face at `COL_OUT`, which puts its front at +0.312 and its flare proud of the shaft; it is 0.919 wide on a
 0.80 column, centred on its span, its back running on into the wall where nothing sees it. The mesh comes from the
-linked portal, so the capitals are built after the link, not with the wall.
+linked portal, so the capitals are built after the link, not with the wall. (Since 2026-10-05 the columns carry their
+own capital, `capital_column` from `ornaments/capital.blend`, its sides carved to the brick, in `CAP_SRC`'s frame;
+the scale and placement are in "The capital stage in the portal and the block".)
 
 The room for them is made by lifting everything from the mid cornice up -- that cornice, the top floor with its
 windows, the top cornice, the parapet and the roof -- by `CAP_LIFT` 0.300 (user 2026-09-16; since 2026-09-17 the
@@ -1120,7 +1223,7 @@ centimetre before the frame, and `sweep(..., caps=True)` closes its ends. The pr
 square edge (20 x 12 mm), a face straight up 10 mm proud, a second small edge (35 x 15), the tall face 25 mm proud
 (0.14), an edge rising on a convex bevel (a 60 x 55 mm quarter ellipse) and the top edge ring 100 mm proud, 48 mm
 tall, its front corners rounded 4 mm; the back 40 mm in the wall; terracotta trim. Every narrow pier between two of a
-set's windows carries the portal's capital (`ge_capital5`, the `ge_capital` mesh) with its neck as wide as the pier
+set's windows carries the portal's capital (`ge_capital5`; since 2026-10-05 its own mesh, from `capital_springing`) with its neck as wide as the pier
 (0.36 / 0.34), `CAP5_H` = `IMP_H` tall with its top on the springing, its neck flush with the pier's face, its abacus
 0.036 proud and its back 0.30 in, inside the panel. The game's block course (`impost_band_*`, `BAND_Z`) is gone with its two readers.
 

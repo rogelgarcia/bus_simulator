@@ -3,14 +3,17 @@
 Each ornament of the atlas (assets/public/textures/bradbury_capital/atlas: the two leaf banks, the horn, the heart, the
 pendant and the crown) is its silhouette cut out as a quad card, extruded ("it must have volume") and wrapped onto the
 photo-proportioned blank (bell.py); the texture does the rest (basecolor, normal, roughness, AO). The horn's roll is a
-drum on the band's end; the corner leaf of each bank rolls forward into a horizontal roll under the drums.
+drum on the band's end; the corner leaf of each bank rolls forward into a horizontal roll under the drums. The front
+is the same everywhere; the side faces are each placement's own (SIDES: the pilasters, the brick columns, the portal's
+piers, the narrow piers), a run of whole leaves from under the corner to the wall beside that placement.
 
     python build.py [build_dir]
 
 System python (numpy + PIL); ../capital.py runs it and imports the result into capital.blend (blender_import.py).
 Writes into build_dir (default: the gitignored cache portal_project/ornaments/cache/capital_stage2) the parts cut from
 the atlas (parts.py), the drum's roll textures (rolltex.py) and stage2_mesh.json: the objects in metres, in the
-capital's frame (x across the face, y depth with the street at -y, z up from the neck), with per-face UVs and slots."""
+capital's frame (x across the face, y depth with the street at -y, z up from the neck), with per-face UVs and slots,
+each tagged with its placement (`variant`; None for the pieces every placement shares), and SIDES' walls (`sides`)."""
 import sys, os, json, math
 import numpy as np
 from PIL import Image
@@ -23,6 +26,7 @@ from trace import signed_area
 REPO = os.path.abspath(os.path.join(HERE, *[".."] * 8))
 TEX_DIR = os.path.join(REPO, "assets", "public", "textures", "bradbury_capital")   # the atlas as delivered + the blank's textures
 ATLAS_DIR = os.path.join(TEX_DIR, "atlas")
+FLOWER_DIR = os.path.join(TEX_DIR, "wall_flower")                     # the owner's wall-facing floral scroll (2026-10-05): its own 2048 x 1024 maps
 BUILD_DIR = os.path.abspath(sys.argv[1]) if __name__ == "__main__" and len(sys.argv) > 1 else os.path.join(
     REPO, "tests", "artifacts", "blender", "bradbury", "portal_project", "ornaments", "cache", "capital_stage2")
 PARTS_DIR = os.path.join(BUILD_DIR, "parts")
@@ -37,11 +41,12 @@ H_CELL = 16.0
 
 class Part:
     """A part's silhouette as a grid card (mm, y up, origin at its alpha box's bottom-left) and its atlas mapping."""
-    def __init__(self, name, mmpx, rot180=False, exclude=None, mask_fn=None, layout_fn=None, sub_fn=None):
+    def __init__(self, name, mmpx, rot180=False, exclude=None, mask_fn=None, layout_fn=None, sub_fn=None, image=None):
         """layout_fn(part) -> card: the piece's own box-modelling layout (quadcards / pieces), built in the card frame
-        from self.sub (the alpha crop; sub_fn may edit it first, e.g. cut the heart's berries)."""
+        from self.sub (the alpha crop; sub_fn may edit it first, e.g. cut the heart's berries). image: a picture
+        outside the atlas (its path), with a texture of its own: the card's uvs then run over that picture."""
         self.name, self.mmpx, self.rot180 = name, mmpx, rot180
-        im = Image.open(os.path.join(PARTS_DIR, name + ".png")).convert("RGBA")
+        im = Image.open(image or os.path.join(PARTS_DIR, name + ".png")).convert("RGBA")
         self.src_w, self.src_h = im.size
         mask = np.array(im)[:, :, 3] >= 128
         if mask_fn is not None: mask = mask_fn(mask)
@@ -62,7 +67,8 @@ class Part:
         polys.sort(key=lambda q: -abs(signed_area(q)))
         self.polys = polys
         self.skirts = []
-        self.crop = PARTS["parts"][name]["crop"]                         # the part image's offset in the atlas
+        self.crop = (0, 0) if image else PARTS["parts"][name]["crop"]   # the part image's offset in the atlas
+        self.tex = im.size if image else (ATLAS, ATLAS)                  # the texture the uvs run over
         self.card = layout_fn(self) if layout_fn is not None else None
         if self.card is not None:
             print("  %-8s %3d x %3d mm  %4d quads" % (name, self.W, self.H, len(self.card.quads)))
@@ -70,7 +76,7 @@ class Part:
         """Card mm -> atlas uv (v up). The card's origin is the alpha box's bottom-left in the (rotated) image."""
         px = self.bx0 + u / self.mmpx; py = self.by1 - v / self.mmpx       # in the rotated image
         if self.rot180: px, py = self.src_w - px, self.src_h - py
-        return ((self.crop[0] + px) / ATLAS, 1.0 - (self.crop[1] + py) / ATLAS)
+        return ((self.crop[0] + px) / self.tex[0], 1.0 - (self.crop[1] + py) / self.tex[1])
 
 
 # ---------------------------------------------------------------- the pieces
@@ -85,16 +91,18 @@ def horn_circle(mask, mmpx):
     cx, cy = -D / 2, -E / 2; r = math.sqrt(cx * cx + cy * cy - F)
     return ((cx - x0) * mmpx, (y1 - cy) * mmpx, r * mmpx)
 
+def bank_layout(pt):
+    """A leaf bank's card: the tight envelope, its corners ON the outline at the tips and notches (walls on the
+    picture's edge), 3 rows."""
+    return EV.envelope_card_tight(pt.sub, pt.mmpx, tol=3.0, merge=8.0, rows=3)
+
+
 def build_pieces():
     print("pieces:")
     P = {}
-    bank_layout = lambda pt: EV.envelope_card_tight(pt.sub, pt.mmpx, tol=3.0, merge=8.0, rows=3)   # corners ON the outline at the tips and notches (walls on the picture's edge), 3 rows
-    P["bank_R"] = Part("bank_R", 0.40, layout_fn=bank_layout); P["bank_L"] = Part("bank_L", 0.40, layout_fn=bank_layout)
-    def drop_outer_left(m):                                            # bank_L without its outer (corner) leaf: the side faces' front halves
-        ys, xs = np.nonzero(m); x0 = xs.min(); W = (xs.max() + 1 - x0) * 0.40
-        cut = x0 + int((W - BANK_ROLL["u_from"]) / 0.40)
-        m = m.copy(); m[:, :cut] = False; return m
-    P["bank_L_inner"] = Part("bank_L", 0.40, mask_fn=drop_outer_left, layout_fn=bank_layout)
+    P["bank_R"] = Part("bank_R", 0.40, layout_fn=bank_layout); P["bank_L"] = Part("bank_L", 0.40, layout_fn=bank_layout)   # whole: the sides' leaves are sliced from them (side_run)
+    P["flower"] = Part("flower", 0.20, image=os.path.join(FLOWER_DIR, "basecolor_rgba.png"), layout_fn=bank_layout)   # the sides' scroll over the leaves (side_crest): cut out like the banks, on its own texture
+    P["flower"].wall_inset, P["flower"].edge_factor = 2.0, 0.35
     P["heart"] = Part("heart", 0.294, sub_fn=lambda sub, pt: PC.cut_heart(sub, pt.mmpx, pt.W, pt.H),
                       layout_fn=lambda pt: PC.heart_polar(pt.polys[0], pt.polys[1:], pt.W, tol=2.5, rows=3))   # beads and berries cut out (3D), a polar ring round each eye
     P["heart"].wall_skip = PC.near_balls(P["heart"].W, P["heart"].H)    # no walls where the 3D beads and berries give the volume
@@ -130,8 +138,8 @@ def build_pieces():
         kb = getattr(q_, "knob_box", (q_.W - 95.0, q_.W) if side_ > 0 else (0.0, 95.0))
         q_.wall_skip = (lambda u, v, kb=kb: v > KNOB["v_cut"] - 8.0 and kb[0] - 6.0 < u < kb[1] + 6.0)   # the roll covers the cut
         P[nm_ + "_front"] = q_
-    for nm_ in ("bank_R", "bank_L", "bank_L_inner", "pendant", "crown", "bank_R_front", "bank_L_front"): P[nm_].wall_inset = 2.0   # walls are kept only on the picture's edge: their colour from 2 mm inside
-    for nm_ in ("bank_R", "bank_L", "bank_L_inner", "pendant", "crown", "heart", "bank_R_front", "bank_L_front"): P[nm_].edge_factor = 0.35   # a cushion: edges at 35 % of the relief, short walls
+    for nm_ in ("bank_R", "bank_L", "pendant", "crown", "bank_R_front", "bank_L_front"): P[nm_].wall_inset = 2.0   # walls are kept only on the picture's edge: their colour from 2 mm inside
+    for nm_ in ("bank_R", "bank_L", "pendant", "crown", "heart", "bank_R_front", "bank_L_front"): P[nm_].edge_factor = 0.35   # a cushion: edges at 35 % of the relief (of the thickness, on a plate), short walls
     for nm_, side_ in (("bank_R", 1.0), ("bank_L", -1.0)): P[nm_].blob = blob_circle(P[nm_], side_)
     hm = np.array(Image.open(os.path.join(PARTS_DIR, "horn.png")).convert("RGBA"))[:, :, 3] >= 128
     cx, cy, r = horn_circle(hm, 0.32)
@@ -198,18 +206,39 @@ ARM_SCALE_CAP_SIDE = 1.30                                            # the side 
 ARM_TAIL_MIN = 190.0                                                  # never below the heart's lower curl                                                      # how far (fraction of the root-tail chord) the arm runs level under the abacus before it dives                                                         # degrees: the arm turned up about the roll, more room for the leaves under it (user 2026-10-03)                                                   # the band stretched toward the face's middle about the roll (its tail reaches the heart's knot: "MOVE")   # each drum faces its own face (user 2026-10-03 "ROTATE" arrows: turn them back to their faces), the two meeting at the corner edge
 BANK_ROLL = dict(u_from=282.0)   # bank_R card mm: where the outer leaf's rolled tip (the texture's blob, drawn in 3/4, "shows a bit of the side") begins; mirrored for bank_L
 PLACES = [
-    # name, piece, faces, options: x0/x1/x (inner edge or centre, mm from the face's middle), z0/z1, relief (u, v) -> mm,
-    # sx (stretch about the inner edge), mirror (card u negated), roll (the outer leaf's curl, "R"/"L" end)
-    ("crown",   "crown",        ("front", "side"), dict(x=0.0, z1=458.0, relief=lambda u, v: 44.0 + 36.0 * min(max(v / 90.0, 0.0), 1.0))),   # its point over the abacus's lower edge (the photo's reaches near the abacus top), leaning forward: 44 mm proud at the foot, 80 at the point, in front of the abacus band (68)
-    ("heart",   "heart",        ("front", "side"), dict(x=0.0, z0=200.0, relief=lambda u, v: 30.0)),
-    ("pendant", "pendant",      ("front", "side"), dict(x=0.0, z1=222.0, relief=lambda u, v: 28.0)),
-    ("bank_R",  "bank_R_front", ("front",),        dict(x0=40.0, z0=76.0, sx=1.15, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), roll="R", drum_touch=True)),   # its corner leaf lands on the corner cut's middle
-    ("bank_L",  "bank_L_front", ("front",),        dict(x1=-40.0, z0=76.0, sx=1.15, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), roll="L", drum_touch=True)),
-    ("bank_F",  "bank_L_inner", ("side",),         dict(x1=-60.0, z0=76.0, sx=1.28, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), sink_edge=("L", 40.0))),   # the side's front half: inner leaves up to the corner leaf; its cut end sinks into the bell under the corner leaf (no wall)
-    ("bank_B",  "bank_R",       ("side",),         dict(x0=60.0, z0=76.0, sx=1.03, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), roll="R")),    # the back half, ending at the back plane
-    ("horn_L",  "horn",         ("front", "side"), dict(drum=-1)),
-    ("horn_R",  "horn",         ("front", "side"), dict(drum=+1, mirror=True)),
+    # the front face: name, piece, options: x0/x1/x (inner edge or centre, mm from the face's middle), z0/z1, relief
+    # (u, v) -> mm, sx (stretch about the inner edge), mirror (card u negated), roll (the outer leaf's curl, "R"/"L" end).
+    # The side faces are each placement's own (SIDES).
+    ("crown",   "crown",        dict(x=0.0, z0=368.0, k=1.3, relief=lambda u, v: 44.0 + 61.0 * min(max(v / 90.0, 0.0), 1.0), thick=lambda u, v: 30.0 - 20.0 * (lambda t: t * t * (3 - 2 * t))(min(max(v / 90.0, 0.0), 1.0)))),   # standing over the abacus's top edge (user 2026-10-05: "it should show above the top edge ... incline it forward so it outstands over the top edge"): 1.3 alike on both axes from its foot on the heart's top bead (368) to 485, 22 over the abacus top (463); a plate leaning forward, its face 44 mm proud at the foot to 105 at the top, 30 mm thick at the foot thinning to 10 at its tips (as a carved leaf; thicker tips read as blocks seen level with the abacus top), closed behind
+    ("heart",   "heart",        dict(x=0.0, z0=200.0, relief=lambda u, v: 30.0)),
+    ("pendant", "pendant",      dict(x=0.0, z1=222.0, relief=lambda u, v: 28.0)),
+    ("bank_R",  "bank_R_front", dict(x0=40.0, z0=76.0, sx=1.15, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), roll="R", drum_touch=True)),   # its corner leaf lands on the corner cut's middle
+    ("bank_L",  "bank_L_front", dict(x1=-40.0, z0=76.0, sx=1.15, relief=lambda u, v: 6.0 + 14.0 * min(v / 260.0, 1.0), roll="L", drum_touch=True)),
+    ("horn_L",  "horn",         dict(drum=-1)),
+    ("horn_R",  "horn",         dict(drum=+1, mirror=True)),
 ]
+# The side faces, one capital per kind of placement (user 2026-10-05, a pier capital's plain side: "this one should be
+# completed till the wall ... don't do a blind cut where ornaments are cut in places where the piece is not complete.
+# put the flowers ... arrange in a way that the full or at least a natural seam (in between flowers) is where it is
+# cut"; "you can resize a bit ... the side doesn't need to be the same drawing as the front"). Each side carries the
+# corner's drum and its whole arm, and a run of whole leaves from under the corner to the wall beside the capital
+# (side_run); the longer sides a crest over the leaves by the wall (side_crest). The front and the blank are the same
+# in every one.
+BANK_SEAMS = dict(bank_L=(132.8, 210.4, 300.8, 342.4), bank_R=(35.2, 76.8, 166.0, 280.4))   # card mm: the notches between neighbouring leaves (the deepest dip of the top edge between two leaf tips); bank_L's corner leaf ends at its first, bank_R's begins at its last
+SL, SR = BANK_SEAMS["bank_L"], BANK_SEAMS["bank_R"]
+SIDES = {
+    # wall: mm behind the neck's front where the wall beside the capital starts (or the capital is cut), the same on
+    # both sides; run: the slices from the corner to the wall, (bank, from, to) in card mm, None for the picture's own
+    # end -- the drum's arm ends over the valley between two slices, or, after one, at the wall; crest: (piece, largest
+    # scale) over the leaves, its right end at the wall
+    "pilaster":  dict(wall=180.0, run=(("bank_L", SL[1], None),)),                               # piece 07: the wall 0.18 behind the pilaster's face (the user's line), the arch block 0.20 on its inner side
+    "column":    dict(wall=273.0, run=(("bank_L", SL[0], None),)),                               # the block's brick columns: 0.30 proud of the brick, the capital at 1.097
+    "pier":      dict(wall=504.0, run=(("bank_L", SL[1], None), ("bank_R", None, SR[3])), crest=("flower", 1.3)),   # piece 02: the pier 0.2365 wide, the capital at 0.469
+    "springing": dict(wall=593.0, run=(("bank_L", SL[0], None), ("bank_R", None, SR[3])), crest=("flower", 1.3)),   # the block's narrow piers: cut 0.305 behind the foot (2 cm inside the wall's back) at 0.514, the widest pier's scale
+}
+RUN = dict(z0=76.0, start=-20.0, sink=40.0, gap=3.0)                  # the runs: their foot (the front banks'), where a run's one scale would start (mm behind the neck's front: under the corner), its first 40 mm growing out of the bell from the corner's edge, its end 3 mm short of the wall
+ARM_WALL = dict(tail_in=12.0, dives=(45.0, 55.0, 65.0, 75.0))        # a one-slice side's arm (user 2026-10-05, a sketch on the pilaster's side, "complete the arm there"): its tail 12 mm short of the wall over the last leaf, diving to it steeply
+CREST = dict(top_gap=4.0, gap=6.0, relief=12.0)                       # the crest (user 2026-10-05, on the pier's plain side over its leaves: "get another ornament to put above the flowers"; the atlas's crown "too stand alone ... doesn't integrate well", then their wall_flower_ornament_PBR): its top at least 4 mm under the abacus soffit, its underside 6 mm over the leaves, the arm and the drum, 12 mm proud
 
 
 def band_flatness(horn):
@@ -405,22 +434,108 @@ def build():
     P = build_pieces()
     objects = []
     leaf_tops = {}                                                        # face_tag -> [(s, z) polylines]: the banks' placed top edges
-    def face(face_tag, anchor, sign):
-        """One face: the front (anchor centre, sign +1) or a side (anchor side, sign +-1). On a side the front half is
-        the mirror of the front face's left half (uflip), the back half its right half with the drum left out."""
-        F = bell.frame_at(0.38)
-        face_len = (F.s_cut_start if anchor == "centre" else (F.s_side_centre - F.s_cut_end)) * 1000.0
-        kind = "front" if anchor == "centre" else "side"
-        for name, pname, faces_, o in PLACES:
-            if kind not in faces_: continue
+    arm_tops = {}                                                         # face_tag -> [(s, z) polyline]: the top of the arm, its web and its drum (the crest keeps over it)
+    def front_face():
+        """The front face (anchor centre): the PLACES pieces."""
+        face_len = bell.frame_at(0.38).s_cut_start * 1000.0
+        for name, pname, o in PLACES:
             piece = P[pname]
-            obj = c3.MeshOut("%s_%s" % (face_tag, name))
-            if "drum" in o:                                              # the horn: band + drum (no drum at a side's back corner)
-                place_horn(obj, objects, P, face_tag, anchor, sign, o["drum"], face_len, o.get("mirror", False))
+            obj = c3.MeshOut("front_%s" % name)
+            if "drum" in o:                                              # the horn: band + drum
+                place_horn(obj, objects, P, "front", "centre", 1.0, o["drum"], face_len, o.get("mirror", False))
                 continue
-            place_card(obj, piece, o, anchor, sign, False, o.get("sx", 1.0))
+            place_card(obj, piece, o, "centre", 1.0, False, o.get("sx", 1.0))
             objects.append(obj)
-            if pname == "heart": add_balls(face_tag, piece, o, anchor, sign)
+            if pname == "heart": add_balls("front", piece, o, "centre", 1.0)
+    def side_face(variant, spec, face_tag, sign):
+        """One side face (anchor side, sign +1 the right one, -1 the left) of one placement's capital: its leaves
+        (side_run), the front corner's drum and its whole arm -- its tail over the leaves' valley, or at the wall when
+        the run is one slice -- and the crest, if any (side_crest). The objects are named after the placement:
+        pier_side_R_bank_0, pier_side_R_drum_L, pier_side_R_flower, ..."""
+        tag = "%s_%s" % (variant, face_tag)
+        tail_s, spans = side_run(tag, sign, spec)
+        F = bell.frame_at(0.38)
+        place_horn(c3.MeshOut("%s_horn_L" % tag), objects, P, tag, "side", sign, -1, (F.s_side_centre - F.s_cut_end) * 1000.0,
+                   False, tail_s=tail_s, dives=ARM_WALL["dives"] if len(spans) == 1 else None)
+        if spec.get("crest"): side_crest(tag, sign, spec["crest"], spec["wall"] - RUN["gap"])
+    def side_crest(tag, sign, crest, y_end):
+        """The scroll over the side's leaves (the owner's wall_flower: one acanthus scroll, its right stem a flush end
+        made to meet the wall): that end at y_end (mm behind the neck's front, the run's own end), the largest scale
+        alike on both axes, up to the crest's own, at which it fits under the abacus -- its underside, column by column
+        of the picture, CREST gap over whatever is below it (the leaves' top edges, the arm, its web and the drum) and
+        its top CREST top_gap under the soffit -- and sitting on them as low as that allows."""
+        pname, k_max = crest
+        piece = P[pname]; W, H = piece.W, piece.H; mm = piece.mmpx; Hs, Ws = piece.sub.shape
+        prof = [((c + 0.5) * mm, (Hs - 1 - int(np.nonzero(piece.sub[:, c])[0].max())) * mm)
+                for c in range(0, Ws, 4) if piece.sub[:, c].any()]            # (u, the picture's lowest v) per column
+        tops = leaf_tops.get(tag, []) + arm_tops.get(tag, [])
+        def floor(s):
+            zs = [float(np.interp(s, pl[:, 0], pl[:, 1], left=-1e9, right=-1e9)) for pl in tops]
+            return max(zs) if zs else -1e9
+        z_lid = bell.Z_ABACUS * 1000.0 - CREST["top_gap"]
+        fit = None
+        for k in np.arange(k_max, 0.4, -0.01):
+            z0 = max(floor(bell.side_s(y_end - (W - u) * k, 250.0)) + CREST["gap"] - v * k for (u, v) in prof)
+            if z0 + H * k <= z_lid: fit = (float(k), float(z0)); break
+        if fit is None: raise RuntimeError("%s: no room for the %s over the leaves" % (tag, pname))
+        k, z0 = fit
+        def place(u, v, w):
+            z = z0 + v * k
+            return bell.wrap(bell.side_s(y_end - (W - u) * k, z), z, w, anchor="side", sign=sign)
+        verts, faces, uvs, mats = extrude(piece.card, place, piece.atlas_uv, lambda u, v: CREST["relief"], None, back_cap=None, piece=piece)
+        mats = [7 if m == 0 else m for m in mats]                         # its face on its own texture (slot flower)
+        if sign < 0: faces = [tuple(reversed(f)) for f in faces]; uvs = [tuple(reversed(uv)) for uv in uvs]
+        obj = c3.MeshOut("%s_%s" % (tag, pname)); obj.add(verts, faces, uvs, 0); obj.mats[-len(mats):] = mats
+        objects.append(obj)
+        print("  %-18s %s at %.2f: %.0f x %.0f mm over y %.0f..%.0f, z %.0f..%.0f" % (tag, pname, k, W * k, H * k, y_end - W * k, y_end, z0, z0 + H * k))
+    def side_run(tag, sign, spec):
+        """A side face's leaves: slices of the banks, each from one notch between two leaves to another (BANK_SEAMS)
+        or to the picture's own end, laid end to end from under the front corner to RUN gap mm short of the wall
+        (spec wall, mm behind the neck's front), all at one stretch along the side (near the front banks' 1.15) and at
+        the front banks' height and relief. The first RUN sink mm grow out of the bell from the corner's edge at every
+        height (the bell flares: the side starts further forward higher up); past them the one stretch holds, so the
+        last leaf meets the wall whole or at its notch. Registers the run's top edge for the arm's search; returns the
+        arm's tail (anchor-relative s: the valley after the first slice, or ARM_WALL tail_in short of the wall for one
+        slice) and each slice's y range."""
+        Z0, SINK = RUN["z0"], RUN["sink"]
+        y_end = spec["wall"] - RUN["gap"]
+        slices, L = [], 0.0
+        for bank, ua, ub in spec["run"]:
+            full = P[bank]; mm = full.mmpx
+            c0 = full.bx0 + int(round((0.0 if ua is None else ua) / mm)); c1 = full.bx1 if ub is None else full.bx0 + int(round(ub / mm))
+            def keep(m, c0=c0, c1=c1):
+                m = m.copy(); m[:, :c0] = False; m[:, c1:] = False; return m
+            pt = Part(bank, mm, mask_fn=keep, layout_fn=bank_layout)
+            pt.wall_inset, pt.edge_factor = 2.0, 0.35
+            slices.append((pt, L + (pt.bx0 - c0) * mm, (full.by1 - pt.by1) * mm, L))   # its card's u 0 along the run, its v 0 over the bank's foot, its start
+            L += (c1 - c0) * mm
+        sx = (y_end - RUN["start"]) / L
+        y_sink = y_end - (L - SINK) * sx
+        def y_at(r, z):
+            if r >= SINK: return y_end - (L - r) * sx
+            y0 = bell.side_start_y(z) - 2.0                               # the corner's edge at this height, 2 mm round it
+            return y0 + (y_sink - y0) * max(r, 0.0) / SINK
+        print("  %-18s %d slice(s): %.0f mm of leaves at %.3f, to %.0f mm behind the neck's front" % (tag, len(slices), L, sx, y_end))
+        for k, (pt, r0, v0, _) in enumerate(slices):
+            def rel(u, v, r0=r0, v0=v0):                                  # the front banks' relief, from nothing at the corner
+                t = min(max((r0 + u) / SINK, 0.0), 1.0); t = t * t * (3 - 2 * t)
+                return (6.0 + 14.0 * min((v + v0) / 260.0, 1.0)) * t
+            def place(u, v, w, r0=r0, v0=v0):
+                z = Z0 + v0 + v
+                return bell.wrap(bell.side_s(y_at(r0 + u, z), z), z, w, anchor="side", sign=sign)
+            if k == 0: pt.wall_skip = lambda u, v, r0=r0: r0 + u < 2.0     # no walls on the edge that starts flat at the corner
+            verts, faces, uvs, mats = extrude(pt.card, place, pt.atlas_uv, rel, None, back_cap=None, piece=pt)
+            if sign < 0: faces = [tuple(reversed(f)) for f in faces]; uvs = [tuple(reversed(uv)) for uv in uvs]
+            obj = c3.MeshOut("%s_bank_%d" % (tag, k)); obj.add(verts, faces, uvs, 0); obj.mats[-len(mats):] = mats
+            objects.append(obj)
+            pts = []
+            for (u, T_) in pt.card.top:
+                z = Z0 + v0 + T_; pts.append((bell.side_s(y_at(r0 + u, z), z), z))
+            leaf_tops.setdefault(tag, []).append(np.array(sorted(pts)))
+        spans = [(y_at(max(r_, SINK), 200.0), y_at(slices[i + 1][3] if i + 1 < len(slices) else L, 200.0))
+                 for i, (_, _, _, r_) in enumerate(slices)]
+        if len(slices) < 2: return bell.side_s(y_end - ARM_WALL["tail_in"], 200.0), spans
+        return bell.side_s(y_at(slices[1][3], 200.0), 200.0), spans
     def add_balls(face_tag, piece, o, anchor, sign):
         """The heart's beads (on the card, half proud) and berries (cut from the card, sunk into the bell) as
         ellipsoids; the texture projected from the front (the card's own atlas mapping)."""
@@ -445,18 +560,12 @@ def build():
         card = piece.card; V2 = np.array(card.verts)
         W = piece.W; uc = W / 2.0
         mirror = o.get("mirror", False)
+        kk = o.get("k", 1.0)                                                 # a scale alike on both axes, about the inner edge (or the centre) and the foot
         if "x" in o: u_off = o["x"] - uc; ua = uc
         elif "x0" in o: u_off = o["x0"]; ua = 0.0                           # scaled about the inner edge
         else: u_off = o["x1"] - W; ua = W
-        v_off = (o["z0"] if "z0" in o else o["z1"] - piece.H)
-        rel0 = o["relief"]
-        rel = rel0
-        if "sink_edge" in o:                                                 # the relief fades to nothing toward that card edge
-            edge, width = o["sink_edge"]
-            def rel(u, v, rel0=rel0, edge=edge, width=width):
-                d = u if edge == "L" else W - u
-                t = min(max(d / width, 0.0), 1.0); t = t * t * (3 - 2 * t)
-                return rel0(u, v) * t
+        v_off = (o["z0"] if "z0" in o else o["z1"] - piece.H * kk)
+        rel = o["relief"]
         roll = None
         if o.get("roll"):
             roll = dict(BANK_ROLL)
@@ -470,30 +579,30 @@ def build():
             squash = (min(1.0, (z_roll - 0.3 * CURL_ROLL["r"] - v_off) / KNOB["v_cut"]), roll["u_from"] - 70.0 * roll["side"], roll["side"])
         def place(u, v, w):
             uu = 2 * uc - u if mirror else u
-            uu = ua + (uu - ua) * sx
-            vv = v
+            uu = ua + (uu - ua) * sx * kk
+            vv = v * kk
             if squash is not None:
                 sy_out, u0_, sd_ = squash
                 fq = min(max((u - u0_) * sd_ / 70.0, 0.0), 1.0); fq = fq * fq * (3 - 2 * fq)
-                vv = v * (1.0 + (sy_out - 1.0) * fq)
+                vv = vv * (1.0 + (sy_out - 1.0) * fq)
             return bell.wrap(uu + u_off, vv + v_off, w, anchor=anchor, sign=sign, uflip=uflip)
-        thick = None
+        thick = o.get("thick")                                               # (u, v) -> mm: a plate that thick, closed behind, instead of a body down to the bell
         back_fn = None
         if piece.name.startswith("bank") and hasattr(card, "top"):
             pts = []
             for (u, T_) in card.top:
                 uu = 2 * uc - u if mirror else u
-                uu = ua + (uu - ua) * sx
-                vv = T_
+                uu = ua + (uu - ua) * sx * kk
+                vv = T_ * kk
                 if squash is not None:
                     sy_out, u0_, sd_ = squash
                     fq = min(max((u - u0_) * sd_ / 70.0, 0.0), 1.0); fq = fq * fq * (3 - 2 * fq)
-                    vv = T_ * (1.0 + (sy_out - 1.0) * fq)
+                    vv = vv * (1.0 + (sy_out - 1.0) * fq)
                 s_ = uu + u_off
                 pts.append(((-s_ if uflip else s_), vv + v_off))
             pts = np.array(sorted(pts))
             leaf_tops.setdefault(obj.name.split("_bank")[0], []).append(pts)
-        verts, faces, uvs, mats = extrude(card, place, piece.atlas_uv, rel, thick, back_cap=None, piece=piece)
+        verts, faces, uvs, mats = extrude(card, place, piece.atlas_uv, rel, thick, back_cap=thick is not None, piece=piece)
         if (sign < 0) != bool(uflip) != bool(mirror):
             faces = [tuple(reversed(f)) for f in faces]; uvs = [tuple(reversed(uv)) for uv in uvs]
         obj.add(verts, faces, uvs, 0); obj.mats[-len(mats):] = mats
@@ -528,13 +637,26 @@ def build():
             cobj.add(cv_, cf_, cuv_, 0); cobj.mats[-len(cm_):] = cm_
             objects.append(cobj)
 
-    def place_horn(obj, objects, P, face_tag, anchor, sign, d, face_len, mirror):
+    def place_horn(obj, objects, P, face_tag, anchor, sign, d, face_len, mirror, arm=True, tail_s=None, dives=None):
         """The band (grid card without the roll's circle) with its end landing on the drum's face, and the drum (the
         circle as a disc, extruded) hung at the face's end. d = +1: toward +s (the right corner on the front, the
-        back corner on a side); -1: toward -s. A side's back corner gets no drum (the wall): the band ends there."""
+        back corner on a side); -1: toward -s. A side's back corner gets no drum (the wall): the band ends there.
+        arm False: the drum alone; tail_s: the arm's tail there (anchor-relative s, mm) instead of ARM_TAIL's, 45 mm
+        short of the face's middle; dives: the angles (degrees under level) its search tries for the arm's end."""
         horn = P["horn"]; card = horn.card; cx, cy, r = horn.circle
         W = horn.W; uc = W / 2.0
         has_drum = not (anchor == "side" and d > 0)
+        def add_drum(g):
+            # the drum: a cylinder with a rounded front edge and a dished spiral face; its rim wears the band itself
+            # (a roll is the band rolled up), the first 150 mm of the band from the roll, repeated round the rim
+            disc = P["disc"]; C, n_b, e_b, up_b, relief = g["C"], g["n_b"], g["e_b"], g["up_b"], ROLL["relief"]
+            mirror_tex = bool(mirror) != (sign < 0)
+            dobj = c3.MeshOut("%s_drum_%s" % (face_tag, "R" if d > 0 else "L"))
+            dv_, df_, duv_, dm_ = build_drum(disc, (cx, cy, r), C, n_b, e_b * (-1.0 if mirror_tex else 1.0), up_b, relief, ROLL, horn, rot=horn.alpha)
+            if mirror_tex:
+                df_ = [tuple(reversed(f)) for f in df_]; duv_ = [tuple(reversed(uv)) for uv in duv_]
+            dobj.add(dv_, df_, duv_, 0); dobj.mats[-len(dm_):] = dm_
+            objects.append(dobj)
         # the drum's centre on the face: ROLL_AT_END past the face's end toward d, its top touching the abacus soffit
         # (photo: the volute spans 282-430 mm, r 74 -- user 2026-10-03 "TOUCH")
         s_c = d * (face_len + ROLL_AT_END); z_c = bell.Z_ABACUS * 1000.0 - r - 1.0
@@ -554,9 +676,12 @@ def build():
             q = p - np.array([cx, cy]); q = np.array([ca_ * q[0] - sa_ * q[1], sa_ * q[0] + ca_ * q[1]])
             return np.array([s_c + mx * q[0], z_c + q[1]])
         P0 = rigid(T[k0])                                                 # the root chord's middle, where the band leaves the roll
+        if not arm:
+            horn.alpha = alpha; add_drum(roll_geom(s_c, z_c, anchor, sign)); return
         off_sign = 1.0 if gdir > 0 else -1.0                              # the texture's top edge stays on top on both arms
+        tail_x = -gdir * ARM_TAIL[0] if tail_s is None else tail_s
         def make_path(level, a3d, tail_z):
-            P3 = np.array([-gdir * ARM_TAIL[0], tail_z])
+            P3 = np.array([tail_x, tail_z])
             chord = float(np.hypot(*(P3 - P0)))
             B1 = P0 + np.array([gdir * level * chord, 0.0])
             a3 = math.radians(a3d); tang3 = np.array([gdir * math.cos(a3), -math.sin(a3)])
@@ -620,7 +745,7 @@ def build():
         # the search: the lowest tail (user: "lower the base of the arm, the maximum possible without touching the leaves")
         best = None
         for level in (0.25, 0.35, 0.45, 0.55):
-            for a3d in (25.0, 35.0, 45.0):
+            for a3d in (dives or (25.0, 35.0, 45.0)):
                 for tz in np.arange(ARM_TAIL_MIN, ARM_TAIL[1] + 60.0, 3.0):
                     Bz_, sB_ = make_path(level, a3d, tz)
                     if clearance(mapper(Bz_, sB_)) >= ARM_GAP:
@@ -629,6 +754,8 @@ def build():
         if best is None: best = (ARM_TAIL[1], ARM_LEVEL, 35.0)
         Bz, sB = make_path(best[1], best[2], best[0]); LB = sB[-1]
         arm_map = mapper(Bz, sB)
+        arm_pts = [arm_map(te_, off_, uv_) for (te_, off_, uv_) in samp]
+        if has_drum: arm_pts += [(s_c + r * math.cos(a_), z_c + r * math.sin(a_)) for a_ in np.linspace(0.0, 2.0 * math.pi, 48)]
         print("  %-14s arm: tail z %.0f mm, level %.2f, dive %.0f deg, clearance %.1f mm, path / texture length %.2f" % (
             face_tag + "_" + ("R" if d > 0 else "L"), best[0], best[1], best[2], clearance(arm_map), LB / LT0))
         def tex_param(u, v):
@@ -711,17 +838,13 @@ def build():
             if wf:
                 obj.add(wv, wf, wu, 0); obj.mats[-len(wm):] = wm
         objects.append(obj)
-        if not has_drum: return
-        # the drum: a cylinder with a rounded front edge and a dished spiral face; its rim wears the band itself
-        # (a roll is the band rolled up), the first 150 mm of the band from the roll, repeated round the rim
-        disc = P["disc"]; C, n_b, e_b, up_b, relief = g["C"], g["n_b"], g["e_b"], g["up_b"], ROLL["relief"]
-        mirror_tex = bool(mirror) != (sign < 0)
-        dobj = c3.MeshOut("%s_drum_%s" % (face_tag, "R" if d > 0 else "L"))
-        dv_, df_, duv_, dm_ = build_drum(disc, (cx, cy, r), C, n_b, e_b * (-1.0 if mirror_tex else 1.0), up_b, relief, ROLL, horn, rot=horn.alpha)
-        if mirror_tex:
-            df_ = [tuple(reversed(f)) for f in df_]; duv_ = [tuple(reversed(uv)) for uv in duv_]
-        dobj.add(dv_, df_, duv_, 0); dobj.mats[-len(dm_):] = dm_
-        objects.append(dobj)
+        if has_drum: add_drum(g)
+        arm_pts = np.array(arm_pts + ([tuple(p) for p in lif] if has_drum else []), float)   # the upper envelope of the arm, its web and its drum
+        bins = np.arange(arm_pts[:, 0].min(), arm_pts[:, 0].max() + 4.0, 4.0); top = np.full(len(bins), np.nan)
+        for i_, z_ in zip(np.clip(((arm_pts[:, 0] - bins[0]) / 4.0).astype(int), 0, len(bins) - 1), arm_pts[:, 1]):
+            top[i_] = z_ if np.isnan(top[i_]) else max(top[i_], z_)
+        ok_ = ~np.isnan(top)
+        arm_tops.setdefault(face_tag, []).append(np.column_stack([bins, np.interp(bins, bins[ok_], top[ok_])]))
 
     def roll_geom(s_c, z_c, anchor, sign):
         C = np.array(bell.wrap(s_c, z_c, ROLL["relief"], anchor=anchor, sign=sign, flat="cut"))
@@ -738,9 +861,12 @@ def build():
         up_b = np.cross(n_b, e_b)
         return dict(C=C, n_b=n_b, e_b=e_b, up_b=up_b)
 
-    face("front", "centre", 1.0)
-    face("side_R", "side", 1.0)
-    face("side_L", "side", -1.0)
+    front_face()
+    for variant, spec in SIDES.items():                                   # each placement's two side faces
+        n0 = len(objects)
+        side_face(variant, spec, "side_R", 1.0)
+        side_face(variant, spec, "side_L", -1.0)
+        for o in objects[n0:]: o.variant = variant
     # the blank: neck and abacus mouldings textured, the bell a plain clay patch, each its own material
     bm = bell.blank_mesh(lod=1)
     blank = c3.MeshOut("blank")
@@ -755,30 +881,36 @@ def build():
         mats.append(slot[m])
     blank.add(bm["verts"], bm["faces"], uvs, 0); blank.mats = mats
     objects.append(blank)
-    MATS = ["atlas", "atlas_noclip", "abacus", "neck", "bell", "sides", "roll"]   # the slots, in order (blender_import.py)
-    out = dict(materials=MATS, objects=[o.as_dict() for o in objects],
+    MATS = ["atlas", "atlas_noclip", "abacus", "neck", "bell", "sides", "roll", "flower"]   # the slots, in order (blender_import.py)
+    out = dict(materials=MATS, objects=[dict(o.as_dict(), variant=getattr(o, "variant", None)) for o in objects],   # variant None: in every placement's capital
+               sides={k: dict(wall=v["wall"], crest=v["crest"][0] if v.get("crest") else "") for k, v in SIDES.items()},
                textures=dict(atlas_dir=ATLAS_DIR, basecolor="basecolor_rgba.png", normal="normal_opengl.png", roughness="roughness.png",
                              ao="ambient_occlusion.png", abacus=os.path.join(TEX_DIR, "abacus.png"), neck=os.path.join(TEX_DIR, "neck.png"),
-                             bell=os.path.join(TEX_DIR, "bell.png"), roll_dir=ROLL_TEX_DIR))
+                             bell=os.path.join(TEX_DIR, "bell.png"), roll_dir=ROLL_TEX_DIR, flower_dir=FLOWER_DIR))
     json.dump(out, open(os.path.join(BUILD_DIR, "stage2_mesh.json"), "w"))
     nq = sum(len(o.faces) for o in objects); ntri = sum(sum(len(f) - 2 for f in o.faces) for o in objects)
     print("objects %d, faces %d (%d triangles), verts %d" % (len(objects), nq, ntri, sum(len(o.verts) for o in objects)))
+    for variant in SIDES:
+        sel = [o for o in objects if getattr(o, "variant", None) in (None, variant)]
+        print("  the %-9s capital: %d objects, %d triangles" % (variant, len(sel), sum(sum(len(f) - 2 for f in o.faces) for o in sel)))
 
 
 def extrude(card, place, uvfn, relief, thickness, back_cap=None, piece=None):
     """Grid card -> front cap (slot 0, alpha clipped), optional back cap, and the skirt (slot 5): walls along the
-    picture's own outline and holes (piece.skirts), from the card's surface down to the bell."""
+    picture's own outline and holes (piece.skirts), from the card's surface down to the bell -- or, given a thickness,
+    to the plate's own back."""
     V2 = np.array(card.verts); n = len(V2)
+    rel_in = relief
+    def wback(u, v):                                                      # the back: on the bell, or a plate's own back
+        return 0.0 if thickness is None else rel_in(u, v) - thickness(u, v)
     ef = getattr(piece, "edge_factor", 1.0) if piece is not None else 1.0
-    if ef != 1.0:                                                         # a cushion: the card's edge vertices lower, so its walls are short
+    if ef != 1.0:                                                         # a cushion: the card's edge vertices lowered toward the back, so its walls are short
         edge_v = set(i for e_ in qc.boundary_edges(card.quads) for i in e_)
-        rel_in = relief
         def relief(u, v, _r=rel_in, _V=V2, _ev=edge_v, _ef=ef):
             k = int(np.argmin(np.hypot(_V[:, 0] - u, _V[:, 1] - v)))
-            return _r(u, v) * (_ef if (k in _ev and abs(_V[k, 0] - u) + abs(_V[k, 1] - v) < 1e-6) else 1.0)
+            if not (k in _ev and abs(_V[k, 0] - u) + abs(_V[k, 1] - v) < 1e-6): return _r(u, v)
+            b = wback(u, v); return b + _ef * (_r(u, v) - b)
     front = [place(u, v, relief(u, v)) for (u, v) in V2]
-    def wback(u, v):
-        return 0.0 if thickness is None else relief(u, v) - thickness(u, v)
     back = [place(u, v, wback(u, v)) for (u, v) in V2]
     verts = front + back
     faces, uvs, mats = [], [], []

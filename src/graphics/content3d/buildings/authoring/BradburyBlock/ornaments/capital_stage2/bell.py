@@ -116,6 +116,26 @@ def wrap(s_mm, z_mm, w_mm, anchor="centre", sign=1.0, flat="none", uflip=False):
     return (float(x), float(y), float(z))
 
 
+def side_start_y(z_mm):
+    """Where the right side face starts at height z_mm (the corner cut's end): mm behind the neck's front (YF)."""
+    F = frame_at(z_mm / 1000.0); q, _ = F.point(F.s_cut_end)
+    return (q[1] - YF) * 1000.0
+
+
+def side_s(y_mm, z_mm):
+    """The arc length wrap(anchor='side') takes -- mm from the right side face's middle -- of the outline point at
+    height z_mm that lies y_mm behind the neck's front: on the side face, or on the corner cut in front of its start
+    (y grows steadily from the cut's start to the back); past the back, straight on."""
+    F = frame_at(z_mm / 1000.0); y = YF + y_mm / 1000.0
+    S, P = F.s, F.P
+    i = max(int(np.searchsorted(S, F.s_cut_start)) - 1, 0)
+    while i < len(S) - 1 and P[i + 1][1] < y: i += 1
+    if i >= len(S) - 1: return (S[-1] - F.s_side_centre + (y - P[-1][1])) * 1000.0
+    y0, y1 = P[i][1], P[i + 1][1]
+    t = 0.0 if y1 == y0 else min(max((y - y0) / (y1 - y0), 0.0), 1.0)
+    return (S[i] + t * (S[i + 1] - S[i]) - F.s_side_centre) * 1000.0
+
+
 # ---------------------------------------------------------------- the blank as geometry (verts, quads, uvs, material slot)
 def blank_mesh(lod=1):
     """Neck (cove, fillet, torus) swept round the front and sides, bell lofted between outlines, abacus (soffit,

@@ -115,6 +115,31 @@ def portal_matrix(face_x, yc, angle):
 bpy.ops.wm.open_mainfile(filepath=BASE)
 S = bpy.context.scene
 FIT = bpy.data.collections.new("PORTAL_FIT"); S.collection.children.link(FIT)   # everything built to fit the portal and the references
+# The capital the portal carries (ornaments/capital.blend, the stage portal_lib.CAPITAL_STAGE picks), its height read now,
+# before the portal is linked: the brick columns are built first and stop under it. The file holds one capital per
+# placement, alike but for its side faces, which the carved one carries as far as the wall beside it (portal_lib
+# CAPITAL_MESHES): `capital` on the portal's pilasters, `capital_column` on the brick columns, `capital_springing` on
+# the top floor's narrow piers.
+CAPITAL = os.path.join(ART, "portal_project", "ornaments", "capital.blend")
+CAP_REF_H = 0.41                                   # the plain capital's height (portal_lib.CAPITAL_REF_H), which the band over the fourth floor was made for
+with bpy.data.libraries.load(CAPITAL, link=True, relative=True) as (data_from, data_to):
+    data_to.meshes = ["capital", "capital_column", "capital_springing"]
+CAP_MESHES = dict(zip(("pilaster", "column", "springing"), data_to.meshes))
+assert all(CAP_MESHES.values()), f"{CAPITAL} has no capital_column / capital_springing: run ornaments/capital.py (or use_capital_stage.py)"
+def capital_top(me):                               # the abacus's top over the neck's foot (portal_lib.capital_top): the crown stands above it
+    return float(me["capital_top"]) if "capital_top" in me else max(v.co.z for v in me.vertices)
+CAP_EXPORT_H = capital_top(CAP_MESHES["pilaster"])   # 0.41 plain, 0.463 carved
+CAP_NECK_W = 2 * max(abs(v.co.x) for v in CAP_MESHES["pilaster"].vertices if v.co.z < 0.02)   # its neck's width at the foot
+# portal_lib.CAPITAL_PROPORTIONAL: the carved capital is never distorted -- scaled alike on every axis, its neck as wide as
+# its column, cut or buried where it does not fit (user 2026-10-05); the plain one is fitted to the band as it always was
+CAP_PROPORTIONAL = int(CAP_MESHES["pilaster"].get("capital_stage", 1)) >= 2
+def check_capital_wall(kind, wall_mm, tol=12.0):
+    """A carved capital's side faces reach the wall they were carved for (build.py SIDES, `side_wall_mm` on the mesh):
+    refuse one whose wall is not where this placement's is (mm behind its neck, in the capital's frame)."""
+    carved = CAP_MESHES[kind].get("side_wall_mm")
+    assert carved is None or abs(carved - wall_mm) <= tol, (
+        f"{CAP_MESHES[kind].name}'s side faces are carved to a wall {carved:.0f} mm behind its neck, this placement's is "
+        f"{wall_mm:.0f} mm: set its wall in SIDES (ornaments/capital_stage2/build.py) and run use_capital_stage.py")
 def wbbox(o):
     pts = [o.matrix_world @ Vector(c) for c in o.bound_box]
     return Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts))), Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
@@ -1958,11 +1983,14 @@ def build_upper_wall(old):
     # the brick columns (user 2026-09-12 and 2026-09-16, reference): one over every storefront pier, `column_spans`,
     # continuing the pillar under it up through the zone's blocks to the mid cornice, as wide as those blocks and flush
     # with them, part of the wall itself so the brick runs on
-    cap_bot = max(h[4] for h in frame_boxes() if h[4] < 15.2) + RECESS_ABOVE   # where the window recesses end: the capitals stand there
+    cap_bot = max(h[4] for h in frame_boxes() if h[4] < 15.2) + RECESS_ABOVE   # where the window recesses end: the plain capitals stand there
+    k_col = COL_W / CAP_NECK_W if CAP_PROPORTIONAL else (WALL24_TOP - cap_bot) / CAP_REF_H   # the capital's scale (below, CAP_FOOT): neck as wide as the column, or the plain one fitted to the band
+    col_top = WALL24_TOP - k_col * CAP_EXPORT_H                                      # its top on WALL24_TOP, so a larger capital starts lower: the column stops under it
+    print(f"the brick columns run up to {col_top:.3f}, the foot of a {CAP_EXPORT_H:.3f} capital (the window recesses end at {cap_bot:.3f})")
     for fi in range(len(FACES)):
         F = rh_frame(fi); spans = column_spans(fi)
         for a, b in spans:
-            cut_world_box(wall, -b, -a, BRICK_OUT - 0.10, COL_OUT, z0 + 0.001, cap_bot, frame=F, op='UNION')
+            cut_world_box(wall, -b, -a, BRICK_OUT - 0.10, COL_OUT, z0 + 0.001, col_top, frame=F, op='UNION')
         print(f"face {PORTAL_TAG.get(fi, fi)}: {len(spans)} brick columns at " + ", ".join(f"{a:.2f}" for a, b in spans))
     # The whole wall stands on the one plane now (user 2026-09-15), so every window on these floors travels the same
     # BRICK_OUT + FIELD_IN with it -- frames, glass, bars, backdrops and sills -- and keeps the reveal it had.
@@ -2673,19 +2701,30 @@ assert not _tall, f"something still stands over the wall head, where the crown i
 print("the game's crown taken down (the cornice, its dentil course, the parapet band and its coping, 19.102..19.802): "
       "the roof deck is the top of the block until the four courses are built on it")
 CAP_SRC = "pilaster_L_capital"
-def capital_mesh():
+def capital_mesh(src_me, name):
+    """A copy of one of the capital file's meshes (CAP_MESHES) in the frame the block places capitals in: x across
+    from the middle, y back from the front, z up from the foot, measured on the portal's pilaster capital (CAP_SRC),
+    so every placement's capital (all in one frame, alike but for their sides) gets the same."""
     src = bpy.data.objects[CAP_SRC]; mw = src.matrix_world
     pts = [mw @ v.co for v in src.data.vertices]
     x0, x1 = min(q.x for q in pts), max(q.x for q in pts)
     y0, y1 = min(q.y for q in pts), max(q.y for q in pts)                 # the portal faces -y, so y0 is its front
     z0 = min(q.z for q in pts); z1 = max(q.z for q in pts); cx = (x0 + x1) / 2
     base = min(q.y for q in pts if q.z < z0 + 0.02) - y0                  # how far back the capital's own base sits
-    me = src.data.copy(); me.name = "ge_capital"
-    for v, q in zip(me.vertices, pts): v.co = Vector((q.x - cx, q.y - y0, q.z - z0))   # across, back from the front, up
+    me = src_me.copy(); me.name = name
+    for v in me.vertices:
+        q = mw @ v.co; v.co = Vector((q.x - cx, q.y - y0, q.z - z0))     # across, back from the front, up
     me.update()
-    return me, (x1 - x0), (y1 - y0), (z1 - z0), base
-CAP_BOT = max(wbbox(q)[1].z for q in window_panels)                       # where the window recesses end, the capitals' foot
-_me, _w, _d, _h, _base = capital_mesh(); _k = (WALL24_TOP - CAP_BOT) / _h
+    return me, (x1 - x0), (y1 - y0), capital_top(src.data), base         # its height to the abacus's top (the crown above it)
+CAP_BOT = max(wbbox(q)[1].z for q in window_panels)                       # where the window recesses end: the plain capital's foot
+_me, _w, _d, _h, _base = capital_mesh(CAP_MESHES["column"], "ge_capital")   # the brick columns' own capital
+_k = COL_W / CAP_NECK_W if CAP_PROPORTIONAL else (WALL24_TOP - CAP_BOT) / CAP_REF_H   # the carved capital's neck as wide as the column (user 2026-10-05: "adjust the size so it uses the width of the pillar"); the plain one fitted to the band
+_shaft_top = max((bpy.data.objects["pilaster_L_shaft"].matrix_basis @ v.co).z for v in bpy.data.objects["pilaster_L_shaft"].data.vertices)
+_cap_foot = min((bpy.data.objects[CAP_SRC].matrix_basis @ v.co).z for v in bpy.data.objects[CAP_SRC].data.vertices)   # the stored transforms: an instanced collection's linked objects are not evaluated
+assert abs(_cap_foot - _shaft_top) < 1e-3 and abs(_h - CAP_EXPORT_H) < 1e-4, (
+    f"the portal's shafts end at {_shaft_top:.3f} under a capital starting at {_cap_foot:.3f}: it was built for another capital stage (run use_capital_stage.py)")
+CAP_FOOT = WALL24_TOP - _k * _h                                           # its top on WALL24_TOP: the taller carved capital comes down past CAP_BOT, over that much more of its column
+check_capital_wall("column", (COL_OUT - BRICK_OUT) / _k * 1000.0)         # its neck on the column's face, the brick COL_RELIEF behind it
 _flare = (_w * _k - COL_W) / 2; _front = COL_OUT + _k * _base             # its base flush with the column, the rest proud of it
 n_cap = 0
 for fi in range(len(FACES)):
@@ -2695,10 +2734,10 @@ for fi in range(len(FACES)):
         base = A + d * ((a + b) / 2) + nrm * _front
         o.matrix_world = Matrix(((d.x * _k, -nrm.x * _k, 0.0, base.x),
                                  (d.y * _k, -nrm.y * _k, 0.0, base.y),
-                                 (0.0, 0.0, _k, CAP_BOT),
+                                 (0.0, 0.0, _k, CAP_FOOT),
                                  (0.0, 0.0, 0.0, 1.0)))
         n_cap += 1
-print(f"a capital on each of the {n_cap} brick columns: the portal's own, scaled {_k:.3f} to {CAP_BOT:.3f}..{WALL24_TOP:.3f} "
+print(f"a capital on each of the {n_cap} brick columns: the portal's own, scaled {_k:.3f} to {CAP_FOOT:.3f}..{WALL24_TOP:.3f} "
       f"({_w * _k:.3f} wide on a {COL_W:.2f} column, its base on the column's face at {COL_OUT:+.2f} and its front {_front:+.3f})")
 # The band between floors 4 and 5 (user 2026-09-17, photos 1-3): one box per deep run of every face -- from a corner
 # stretch's end to the centre pavilion, from the pavilion to the far corner -- standing on the capitals' top, B45_Z0 to
@@ -2938,7 +2977,8 @@ print(f"the archivolts: {n_av[0]} bands round the top floor's arches, {AV_W * 10
       f"merge where two windows meet; the trim's terracotta on {n_av_mat}")
 n_capm = 0
 for o in [q for q in bpy.data.objects if q.type == 'MESH' and q.name.startswith("ge_capital")]:   # the capitals too (user 2026-09-17)
-    o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_capm += 1
+    if len(o.data.materials) == 1:                 # the plain capital's one stone slot; the carved one keeps its own textured slots (atlas, alpha cut-outs)
+        o.data.materials.clear(); o.data.materials.append(TRIM_PBR); n_capm += 1
 for o in [q for q in bpy.data.objects if q.name.startswith("ge_band45")]:                         # the band's margins and its other faces
     o.data.materials[1] = TRIM_PBR
 print("the band's margins: " + ", ".join(f"{o.name} {o['band_cols']} columns, side margins {o['band_side_margin']:.3f}, the columns stretched {(o['band_stretch'] - 1) * 100:+.2f}%" for o in bpy.data.objects if o.name.startswith("ge_band45")))
@@ -3097,9 +3137,15 @@ def add_bracket(bm, sc):
     for i in range(n): bm.faces.new((L[i], L[(i + 1) % n], R[(i + 1) % n], R[i]))
     bm.faces.new(L[::-1]); bm.faces.new(R)                                       # the sides are planar: the taper is linear in z
 BRK_MAT = TRIM_PBR                                 # the band's own terracotta (user 2026-09-17); the capitals keep the portal's stone
-n_brk, brk_bays = 0, []
+# The capitals' abaci reach CAP_OV past their columns' faces. Where that leaves less than BRK_CAP_GAP to a bay's first
+# bracket -- the carved capital at its column's width (user 2026-10-05) reaches 0.177, within 1 to 3 cm of most first
+# brackets -- the bay's brackets are spaced from the capitals' ends, BRK_CAP_GAP clear, instead of from the columns'
+# faces. The gap is the least the plain capital leaves (0.06), which never triggers this, so its brackets stay put.
+CAP_OV, BRK_CAP_GAP = max(0.0, (_w * _k - COL_W) / 2), 0.06
+n_brk, brk_bays, n_brk_moved = 0, [], 0
 for fi in range(len(FACES)):
     outs = out_stretches(fi); cols = column_spans(fi); tag = PORTAL_TAG.get(fi, fi)
+    col_edges = {x for c0, c1 in cols for x in (c0, c1)}
     for k in range(1, len(outs)):
         a, b = outs[k - 1][1], outs[k][0]
         if b - a < 0.05: continue
@@ -3107,13 +3153,17 @@ for fi in range(len(FACES)):
         for j, (s0, s1) in enumerate(zip(edges[::2], edges[1::2])):
             n = BRK_N.get(n_windows(fi, s0, s1, 12.3, 15.25), 0)
             if not n: continue
+            if CAP_OV + BRK_CAP_GAP > (s1 - s0) / n / 2 - BRK_W_TOP / 2:   # a capital would come within BRK_CAP_GAP of the first bracket: space them between the capitals' ends
+                s0 += (CAP_OV + BRK_CAP_GAP) if s0 in col_edges else 0.0
+                s1 -= (CAP_OV + BRK_CAP_GAP) if s1 in col_edges else 0.0
+                n_brk_moved += 1
             bm = bmesh.new(); pitch = (s1 - s0) / n
             for i in range(n): add_bracket(bm, s0 + pitch * (i + 0.5))
             o = mesh_from_bm(f"ge_bracket45_{tag}_{k}_{j}", bm, BRK_MAT, FIT, smooth=True)
             o.matrix_world = rh_frame(fi) @ Matrix.Translation((0.0, 0.0, B45_Z0 - BRK_H))
             if hasattr(o.data, "set_sharp_from_angle"): o.data.set_sharp_from_angle(angle=math.radians(40.0))
             n_brk += n; brk_bays.append(f"{tag}:{s0:.2f}..{s1:.2f}x{n}")
-print(f"the brackets under the band: {n_brk} in {len(brk_bays)} bays, {BRK_H:.2f} tall from {B45_Z0:.3f} down with a {BRK_HEAD:.2f} head, "
+print(f"the brackets under the band: {n_brk} in {len(brk_bays)} bays ({n_brk_moved} of them spaced from the capitals' ends, which reach {CAP_OV:.3f} past their columns), {BRK_H:.2f} tall from {B45_Z0:.3f} down with a {BRK_HEAD:.2f} head, "
       f"{BRK_W_TOP:.2f}/{BRK_W_BOT:.2f} wide, flush with the band at {B45_FRONT:+.2f}: " + ", ".join(brk_bays))
 # The cornices at the band's foot and head (user 2026-09-17, photos 6 and 7). Both go right round the building, over the
 # raised bays as well, and follow the silhouette: the loop they are swept on is the wall's own outline at their height,
@@ -3334,24 +3384,45 @@ for fi, spans in imp_spans.items():                # nothing of the moulding mor
         inside = [face_sd(fi, q)[0] for q in _iw if on_face(q) == fi and abs(face_sd(fi, q)[1] - pl) < 0.5 and s0 < face_sd(fi, q)[0] < s1]
         worst = max([min(sv - s0, s1 - sv) for sv in inside], default=0.0)
         assert worst < IMP_CLIP + 1e-4, f"face {fi}: the moulding reaches {worst:.3f} into the set at {s0:.2f}..{s1:.2f}"
-cap_me = bpy.data.meshes["ge_capital"]             # the brick columns' capital: x across, y from the abacus's front into the wall, z up from its foot
+cap_me = capital_mesh(CAP_MESHES["springing"], "ge_capital_springing")[0]   # the narrow piers' own capital, in the brick columns' frame: x across, y from the abacus's front into the wall, z up from its foot
 cap_foot = [v.co for v in cap_me.vertices if v.co.z < 0.02]
 CAP_NECK, CAP_BACK = 2 * max(abs(q.x) for q in cap_foot), min(q.y for q in cap_foot)   # the neck's width (0.733) and how far behind the abacus's front it stands (0.117)
-CAP_D, CAP_H = max(v.co.y for v in cap_me.vertices), max(v.co.z for v in cap_me.vertices)   # its depth (0.971) and height (0.410)
+CAP_D, CAP_H = max(v.co.y for v in cap_me.vertices), capital_top(cap_me)   # its depth (0.971) and height to the abacus's top (0.410)
+def cut_back(me_src, y_back, name):
+    """A copy of the capital mesh cut at y = y_back (y from the abacus's front into the wall), the part in front of the
+    plane kept. Cut outlines that close into loops are filled in the bell's clay; the blank's surfaces are open shells,
+    so mostly none do, and the cut is placed inside the wall, where nothing sees it."""
+    me = me_src.copy(); me.name = name
+    bm = bmesh.new(); bm.from_mesh(me)
+    res = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0.0, y_back, 0.0), plane_no=(0.0, 1.0, 0.0), clear_outer=True)
+    filled = bmesh.ops.holes_fill(bm, edges=[e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)], sides=0)["faces"]
+    slot = next((i for i, m in enumerate(me.materials) if m and m.name.startswith("capital_s2_bell")), 0)
+    for f in filled: f.material_index = slot
+    bm.to_mesh(me); bm.free()
+    return me, len(filled)
+piers5 = [(fi, sa + wa / 2, sb - wb / 2, pl) for fi, pname, pl, ws in imp_sets for (sa, wa), (sb, wb) in zip(ws, ws[1:])]   # the narrow piers between a set's windows, jamb to jamb
+cap5_me, n_fill = cap_me, 0
+if CAP_PROPORTIONAL:
+    # the carved capital keeps its proportions (user 2026-10-05: "looks like this was stretched, reduce it to normal
+    # proportions"): its neck CAP5_WIDEN wider than the pier and the same scale on every axis, so it is deeper than the
+    # 0.32 wall: its back is cut 2 cm inside the wall's back, at the largest pier's scale so it holds for them all
+    k5_max = max((b - a + CAP5_WIDEN) / CAP_NECK for fi, a, b, pl in piers5)
+    cap5_me, n_fill = cut_back(cap_me, CAP_BACK + (CAP5_OUT + TOP_T - 0.02) / k5_max, "ge_capital5")
+    check_capital_wall("springing", (CAP5_OUT + TOP_T - 0.02) / k5_max * 1000.0)   # its sides' leaves end just short of that cut
 n_cap5 = 0
-for fi, pname, pl, ws in imp_sets:
+for fi, a, b, pl in piers5:
     A, d, nrm, L = FACES[fi]
-    for (sa, wa), (sb, wb) in zip(ws, ws[1:]):
-        a, b = sa + wa / 2, sb - wb / 2            # the narrow pier between two of the set's windows, jamb to jamb
-        kx, ky, kz = (b - a + CAP5_WIDEN) / CAP_NECK, (TOP_T - 0.02) / CAP_D, CAP5_H / CAP_H   # the foot CAP5_WIDEN wider than the pier; the back inside the panel; as tall as the moulding
-        o = bpy.data.objects.new("ge_capital5", cap_me); FIT.objects.link(o)
-        base = A + d * ((a + b) / 2) + nrm * (pl + ky * CAP_BACK + CAP5_OUT)   # the foot's front CAP5_OUT proud of the pier's face (its setback behind the abacus scales with the depth, ky): the abacus ky * CAP_BACK + CAP5_OUT proud
-        o.matrix_world = Matrix(((d.x * kx, -nrm.x * ky, 0.0, base.x), (d.y * kx, -nrm.y * ky, 0.0, base.y), (0.0, 0.0, kz, IMP_Z0), (0.0, 0.0, 0.0, 1.0)))
-        n_cap5 += 1
+    kx = (b - a + CAP5_WIDEN) / CAP_NECK                                   # the foot CAP5_WIDEN wider than the pier
+    ky, kz = (kx, kx) if CAP_PROPORTIONAL else ((TOP_T - 0.02) / CAP_D, CAP5_H / CAP_REF_H)   # the plain one: its back inside the panel, as tall as the moulding
+    o = bpy.data.objects.new("ge_capital5", cap5_me); FIT.objects.link(o)
+    base = A + d * ((a + b) / 2) + nrm * (pl + ky * CAP_BACK + CAP5_OUT)   # the foot's front CAP5_OUT proud of the pier's face (its setback behind the abacus scales with the depth, ky): the abacus ky * CAP_BACK + CAP5_OUT proud
+    o.matrix_world = Matrix(((d.x * kx, -nrm.x * ky, 0.0, base.x), (d.y * kx, -nrm.y * ky, 0.0, base.y), (0.0, 0.0, kz, IMP_Z0 + CAP5_H - kz * CAP_H), (0.0, 0.0, 0.0, 1.0)))   # its top on the springing
+    n_cap5 += 1
 print(f"the top floor's impost course: one moulding {IMP_Z0:.3f}..{IMP_Z0 + IMP_H:.3f} on the wall's outline ({len(imp_path)} points), cut at "
       f"{len(imp_sets)} window sets into {len(imp_pieces)} pieces returning {IMP_RET:.2f} into their reveals, cut back to {IMP_CLIP:.3f} inside the jambs at {n_imp_clip} sets; "
       f"{n_cap5} capitals on the narrow piers, {CAP5_WIDEN * 1000:.0f} mm wider than their piers and their feet {CAP5_OUT * 1000:.0f} mm proud, "
-      f"{CAP5_H:.2f} tall with their tops on the springing")
+      + (f"the carved capital alike on every axis, {min((b - a + CAP5_WIDEN) / CAP_NECK for fi, a, b, pl in piers5) * CAP_H:.3f}..{k5_max * CAP_H:.3f} tall, its back cut 2 cm inside the wall's back ({n_fill} faces closing it), "
+         if CAP_PROPORTIONAL else f"{CAP5_H / CAP_REF_H * CAP_H:.3f} tall, ") + "with their tops on the springing")
 # ---------------------------------------------------------------- the roof crown (user 2026-09-19, the reference photos)
 # Four courses on the top floor's wall head, in the place of the game's crown (taken down with the lift, above): a
 # two-step corbelled moulding, a frieze of flower tiles, a dentil course on its own plinth, and a cornice of three

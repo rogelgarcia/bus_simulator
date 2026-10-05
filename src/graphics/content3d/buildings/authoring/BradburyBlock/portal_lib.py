@@ -691,6 +691,38 @@ def linked_mesh(name, blend):
     with bpy.data.libraries.load(path, link=True) as (data_from, data_to):
         data_to.meshes = [name]
     return data_to.meshes[0]
+# The pilaster capital's stage (ornaments/capital.py): 1 the plain capital, 2 the carved one cut from the PBR atlas.
+# capital.py exports this stage as one mesh per placement (CAPITAL_MESHES); the pieces that carry it (02, 07) and
+# assemble_building.py measure the linked mesh and take whatever it is taller than CAPITAL_REF_H out of the shaft under
+# it, so every capital's top stays where it was. BRADBURY_CAPITAL_STAGE overrides it for one run (use_capital_stage.py
+# sets it for the whole chain).
+CAPITAL_STAGE = int(os.environ.get("BRADBURY_CAPITAL_STAGE", "2"))
+CAPITAL_REF_H = 0.41                                             # stage 1's height: the portal's and the block's levels were set for it
+CAPITAL_PROPORTIONAL = CAPITAL_STAGE >= 2                        # the carved capital is never distorted (user 2026-10-05: "keep it proportional"): every placement scales it alike on all axes and cuts or buries what does not fit; the plain one stretches to fit as it always did
+# One capital per kind of placement, alike but for its side faces: the carved one's sides carry whole leaves as far as
+# the wall beside that placement (user 2026-10-05: no ornament cut where it is not complete; capital_stage2/build.py
+# SIDES holds each wall); the plain one is exported under every name. pieces 07 and 02 link the first two, the block
+# (assemble_building.py) the other two.
+CAPITAL_MESHES = {"pilaster": "capital", "pier": "capital_pier", "column": "capital_column", "springing": "capital_springing"}
+def capital_top(me):
+    """A capital mesh's height as its placements count it: from the neck's foot to the abacus's top (m), recorded by
+    ornaments/capital.py as `capital_top` -- the carved capital's crown stands above it."""
+    return float(me["capital_top"]) if "capital_top" in me else max(v.co.z for v in me.vertices)
+def linked_capital(kind="pilaster", wall=None):
+    """The capital mesh of one placement (CAPITAL_MESHES) linked from ornaments/capital.blend, and its height (m, from
+    the neck's foot to the abacus's top: capital_top). Refuses a capital file that exports another stage than
+    CAPITAL_STAGE (run ornaments/capital.py first) and, given `wall` -- how far behind the capital's neck the wall
+    beside it starts, m in the capital's own frame -- a carved capital whose side faces were carved to another wall."""
+    me = linked_mesh(CAPITAL_MESHES[kind], "capital.blend")
+    stage = me.get("capital_stage")
+    if stage is not None and int(stage) != CAPITAL_STAGE:
+        raise RuntimeError(f"ornaments/capital.blend exports stage {int(stage)} but CAPITAL_STAGE is {CAPITAL_STAGE}: "
+                           f"run ornaments/capital.py (or use_capital_stage.py) first")
+    carved = me.get("side_wall_mm")
+    if wall is not None and carved is not None and abs(wall * 1000.0 - carved) > 12.0:
+        raise RuntimeError(f"mesh {me.name}'s side faces are carved to a wall {carved:.0f} mm behind its neck, this placement's "
+                           f"is {wall * 1000.0:.0f} mm: set its wall in SIDES (ornaments/capital_stage2/build.py) and run use_capital_stage.py")
+    return me, capital_top(me)
 def ornament_instance(name, me, loc, coll, rot_z=0.0, scale=1.0):
     o = bpy.data.objects.new(name, me); coll.objects.link(o)
     o.location = loc; o.rotation_euler = (0.0, 0.0, rot_z)

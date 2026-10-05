@@ -6,7 +6,16 @@ pier, 5 cm apart). Proportions follow the reference with the door leaf as the
 2.50 m module: pier 0.26 wide x 0.34 deep, plinth 0.50 m; the capital is the same
 ornament as the pilasters', LINKED from ornaments/capital.blend, scaled to
 the pier width (0.34 / 0.784) and turned so its front faces the passage;
-the capital top is level with the top of the door glass (2.35 m).
+the capital's top is the impost (2.15 m), where the arch's jambs start
+(piece 06). It keeps that top whatever stage portal_lib.CAPITAL_STAGE picks,
+and the shaft stops where it starts (rerun this piece after a stage change).
+The plain capital is stretched to the pier (0.469 x 0.278 x 0.585); the carved
+one keeps its proportions (portal_lib.CAPITAL_PROPORTIONAL): 0.469 on every
+axis, its neck as wide as the passage face and flush with it, the rest of its
+depth running into the recess wall. It is the piers' own capital, mesh
+capital_pier: its sides carry the corner's drum and arm, whole leaves as far
+as the recess wall, the pier's width behind the passage face, and a crown
+over the leaves by the wall.
 
 Frame: x across (0 = centre), y depth (+ into the building; door faces at
 y = 0, piers at negative y), z up from the threshold. Collection: PILLARS.
@@ -23,15 +32,25 @@ PIER_X = DOOR_HALF_W - PIER_W/2                      # 1.47: the pier's back sit
 FRONT_Y, BACK_Y = -2.53, -2.14                         # pier centres in depth: the pair stands at the mouth, under the arch ring (y -2.70 .. -2.08)
 PLINTH_H = 0.56                                        # (0.50 + a bit, user request) top of the plinth's cap fillet, level with the pilasters' (piece 07)
 CAP_TOP = 2.15                                         # impost: the arch's straight jambs start here and curve from 2.25 (piece 06 STILT)
-CAP_H = 0.24                                           # the pier capital still reaches down to 1.91 (the yellow line on the A/B pair)
-SHAFT_TOP = CAP_TOP - CAP_H                            # 1.91
+CAP_SCALE_Z = 0.24 / CAPITAL_REF_H                     # the ornament squashed to 0.585 of its height: 0.24 with the plain capital, which reaches down to 1.91 (the yellow line on the A/B pair)
 CAP_BACK = CAPITAL_DEPTH * 0.725 / 0.85                # 0.68: the ornament's straight back plane as a fraction of the pier width from its passage face
 
 COLL = ensure_collection("PILLARS")
 STONE = mat_sandstone("PORTAL_sandstone", joints=False)
 CARVED = mat_sandstone("PORTAL_sandstone_carved", joints=False)
 
-cap_me = linked_mesh("capital", "capital.blend")      # same ornament as the pilasters (portal_lib.ORNAMENTS_DIR)
+if CAPITAL_PROPORTIONAL:
+    # the carved capital keeps its proportions (user 2026-10-05: "the side ornaments were squeezed to fit. instead,
+    # only use part of the ornaments. use the leaves and the horn. keep it proportional"): scaled alike on every axis so
+    # its neck is as wide as the passage face, its front on that face, the rest of its depth in the recess wall
+    CAP_SCALE = (PIER_D / 0.725,) * 3                  # 0.469
+    CAP_SHIFT = 0.425 * CAP_SCALE[1] - PIER_W / 2      # 0.081 toward the wall: the neck's front (local y -0.425) on the passage face
+else:
+    CAP_SCALE = (PIER_D / 0.725, PIER_W / 0.85, CAP_SCALE_Z)   # the plain capital stretched to the pier
+    CAP_SHIFT = 0.0
+cap_me, cap_h = linked_capital("pier", wall=PIER_W / CAP_SCALE[1] if CAPITAL_PROPORTIONAL else None)   # the piers' own capital (portal_lib.ORNAMENTS_DIR): its sides carved to the recess wall, the pier's width behind its neck
+CAP_H = CAP_SCALE[2] * cap_h                           # 0.24 plain, 0.217 carved
+SHAFT_TOP = CAP_TOP - CAP_H                            # 1.91 plain, 1.933 carved
 for s, tag in ((-1, "L"), (1, "R")):
     for yc, dtag in ((FRONT_Y, "front"), (BACK_Y, "back")):
         cx = s * PIER_X
@@ -45,7 +64,7 @@ for s, tag in ((-1, "L"), (1, "R")):
         mesh_from_bm(f"pillar_{tag}_{dtag}", bm, STONE, COLL)
         # the ornament's front (-y) turned to face the passage: +x for the left pier, -x for the right one;
         # its width (local x) runs along the wall = the pier depth, its depth (local y) toward the passage = the pier width
-        ornament_instance(f"pillar_{tag}_{dtag}_capital", cap_me, (cx, yc, SHAFT_TOP), COLL, rot_z=-s * math.pi / 2, scale=(PIER_D / 0.725, PIER_W / 0.85, CAP_H / 0.41))
+        ornament_instance(f"pillar_{tag}_{dtag}_capital", cap_me, (cx + s * CAP_SHIFT, yc, SHAFT_TOP), COLL, rot_z=-s * math.pi / 2, scale=CAP_SCALE)
 
 # ---------------------------------------------------------------- rig, renders, save
 rig = setup_scene()

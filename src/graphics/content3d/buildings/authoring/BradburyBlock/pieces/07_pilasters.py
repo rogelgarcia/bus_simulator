@@ -6,11 +6,14 @@ the piers' stepped plinth (top at 0.44) in the same pink stone, a shaft
 square step at the face, convex quarter-round, tiny square step down to the
 field) running straight up to the capital, which is LINKED from the
 ornament file ornaments/capital.blend (mesh `capital`, built by
-ornaments/capital.py at the 0.80 x 0.85 footprint, 0.42 tall, engaged: it runs back
+ornaments/capital.py at the 0.725 x 0.85 footprint in the stage portal_lib.CAPITAL_STAGE
+picks -- 0.41 tall plain, 0.463 carved -- engaged: it runs back
 80% of its width along the sides, the plain pilaster continuing up behind
 its straight back): both pilasters are instances of
 that linked mesh, so saving a new version of the ornament shows up here on
-reload. The capital top (4.08) matches the top of the arch block (piece 06). The pilasters project 0.20 m beyond the arch
+reload. The capital's top (4.16, 0.03 over the arch block's, piece 06) stays put whatever
+the stage: the shaft stops where the capital starts, so a taller capital shortens it
+(rerun this piece after a stage change). The pilasters project 0.20 m beyond the arch
 block's face and cover the ends of the recess walls.
 
 Frame: x across, y depth (arch face at y = -2.70), z up (sidewalk at -0.12).
@@ -28,14 +31,15 @@ X0 = ARCH_HALF + GAP; X1 = X0 + PW       # 1.605 .. 2.33
 Y_FACE, Y_BACK = -2.90, -2.05            # 0.20 proud of the arch face; the back overlaps the recess wall ends
 SIDEWALK = -0.12
 PLINTH_TOP = 0.56                        # (0.50 + a bit, user request) top of the plinth's cap fillet (photo row 1080); same foot as the inner piers (piece 02)
-CAP_H = 0.41; CAP_TOP = 4.16             # capital 0.41 tall (0.39 + 5%, the shaft gives up the same 0.02); its top contour ends 0.03 above the band bottom (4.13 = piece 06 BLOCK_TOP)
-SHAFT_TOP = CAP_TOP - CAP_H              # 3.75: the capital's baseline in the photo
+CAP_TOP = 4.16                           # the capital's top contour ends 0.03 above the band bottom (4.13 = piece 06 BLOCK_TOP)
 
 COLL = ensure_collection("PILASTERS")
 STONE = mat_sandstone("PORTAL_sandstone", joints=False)
 CARVED = mat_sandstone("PORTAL_sandstone_carved", joints=False)
 
-cap_me = linked_mesh("capital", "capital.blend")      # the ornament file (portal_lib.ORNAMENTS_DIR); built at the 0.76 x 0.85 footprint
+SIDE_WALL = 0.18                         # the wall beside the pilaster starts 0.18 behind its face (the block's; the user's line, 2026-10-05); on its inner side the arch block, 0.20
+cap_me, CAP_H = linked_capital("pilaster", wall=SIDE_WALL)   # mesh `capital` (portal_lib.ORNAMENTS_DIR): 0.41 tall plain (0.39 + 5%, the shaft gave up the same 0.02), 0.463 carved, its sides' leaves ending at that wall
+SHAFT_TOP = CAP_TOP - CAP_H                           # 3.75 with the plain capital (its baseline in the photo), 3.697 with the carved one
 CAP_BACK_Y = Y_FACE + CAPITAL_DEPTH * PW              # -2.29: the capital's straight back (80% of the front width behind the face)
 for s, tag in ((-1, "L"), (1, "R")):
     x0, x1 = (X0, X1) if s > 0 else (-X1, -X0)
