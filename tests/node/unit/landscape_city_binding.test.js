@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import {
     validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape,
     cityReservationsToLandscapeConstraints, cityTileLandscapeCoverage, loadCityLandscape,
@@ -27,6 +28,29 @@ test('Landscape city binding: registered JS fixture pins a retained immutable ma
     const altered = structuredClone(spec.landscape);
     altered.revision = 'stale';
     assert.throws(() => validateLandscapeCityBinding(altered, { manifest }), /revision is stale/);
+});
+
+// The nature pass and AI577 D1a published material-only revisions after AI 576 bound the fixture; the city has not reviewed them, so its strict
+// pin refuses both. The difference check is the review record an explicit rebind would cite.
+test('Landscape city binding: the fixture pin refuses retained material-only publications until an explicit rebind', async () => {
+    const binding = city().landscape, directory = binding.manifestUrl.slice(0, binding.manifestUrl.lastIndexOf('/'));
+    const snapshot = async name => {
+        const bytes = await readFile(`${directory}/${name}`);
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), name.match(/^manifest\.([a-f0-9]{64})\.json$/)[1], `${name} is content addressed`);
+        return JSON.parse(bytes.toString('utf8'));
+    };
+    const pinned = await snapshot(binding.manifestUrl.slice(directory.length + 1));
+    for (const name of ['manifest.12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b.json', 'manifest.496f91b93facbbc9183d939d4da4e758852270fa71ed19e732ad1fa944127c20.json']) {
+        const later = await snapshot(name), restored = structuredClone(later);
+        assert.match(later.revision, /^materials-/);
+        restored.revision = pinned.revision;
+        restored.soil.catalog.forEach((soil, index) => { soil.materialId = pinned.soil.catalog[index].materialId; });
+        assert.deepEqual(restored, pinned, `${name} differs from the pinned hierarchy snapshot only by its revision and soil material bindings`);
+        assert.throws(() => validateLandscapeCityBinding(binding, { manifest: later }), new RegExp(`revision is stale: expected ${pinned.revision}, got ${later.revision}; explicitly rebind`));
+        const rebound = validateLandscapeCityBinding({ ...structuredClone(binding), manifestUrl: `${directory}/${name}`, revision: later.revision }, { manifest: later });
+        assert.deepEqual([rebound.transform, rebound.extent], [binding.transform, binding.extent]);
+        assert.throws(() => validateLandscapeCityBinding(rebound, { manifest: pinned }), /revision is stale/);
+    }
 });
 
 test('Landscape city binding: rejects unknown versions/capabilities, machine paths and implicit scaling', () => {

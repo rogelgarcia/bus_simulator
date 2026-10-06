@@ -117,6 +117,11 @@ inside the edited chunk; flow, wetness and deposition only downstream of (or dam
 most the catchment draining through it; natural soil only for planning samples within about 1.1 km.
 Re-baking binds the new revision.
 
+A pinned older revision with other material bindings (the city pin, the nature-pass snapshot) resolves its retained appearance
+through its binding alias, reports the companion `invalid` with reason `multiscale-binding-mismatch: …` and keeps schema-1 tiers;
+its terrain fields stay `active` with `bound:false` and no stale chunk, because material-only revisions share the native channel
+hashes the fields bind (`landscape_appearance_binding`).
+
 ## Bake validation and publication
 
 Validation re-reads every byte (sizes, hashes, content-addressed URLs), the strict schema and binding,

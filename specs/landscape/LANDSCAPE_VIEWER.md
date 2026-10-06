@@ -117,11 +117,13 @@ streams, and any other value throws "<name> must be one of …; received …". H
 Diagnostics: `terrain-appearance` and the `dressing*` views. `snapshot()` reports `lighting`,
 `appearance.terrainFields` and `appearance.presentation`.
 
-AI577 D6: `landscapeSurfaceCache=off|on` (default off), `landscapeSurfaceCacheSlots`,
-`landscapeSurfaceCacheAnisotropy` and `landscapeSurfaceCacheNear=on|off` select the runtime surface cache
-(LANDSCAPE_APPEARANCE_RUNTIME.md). With the cache on the shipped ledger is `LANDSCAPE_SURFACE_CACHE_BUDGETS`
-(512/448 MiB) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
-512/256). A view that cannot run the cache compiles the uncached program from the start and shows `Surface
+AI577 D6/D7: `landscapeSurfaceCache=off|on` (default on since D7), `landscapeSurfaceCacheSlots`,
+`landscapeSurfaceCacheWindow`, `landscapeSurfaceCacheAnisotropy` and `landscapeSurfaceCacheNear=on|off` select the
+runtime surface cache (LANDSCAPE_APPEARANCE_RUNTIME.md). With the cache on the shipped ledger is the cache profile
+of the display (`landscapeSurfaceCacheBudgets`: 512/448 MiB up to 1920×1080, 512/588 at 2560×1440, 512/950 at
+3840×2160) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
+512/256). A resize that changes the cache capacity rebuilds the cache 500 ms after the size settles; the hook
+`setSurfaceCacheCapacity` fixes the capacity for evidence. A view that cannot run the cache compiles the uncached program from the start and shows `Surface
 cache unavailable: <reason>`. Hooks: `setSurfaceCache`, `setSurfaceCacheNear`, `surfaceCacheLookup`. A reload
 of the same landscape at the same budget keeps the runtime and regenerates its pages. Inspection views are a
 separately compiled diagnostics variant that links in the background when first selected. Browser suites
@@ -136,7 +138,7 @@ world scale/orientation. The appearance planner can refine flat root geometry's
 materials without requesting fine height meshes. Its raw source page tiers are
 32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
 
-The same 512 MiB CPU / 256 MiB estimated GPU ledger (128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; 512/448 MiB with the AI577 D6 surface cache on) covers both adapters. A base
+The same 512 MiB CPU / 256 MiB estimated GPU ledger (128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; with the AI577 D6/D7 surface cache on, the default since D7, the display's cache profile: 512/448 MiB up to 1920×1080) covers both adapters. A base
 appearance allowance and bounded view-demand credit protect planned material tiers
 before geometry admission. Delayed cover/halo work therefore cannot change their
 priority solely through completion order. Geometry and appearance share

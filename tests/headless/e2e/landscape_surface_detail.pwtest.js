@@ -40,7 +40,8 @@ function observe(page) {
 async function open(page, address = '/screens/landscape_fabrication.html', view = null) {
     const started = Date.now();
     await page.goto(landscapeViewerUrl(address));
-    await page.waitForFunction(() => !!window.__landscapeTestHooks, null, { timeout: 30000 });
+    // the viewer module installs its hooks after its shader sources load; a cold first load of the suite can take longer than 30 s (AI577 D7 full run)
+    await page.waitForFunction(() => !!window.__landscapeTestHooks, null, { timeout: 60000 });
     if (view) await page.evaluate(value => window.__landscapeTestHooks.setCamera(value), view);
     await page.waitForFunction(() => window.__landscapeTestHooks.snapshot().ready || window.__landscapeTestHooks.snapshot().lastError, null, { timeout: 60000 });
     expect((await snapshot(page)).lastError).toBeNull();

@@ -1,7 +1,7 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
-import { LandscapeView, LANDSCAPE_MULTISCALE_MODES, LANDSCAPE_NATURAL_INFERENCE_MODES, LANDSCAPE_SURFACE_CACHE_MODES, LANDSCAPE_SURFACE_DETAIL_MODES, LANDSCAPE_TERRAIN_APPEARANCE_MODES,
-    LANDSCAPE_TERRAIN_FIELD_MODES } from './LandscapeView.js';
-import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
+import { LandscapeView, LANDSCAPE_MULTISCALE_MODES, LANDSCAPE_NATURAL_INFERENCE_MODES, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, LANDSCAPE_SURFACE_CACHE_MODES, LANDSCAPE_SURFACE_DETAIL_MODES,
+    LANDSCAPE_TERRAIN_APPEARANCE_MODES, LANDSCAPE_TERRAIN_FIELD_MODES, landscapeSurfaceCacheShippedBudgets } from './LandscapeView.js';
+import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
@@ -17,10 +17,11 @@ function mode(name, modes, fallback) {
     if (!modes.includes(value)) throw new Error(`${name} must be one of ${modes.join(', ')}; received ${value}`);
     return value;
 }
-// landscapeSurfaceCache=off|on: the AI577 D6 runtime surface cache (default off; on, the shipped budget is LANDSCAPE_SURFACE_CACHE_BUDGETS); landscapeSurfaceCacheSlots
-// (multiple of 256) and landscapeSurfaceCacheAnisotropy (1, 2, 4, 8, 16) size its atlas and sampler for evidence
-const surfaceCache = mode('landscapeSurfaceCache', LANDSCAPE_SURFACE_CACHE_MODES, 'off');
-const shippedBudgets = surfaceCache === 'on' ? LANDSCAPE_SURFACE_CACHE_BUDGETS : LANDSCAPE_STREAMING_BUDGETS;
+// landscapeSurfaceCache=off|on: the AI577 D6 runtime surface cache (default LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE; on, the shipped budget is the profile of the
+// display's capacity, landscapeSurfaceCacheShippedBudgets, AI577 D7); landscapeSurfaceCacheSlots (multiple of 256), landscapeSurfaceCacheWindow (64, 128, 256) and
+// landscapeSurfaceCacheAnisotropy (1, 2, 4, 8, 16) fix its atlas, window and sampler for evidence (the slots and window otherwise follow the drawing buffer)
+const surfaceCache = mode('landscapeSurfaceCache', LANDSCAPE_SURFACE_CACHE_MODES, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE);
+const shippedBudgets = surfaceCache === 'on' ? landscapeSurfaceCacheShippedBudgets(canvas) : LANDSCAPE_STREAMING_BUDGETS;
 const budgets = {};
 for (const [parameter, key] of [['landscapeCpuMiB', 'cpuBytes'], ['landscapeGpuMiB', 'gpuBytes']]) {
     if (!parameters.has(parameter)) continue;
@@ -39,14 +40,18 @@ const naturalInference = mode('landscapeNaturalInference', LANDSCAPE_NATURAL_INF
 const terrainFields = mode('landscapeTerrainFields', LANDSCAPE_TERRAIN_FIELD_MODES, 'auto');
 // landscapeTerrainAppearance=on|off: the AI577 D5 terrain-driven natural appearance (A/B evidence; since AI577 D6 a compiled program variant)
 const terrainAppearance = mode('landscapeTerrainAppearance', LANDSCAPE_TERRAIN_APPEARANCE_MODES, 'on');
-const surfaceCacheSlots = Number(parameters.get('landscapeSurfaceCacheSlots') ?? LANDSCAPE_SURFACE_CACHE.targetSlots);
-if (!Number.isSafeInteger(surfaceCacheSlots) || surfaceCacheSlots < 256 || surfaceCacheSlots > 8192 || surfaceCacheSlots % 256) throw new Error(`landscapeSurfaceCacheSlots must be a multiple of 256 from 256 to 8192; received ${parameters.get('landscapeSurfaceCacheSlots')}`);
+const surfaceCacheSlots = parameters.has('landscapeSurfaceCacheSlots') ? Number(parameters.get('landscapeSurfaceCacheSlots')) : null;
+if (surfaceCacheSlots !== null && (!Number.isSafeInteger(surfaceCacheSlots) || surfaceCacheSlots < 256 || surfaceCacheSlots > LANDSCAPE_SURFACE_CACHE_CAPACITY.maximumSlots || surfaceCacheSlots % 256)) {
+    throw new Error(`landscapeSurfaceCacheSlots must be a multiple of 256 from 256 to ${LANDSCAPE_SURFACE_CACHE_CAPACITY.maximumSlots}; received ${parameters.get('landscapeSurfaceCacheSlots')}`);
+}
+const surfaceCacheWindow = parameters.has('landscapeSurfaceCacheWindow') ? Number(parameters.get('landscapeSurfaceCacheWindow')) : null;
+if (surfaceCacheWindow !== null && ![64, 128, 256].includes(surfaceCacheWindow)) throw new Error(`landscapeSurfaceCacheWindow must be 64, 128 or 256; received ${parameters.get('landscapeSurfaceCacheWindow')}`);
 const surfaceCacheAnisotropy = Number(parameters.get('landscapeSurfaceCacheAnisotropy') ?? LANDSCAPE_SURFACE_CACHE.maxAnisotropy);
 if (![1, 2, 4, 8, 16].includes(surfaceCacheAnisotropy)) throw new Error(`landscapeSurfaceCacheAnisotropy must be 1, 2, 4, 8 or 16; received ${parameters.get('landscapeSurfaceCacheAnisotropy')}`);
 // landscapeSurfaceCacheNear=on|off: per-pixel evaluation of the near field under the cache (on by default; off for A/B evidence)
 const surfaceCacheNear = mode('landscapeSurfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, 'on');
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
-    surfaceCache, surfaceCacheSlots, surfaceCacheAnisotropy, surfaceCacheNear });
+    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -69,6 +74,8 @@ window.__landscapeTestHooks = Object.freeze({
     // AI577 D6 runtime surface cache: switch ('off' | 'on', resolves once applied) and the CPU mirror of the cached frame's page lookup
     setSurfaceCache: mode => view.setSurfaceCache(mode),
     setSurfaceCacheNear: (mode, band) => view.setSurfaceCacheNear(mode, band),
+    // AI577 D7: fixes the cache's slot target and window ({slots, windowPages}; null follows the drawing buffer) and rebuilds it (evidence switch)
+    setSurfaceCacheCapacity: capacity => view.setSurfaceCacheCapacity(capacity),
     surfaceCacheLookup: (x, z, footprint) => view.surfaceCacheLookup(x, z, footprint),
     detailSample: (x, z) => view.detailSample(x, z),
     setSurfaceWarp: enabled => view.setSurfaceWarp(enabled),

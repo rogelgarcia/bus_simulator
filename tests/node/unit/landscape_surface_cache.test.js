@@ -1,8 +1,10 @@
 // Verifies the AI577 D6 runtime surface cache contract: addressing, clipmap windows, slot layout and gutters, budget fitting, encodings,
-// identity, residency, indirection and the CPU demand planner (landscape-surface-cache-v1).
+// identity, residency, indirection and the CPU demand planner (landscape-surface-cache-v1), and the AI577 D7 viewport capacity policy
+// (landscape-surface-cache-capacity-v1): slots, window and budget profile from the drawing buffer, and the default mode (on since AI577 D7) with the
+// browser suites' run selection.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS, decodeLandscapeHemiOctahedral, encodeLandscapeHemiOctahedral, fitLandscapeSurfaceCache, landscapeSurfaceCacheFilterReach,
+import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity, decodeLandscapeHemiOctahedral, encodeLandscapeHemiOctahedral, fitLandscapeSurfaceCache, landscapeSurfaceCacheFilterReach,
     landscapeSurfaceCacheFootprint, landscapeSurfaceCacheFrameMip, landscapeSurfaceCacheGeometry, landscapeSurfaceCacheGutter, landscapeSurfaceCacheHash,
     landscapeSurfaceCacheIndirectionBytes, landscapeSurfaceCacheMaskLevel, landscapeSurfaceCachePageBounds, landscapeSurfaceCachePageIdentity, landscapeSurfaceCachePageKey,
     landscapeSurfaceCachePageMeters, landscapeSurfaceCachePagesPerAxis, landscapeSurfaceCacheSlotLayout, landscapeSurfaceCacheSlotPosition, landscapeSurfaceCacheSnapCenter,
@@ -12,6 +14,7 @@ import { LandscapeSurfaceCacheIndirection, LandscapeSurfaceCacheResidency } from
 import { LANDSCAPE_SURFACE_CACHE_DEMAND, chooseLandscapeSurfaceCacheCenter, createLandscapeSurfaceCacheTerrainEnvelope, mergeLandscapeSurfaceCacheFeedback, planLandscapeSurfaceCacheDemand } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheDemand.js';
 import { indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheGlobalKey, landscapeSurfaceCachePageInputs } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheInputs.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../src/app/landscape/LandscapeResidencyBudget.js';
+import { landscapeEffectiveSurfaceCache, landscapeShippedBudgetMiB, landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const MIB = 1024 * 1024;
 const coastal = landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 });
@@ -51,7 +54,9 @@ test('Surface cache: the coastal virtual texture has mips 0-12 of 1.5625 cm to 6
     assert.equal(LANDSCAPE_SURFACE_CACHE.id, 'landscape-surface-cache-v1');
     assert.equal(LANDSCAPE_SURFACE_CACHE.texel0Meters, .015625);
     assert.deepEqual([LANDSCAPE_SURFACE_CACHE.pageTexels, LANDSCAPE_SURFACE_CACHE.gutterTexels, LANDSCAPE_SURFACE_CACHE.slotTexels], [64, 4, 72]);
-    assert.deepEqual({ ...coastal }, { originX: 0, originZ: 0, rootMip: 12, mips: 13, pageMeters0: 1, texel0Meters: .015625, extentMeters: 4096 });
+    assert.deepEqual({ ...coastal }, { originX: 0, originZ: 0, rootMip: 12, mips: 13, pageMeters0: 1, texel0Meters: .015625, extentMeters: 4096, windowPages: 64 });
+    assert.equal(landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, { windowPages: 128 }).windowPages, 128);
+    assert.throws(() => landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, { windowPages: 96 }), /window pages must be 64, 128 or 256/);
     assert.equal(2 ** 18 * coastal.texel0Meters, 4096);
     assert.equal(landscapeSurfaceCachePagesPerAxis(coastal, 0), 4096);
     assert.equal(landscapeSurfaceCachePagesPerAxis(coastal, 12), 1);
@@ -174,19 +179,21 @@ test('Surface cache: gutters keep bilinear, trilinear and 2x anisotropic fetches
     assert.ok(landscapeSurfaceCacheFilterReach({ anisotropy: 4, level: 1 }) > 2);
 });
 
-test('Surface cache: the atlas fits whole 256-slot layers under 3/8 of the GPU limit above the streams\' reserve, with explicit degradation reasons', () => {
+test('Surface cache: the atlas fits whole 256-slot layers above the streams\' reserve, with explicit degradation reasons', () => {
     assert.equal(LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes, LANDSCAPE_STREAMING_BUDGETS.gpuBytes, 'the cache never takes the uncached shipped GPU limit from the streams');
     assert.equal(LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes, LANDSCAPE_STREAMING_BUDGETS.cpuBytes);
     const fit = (cpu, gpu, options = {}) => fitLandscapeSurfaceCache({ limits: { cpuBytes: cpu * MIB, gpuBytes: gpu * MIB }, geometry: coastal, ...options });
     const brief = ({ slots, reason }) => ({ slots, reason });
-    // the cache's shipped profile (512/448 MiB) holds the 11-layer target under its 168 MiB ceiling
+    // the cache's shipped 1920x1080 profile (512/448 MiB) holds the 12-layer reference target under its 192 MiB ceiling (D6's 3/8 fraction capped
+    // the ceiling at 168 MiB and the target at 11 layers)
     const shipped = fitLandscapeSurfaceCache({ limits: LANDSCAPE_SURFACE_CACHE_BUDGETS, geometry: coastal });
-    assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 11, reason: null });
-    assert.equal(shipped.ceilingBytes, 168 * MIB);
+    assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 12, reason: null });
+    assert.equal(LANDSCAPE_SURFACE_CACHE.targetSlots, 3072);
+    assert.equal(shipped.ceilingBytes, 192 * MIB);
     assert.ok(shipped.gpuBytes <= shipped.ceilingBytes);
-    assert.equal(shipped.gpuBytes, 11 * 14598144 + 576 * 576 * 16 + 212992, 'eleven layers, the packed generation scratch and the indirection');
+    assert.equal(shipped.gpuBytes, 12 * 14598144 + 576 * 576 * 16 + 212992, 'twelve layers, the packed generation scratch and the indirection');
     assert.equal(shipped.scratchBytes, 5308416);
-    assert.equal(shipped.cpuBytes, 212992 + 2816 * 8);
+    assert.equal(shipped.cpuBytes, 212992 + 3072 * 8);
     // 768/384: the reserve leaves 128 MiB, eight layers
     const large = fit(768, 384);
     assert.deepEqual({ ...brief(large), ceiling: large.ceilingBytes, atlasBytes: large.atlasBytes }, { slots: 2048, reason: 'surface-cache-gpu-ceiling', ceiling: 128 * MIB, atlasBytes: 116785152 });
@@ -205,9 +212,113 @@ test('Surface cache: the atlas fits whole 256-slot layers under 3/8 of the GPU l
     const beside = fit(512, 448, { available: { gpuBytes: 68 * MIB } });
     assert.deepEqual(brief(beside), { slots: 1024, reason: 'surface-cache-gpu-available' });
     assert.ok(beside.gpuBytes <= 68 * MIB);
-    assert.deepEqual(brief(fit(512, 448, { available: { gpuBytes: 200 * MIB }, targetSlots: 4096 })), { slots: 2816, reason: 'surface-cache-gpu-ceiling' }, 'the ceiling binds first when the ledger has room');
+    assert.deepEqual(brief(fit(512, 448, { available: { gpuBytes: 200 * MIB }, targetSlots: 4096 })), { slots: 3328, reason: 'surface-cache-gpu-ceiling' }, 'the 192 MiB ceiling binds first when the ledger has room');
     assert.equal(fit(512, 448, { available: { gpuBytes: 10 * MIB } }).reason, 'surface-cache-gpu-budget');
     assert.equal(fit(512, 448, { available: { gpuBytes: 448 * MIB } }).reason, null);
+});
+
+test('Surface cache capacity (AI577 D7): slots, window and budget profile scale with the drawing buffer above the 1920x1080 reference', () => {
+    assert.equal(LANDSCAPE_SURFACE_CACHE_CAPACITY.id, 'landscape-surface-cache-capacity-v1');
+    const brief = size => { const capacity = landscapeSurfaceCacheCapacity(size); return { slots: capacity.targetSlots, window: capacity.windowPages, reason: capacity.reason }; };
+    const reference = landscapeSurfaceCacheCapacity({ width: 1920, height: 1080 });
+    assert.deepEqual({ slots: reference.targetSlots, window: reference.windowPages, reason: reference.reason, pixels: reference.pixels }, { slots: 3072, window: 64, reason: null, pixels: 2073600 });
+    assert.deepEqual({ ...landscapeSurfaceCacheBudgets(reference) }, { ...LANDSCAPE_SURFACE_CACHE_BUDGETS }, 'the reference keeps the 512/448 MiB profile');
+    // smaller or equal drawing buffers keep the reference capacity (its LRU room and the root pyramid do not shrink with the view)
+    for (const size of [{ width: 1920, height: 1032 }, { width: 1280, height: 720 }, { width: 960, height: 540 }, { width: 512, height: 512 }, { width: 1080, height: 1920 }, { width: 2048, height: 1012 }]) {
+        assert.deepEqual(brief(size), { slots: 3072, window: 64, reason: null }, JSON.stringify(size));
+    }
+    // larger ones scale the slots with the pixels (whole layers) and the window with the longer side (32 pixels per window page)
+    assert.deepEqual(brief({ width: 2560, height: 1440 }), { slots: 5632, window: 128, reason: null }, '12 x 1.78 = 21.3 layers, 80 pages along 2560 pixels');
+    assert.deepEqual(brief({ width: 2560, height: 1080 }), { slots: 4096, window: 128, reason: null });
+    assert.deepEqual(brief({ width: 3440, height: 1440 }), { slots: 7424, window: 128, reason: null });
+    assert.deepEqual(brief({ width: 3840, height: 2160 }), { slots: 12288, window: 128, reason: null }, 'the explicit limit, 48 layers');
+    assert.deepEqual(brief({ width: 2160, height: 3840 }), { slots: 12288, window: 128, reason: null }, 'portrait 4K');
+    // beyond 3840x2160 the capacity stops at its explicit limits and says so
+    const large = landscapeSurfaceCacheCapacity({ width: 5120, height: 2880 });
+    assert.deepEqual({ slots: large.targetSlots, window: large.windowPages, wanted: large.wantedSlots, wantedWindow: large.wantedWindowPages, reason: large.reason },
+        { slots: 12288, window: 128, wanted: 22016, wantedWindow: 256, reason: 'surface-cache-viewport-capacity' });
+    assert.equal(landscapeSurfaceCacheCapacity({ width: 4096, height: 2160 }).reason, 'surface-cache-viewport-capacity', 'more pixels than 3840x2160');
+    assert.throws(() => landscapeSurfaceCacheCapacity({ width: 0, height: 1080 }), /drawing-buffer width/);
+    assert.throws(() => landscapeSurfaceCacheCapacity({ width: 1920.5, height: 1080 }), /drawing-buffer width/);
+    // the profile adds exactly the capacity's layers and indirection beyond the reference, so every capacity fits its target under its ceiling and
+    // the streams keep the room they have at the reference
+    const roomAt = size => {
+        const capacity = landscapeSurfaceCacheCapacity(size), limits = landscapeSurfaceCacheBudgets(capacity);
+        const fit = fitLandscapeSurfaceCache({ limits, geometry: landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, { windowPages: capacity.windowPages }), targetSlots: capacity.targetSlots });
+        assert.deepEqual({ slots: fit.slots, reason: fit.reason }, { slots: capacity.targetSlots, reason: null }, JSON.stringify(size));
+        return { gpuMiB: limits.gpuBytes / MIB, cpuMiB: limits.cpuBytes / MIB, cacheMiB: fit.gpuBytes / MIB, room: limits.gpuBytes - fit.gpuBytes };
+    };
+    const base = roomAt({ width: 1920, height: 1080 }), qhd = roomAt({ width: 2560, height: 1440 }), uhd = roomAt({ width: 3840, height: 2160 });
+    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [448, 588, 950]);
+    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [512, 512, 512]);
+    assert.ok(Math.abs(uhd.cacheMiB - 674.1) < .1 && Math.abs(qhd.cacheMiB - 312.2) < .1 && Math.abs(base.cacheMiB - 172.3) < .1, `${base.cacheMiB} / ${qhd.cacheMiB} / ${uhd.cacheMiB} MiB`);
+    for (const value of [qhd, uhd]) assert.ok(value.room >= base.room && value.room - base.room < MIB, 'the streams keep the reference room');
+    assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 2816, windowPages: 64 }), /target slots/, 'below the reference');
+    assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 3100, windowPages: 64 }), /multiple of 256/);
+    assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 3072, windowPages: 100 }), /window pages/);
+});
+
+test('Surface cache capacity (AI577 D7): the worst orthographic and perspective demand of a drawing buffer fits its capacity', () => {
+    const ground = 6, flat = (minX, minZ, maxX, maxZ, out) => { if (out) { out[0] = ground; out[1] = ground; out[2] = .02; return out; } return { min: ground, max: ground, slope: .02 }; };
+    const bounds = { minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, nearStart = .75 * LANDSCAPE_SURFACE_CACHE.texel0Meters;
+    for (const [width, height, worstAbove] of [[1920, 1080, 2900], [2560, 1440, 5000], [3840, 2160, 11000]]) {
+        const capacity = landscapeSurfaceCacheCapacity({ width, height }), geometry = landscapeSurfaceCacheGeometry(bounds, { windowPages: capacity.windowPages });
+        const pages = capacity.targetSlots - LANDSCAPE_SURFACE_CACHE.reservedSlots, aspect = width / height;
+        const demand = camera => planLandscapeSurfaceCacheDemand({ geometry, camera, center: chooseLandscapeSurfaceCacheCenter({ geometry, camera, groundHeight: ground }), heightRange: flat, capacity: 1e6, bounds, nearStart }).desired;
+        let worst = 0;
+        // every phase of the finest mip against the pixel (log-spaced spans over two octaves around the worst one) and wide spans
+        for (let i = 0; i <= 160; i++) {
+            const span = 20 * 400 ** (i / 160), camera = topDownCamera({ x: 2000.3, z: 2000.2, height: 300, span, aspect, viewportHeight: height });
+            worst = Math.max(worst, demand(camera));
+        }
+        assert.ok(worst > worstAbove, `${width}x${height}: the sweep reaches the worst case (${worst})`);
+        assert.ok(worst <= pages, `${width}x${height}: worst orthographic demand ${worst} within ${pages} pages`);
+        let perspective = 0;
+        for (const fovDegrees of [8, 35, 55, 90, 110]) for (const above of [1.6, 15, 150]) for (const pitch of [8, 25, 60]) {
+            const eye = [2000, ground + above, 2000], camera = perspectiveCamera({ eye, target: [2000, ground, 2000 + above / Math.tan(pitch * Math.PI / 180)], fovDegrees, aspect, viewportHeight: height });
+            perspective = Math.max(perspective, demand(camera));
+        }
+        assert.ok(perspective <= pages, `${width}x${height}: worst perspective demand ${perspective} within ${pages} pages`);
+    }
+});
+
+test('Surface cache capacity (AI577 D7): a 128-page window refines where a 64-page window stops and resolves through the same indirection rules', () => {
+    // a 3840x2160 top-down view whose finest mip spans more than 64 pages: the 64-page window leaves its sides one mip coarser, the 128-page one does not
+    const camera = topDownCamera({ x: 2000.3, z: 2000.2, height: 300, span: 268, aspect: 16 / 9, viewportHeight: 2160 }), ground = () => ({ min: 6, max: 6, slope: 0 });
+    const plan = windowPages => {
+        const geometry = landscapeSurfaceCacheGeometry({ minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, { windowPages });
+        return { geometry, ...planLandscapeSurfaceCacheDemand({ geometry, camera, center: chooseLandscapeSurfaceCacheCenter({ geometry, camera, groundHeight: 6 }), heightRange: ground, capacity: 1e6 }) };
+    };
+    const narrow = plan(64), wide = plan(128), finest = wide.byMip.findIndex(count => count > 0);
+    const columns = result => new Set(result.pages.filter(page => page.mip === finest).map(page => page.x)).size;
+    assert.equal(columns(narrow), 64, 'the 64-page window caps the finest mip at 64 columns');
+    assert.ok(columns(wide) >= 119 && columns(wide) <= 128, `the 128-page window holds the 476 m view's ${columns(wide)} columns of 4 m pages`);
+    assert.ok(wide.byMip[finest] > narrow.byMip[finest] * 1.5, `128-page window: ${wide.byMip[finest]} finest pages against ${narrow.byMip[finest]}`);
+    assert.ok(wide.byMip[finest] <= 128 * 128);
+    // the frame's mip mirror samples the footprint's mip at the view's edge only with the wider window
+    const footprint = 268 / 2160, edge = 2000.3 - 268 * 16 / 9 / 2 + 1;
+    assert.ok(landscapeSurfaceCacheFrameMip(narrow.geometry, chooseLandscapeSurfaceCacheCenter({ geometry: narrow.geometry, camera, groundHeight: 6 }), edge, 2000.2, footprint) > finest);
+    assert.equal(landscapeSurfaceCacheFrameMip(wide.geometry, chooseLandscapeSurfaceCacheCenter({ geometry: wide.geometry, camera, groundHeight: 6 }), edge, 2000.2, footprint), finest);
+    // indirection: 128 x 128 layers resolve the best resident ancestor inside every window, like the 64-page ones
+    const geometry = landscapeSurfaceCacheGeometry({ minX: 0, maxX: 2048, minZ: 0, maxZ: 2048 }, { windowPages: 128 });
+    const residency = new LandscapeSurfaceCacheResidency({ slots: 1024 }), indirection = new LandscapeSurfaceCacheIndirection({ geometry }), rand = random(9);
+    assert.equal(indirection.layerBytes, 128 * 128 * 4);
+    assert.equal(indirection.data.byteLength, landscapeSurfaceCacheIndirectionBytes(geometry));
+    const publish = (mip, x, z) => { const key = landscapeSurfaceCachePageKey(mip, x, z); if (residency.get(key)) return; residency.publish({ key, slot: residency.allocate(0).slot, identity: 'i', frame: 0 }); indirection.markPage(mip, x, z); };
+    publish(geometry.rootMip, 0, 0);
+    for (let i = 0; i < 600; i++) { const mip = Math.floor(rand() * geometry.rootMip), size = 2 ** (geometry.rootMip - mip); publish(mip, Math.floor(rand() * size), Math.floor(rand() * size)); }
+    for (const center of [{ x: 700, z: 900 }, { x: 760, z: 840 }, { x: 1500, z: 300 }]) {
+        indirection.setCenter(center);
+        indirection.rebuild((mip, x, z) => residency.slotOf(mip, x, z));
+        for (let probe = 0; probe < 600; probe++) {
+            const mip = Math.floor(rand() * geometry.mips), pages = 2 ** (geometry.rootMip - mip), origin = landscapeSurfaceCacheWindowOrigin(geometry, mip, center);
+            const x = origin.x + Math.floor(rand() * Math.min(128, pages)), z = origin.z + Math.floor(rand() * Math.min(128, pages));
+            assert.ok(landscapeSurfaceCacheWindowContains(geometry, mip, center, x, z));
+            let expected = null;
+            for (let level = mip; level <= geometry.rootMip && !expected; level++) { const slot = residency.slotOf(level, x >> (level - mip), z >> (level - mip)); if (slot >= 0) expected = { slot, mip: level }; }
+            assert.deepEqual(indirection.entry(mip, x, z), { ...expected, valid: true }, `mip ${mip} page ${x},${z}`);
+        }
+    }
 });
 
 test('Surface cache: hemi-octahedral normals round-trip in the geometric tangent frame within 0.6 degrees at 8 bits', () => {
@@ -438,4 +549,24 @@ test('Surface cache demand: feedback pages and their missing ancestors join a pl
     assert.ok(deep.limited);
     assert.ok(deep.pages.slice(3).every((p, i, list) => i === 0 || p.priority > list[i - 1].priority));
     assert.throws(() => mergeLandscapeSurfaceCacheFeedback({ geometry: coastal, plan, feedback: [{ mip: 0, x: 4096, z: 0 }], capacity: 10 }), /page x/);
+});
+
+test('Surface cache default (AI577 D7): a view runs the cache unless it selects off; a suite without a selection runs the default at its display profile', () => {
+    assert.equal(LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, 'on');
+    const saved = process.env.LANDSCAPE_TEST_SURFACE_CACHE;
+    try {
+        delete process.env.LANDSCAPE_TEST_SURFACE_CACHE;
+        assert.equal(landscapeEffectiveSurfaceCache(), 'on');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html', 'an unselected run keeps the address');
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 512, gpuMiB: 448 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 512, gpuMiB: 588 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 512, gpuMiB: 950 });
+        process.env.LANDSCAPE_TEST_SURFACE_CACHE = 'off';
+        assert.equal(landscapeEffectiveSurfaceCache(), 'off');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceCache=on'), '/screens/landscape_fabrication.html?landscapeSurfaceCache=on', 'an address that selects the cache keeps it');
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: LANDSCAPE_STREAMING_BUDGETS.cpuBytes / 2 ** 20, gpuMiB: LANDSCAPE_STREAMING_BUDGETS.gpuBytes / 2 ** 20 });
+    } finally {
+        if (saved === undefined) delete process.env.LANDSCAPE_TEST_SURFACE_CACHE; else process.env.LANDSCAPE_TEST_SURFACE_CACHE = saved;
+    }
 });

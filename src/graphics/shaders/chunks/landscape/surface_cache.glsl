@@ -1,6 +1,7 @@
 // AI577 D6 runtime surface cache sampling (landscape-surface-cache-v1), mirroring LandscapeSurfaceCacheLayout.js. Included only by the cached frame
 // program (LANDSCAPE_SURFACE_CACHE). The fragment's anisotropic footprint selects the finer trilinear mip of a world-anchored virtual texture,
-// raised until that mip's 64-page toroidal window around the clipmap center contains the position; one indirection texel then gives the slot
+// raised until that mip's toroidal window around the clipmap center contains the position (the window is the indirection texture's width in pages:
+// 64 at the 1920x1080 reference, larger for larger drawing buffers since AI577 D7); one indirection texel then gives the slot
 // and mip of the best resident page (the page itself or its closest resident ancestor), and three filtered fetches with the fragment's own
 // gradients read the composited view-independent surface: albedo + AO, the surface normal in the geometric tangent frame + roughness + micro-paired
 // coverage, and at half resolution the natural-ground response + coastal reach. Hardware trilinear filtering stays inside a slot (its level 1 is
@@ -33,15 +34,15 @@ float landscapeSurfaceCachePageMeters(int mip) {
     return LANDSCAPE_SURFACE_CACHE_TEXEL0 * LANDSCAPE_SURFACE_CACHE_PAGE_TEXELS * exp2(float(mip));
 }
 
-// the footprint's finer trilinear mip, raised until the mip's toroidal window contains the virtual position
-int landscapeSurfaceCacheMip(vec2 p, float lod, int rootMip) {
+// the footprint's finer trilinear mip, raised until the mip's toroidal window of window x window pages contains the virtual position
+int landscapeSurfaceCacheMip(vec2 p, float lod, int rootMip, float window) {
     int mip = clamp(int(floor(lod)), 0, rootMip);
     for (int i = 0; i < LANDSCAPE_SURFACE_CACHE_MAX_MIPS; i++) {
         if (mip >= rootMip) break;
         float size = landscapeSurfaceCachePageMeters(mip);
-        vec2 page = floor(p / size), last = vec2(max(0.0, exp2(float(rootMip - mip)) - LANDSCAPE_SURFACE_CACHE_WINDOW));
-        vec2 origin = clamp(floor(uSurfaceCacheFrame.zw / size) - LANDSCAPE_SURFACE_CACHE_WINDOW * 0.5, vec2(0.0), last);
-        if (all(greaterThanEqual(page, origin)) && all(lessThan(page, origin + LANDSCAPE_SURFACE_CACHE_WINDOW))) break;
+        vec2 page = floor(p / size), last = vec2(max(0.0, exp2(float(rootMip - mip)) - window));
+        vec2 origin = clamp(floor(uSurfaceCacheFrame.zw / size) - window * 0.5, vec2(0.0), last);
+        if (all(greaterThanEqual(page, origin)) && all(lessThan(page, origin + window))) break;
         mip++;
     }
     return mip;
@@ -63,9 +64,10 @@ LandscapeCachedSurface landscapeSurfaceCacheSample(vec2 world, vec2 dx, vec2 dy)
     vec2 p = clamp(world - uSurfaceCacheFrame.xy, vec2(0.0), vec2(extent * 0.99999));
     float major = max(length(dx), length(dy)), minor = min(length(dx), length(dy));
     float footprint = max(major / uSurfaceCacheState.y, minor);
-    int mip = landscapeSurfaceCacheMip(p, log2(max(footprint, 1.0e-7) / LANDSCAPE_SURFACE_CACHE_TEXEL0), rootMip);
+    int window = textureSize(uSurfaceCacheIndirection, 0).x;
+    int mip = landscapeSurfaceCacheMip(p, log2(max(footprint, 1.0e-7) / LANDSCAPE_SURFACE_CACHE_TEXEL0), rootMip, float(window));
     ivec2 page = ivec2(floor(p / landscapeSurfaceCachePageMeters(mip)));
-    uvec4 entry = texelFetch(uSurfaceCacheIndirection, ivec3(page & ivec2(LANDSCAPE_SURFACE_CACHE_WINDOW_MASK), mip), 0);
+    uvec4 entry = texelFetch(uSurfaceCacheIndirection, ivec3(page & ivec2(window - 1), mip), 0);
     ivec3 size = textureSize(uSurfaceCacheAlbedo, 0);
     vec2 scale;
     vec3 uv = landscapeSurfaceCacheCoordinates(entry, p, size, scale);
@@ -74,7 +76,7 @@ LandscapeCachedSurface landscapeSurfaceCacheSample(vec2 world, vec2 dx, vec2 dy)
     vec4 response = textureGrad(uSurfaceCacheResponse, uv, dx * scale, dy * scale);
     // the coarse ground: the 1 m mip (every window from it on covers the landscape), its slot level 1
     int groundMip = max(mip, min(LANDSCAPE_SURFACE_CACHE_GROUND_MIP, rootMip));
-    uvec4 groundEntry = texelFetch(uSurfaceCacheIndirection, ivec3(ivec2(floor(p / landscapeSurfaceCachePageMeters(groundMip))) & ivec2(LANDSCAPE_SURFACE_CACHE_WINDOW_MASK), groundMip), 0);
+    uvec4 groundEntry = texelFetch(uSurfaceCacheIndirection, ivec3(ivec2(floor(p / landscapeSurfaceCachePageMeters(groundMip))) & ivec2(window - 1), groundMip), 0);
     vec2 groundScale;
     vec3 groundUv = landscapeSurfaceCacheCoordinates(groundEntry, p, size, groundScale);
     LandscapeCachedSurface surface;

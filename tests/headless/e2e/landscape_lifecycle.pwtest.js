@@ -111,6 +111,46 @@ test('Landscape AI577 D4: disposing while the terrain program compiles stops wai
     await writeFile(path.join(artifacts, 'dispose-during-compile.json'), JSON.stringify({ disposed: { ready: disposed.ready, budget: disposed.budget, lastError: disposed.lastError }, errors }, null, 2));
 });
 
+// AI577 D7: an animation frame's time is the time its frame began, which can precede a resume that ran just before its callbacks (a tab shown
+// again, the pause hook). The first interval after the resume was then negative, drove the running terrain morph below zero and made the edge
+// stitching throw inside the frame loop, which stopped for good: the view froze until the next pause and resume
+test('Landscape AI577 D7: resuming a paused view during a terrain transition keeps rendering', async ({ page }) => {
+    test.setTimeout(150000);
+    await mkdir(artifacts, { recursive: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    // every frame time arrives one second early, as for a frame that began before the resume; intervals between frames are unchanged
+    await page.addInitScript(() => { const request = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = callback => request(time => callback(time - 1000)); });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
+    await expect.poll(async () => { const state = await snapshot(page); return !!(state.ready && state.planning?.ready && state.streaming?.settled); }, { timeout: 120000 }).toBe(true);
+    await page.evaluate(() => window.__landscapeTestHooks.setCamera({ position: [2000, 180, 1750], target: [2000, 18, 2000], projection: 'perspective', fov: 50, zoom: 1 }));
+    // pause while a level transition morphs, then resume after a while
+    await page.waitForFunction(() => {
+        const state = window.__landscapeTestHooks.snapshot();
+        if (state.streaming?.transition?.phase !== 'morph') return false;
+        window.__landscapeTestHooks.pause();
+        return true;
+    }, null, { timeout: 60000, polling: 10 });
+    const paused = await snapshot(page);
+    await page.waitForTimeout(500);
+    expect((await snapshot(page)).frameIndex, 'no frame while paused').toBe(paused.frameIndex);
+    await page.evaluate(() => window.__landscapeTestHooks.resume());
+    await page.waitForTimeout(1000);
+    const resumed = await snapshot(page);
+    expect(errors, 'the frame loop does not throw').toEqual([]);
+    expect(resumed.frameIndex - paused.frameIndex, 'frames continue after the resume').toBeGreaterThan(10);
+    await expect.poll(async () => (await snapshot(page)).streaming.settled, { timeout: 60000 }).toBe(true);
+    const settled = await snapshot(page);
+    expect(settled.streaming.transition).toBeNull();
+    expect(settled.streaming.lods.every(lod => lod.morph >= 0 && lod.morph <= 1)).toBe(true);
+    await writeFile(path.join(artifacts, 'resume-during-transition.json'), JSON.stringify({ paused: { frameIndex: paused.frameIndex, transition: paused.streaming.transition },
+        resumed: { frameIndex: resumed.frameIndex }, settled: { transition: settled.streaming.transition, lods: settled.streaming.lods.length }, errors }, null, 2));
+    await page.evaluate(() => window.__landscapeTestHooks.dispose());
+    const disposed = await snapshot(page);
+    expect([disposed.budget.cpuBytes, disposed.budget.gpuBytes]).toEqual([0, 0]);
+});
+
 test('Landscape AI577 D6: diagnostics and the terrain-appearance switch link their program variant in parallel without stalling frames', async ({ page }) => {
     test.setTimeout(240000);
     await mkdir(artifacts, { recursive: true });

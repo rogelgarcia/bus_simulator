@@ -1,12 +1,14 @@
-// Verifies the AI577 D6 runtime surface cache in the viewer (landscape-surface-cache-v1, default off): the root page precedes the first detailed
+// Verifies the AI577 D6 runtime surface cache in the viewer (landscape-surface-cache-v1): the root page precedes the first detailed
 // cached frame, generation keeps to its GPU budget, atlases and indirection stay inside the ledger under their ceiling at the cache's shipped profile,
 // the near pass draws the near field, page borders are seamless in a top-down probe, switching it on and off links the program variants and releases
 // every cache allocation, a lost and restored WebGL context rebuilds the cache, a reload of the same landscape rebinds it, and profiles without room
-// above the streams' reserve keep it off.
+// above the streams' reserve keep it off. AI577 D7: the capacity (slots, window) follows the drawing buffer within the display's budget profile, and a
+// resize past a capacity step rebuilds the cache at the new capacity.
 import { test, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS, landscapeSurfaceCacheSlotLayout, landscapeSurfaceCacheScratchLayout, landscapeSurfaceCacheIndirectionBytes } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheLayout.js';
+import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity, landscapeSurfaceCacheSlotLayout,
+    landscapeSurfaceCacheScratchLayout, landscapeSurfaceCacheIndirectionBytes } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
@@ -65,8 +67,8 @@ function assertLedger(state, cache) {
     expect(indirection.gpuBytes).toBe(landscapeSurfaceCacheIndirectionBytes(cache.geometry));
     expect(indirection.cpuBytes, 'the indirection mirror and the slot table').toBe(indirection.gpuBytes + cache.atlas.slots * 8);
     expect(atlas.gpuBytes + indirection.gpuBytes).toBeLessThanOrEqual(cache.atlas.ceilingBytes);
-    // 3/8 of the GPU limit, never the streams' reserve below it
-    expect(cache.atlas.ceilingBytes).toBe(Math.max(0, Math.min(Math.floor(budget.limits.gpuBytes * LANDSCAPE_SURFACE_CACHE.gpuCeilingFraction), budget.limits.gpuBytes - LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes)));
+    // the GPU limit less the streams' reserve
+    expect(cache.atlas.ceilingBytes).toBe(Math.max(0, budget.limits.gpuBytes - LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes));
     expect(budget.denied, 'the cache never makes the ledger deny a stream').toBe(0);
     expect(cache.pages.resident).toBeLessThanOrEqual(cache.atlas.slots);
     expect(cache.pages.desired).toBeLessThanOrEqual(cache.atlas.slots - LANDSCAPE_SURFACE_CACHE.reservedSlots);
@@ -104,9 +106,13 @@ test('Landscape D6 surface cache: the root page precedes the first detailed cach
     expect(frames.filter(frame => frame.frameReady).every(frame => frame.root === 1), 'every detailed cached frame has the root page').toBe(true);
     expect(cache.generation.rootGeneratedAtMs).not.toBeNull();
     expect(cache.generation.program.ready).toBe(true);
-    // with the cache on, the viewer's shipped profile is the cache's own (512/448 MiB): the 11-layer target fits under its ceiling beside the streams
+    // with the cache on, the viewer's shipped profile is the cache's own (512/448 MiB on a 1920x1080 display): the 12-layer reference target and the
+    // 64-page windows of a 1920x1080 drawing buffer fit under its ceiling beside the streams (AI577 D7)
     expect(state.budget.limits).toEqual(LANDSCAPE_SURFACE_CACHE_BUDGETS);
-    expect(cache.atlas).toMatchObject({ slots: LANDSCAPE_SURFACE_CACHE.targetSlots, targetSlots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 11, slotTexels: 72, fitReason: null, anisotropy: 2 });
+    expect(state.surfaceCacheCapacity).toMatchObject({ ...state.canvas, targetSlots: 3072, windowPages: 64, reason: null, explicit: false, rebuilds: 0,
+        display: { width: 1920, height: 1080 }, runtime: { targetSlots: 3072, slots: 3072, windowPages: 64 } });
+    expect(cache.atlas).toMatchObject({ slots: LANDSCAPE_SURFACE_CACHE.targetSlots, targetSlots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 12, slotTexels: 72, fitReason: null, anisotropy: 2 });
+    expect(cache.geometry.windowPages).toBe(64);
     assertLedger(state, cache);
     expect(cache.demand.limited, 'the game view demand fits the atlas').toBe(false);
     // the near pass evaluates the near field per pixel over the tiles in reach
@@ -192,7 +198,7 @@ test('Landscape D6 surface cache: page borders are seamless top-down; switching 
     const switchMs = Date.now() - started;
     expect(on.terrainProgramVariant).toMatchObject({ surfaceCache: true, pending: false });
     expect(cache).toMatchObject({ status: 'active', ready: true, frameReady: true, settled: true });
-    expect(cache.atlas.slots, 'the cache profile fits the 2,816-slot target').toBe(LANDSCAPE_SURFACE_CACHE.targetSlots);
+    expect(cache.atlas.slots, 'the cache profile fits the 3,072-slot reference target').toBe(LANDSCAPE_SURFACE_CACHE.targetSlots);
     expect(cache.atlas.fitReason).toBeNull();
     assertLedger(on, cache);
     const lookup = await page.evaluate(({ cx, cz }) => window.__landscapeTestHooks.surfaceCacheLookup(cx + .5, cz + .5, 64 / 1080), { cx, cz });
@@ -294,6 +300,17 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
     test.setTimeout(240000);
     const context = await browser.newContext({ baseURL: String(testInfo.project.use.baseURL), viewport: { width: 960, height: 540 } });
     try {
+        // AI577 D7: an address that does not select the cache runs the default mode (on) with the profile of its display's capacity (512/448 MiB here)
+        const defaulted = await context.newPage(), defaultErrors = observeErrors(defaulted);
+        await defaulted.goto('/screens/landscape_fabrication.html');
+        await defaulted.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.ready, null, { timeout: 60000 });
+        const byDefault = await snapshot(defaulted);
+        expect(LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE).toBe('on');
+        expect(byDefault.surfaceCache).toBe('on');
+        expect(byDefault.budget.limits).toEqual(LANDSCAPE_SURFACE_CACHE_BUDGETS);
+        expect(defaultErrors).toEqual([]);
+        await defaulted.evaluate(() => window.__landscapeTestHooks.dispose());
+        await defaulted.close();
         const page = await context.newPage(), errors = observeErrors(page);
         await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceCache=on&landscapeSurfaceCacheSlots=512&landscapeSurfaceCacheAnisotropy=4'));
         await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.appearance?.surfaceCache?.status === 'active', null, { timeout: 150000 });
@@ -325,7 +342,8 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
         await expect.poll(() => aboveFailures.join('\n'), { timeout: 20000 }).toMatch(/landscapeGpuMiB must be a positive byte-exact MiB value no greater than the shipped budget/);
         await above.close();
         for (const [query, message] of [['landscapeSurfaceCache=maybe', /landscapeSurfaceCache must be one of off, on; received maybe/],
-            ['landscapeSurfaceCacheSlots=300', /landscapeSurfaceCacheSlots must be a multiple of 256 from 256 to 8192; received 300/],
+            ['landscapeSurfaceCacheSlots=300', new RegExp(`landscapeSurfaceCacheSlots must be a multiple of 256 from 256 to ${LANDSCAPE_SURFACE_CACHE_CAPACITY.maximumSlots}; received 300`)],
+            ['landscapeSurfaceCacheWindow=96', /landscapeSurfaceCacheWindow must be 64, 128 or 256; received 96/],
             ['landscapeSurfaceCacheAnisotropy=3', /landscapeSurfaceCacheAnisotropy must be 1, 2, 4, 8 or 16; received 3/]]) {
             const invalid = await context.newPage(), failures = [];
             invalid.on('pageerror', error => failures.push(error.message));
@@ -334,5 +352,54 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
             expect(await invalid.evaluate(() => typeof window.__landscapeTestHooks)).toBe('undefined');
             await invalid.close();
         }
+    } finally { await context.close(); }
+});
+
+test('Landscape D7 surface cache capacity: the slots and window follow the drawing buffer within the display profile; a resize rebuilds the cache', async ({ browser }, testInfo) => {
+    test.setTimeout(420000);
+    // a 1920x1080 window on a 3840x2160 display: the profile admits the display's capacity, the cache holds the drawing buffer's
+    const context = await browser.newContext({ baseURL: String(testInfo.project.use.baseURL), viewport: { width: 1920, height: 1080 }, screen: { width: 3840, height: 2160 }, deviceScaleFactor: 1 });
+    try {
+        const page = await context.newPage(), errors = observeErrors(page);
+        await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceCache=on'));
+        await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.ready, null, { timeout: 60000 });
+        await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), gamePov);
+        const display = landscapeSurfaceCacheBudgets(landscapeSurfaceCacheCapacity({ width: 3840, height: 2160 }));
+        const first = await settle(page);
+        expect(display.gpuBytes / MiB).toBe(950);
+        expect(first.budget.limits).toEqual(display);
+        expect(first.surfaceCacheCapacity).toMatchObject({ ...first.canvas, targetSlots: 3072, windowPages: 64, display: { width: 3840, height: 2160 }, rebuilds: 0 });
+        expect(first.appearance.surfaceCache.atlas.slots).toBe(3072);
+        // a 2560-wide drawing buffer: the policy's slots for its pixels and 128-page windows, rebuilt once the size settles
+        await page.setViewportSize({ width: 2560, height: 1440 });
+        await expect.poll(async () => (await snapshot(page)).canvas.width, { timeout: 30000 }).toBe(2560);
+        const expected = landscapeSurfaceCacheCapacity((await snapshot(page)).canvas);
+        expect(expected.windowPages).toBe(128);
+        expect(expected.targetSlots).toBeGreaterThanOrEqual(5120);
+        await expect.poll(async () => (await snapshot(page)).surfaceCacheCapacity.runtime, { timeout: 120000 })
+            .toMatchObject({ targetSlots: expected.targetSlots, slots: expected.targetSlots, windowPages: 128 });
+        const wide = await settle(page), cache = wide.appearance.surfaceCache;
+        expect(wide.surfaceCacheCapacity).toMatchObject({ ...wide.canvas, targetSlots: expected.targetSlots, windowPages: 128, reason: null, rebuilds: 1 });
+        expect(wide.terrainProgramVariant).toMatchObject({ surfaceCache: true, pending: false });
+        expect(cache).toMatchObject({ status: 'active', ready: true, frameReady: true, settled: true });
+        expect(cache.atlas).toMatchObject({ slots: expected.targetSlots, targetSlots: expected.targetSlots, layers: expected.targetSlots / 256, fitReason: null });
+        expect(cache.geometry.windowPages).toBe(128);
+        expect(cache.indirection.bytes).toBe(landscapeSurfaceCacheIndirectionBytes(cache.geometry));
+        expect(cache.indirection.bytes).toBe(128 * 128 * 4 * cache.geometry.mips);
+        assertLedger(wide, cache);
+        expect(cache.demand.limited, 'the game view demand fits the larger atlas').toBe(false);
+        expect(cache.pages.missing).toBe(0);
+        const near = await page.evaluate(({ x, z }) => window.__landscapeTestHooks.surfaceCacheLookup(x, z, .02), { x: anchor.x, z: anchor.z });
+        expect(near.resident).not.toBeNull();
+        // back to 1920x1080: the reference capacity again, its allocations replaced, nothing left behind in the ledger
+        await page.setViewportSize({ width: 1920, height: 1080 });
+        await expect.poll(async () => (await snapshot(page)).surfaceCacheCapacity.runtime, { timeout: 120000 }).toMatchObject({ targetSlots: 3072, windowPages: 64 });
+        const back = await settle(page);
+        expect(back.surfaceCacheCapacity.rebuilds).toBe(2);
+        expect(cacheEntries(back)).toHaveLength(2);
+        assertLedger(back, back.appearance.surfaceCache);
+        expect(back.appearance.surfaceCache.atlas.layers).toBe(12);
+        expect(errors).toEqual([]);
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
     } finally { await context.close(); }
 });

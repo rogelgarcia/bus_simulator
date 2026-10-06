@@ -2,14 +2,12 @@
 // @ts-check
 // AI577 D6 (landscape-surface-cache-v1). A slot holds one page; publishing a regenerated page moves it to a new slot and frees the old one only
 // then, so a stale page keeps rendering until its replacement exists. Eviction takes the page desired longest ago, never the pinned root or a
-// page desired in the protected frame. The indirection keeps one RGBA8UI 64x64 layer per mip: every texel of a mip's toroidal window holds the
-// slot and mip of the page itself when it is resident, otherwise its parent's texel, which the next coarser window always contains, so one fetch
-// returns the best resident ancestor. Changed pages mark the region they cover in their own and every finer layer; a window that moves marks only
-// the strips of pages entering it (the toroidal addressing keeps every other texel valid); layers rebuild their dirty boxes coarse to fine.
-import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCachePageKey, landscapeSurfaceCachePagesPerAxis, landscapeSurfaceCacheWindowOrigin,
-    parseLandscapeSurfaceCachePageKey } from './LandscapeSurfaceCacheLayout.js';
-
-const WINDOW = LANDSCAPE_SURFACE_CACHE.windowPages;
+// page desired in the protected frame. The indirection keeps one RGBA8UI layer of window x window texels per mip (geometry.windowPages: 64 at the
+// 1920x1080 reference, larger for larger drawing buffers since AI577 D7): every texel of a mip's toroidal window holds the slot and mip of the page
+// itself when it is resident, otherwise its parent's texel, which the next coarser window always contains, so one fetch returns the best resident
+// ancestor. Changed pages mark the region they cover in their own and every finer layer; a window that moves marks only the strips of pages entering
+// it (the toroidal addressing keeps every other texel valid); layers rebuild their dirty boxes coarse to fine.
+import { landscapeSurfaceCachePageKey, landscapeSurfaceCachePagesPerAxis, landscapeSurfaceCacheWindowOrigin, parseLandscapeSurfaceCachePageKey } from './LandscapeSurfaceCacheLayout.js';
 
 export class LandscapeSurfaceCacheResidency {
     /** @param {{slots:number}} options */
@@ -93,8 +91,9 @@ export class LandscapeSurfaceCacheIndirection {
     /** @param {{geometry:any}} options */
     constructor({ geometry }) {
         this.geometry = geometry;
-        this.data = new Uint8Array(WINDOW * WINDOW * 4 * geometry.mips);
-        this.layerBytes = WINDOW * WINDOW * 4;
+        this.window = geometry.windowPages;
+        this.data = new Uint8Array(this.window * this.window * 4 * geometry.mips);
+        this.layerBytes = this.window * this.window * 4;
         this.center = null;
         /** @type {Array<{x:number,z:number}|null>} */
         this.origins = Array.from({ length: geometry.mips }, () => null);
@@ -114,7 +113,7 @@ export class LandscapeSurfaceCacheIndirection {
 
     // a box clipped to the layer's window joins its dirty list; a list grown past a few boxes collapses into their bounding box
     #markBox(mip, x0, z0, x1, z1) {
-        const origin = this.origins[mip];
+        const origin = this.origins[mip], WINDOW = this.window;
         if (!origin) return;
         const pages = landscapeSurfaceCachePagesPerAxis(this.geometry, mip);
         const box = { x0: Math.max(x0, origin.x), z0: Math.max(z0, origin.z), x1: Math.min(x1, origin.x + WINDOW, pages), z1: Math.min(z1, origin.z + WINDOW, pages) };
@@ -133,6 +132,7 @@ export class LandscapeSurfaceCacheIndirection {
      * larger jump (or a first placement) marks the whole window. @param {{x:number,z:number}} center
      */
     setCenter(center) {
+        const WINDOW = this.window;
         this.center = center;
         for (let mip = 0; mip < this.geometry.mips; mip++) {
             const origin = landscapeSurfaceCacheWindowOrigin(this.geometry, mip, center), previous = this.origins[mip];
@@ -158,7 +158,7 @@ export class LandscapeSurfaceCacheIndirection {
         }
     }
 
-    markAll() { for (let mip = 0; mip < this.geometry.mips; mip++) { const origin = this.origins[mip]; if (origin) this.#markBox(mip, origin.x, origin.z, origin.x + WINDOW, origin.z + WINDOW); } }
+    markAll() { const WINDOW = this.window; for (let mip = 0; mip < this.geometry.mips; mip++) { const origin = this.origins[mip]; if (origin) this.#markBox(mip, origin.x, origin.z, origin.x + WINDOW, origin.z + WINDOW); } }
 
     /**
      * Rebuilds the dirty boxes coarse to fine. Entry RGBA: slot low byte, slot high byte, page mip, 255; the root missing leaves zeros.
@@ -166,7 +166,7 @@ export class LandscapeSurfaceCacheIndirection {
      */
     rebuild(slotOf) {
         if (!this.center) throw new Error('[LandscapeSurfaceCache] the indirection needs a center before it is built');
-        const rebuilt = [], data = this.data, root = this.geometry.rootMip;
+        const rebuilt = [], data = this.data, root = this.geometry.rootMip, WINDOW = this.window;
         for (let mip = root; mip >= 0; mip--) {
             const boxes = this.dirty[mip];
             if (!boxes.length) continue;
@@ -196,7 +196,7 @@ export class LandscapeSurfaceCacheIndirection {
 
     /** CPU lookup mirror of the frame program's single indirection fetch. @param {number} mip @param {number} x @param {number} z */
     entry(mip, x, z) {
-        const offset = mip * this.layerBytes + ((z & (WINDOW - 1)) * WINDOW + (x & (WINDOW - 1))) * 4, data = this.data;
+        const WINDOW = this.window, offset = mip * this.layerBytes + ((z & (WINDOW - 1)) * WINDOW + (x & (WINDOW - 1))) * 4, data = this.data;
         return { slot: data[offset] | (data[offset + 1] << 8), mip: data[offset + 2], valid: data[offset + 3] === 255 };
     }
 }

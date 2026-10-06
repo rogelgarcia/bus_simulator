@@ -93,7 +93,7 @@ export function chooseLandscapeSurfaceCacheCenter({ geometry, camera, groundHeig
         const horizontal = Math.hypot(direction.x, direction.z);
         if (horizontal > .1) {
             const pixelAngle = 2 * Math.tan(camera.fovYRadians / 2) / camera.zoom / camera.viewportHeight;
-            const reach = geometry.texel0Meters / pixelAngle, shift = Math.min(DEMAND.centerShiftLimitMeters, Math.max(0, reach - LANDSCAPE_SURFACE_CACHE.windowPages / 4 * geometry.pageMeters0));
+            const reach = geometry.texel0Meters / pixelAngle, shift = Math.min(DEMAND.centerShiftLimitMeters, Math.max(0, reach - geometry.windowPages / 4 * geometry.pageMeters0));
             x += direction.x / horizontal * shift; z += direction.z / horizontal * shift;
         }
     }
@@ -118,7 +118,7 @@ export function planLandscapeSurfaceCacheDemand({ geometry, camera, center, heig
     const orthographic = camera.projection === 'orthographic';
     const pixelAngle = orthographic ? 0 : 2 * Math.tan(camera.fovYRadians / 2) / camera.zoom / camera.viewportHeight;
     const orthoPixel = orthographic ? camera.orthoHeight / camera.zoom / camera.viewportHeight : 0;
-    const minimumSine = DEMAND.minimumGrazingSine, pageTexels = LANDSCAPE_SURFACE_CACHE.pageTexels, window = LANDSCAPE_SURFACE_CACHE.windowPages;
+    const minimumSine = DEMAND.minimumGrazingSine, pageTexels = LANDSCAPE_SURFACE_CACHE.pageTexels, window = geometry.windowPages;
     const stretch = sine => Math.max(1, 1 / (anisotropy * Math.min(1, Math.max(sine, minimumSine)))), bias = 2 ** Math.max(0, lodBias);
     // per mip: page size, pages per axis and the clipmap window origin
     const mips = geometry.mips, sizes = new Float64Array(mips), perAxis = new Int32Array(mips), originX = new Int32Array(mips), originZ = new Int32Array(mips);

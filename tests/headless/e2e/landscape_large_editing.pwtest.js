@@ -1,4 +1,8 @@
 // Exercises bounded multi-chunk authoring, real-source preparation, streaming revisit and whole-batch revert.
+// The editable copy starts at the immutable snapshot the city fixture pins, not at the canonical current revision: later material-only
+// publications (the nature pass, AI577 D1a) advance the canonical revision without a city review, and the strict pin must keep refusing them.
+// Starting from the pinned revision keeps the binding valid at the start, and the revert then restores the pinned content under a new revision,
+// which the strict pin must still refuse.
 import { test, expect } from '@playwright/test';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -30,8 +34,9 @@ const widePose = { position: [2000, 6500, 1999], target: [2000, 0, 2000], projec
 test.beforeAll(async () => {
     await mkdir(artifacts, { recursive: true });
     directory = await mkdtemp(path.join(artifacts, 'coastal-run-'));
-    for (const relative of ['manifest.json', 'payloads', 'appearance']) await cp(path.join(source, relative), path.join(directory, relative), { recursive: true });
-    await cp(path.join(root, boundCity.landscape.manifestUrl), path.join(directory, path.basename(boundCity.landscape.manifestUrl)));
+    for (const relative of ['payloads', 'appearance']) await cp(path.join(source, relative), path.join(directory, relative), { recursive: true });
+    const pinnedSnapshot = path.join(root, boundCity.landscape.manifestUrl);
+    for (const name of ['manifest.json', path.basename(boundCity.landscape.manifestUrl)]) await cp(pinnedSnapshot, path.join(directory, name));
     await copyLandscapePlanningSources(await manifest(), source, directory);
     server = createLandscapeServer({ root, landscapeDirectory: directory });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -113,8 +118,12 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error' && /WebGLProgram|VALIDATE_STATUS|shader error|GL_INVALID/i.test(message.text())) errors.push(message.text()); });
-    const original = await manifest();
+    const original = await manifest(), canonical = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8'));
+    expect(original.revision).toBe(boundCity.landscape.revision);
     validateLandscapeCityBinding(boundCity.landscape, { manifest: original });
+    // a canonical publication the city has not reviewed (currently the AI577 D1a material bindings) is refused until an explicit rebind
+    const canonicalRefused = canonical.revision !== boundCity.landscape.revision;
+    if (canonicalRefused) expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: canonical })).toThrow(/revision is stale/);
     const reservations = cityReservationsToLandscapeConstraints(boundCity.landscape, CityMap.fromSpec(boundCity, createCityConfig()).reservations);
     const studyShape = { type: 'footprint', region: polygon };
     const corridorShape = { type: 'corridor', points: [{ x: 1800, z: 2000 }, { x: 2200, z: 2000 }], widthMeters: 20 };
@@ -266,6 +275,7 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     expect(disposed.budget.cpuBytes).toBe(0);
     expect(disposed.budget.gpuBytes).toBe(0);
     const planning = { beforeReport, beforeCorridor, editedReport, editedCorridor, preparedReport, restoredReport, restoredCorridor,
-        pinnedCityBinding: boundCity.landscape, currentCityBinding, pinnedBefore, pinnedAfterEdit, pinnedAfterRevert, unrelatedDependency, coverDependency };
+        pinnedCityBinding: boundCity.landscape, currentCityBinding, pinnedBefore, pinnedAfterEdit, pinnedAfterRevert, unrelatedDependency, coverDependency,
+        canonical: { revision: canonical.revision, refusedByPin: canonicalRefused }, startingRevision: original.revision, restoredRevision: restored.revision };
     await writeFile(path.join(artifacts, 'verification.json'), JSON.stringify({ directory, batch, applied, beforeCenter, editedCenter, borders, overview, revisited, preparedRevision: prepared.revision, reopened, reverted, restoredBorders, afterRevert, disposed, planning, errors }, null, 2));
 });

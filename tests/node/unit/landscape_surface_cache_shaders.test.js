@@ -169,6 +169,12 @@ test('Surface cache shaders: the default program keeps its structure and defines
     assert.match(mainOf(standard), /\{\s+terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/);
     const defines = landscapeSurfaceCacheDefines();
     assert.equal(defines.LANDSCAPE_SURFACE_CACHE_TEXEL0, String(LANDSCAPE_SURFACE_CACHE.texel0Meters));
-    assert.deepEqual([defines.LANDSCAPE_SURFACE_CACHE_SLOT, defines.LANDSCAPE_SURFACE_CACHE_GUTTER, defines.LANDSCAPE_SURFACE_CACHE_PAGE_TEXELS, defines.LANDSCAPE_SURFACE_CACHE_WINDOW_MASK],
-        ['72.0', '4.0', '64.0', '(63)']);
+    assert.deepEqual([defines.LANDSCAPE_SURFACE_CACHE_SLOT, defines.LANDSCAPE_SURFACE_CACHE_GUTTER, defines.LANDSCAPE_SURFACE_CACHE_PAGE_TEXELS], ['72.0', '4.0', '64.0']);
+    // AI577 D7: the window is not compiled in; the frame reads it from the indirection texture, so one linked program serves every capacity
+    assert.equal(defines.LANDSCAPE_SURFACE_CACHE_WINDOW, undefined);
+    assert.equal(defines.LANDSCAPE_SURFACE_CACHE_WINDOW_MASK, undefined);
+    const frame = code(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE: '1' }));
+    assert.match(frame, /int window = textureSize\(uSurfaceCacheIndirection, 0\)\.x;/);
+    assert.equal((frame.match(/& ivec2\(window - 1\)/g) ?? []).length, 2, 'the page and the ground fetch wrap by the window');
+    assert.doesNotMatch(frame, /LANDSCAPE_SURFACE_CACHE_WINDOW/);
 });

@@ -289,3 +289,8 @@ The D4 publication is `multiscale-eedd520219823e11ff6c7381` (`multiscale.07ec6c0
 layer for sand and seabed (one unique page per tier, 5,312,512 bytes in all). Repeated
 preparation from the same inputs is byte-identical. Runtime selection, fallbacks and accounting
 are specified in [LANDSCAPE_APPEARANCE_RUNTIME.md](LANDSCAPE_APPEARANCE_RUNTIME.md).
+
+A pinned older revision with other material bindings (the city pin, the nature-pass snapshot) resolves its retained appearance
+through its binding alias, reports the companion `invalid` with reason `multiscale-binding-mismatch: …` and keeps schema-1 tiers;
+its terrain fields stay `active` with `bound:false` and no stale chunk, because material-only revisions share the native channel
+hashes the fields bind (`landscape_appearance_binding`).

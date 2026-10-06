@@ -1,3 +1,5 @@
+# DONE — Realistic landscape surfaces and multiscale detail (AI 577)
+
 # Problem
 
 The coastal landscape foundation from AI 576 is complete. Navigation, structured
@@ -33,8 +35,7 @@ visually verified improvement at each step rather than postponing verification.
 
 - Implement one deliverable at a time, using subagents with maximum reasoning.
   Verify and commit each completed deliverable before proceeding. D1 and the
-  corrective D1a step are complete. D2–D6 are complete. Leave D7 pending for a later
-  pass; D7 is next.
+  corrective D1a step are complete. D2–D7 are complete; this AI is done.
 - Use port 8002 for the worktree server, never 8001. Isolated automated fixture
   servers may use temporary OS-assigned ports. Open a renderer only for verification
   and captures, and close it after the run to release GPU resources.
@@ -231,21 +232,21 @@ visually verified improvement at each step rather than postponing verification.
 
 ### D7. Integrated quality and resource acceptance
 
-- [ ] Verify a saved/editable coastal landscape from game POV, oblique travel,
+- [x] Verify a saved/editable coastal landscape from game POV, oblique travel,
   steep ground, shoreline and distant overview, with stable appearance through
   movement, FOV/zoom changes, pause, reload and repeated visits.
-- [ ] Exercise source/soil edits, pinned old revisions, natural planning infill,
+- [x] Exercise source/soil edits, pinned old revisions, natural planning infill,
   seam consistency, corrupt/delayed requests, low budgets and complete disposal.
-- [ ] Decide the runtime surface cache default after a visual review of motion: the D6 cache
+- [x] Decide the runtime surface cache default after a visual review of motion: the D6 cache
   (opt-in, 512/448 MiB) cuts terrain GPU time 56–67% at 1920×1080 within 0.4–0.9 sRGB bytes,
   but its 2,816 slots truncate outer rings at 4K and fast motion or zooms show coarser
   fallback pages. Scale its slots with the viewport and measure 1440p and 4K before enabling it.
-- [ ] Restore `landscape_large_editing`: its city fixture still pins the AI 576 revision
+- [x] Restore `landscape_large_editing`: its city fixture still pins the AI 576 revision
   `hierarchy-afaf934…`, so setup fails since the D1a material-only publication. Re-pin
   deliberately or rework the check around immutable snapshots, keeping strict-pin refusal.
-- [ ] Publish actual visual comparisons and reproducible same-condition benchmark
+- [x] Publish actual visual comparisons and reproducible same-condition benchmark
   results, quality profiles, limitations and canonical data/recipe references.
-- [ ] Keep all prior deliverables checked only when their gates pass; mark this AI
+- [x] Keep all prior deliverables checked only when their gates pass; mark this AI
   DONE only after D1, D1a and D2–D7 are complete. A partial handoff is not completion
   of this AI.
 
@@ -994,6 +995,84 @@ planner proved sufficient; the interface remains). The uncached default keeps D5
 0.3 ms of the safe wins. Everything was measured on one GPU, driver and browser build, where register-driven
 occupancy moves single views by ±1–5 ms between structurally equivalent programs. `landscape_large_editing`
 still stops at the pre-existing stale city pin (D7). This completes D6, not the entire AI.
+
+### D7 completed — 2026-10-06
+
+This step verifies the integrated result on top of D6 commit `c495dbcd`. D1–D6 remain completed history,
+and their gates passed again on the final tree in both surface-cache modes.
+
+- Integrated acceptance: `tests/headless/e2e/landscape_acceptance.pwtest.js` edits a saved copy of the coastal
+  landscape (terrain, appearance, companion, fields and planning sources behind an isolated fixture server)
+  and runs once per cache mode. A journey through the Game POV, FOV 55/20/8°, the shoreline, the bluff,
+  cliffs and steep rock, orthographic spans with a zoom, a native page corner, the planning infill and the
+  4 km overview must settle at every stop with lighting, fields, natural presentation, companion and cache
+  active, the geometry target met, the ledger inside the shipped profile and no denial. A second lap, pauses
+  by the hook and by `visibilitychange`, a source reload and a page reload reproduce each frame (mean
+  ≤ 0.085 sRGB bytes); no frame-to-frame change exceeds 1.06× its neighbors. Edits on the copy (soil, a 1 m
+  raise, the pre-raise immutable snapshot, both reverts), every response delayed 40–440 ms, corrupt field,
+  natural-soil and companion pages, the 128/64 and 48/24 profiles and complete disposal (empty ledger,
+  terminated workers, lost context) all pass with explicit fallbacks.
+- Strict city pin: `landscape_large_editing` starts its editable copy at the city fixture's pinned immutable
+  snapshot (`hierarchy-afaf934…`) instead of re-pinning an AI 576 deliverable. It still refuses the canonical
+  material-only revision and every edited, prepared and reverted revision, and a Node test proves that both
+  later material-only publications differ only in revision and material IDs and are refused. Every number in
+  the AI 576 integrated-correctness evidence reproduces exactly.
+- Runtime fixes found by acceptance: an evicted record now leaves the prefetch set (a stale prefetch id had
+  stalled refinement forever after a Game POV query), and the viewer clamps frame intervals at zero (a frame
+  time preceding a resume ran a morph backwards and stopped the frame loop). Each has a regression test that
+  fails without its fix.
+- Surface cache default: the cache is on by default since this step, with `landscapeSurfaceCache=off` as an
+  explicit override and the uncached path unchanged. Its capacity now follows the drawing buffer
+  (`landscape-surface-cache-capacity-v1`: 3,072 slots up to 1920×1080, 5,632 at 2560×1440, 12,288 at 3840×2160,
+  with 64- or 128-page windows and display-sized profiles of 448, 588 and 950 MiB GPU), so no view truncates
+  demand at any of those sizes. All four gate criteria held: static quality within 1 sRGB byte mean (near
+  crops ≤ 2), no visible motion fallback at ≤ 15 m/s and 45°/s, capacity to 4K within a documented profile,
+  and every landscape suite passing in both modes. Controller v3 separates other processes' GPU work from a
+  batch's own cost, the motion bias starts at 16 m/s and 60°/s (scaled down with the drawing buffer) and zooms
+  prefetch the next mip.
+- Publication: [LANDSCAPE_AI577_SURFACES.md](../specs/landscape/LANDSCAPE_AI577_SURFACES.md) consolidates the
+  outcome, quality profiles, canonical data revisions and recipes, reproduction commands, per-step benchmarks,
+  the final route benchmark and the limitations; the handoff, viewer, streaming, performance, appearance,
+  terrain-field and city-binding specs carry the D7 details.
+
+Verification: all 422 landscape Node tests pass. All 20 landscape browser suites pass in both cache modes,
+73 tests each with none failing: height blend 6, surface detail 8, seams 2, appearance 8, lighting 6,
+terrain fields 3, terrain appearance 4, surface cache 6, nature 1, planning 1, streaming 7, lifecycle 5,
+appearance binding 2, fabrication 2, navigation 2, authoring 3, city binding 1, large editing 1, acceptance 4
+and the performance gate 1 (the opt-in material audit and the capture-only transition suites are
+evidence tools outside the regression list).
+
+Motion review of the cache (fixed 1/60 s frames, moving against the settled cached frame at the same pose):
+mean 0.00–0.05 sRGB bytes at walk 5 m/s, beach flight 15 m/s, a 45°/s turn and a 55° → 8° zoom at 1920×1080,
+2560×1440 and 3840×2160 (≤ 0.10% of pixels over 16 bytes, sharpness ≥ 0.984), with coarser motion-biased
+detail only above about 17 m/s. Paired static quality and GPU: 1440p 24.1 → 8.2 ms (0.55 bytes, near 0.39),
+4K 35.8 → 10.5 ms (0.52 bytes, near 0.32).
+
+Same-condition route benchmark (11 stops, 1,320 sampled frames per run, final code):
+
+| Mode, profile | Load | GPU median / p95, ms | Estimated GPU current / peak, MiB | First coarse / settled, ms |
+| --- | --- | ---: | ---: | ---: |
+| Cache on (default), 512/448 | cold | 1.00 / 2.92 | 214.9 / 339.0 | 769 / 9,063 |
+| Cache on (default), 512/448 | warm | 1.01 / 2.98 | 214.9 / 339.0 | 106 / 1,413 |
+| Cache off, 512/256 | cold | 3.18 / 11.41 | 42.6 / 166.7 | 6,858 / 7,556 |
+| Cache off, 512/256 | warm | 3.20 / 11.40 | 42.6 / 166.7 | 103 / 759 |
+
+The 128/64 and 48/24 profiles run uncached in both modes (GPU median 3.1 ms) with complete coverage.
+
+Evidence root: `tests/artifacts/screens/landscape/ai577/d7/` (`acceptance/` with journey, request, budget and
+disposal receipts per mode; `cache-default/` with capacity tables, paired 1440p/4K sheets and the side-by-side
+motion videos `motion/final4-*/<path>-off-on-diff.mp4`; `regression-final/default|off/`), plus the route
+receipts in `tests/artifacts/screens/landscape/ai577-d7-default/performance/` and `ai577-d7-off/performance/`.
+
+Limitations: the cache needs more GPU memory (a 339 MiB route peak at 1080p, a 950 MiB profile at 4K, an
+estimate rather than measured VRAM), settles about 1.5 s later on a cold profile and regenerates every page
+after a reload or edit; fast zooms at 1440p/4K leave many on-screen pages missing briefly (visible effect
+≤ 0.04 bytes) and speeds above 17 m/s soften by design. A shared appearance worker makes the planning view
+latency-sensitive (about 217 s to settle with 0.3–1.8 s per response). Natural-soil page failures report the
+field loader's message, `snapshot().ready` turns true before Game POV is available, and any other exception
+in the frame loop would still stop rendering. Everything was measured on one RTX 3060, driver and Chromium
+build, partly while other processes used the GPU (only paired comparisons are tight). This completes D7 and,
+with D1, D1a and D2–D6, the entire AI.
 
 ## On completion
 

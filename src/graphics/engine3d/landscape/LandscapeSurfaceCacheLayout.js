@@ -1,15 +1,21 @@
-// Declares the runtime surface cache contract: virtual-texture addressing, clipmap windows, atlas slots, formats and budget fitting.
+// Declares the runtime surface cache contract: virtual-texture addressing, clipmap windows, atlas slots, formats, viewport capacity and budget fitting.
 // @ts-check
 // AI577 D6 (landscape-surface-cache-v1). The cache holds the view-independent composited ground (coverage hierarchy, material lattices, clumps,
 // height competition, landscape-scale and terrain-driven variation) in pages of a world-anchored virtual texture: 64x64 texels plus a 4-texel
 // gutter per side, mip 0 texels of 1.5625 cm (2^18 texels over 4096 m) and one root page over the whole landscape at the coarsest mip. Each mip
-// keeps a toroidal window of 64x64 pages around one center snapped to whole mip-0 pages, so one indirection layer per mip resolves every position
-// its window contains to the best resident page; positions outside a window use the next coarser mip. Pages live in fixed 72x72 atlas slots with
-// a second, half-resolution level (36x36, 2-texel gutter: the 2x2 box filter of level 0) so a single fetch filters trilinearly and 2x
-// anisotropically without leaving its slot.
+// keeps a toroidal window of windowPages x windowPages pages (64 at 1920x1080) around one center snapped to whole mip-0 pages, so one indirection
+// layer per mip resolves every position its window contains to the best resident page; positions outside a window use the next coarser mip.
+// Pages live in fixed 72x72 atlas slots with a second, half-resolution level (36x36, 2-texel gutter: the 2x2 box filter of level 0) so a single
+// fetch filters trilinearly and 2x anisotropically without leaving its slot.
 // Three atlases share the slot grid: albedo + AO (sRGB), the surface normal in the geometric tangent frame + roughness + micro-paired coverage,
 // and at half resolution the natural-ground response and coastal reach the lighting pass needs. Natural landscape materials carry metalness 0
 // (calibration 'constant', ORM blue 0 in every coastal page), so no metalness is stored.
+// AI577 D7 (landscape-surface-cache-capacity-v1): the slot target, the clipmap window and the cache's budget profile scale with the drawing buffer
+// above the 1920x1080 reference (3,072 slots, 64-page windows, 512/448 MiB). A drawing buffer finer than the reference moves every mip ring outward:
+// the worst view (orthographic, its finest mip at up to two texels per pixel) wants about 4/3 of four pages per 64x64 pixels, so the slots grow with
+// the pixel count, and that mip spans the longer side at up to two texels per pixel, so the window grows to the power of two that holds it (a 64-page
+// window at 3840x2160 samples up to half of the cached ground one mip coarser than its footprint). Swept over orthographic spans and perspective
+// views, the worst demand is 2,936 pages at 1920x1080 (D6's 2,816 slots truncated it), 5,071 at 2560x1440 and 11,083 at 3840x2160.
 
 export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
     id: 'landscape-surface-cache-v1',
@@ -19,15 +25,17 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
     slotTexels: 72,
     slotsPerRow: 16,
     atlasLevels: 2,
+    // the window of the 1920x1080 reference and the smallest one (landscapeSurfaceCacheCapacity scales it)
     windowPages: 64,
     maxMips: 16,
     maxAnisotropy: 2,
-    // 11 layers: the largest demand of the 36 AI577 views at 1920x1080 is 2,510 pages (an orthographic 1000 m view, two texels per pixel); the
-    // demand of a view scales with its pixels (about 1.2 pages per 32x32 pixels of fully covered ground), so larger viewports are capacity limited
-    targetSlots: 2816,
-    // the atlas, scratch and indirection take at most this fraction of the GPU limit, and never the GPU bytes the uncached shipped profile gives
-    // the streams (streamReserveGpuBytes, LANDSCAPE_STREAMING_BUDGETS.gpuBytes): a profile without room above that reserve keeps the cache off
-    gpuCeilingFraction: 3 / 8,
+    // 12 layers, the target of the 1920x1080 reference and the smallest one: the worst demand at 1920x1080 is 2,936 pages (a 33.6 m orthographic
+    // top-down view; the 36 AI577 views want at most 2,510), so 2,936 plus the 32 reserved slots fit with 3.5% to spare. D6 used 11 layers (2,816
+    // slots), the most its 3/8 ceiling admitted at 512/448 MiB. landscapeSurfaceCacheCapacity scales it with the drawing buffer's pixels
+    targetSlots: 3072,
+    // the atlas, scratch and indirection never take the GPU bytes the uncached shipped profile gives the streams (streamReserveGpuBytes,
+    // LANDSCAPE_STREAMING_BUDGETS.gpuBytes): a profile without room above that reserve keeps the cache off. (D6 also capped them at 3/8 of the GPU
+    // limit, which bound no admitted target at 512/448 MiB and would hold a 3840x2160 target to 24 of its 44 layers.)
     streamReserveGpuBytes: 256 * 1024 * 1024,
     // an atlas the budget shrinks below this many slots (or the target, if smaller) is not used: it would truncate most views' demand to coarse
     // rings, below the uncached frame's quality
@@ -53,10 +61,32 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
 });
 
 /**
- * Residency budget of a view that draws through the surface cache (AI577 D6): the uncached shipped CPU limit and the GPU limit that admits the
- * target atlas beside the streams' reserve without a ledger denial (measured peak 402 MiB over the 36 AI577 views at 1920x1080).
+ * Residency budget of a view that draws through the surface cache at the 1920x1080 reference capacity (AI577 D6): the uncached shipped CPU limit
+ * and the GPU limit that admits the target atlas beside the streams' reserve without a ledger denial (measured peak 402 MiB over the 36 AI577 views
+ * at 1920x1080). Larger capacities add their own bytes (landscapeSurfaceCacheBudgets).
  */
 export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 512 * 1024 * 1024, gpuBytes: 448 * 1024 * 1024 });
+
+/**
+ * Surface cache mode of a landscape view that does not choose one (AI577 D7 decision: on). `landscapeSurfaceCache=on|off` (the view's surfaceCache
+ * option) overrides it; off keeps the uncached program exactly as before.
+ */
+export const LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE = 'on';
+
+/**
+ * Viewport capacity policy (AI577 D7): the reference drawing buffer of the D6 capacity, how many drawing-buffer pixels along the longer side one
+ * window page must hold (two texels per pixel at the finest mip: 64 texels per page / 2), and the explicit limits. Drawing buffers beyond the limits
+ * keep the limit capacity and report surface-cache-viewport-capacity.
+ */
+export const LANDSCAPE_SURFACE_CACHE_CAPACITY = Object.freeze({
+    id: 'landscape-surface-cache-capacity-v1',
+    referenceWidth: 1920,
+    referenceHeight: 1080,
+    pixelsPerWindowPage: 32,
+    // 3840x2160: 48 layers (12,288 slots, 668.3 MiB of atlases) and 128-page windows
+    maximumSlots: 12288,
+    maximumWindowPages: 128
+});
 
 const MODEL = LANDSCAPE_SURFACE_CACHE;
 const KEY_COORDINATE = 2 ** 15;
@@ -73,17 +103,54 @@ function integer(value, label, min, max) {
 }
 
 /**
- * Virtual-texture frame of a landscape: origin at its bounds minimum, mip count from its larger extent (coastal 4000 m: mips 0..12 over 4096 m).
- * @param {{minX:number,maxX:number,minZ:number,maxZ:number}} bounds
- * @returns {Readonly<{originX:number,originZ:number,rootMip:number,mips:number,pageMeters0:number,texel0Meters:number,extentMeters:number}>}
+ * Virtual-texture frame of a landscape: origin at its bounds minimum, mip count from its larger extent (coastal 4000 m: mips 0..12 over 4096 m),
+ * and the pages per axis of every mip's toroidal window (a power of two from 64 to 256; landscapeSurfaceCacheCapacity chooses it).
+ * @param {{minX:number,maxX:number,minZ:number,maxZ:number}} bounds @param {{windowPages?:number}} [options]
+ * @returns {Readonly<{originX:number,originZ:number,rootMip:number,mips:number,pageMeters0:number,texel0Meters:number,extentMeters:number,windowPages:number}>}
  */
-export function landscapeSurfaceCacheGeometry(bounds) {
+export function landscapeSurfaceCacheGeometry(bounds, { windowPages = MODEL.windowPages } = {}) {
     const minX = finite(bounds?.minX, 'bounds.minX'), maxX = finite(bounds?.maxX, 'bounds.maxX'), minZ = finite(bounds?.minZ, 'bounds.minZ'), maxZ = finite(bounds?.maxZ, 'bounds.maxZ');
     if (!(maxX > minX && maxZ > minZ)) throw new Error('[LandscapeSurfaceCache] bounds must have a positive extent');
+    if (![64, 128, 256].includes(windowPages)) throw new Error(`[LandscapeSurfaceCache] window pages must be 64, 128 or 256; received ${windowPages}`);
     const pageMeters0 = MODEL.texel0Meters * MODEL.pageTexels, extent = Math.max(maxX - minX, maxZ - minZ);
     const rootMip = Math.max(0, Math.ceil(Math.log2(extent / pageMeters0) - 1e-12));
     if (rootMip >= MODEL.maxMips) throw new Error(`[LandscapeSurfaceCache] a ${extent} m landscape needs ${rootMip + 1} mips; at most ${MODEL.maxMips} are supported`);
-    return Object.freeze({ originX: minX, originZ: minZ, rootMip, mips: rootMip + 1, pageMeters0, texel0Meters: MODEL.texel0Meters, extentMeters: pageMeters0 * 2 ** rootMip });
+    return Object.freeze({ originX: minX, originZ: minZ, rootMip, mips: rootMip + 1, pageMeters0, texel0Meters: MODEL.texel0Meters, extentMeters: pageMeters0 * 2 ** rootMip, windowPages });
+}
+
+/**
+ * Capacity of a drawing buffer (AI577 D7, landscape-surface-cache-capacity-v1): the slot target grows with the pixel count above the 1920x1080
+ * reference in whole 256-slot layers (never below the reference's 3,072 slots), and the window is the smallest power of two from 64 whose pages hold
+ * the longer side at two texels per pixel. Both stop at the explicit limits, with the reason surface-cache-viewport-capacity.
+ * @param {{width:number,height:number}} drawingBuffer device pixels (CSS pixels times the renderer's pixel ratio)
+ * @returns {Readonly<{recipe:string,width:number,height:number,pixels:number,targetSlots:number,windowPages:number,wantedSlots:number,wantedWindowPages:number,reason:string|null}>}
+ */
+export function landscapeSurfaceCacheCapacity({ width, height }) {
+    integer(width, 'drawing-buffer width', 1, 65536); integer(height, 'drawing-buffer height', 1, 65536);
+    const policy = LANDSCAPE_SURFACE_CACHE_CAPACITY, perLayer = MODEL.slotsPerRow ** 2, referenceLayers = MODEL.targetSlots / perLayer;
+    const scale = width * height / (policy.referenceWidth * policy.referenceHeight);
+    const wantedSlots = Math.max(referenceLayers, Math.ceil(referenceLayers * scale - 1e-9)) * perLayer;
+    let wantedWindowPages = MODEL.windowPages;
+    while (wantedWindowPages * policy.pixelsPerWindowPage < Math.max(width, height)) wantedWindowPages *= 2;
+    const targetSlots = Math.min(wantedSlots, policy.maximumSlots), windowPages = Math.min(wantedWindowPages, policy.maximumWindowPages);
+    return Object.freeze({ recipe: policy.id, width, height, pixels: width * height, targetSlots, windowPages, wantedSlots, wantedWindowPages,
+        reason: targetSlots < wantedSlots || windowPages < wantedWindowPages ? 'surface-cache-viewport-capacity' : null });
+}
+
+/**
+ * Residency budget profile of a view that draws through the surface cache at a capacity: LANDSCAPE_SURFACE_CACHE_BUDGETS plus the GPU bytes of the
+ * capacity's layers and indirection beyond the reference (indirection for the most mips a landscape may have), in whole MiB. The streams keep the
+ * room they have at the reference; 1920x1080 keeps 512/448 MiB exactly.
+ * @param {{targetSlots:number,windowPages:number}} capacity
+ */
+export function landscapeSurfaceCacheBudgets({ targetSlots, windowPages }) {
+    const perLayer = MODEL.slotsPerRow ** 2;
+    integer(targetSlots, 'target slots', MODEL.targetSlots, perLayer * 1024);
+    if (targetSlots % perLayer) throw new Error(`[LandscapeSurfaceCache] target slots must be a multiple of ${perLayer}; received ${targetSlots}`);
+    landscapeSurfaceCacheGeometry({ minX: 0, maxX: 1, minZ: 0, maxZ: 1 }, { windowPages });
+    const layerBytes = landscapeSurfaceCacheSlotLayout({ slots: perLayer }).layerBytes;
+    const extra = (targetSlots - MODEL.targetSlots) / perLayer * layerBytes + (windowPages ** 2 - MODEL.windowPages ** 2) * 4 * MODEL.maxMips, mib = 1024 * 1024;
+    return Object.freeze({ cpuBytes: LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes, gpuBytes: LANDSCAPE_SURFACE_CACHE_BUDGETS.gpuBytes + Math.ceil(extra / mib) * mib });
 }
 
 /** @param {{pageMeters0:number,rootMip:number}} geometry @param {number} mip */
@@ -131,20 +198,20 @@ export function landscapeSurfaceCacheSnapCenter(geometry, worldX, worldZ) {
 }
 
 /**
- * First page of a mip's toroidal window: 32 pages before the center's page, clamped to the virtual texture (windows of mips with at most 64 pages
- * per axis cover the whole landscape).
+ * First page of a mip's toroidal window: half a window before the center's page, clamped to the virtual texture (windows of mips with at most
+ * windowPages pages per axis cover the whole landscape).
  * @param {any} geometry @param {number} mip @param {{x:number,z:number}} center virtual meters
  */
 export function landscapeSurfaceCacheWindowOrigin(geometry, mip, center) {
-    const size = landscapeSurfaceCachePageMeters(geometry, mip), last = Math.max(0, landscapeSurfaceCachePagesPerAxis(geometry, mip) - MODEL.windowPages);
-    const axis = value => Math.min(last, Math.max(0, Math.floor(value / size) - MODEL.windowPages / 2));
+    const window = geometry.windowPages, size = landscapeSurfaceCachePageMeters(geometry, mip), last = Math.max(0, landscapeSurfaceCachePagesPerAxis(geometry, mip) - window);
+    const axis = value => Math.min(last, Math.max(0, Math.floor(value / size) - window / 2));
     return { x: axis(center.x), z: axis(center.z) };
 }
 
 /** @param {any} geometry @param {number} mip @param {{x:number,z:number}} center @param {number} x @param {number} z */
 export function landscapeSurfaceCacheWindowContains(geometry, mip, center, x, z) {
-    const origin = landscapeSurfaceCacheWindowOrigin(geometry, mip, center), pages = landscapeSurfaceCachePagesPerAxis(geometry, mip);
-    return x >= origin.x && z >= origin.z && x < origin.x + MODEL.windowPages && z < origin.z + MODEL.windowPages && x < pages && z < pages;
+    const origin = landscapeSurfaceCacheWindowOrigin(geometry, mip, center), pages = landscapeSurfaceCachePagesPerAxis(geometry, mip), window = geometry.windowPages;
+    return x >= origin.x && z >= origin.z && x < origin.x + window && z < origin.z + window && x < pages && z < pages;
 }
 
 /** Filtered footprint the atlas sampler resolves with a given anisotropy: max(major / anisotropy, minor) of the planar derivative vectors. */
@@ -208,7 +275,8 @@ export function landscapeSurfaceCacheFilterReach({ anisotropy, level, minimumWei
 export function landscapeSurfaceCacheGutter(level) { return MODEL.gutterTexels / 2 ** level; }
 
 /**
- * Compile-time constants of the cache shaders (surface_cache.glsl and the generation outputs), from this contract.
+ * Compile-time constants of the cache shaders (surface_cache.glsl and the generation outputs), from this contract. The window is not one of them:
+ * the frame reads it from the indirection texture's size, so one linked program serves every capacity.
  * @returns {Readonly<Record<string, string>>}
  */
 export function landscapeSurfaceCacheDefines() {
@@ -218,8 +286,6 @@ export function landscapeSurfaceCacheDefines() {
         LANDSCAPE_SURFACE_CACHE_PAGE_TEXELS: float(MODEL.pageTexels),
         LANDSCAPE_SURFACE_CACHE_GUTTER: float(MODEL.gutterTexels),
         LANDSCAPE_SURFACE_CACHE_SLOT: float(MODEL.slotTexels),
-        LANDSCAPE_SURFACE_CACHE_WINDOW: float(MODEL.windowPages),
-        LANDSCAPE_SURFACE_CACHE_WINDOW_MASK: `(${MODEL.windowPages - 1})`,
         LANDSCAPE_SURFACE_CACHE_MAX_MIPS: `(${MODEL.maxMips})`,
         LANDSCAPE_SURFACE_CACHE_GROUND_MIP: `(${MODEL.groundMip})`,
         LANDSCAPE_SURFACE_CACHE_REACH_SCALE: float(MODEL.reachScaleMeters)
@@ -272,16 +338,18 @@ export function landscapeSurfaceCacheBlockPageOrigin(block, page) {
     return { x: block.origin.x + (page.x - block.x0) * MODEL.pageTexels, y: block.origin.y + (page.z - block.z0) * MODEL.pageTexels };
 }
 
-/** Indirection storage: one RGBA8UI 64x64 layer per mip, mirrored on the CPU. @param {{mips:number}} geometry */
-export function landscapeSurfaceCacheIndirectionBytes(geometry) { return MODEL.windowPages * MODEL.windowPages * 4 * integer(geometry.mips, 'mips', 1, MODEL.maxMips); }
+/** Indirection storage: one RGBA8UI window x window layer per mip, mirrored on the CPU. @param {{mips:number,windowPages:number}} geometry */
+export function landscapeSurfaceCacheIndirectionBytes(geometry) {
+    return integer(geometry.windowPages, 'window pages', 64, 256) ** 2 * 4 * integer(geometry.mips, 'mips', 1, MODEL.maxMips);
+}
 
 /**
- * Fits the atlas to its explicit GPU ceiling (gpuCeilingFraction of the shared GPU limit, and never the streams' reserve below it) and to the GPU
- * bytes the ledger still has available when given: whole 256-slot layers up to the target. Fewer slots than the target report
+ * Fits the atlas to its explicit GPU ceiling (the shared GPU limit less the streams' reserve) and to the GPU bytes the ledger still has available
+ * when given: whole 256-slot layers up to the target. Fewer slots than the target report
  * `surface-cache-gpu-ceiling`, or `surface-cache-gpu-available` when the ledger's free bytes bound them (a cache switched on beside resident
  * streams shrinks instead of displacing them); fewer than the minimum (no layer at all, or fewer than minimumSlots or the target if smaller)
  * report `surface-cache-gpu-budget` with no slots, a device below 1152 texels or the target's layer count `surface-cache-device-capacity`.
- * @param {{limits:{cpuBytes:number,gpuBytes:number},available?:{gpuBytes:number}|null,geometry:{mips:number},targetSlots?:number,maxTextureSize?:number,maxArrayLayers?:number}} options
+ * @param {{limits:{cpuBytes:number,gpuBytes:number},available?:{gpuBytes:number}|null,geometry:{mips:number,windowPages:number},targetSlots?:number,maxTextureSize?:number,maxArrayLayers?:number}} options
  */
 export function fitLandscapeSurfaceCache({ limits, available = null, geometry, targetSlots = MODEL.targetSlots, maxTextureSize = 16384, maxArrayLayers = 2048 }) {
     const gpuLimit = integer(limits?.gpuBytes, 'GPU limit', 0, Number.MAX_SAFE_INTEGER), cpuLimit = integer(limits?.cpuBytes, 'CPU limit', 0, Number.MAX_SAFE_INTEGER);
@@ -289,7 +357,7 @@ export function fitLandscapeSurfaceCache({ limits, available = null, geometry, t
     integer(targetSlots, 'target slots', perLayer, perLayer * 1024);
     // fixed: the indirection layers and the packed float scratch the generation program writes one batch of pages to
     const indirection = landscapeSurfaceCacheIndirectionBytes(geometry), scratch = landscapeSurfaceCacheScratchLayout().bytes;
-    const ceiling = Math.max(0, Math.min(Math.floor(gpuLimit * MODEL.gpuCeilingFraction), gpuLimit - MODEL.streamReserveGpuBytes));
+    const ceiling = Math.max(0, gpuLimit - MODEL.streamReserveGpuBytes);
     const free = available ? Math.max(0, integer(Math.floor(available.gpuBytes), 'available GPU bytes', -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)) : Infinity;
     const layersIn = bytes => Math.max(0, Math.floor((bytes - indirection - scratch) / unit.layerBytes));
     const wanted = Math.ceil(targetSlots / perLayer), underCeiling = layersIn(ceiling), fitting = Math.min(underCeiling, layersIn(free));

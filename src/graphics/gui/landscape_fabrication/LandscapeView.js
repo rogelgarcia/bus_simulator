@@ -26,7 +26,7 @@ import { readLandscapeTerrainReport } from '../../../app/landscape/LandscapeTerr
 import { LANDSCAPE_TERRAIN_FIELD_RUNTIME } from '../../engine3d/landscape/LandscapeTerrainFieldPages.js';
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
 import { LANDSCAPE_SURFACE_CACHE_RUNTIME, LandscapeSurfaceCache, landscapeSurfaceCacheAdmission } from '../../engine3d/landscape/LandscapeSurfaceCache.js';
-import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_BUDGETS } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
+import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 
 const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
@@ -46,8 +46,30 @@ export const LANDSCAPE_TERRAIN_APPEARANCE_MODES = Object.freeze(['on', 'off']);
 /** Natural display policy of planning-only cover (AI577 D5d): terrain-driven inference or the former 15.625 m overview infill. */
 export const LANDSCAPE_NATURAL_INFERENCE_MODES = LANDSCAPE_NATURAL_INFERENCE.modes;
 
-/** Runtime surface cache (AI577 D6 core, landscape-surface-cache-v1): off (default, the uncached program) or on. */
+/** Runtime surface cache (AI577 D6 core, landscape-surface-cache-v1): off (the uncached program) or on. */
 export const LANDSCAPE_SURFACE_CACHE_MODES = LANDSCAPE_SURFACE_CACHE_RUNTIME.modes;
+
+/** Surface cache mode of a view that does not choose one (AI577 D7 decision: on; landscapeSurfaceCache=on|off overrides it). */
+export { LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE };
+
+/** A drawing buffer whose surface cache capacity changed (a resize) rebuilds the cache once its size has been stable this long (AI577 D7). */
+const SURFACE_CACHE_CAPACITY_SETTLE_MS = 500;
+
+/**
+ * The largest drawing buffer a view's canvas can reach (AI577 D7): the display at the renderer's pixel ratio (devicePixelRatio, at most 2), or the
+ * canvas's own drawing buffer when that is larger. It sizes the surface cache's budget profile, so a window enlarged up to full screen grows the cache's
+ * capacity without a reload, while the capacity itself follows the current drawing buffer.
+ * @param {{width:number,height:number}|null} [canvas]
+ */
+export function landscapeDisplayDrawingBuffer(canvas = null) {
+    const ratio = Math.min(globalThis.devicePixelRatio || 1, 2), display = globalThis.screen;
+    return { width: Math.max(1, Math.floor((display?.width || 0) * ratio), canvas?.width ?? 0), height: Math.max(1, Math.floor((display?.height || 0) * ratio), canvas?.height ?? 0) };
+}
+
+/** Shipped residency budget of a view drawing through the surface cache (AI577 D7): the profile of its display's capacity. @param {{width:number,height:number}|null} [canvas] */
+export function landscapeSurfaceCacheShippedBudgets(canvas = null) {
+    return landscapeSurfaceCacheBudgets(landscapeSurfaceCacheCapacity(landscapeDisplayDrawingBuffer(canvas)));
+}
 
 /** @param {string} name @param {readonly string[]} modes @param {string} value */
 function requireViewMode(name, modes, value) {
@@ -59,19 +81,22 @@ export class LandscapeView {
     /**
      * @param {HTMLCanvasElement} canvas
      * @param {{source?:string,budgets?:{cpuBytes?:number,gpuBytes?:number},surfaceDetail?:'off'|'50cm'|'25cm',materialSampling?:string,multiscale?:'auto'|'off',lightingTier?:string,cityBinding?:any,
-     *   naturalInference?:'terrain'|'overview',terrainFields?:'auto'|'off',terrainAppearance?:'on'|'off',surfaceCache?:'off'|'on',surfaceCacheSlots?:number,surfaceCacheAnisotropy?:number,
+     *   naturalInference?:'terrain'|'overview',terrainFields?:'auto'|'off',terrainAppearance?:'on'|'off',surfaceCache?:'off'|'on',surfaceCacheSlots?:number|null,surfaceCacheWindow?:number|null,surfaceCacheAnisotropy?:number,
      *   surfaceCacheNear?:'on'|'off'}} options
      *   multiscale 'off' keeps the schema-1 material tiers without requesting the companion multiscale sidecar; lightingTier selects the compiled lighting tier (low, standard,
      *   high); cityBinding (a validated city landscape binding) rotates the game-frame sun and sky into landscape space by its yaw; naturalInference is
      *   the natural display policy of planning-only cover forwarded to both streams of every load (AI577 D5d); terrainFields 'off' never streams
      *   terrain-field pages (AI577 D5a); terrainAppearance 'off' keeps the terrain-driven natural appearance neutral (AI577 D5 A/B); surfaceCache 'on' draws the
-     *   ground from the runtime surface cache (AI577 D6; default 'off'), with its target slot count and sampler anisotropy, and then defaults the budgets to
-     *   LANDSCAPE_SURFACE_CACHE_BUDGETS (explicit budgets keep their values; a profile without room above the streams' reserve keeps the cache off with
-     *   its reason); surfaceCacheNear 'off' leaves the near field to the cache instead of evaluating it per pixel (landscape-surface-cache-near-v1 A/B evidence)
+     *   ground from the runtime surface cache (AI577 D6; default LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE) and then defaults the budgets to the profile of the
+     *   display's capacity (landscapeSurfaceCacheShippedBudgets; explicit budgets keep their values; a profile without room above the streams' reserve keeps
+     *   the cache off with its reason); the cache's slot target and window follow the drawing buffer (landscapeSurfaceCacheCapacity, AI577 D7) unless
+     *   surfaceCacheSlots / surfaceCacheWindow fix them; surfaceCacheAnisotropy is its sampler anisotropy; surfaceCacheNear 'off' leaves the near field to the
+     *   cache instead of evaluating it per pixel (landscape-surface-cache-near-v1 A/B evidence)
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
         lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
-        surfaceCache = 'off', surfaceCacheSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy, surfaceCacheNear = 'on' } = {}) {
+        surfaceCache = LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, surfaceCacheSlots = null, surfaceCacheWindow = null, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy,
+        surfaceCacheNear = 'on' } = {}) {
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
@@ -79,9 +104,13 @@ export class LandscapeView {
         this.terrainFields = requireViewMode('terrainFields', LANDSCAPE_TERRAIN_FIELD_MODES, terrainFields);
         requireViewMode('terrainAppearance', LANDSCAPE_TERRAIN_APPEARANCE_MODES, terrainAppearance);
         this.surfaceCache = requireViewMode('surfaceCache', LANDSCAPE_SURFACE_CACHE_MODES, surfaceCache);
-        this.surfaceCacheOptions = { targetSlots: surfaceCacheSlots, anisotropy: surfaceCacheAnisotropy, near: { mode: requireViewMode('surfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, surfaceCacheNear) } };
+        this.surfaceCacheOptions = { slots: surfaceCacheSlots, windowPages: surfaceCacheWindow, anisotropy: surfaceCacheAnisotropy,
+            near: { mode: requireViewMode('surfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, surfaceCacheNear) } };
         this.surfaceCacheRuntime = null;
         this.surfaceCacheSequence = 0;
+        this.surfaceCacheCapacityRebuilds = 0;
+        this.drawingBufferKey = null;
+        this.capacityTimer = null;
         this.materialSampling = materialSampling;
         this.multiscale = multiscale;
         this.surfaceLayers = null;
@@ -102,7 +131,7 @@ export class LandscapeView {
         this.programRequests = 0;
         this.report = { status: 'idle', pending: false, result: null, error: null };
         this.reportSequence = 0;
-        this.budget = new LandscapeResidencyBudget(this.surfaceCache === 'on' ? { ...LANDSCAPE_SURFACE_CACHE_BUDGETS, ...budgets } : budgets);
+        this.budget = new LandscapeResidencyBudget(this.surfaceCache === 'on' ? { ...landscapeSurfaceCacheShippedBudgets(canvas), ...budgets } : budgets);
         this.consumerLeases = new Map();
         this.selection = null;
         this.selectionRadius = 25;
@@ -191,9 +220,9 @@ export class LandscapeView {
             this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
             // AI577 D6: the tiles compile the cached frame variant only where a surface cache can run (a rebinding runtime, or a device and budget profile
             // that admit one); otherwise they compile the uncached program from the start instead of drawing the cache's bootstrap while it links
-            const runtime = this.surfaceCacheRuntime, cached = this.surfaceCache === 'on' && ((runtime?.budget === this.budget && runtime.canRebind(loaded))
+            const runtime = this.surfaceCacheRuntime, capacity = this.surfaceCacheCapacity(), cached = this.surfaceCache === 'on' && (this.canRebindSurfaceCache(runtime, loaded, capacity)
                 || landscapeSurfaceCacheAdmission({ renderer: this.renderer, budget: this.budget, bounds: loaded.manifest.bounds, coverageSlots: this.coverageSlots.total,
-                    targetSlots: this.surfaceCacheOptions.targetSlots, headroom: false }).admitted);
+                    targetSlots: capacity.targetSlots, windowPages: capacity.windowPages, headroom: false }).admitted);
             const stream = new LandscapeStreamer({ loaded, budget: this.budget, renderer: this.renderer, scene: this.scene, coverageSlots: this.coverageSlots.total, materialSampling: this.materialSampling,
                 lighting: this.lighting, lightingTier: this.lighting.tier, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, naturalInference: this.naturalInference,
                 diagnostics: this.diagnostic !== 'none', terrainAppearance: this.lighting.response.terrainAppearance, surfaceCache: cached });
@@ -252,16 +281,18 @@ export class LandscapeView {
         }
     }
 
-    // AI577 D6: the runtime surface cache bound to a load's geometry and appearance streams. A reload of the same landscape at the same budget rebinds
-    // the runtime (its atlases and linked programs carry over; every page regenerates); otherwise a new runtime replaces it. A cache that cannot be
-    // admitted (device, budget) reports why, and tiles that compiled the cached frame variant return to the uncached program, so the view never
-    // waits on an absent cache
+    // AI577 D6: the runtime surface cache bound to a load's geometry and appearance streams. A reload of the same landscape at the same budget and
+    // capacity rebinds the runtime (its atlases and linked programs carry over; every page regenerates); otherwise a new runtime replaces it, sized for
+    // the current drawing buffer (AI577 D7). A cache that cannot be admitted (device, budget) reports why, and tiles that compiled the cached frame
+    // variant return to the uncached program, so the view never waits on an absent cache
     attachSurfaceCache(loaded, stream, appearance) {
-        const current = this.surfaceCacheRuntime;
-        if (current?.budget === this.budget && current.canRebind(loaded)) current.bind({ stream, appearance, loaded });
+        const current = this.surfaceCacheRuntime, capacity = this.surfaceCacheCapacity();
+        if (this.canRebindSurfaceCache(current, loaded, capacity)) current.bind({ stream, appearance, loaded });
         else {
             current?.dispose();
-            this.surfaceCacheRuntime = new LandscapeSurfaceCache({ renderer: this.renderer, budget: this.budget, loaded, coverageSlots: this.coverageSlots.total, ...this.surfaceCacheOptions });
+            const { anisotropy, near } = this.surfaceCacheOptions;
+            this.surfaceCacheRuntime = new LandscapeSurfaceCache({ renderer: this.renderer, budget: this.budget, loaded, coverageSlots: this.coverageSlots.total,
+                targetSlots: capacity.targetSlots, windowPages: capacity.windowPages, capacityReason: capacity.reason, anisotropy, near });
             this.surfaceCacheRuntime.bind({ stream, appearance });
         }
         if (!this.surfaceCacheRuntime.available) {
@@ -299,6 +330,60 @@ export class LandscapeView {
 
     /** CPU mirror of the cached frame's page lookup at a world position for a footprint in meters (AI577 D6 inspection). @param {number} x @param {number} z @param {number} footprint */
     surfaceCacheLookup(x, z, footprint) { return this.surfaceCacheRuntime?.lookup(x, z, footprint) ?? null; }
+
+    /**
+     * Surface cache capacity of the current drawing buffer (AI577 D7, landscapeSurfaceCacheCapacity): its slot target and window, or the explicit
+     * surfaceCacheSlots / surfaceCacheWindow options in their place (their reason is then null).
+     */
+    surfaceCacheCapacity() {
+        const policy = landscapeSurfaceCacheCapacity({ width: Math.max(1, this.canvas.width), height: Math.max(1, this.canvas.height) }), { slots, windowPages } = this.surfaceCacheOptions;
+        const explicit = slots !== null || windowPages !== null;
+        return { ...policy, targetSlots: slots ?? policy.targetSlots, windowPages: windowPages ?? policy.windowPages, explicit, reason: explicit ? null : policy.reason };
+    }
+
+    /**
+     * AI577 D7 evidence switch: fixes the surface cache's slot target and window (null follows the drawing buffer) and rebuilds the cache when its
+     * capacity changes. Resolves with the cache snapshot once applied. @param {{slots?:number|null,windowPages?:number|null}} [capacity]
+     */
+    async setSurfaceCacheCapacity({ slots = null, windowPages = null } = {}) {
+        if (slots !== null && (!Number.isSafeInteger(slots) || slots < 256 || slots > LANDSCAPE_SURFACE_CACHE_CAPACITY.maximumSlots || slots % 256)) {
+            throw new Error(`[Landscape] surface cache slots must be a multiple of 256 from 256 to ${LANDSCAPE_SURFACE_CACHE_CAPACITY.maximumSlots}; received ${slots}`);
+        }
+        if (windowPages !== null && ![64, 128, 256].includes(windowPages)) throw new Error(`[Landscape] surface cache window must be 64, 128 or 256; received ${windowPages}`);
+        this.surfaceCacheOptions = { ...this.surfaceCacheOptions, slots, windowPages };
+        await this.syncSurfaceCacheCapacity();
+        return this.appearance?.snapshot().surfaceCache ?? null;
+    }
+
+    // applies the drawing buffer's capacity once its size has settled (and any load in progress has finished)
+    scheduleSurfaceCacheCapacity() {
+        clearTimeout(this.capacityTimer);
+        this.capacityTimer = setTimeout(() => {
+            if (this.disposed) return;
+            if (this.reloading) { this.scheduleSurfaceCacheCapacity(); return; }
+            this.syncSurfaceCacheCapacity().catch(error => { if (error.name !== 'AbortError') this.lastError = error.message; });
+        }, SURFACE_CACHE_CAPACITY_SETTLE_MS);
+    }
+
+    /** Whether a runtime can serve a load: the same budget and landscape extent at the capacity wanted now. @param {any} runtime @param {any} loaded @param {any} capacity */
+    canRebindSurfaceCache(runtime, loaded, capacity) {
+        return !!runtime && runtime.budget === this.budget && runtime.canRebind(loaded) && runtime.fit.targetSlots === capacity.targetSlots && runtime.geometry.windowPages === capacity.windowPages;
+    }
+
+    /**
+     * AI577 D7: rebuilds the surface cache when the drawing buffer's capacity (slot target or window) differs from the cache's, as a resize past a layer
+     * or window step makes it: the tiles switch to the uncached program, the cache is disposed and a new one at the new capacity switches back once its
+     * root page is resident, as when the cache is switched on. Resolves with the new cache snapshot, or null when nothing changed.
+     */
+    async syncSurfaceCacheCapacity() {
+        const runtime = this.surfaceCacheRuntime;
+        if (this.disposed || this.reloading || this.surfaceCache !== 'on' || !runtime?.available || runtime.stream !== this.stream || !this.appearance) return null;
+        const capacity = this.surfaceCacheCapacity();
+        if (runtime.fit.targetSlots === capacity.targetSlots && runtime.geometry.windowPages === capacity.windowPages) return null;
+        this.surfaceCacheCapacityRebuilds++;
+        await this.setSurfaceCache('off');
+        return this.setSurfaceCache('on');
+    }
 
     /**
      * Near pass of the surface cache (A/B evidence): 'off' leaves the near field to the cache; band overrides the hand-over band in mip-0 texels.
@@ -446,6 +531,12 @@ export class LandscapeView {
         const rect = this.canvas.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
         this.renderer.setSize(Math.round(rect.width), Math.round(rect.height), false);
+        // AI577 D7: a changed drawing buffer may change the surface cache's capacity; it is applied once the size has settled
+        const drawingBuffer = `${this.canvas.width}x${this.canvas.height}`;
+        if (drawingBuffer !== this.drawingBufferKey) {
+            this.drawingBufferKey = drawingBuffer;
+            this.scheduleSurfaceCacheCapacity();
+        }
         if (this.camera.isOrthographicCamera) {
             this.camera.top = this.orthoHeight / 2;
             this.camera.bottom = -this.orthoHeight / 2;
@@ -912,6 +1003,8 @@ export class LandscapeView {
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
             terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off', surfaceCache: this.surfaceCache,
+            surfaceCacheCapacity: { ...this.surfaceCacheCapacity(), display: landscapeDisplayDrawingBuffer(), rebuilds: this.surfaceCacheCapacityRebuilds,
+                runtime: this.surfaceCacheRuntime?.available ? { targetSlots: this.surfaceCacheRuntime.fit.targetSlots, slots: this.surfaceCacheRuntime.fit.slots, windowPages: this.surfaceCacheRuntime.geometry.windowPages } : null },
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
             uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
@@ -959,7 +1052,8 @@ export class LandscapeView {
             this.frameRequest = null;
             if (this.disposed || document.hidden) return;
             const frameStart = this.performanceCapture ? performance.now() : 0;
-            const rawDt = (now - this.lastFrame) / 1000;
+            // a frame's time can precede a resume that ran just before its callbacks; a negative interval would run transitions backwards
+            const rawDt = Math.max(0, (now - this.lastFrame) / 1000);
             this.lastFrame = now;
             this.controls.update(Math.min(rawDt, .1));
             if (this.camera.isOrthographicCamera) this.camera.fov = 2 * Math.atan(this.orthoHeight / this.camera.zoom / (2 * this.camera.position.distanceTo(this.controls.target))) * 180 / Math.PI;
@@ -972,7 +1066,7 @@ export class LandscapeView {
                 const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0);
                 const planningUploads = this.planning?.update(Math.max(0, uploadLimit - terrainUploads)) ?? 0;
                 // AI577 D6: surface cache demand and page generation run on the GPU before the frame, the indirection uploads with them
-                const cacheUploads = this.surfaceCacheRuntime?.update({ dt: rawDt, camera: this.camera, viewportHeight: this.canvas.height,
+                const cacheUploads = this.surfaceCacheRuntime?.update({ dt: rawDt, camera: this.camera, viewportHeight: this.canvas.height, viewportWidth: this.canvas.width,
                     uploadAllowance: Math.max(0, uploadLimit - terrainUploads - planningUploads), frameGpuMs: this.gpuTimer.getLastMs() }) ?? 0;
                 this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads + cacheUploads);
             }
@@ -1022,6 +1116,7 @@ export class LandscapeView {
         this.selectionAbort?.abort();
         this.reportAbort?.abort();
         this.abort.abort();
+        clearTimeout(this.capacityTimer);
         this.resizeObserver.disconnect();
         this.controls.dispose();
         this.loadingStream?.dispose();

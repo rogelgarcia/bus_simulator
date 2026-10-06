@@ -76,10 +76,10 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
-| With the runtime surface cache on (AI577 D6, `LANDSCAPE_SURFACE_CACHE_BUDGETS`) | 512 MiB CPU / 448 MiB GPU; the cache atlases take at most min(3/8 of the GPU limit, GPU limit − 256 MiB), so the streams keep the 256 MiB of the uncached profile |
+| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 512 MiB CPU / 448 MiB GPU up to 1920×1080, 588 at 2560×1440, 950 at 3840×2160 (the display's capacity); the cache takes at most the GPU limit less 256 MiB, so the streams keep the 256 MiB of the uncached profile |
 | Geometric screen error goal | 1.5 pixels |
 
-URL budgets may not exceed the profile of the selected mode (surface cache off: 512/256 MiB; on: 512/448 MiB).
+URL budgets may not exceed the profile of the selected mode (surface cache off: 512/256 MiB; on: the display's cache profile, 512/448 MiB up to 1920×1080).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle
@@ -144,6 +144,15 @@ transition. It must not fetch all 64 native coastal tiles at startup, decode the
 source raster, or allocate the full 8,388,608-triangle native mesh. Appearance
 residency is independently selected in D4, so low triangle count cannot disguise
 full-resolution mask or texture residency.
+
+An evicted record leaves the prefetch set at once. A consumer lease (a Game POV or selection query) released over a prefetched
+source chunk evicts it; its stale prefetch ID previously made the next refinement's prefetch cancellation evict that chunk's newly
+reserved build record before the task was set, so the refinement waited forever and streaming never settled (AI577 D7 fix,
+`landscape_streaming` regression test).
+
+The viewer clamps a frame interval at zero: an animation frame's time is the time its frame began and can precede a resume that
+ran just before its callbacks (a tab shown again, the pause hook). The negative interval drove a running LOD morph below zero and
+the edge stitching assertion stopped the frame loop for good (AI577 D7 fix, `landscape_lifecycle` regression test).
 
 ## Verification
 

@@ -18,13 +18,14 @@ Canonical current data is `assets/public/landscape/coastal-city/manifest.json`. 
 
 The follow-up nature pass installs clean CC0 beach sand and replaces the visual pavement treatment with inferred natural ground while retaining source classifications. See [natural material provenance](LANDSCAPE_NATURE_MATERIALS.md) for the material-only revision, immutable appearance snapshot and source hashes. D7 measurements below remain historical; the nature pass is verified separately.
 
-AI 577 continues the surface work on top of this foundation: continuous coverage
-([LANDSCAPE_SURFACE_COVERAGE.md](LANDSCAPE_SURFACE_COVERAGE.md)), homogeneous base materials with
-relief transitions ([LANDSCAPE_BASE_MATERIALS.md](LANDSCAPE_BASE_MATERIALS.md)) and generated fine
-surface pages with natural boundaries and physical interleaving
-([LANDSCAPE_SURFACE_DETAIL.md](LANDSCAPE_SURFACE_DETAIL.md)). Following the user's realism-first
-direction the shipped budget is 512 MiB CPU / 256 MiB GPU (384/192 MiB in D2–D3); the budget table below keeps the
-historical values for reference.
+AI 577 built realistic surfaces on top of this foundation: continuous coverage, homogeneous base materials
+with relief transitions, generated fine surface pages, stochastic tiling, physically scaled multiscale detail,
+global terrain fields, the game's calibrated daylight with sky, haze and water optics, terrain shadows and
+terrain-driven natural appearance, and a runtime surface cache that is on by default. See
+[LANDSCAPE_AI577_SURFACES.md](LANDSCAPE_AI577_SURFACES.md) for the outcome, quality profiles, canonical data and
+recipes, reproduction commands, benchmarks and limitations. The shipped budget is the display's surface-cache
+profile (512 MiB CPU / 448 MiB GPU up to 1920×1080) or 512/256 MiB with the cache off; the budget table below
+keeps the historical values for reference.
 
 ## Source and fidelity
 
@@ -121,6 +122,47 @@ The D7 lifecycle gate also passes **2/2** checks. A real SetupState Fabrication-
 Measured hardware/browser, cold/warm conditions, route/zoom sequence, sample counts, startup/detail latency, frame time/FPS, draw/triangle counts, transfer bytes and residency/transient tables are maintained separately in [LANDSCAPE_PERFORMANCE.md](LANDSCAPE_PERFORMANCE.md), with raw receipts under `tests/artifacts/screens/landscape/ai576/d7/performance/`. This handoff does not substitute inventory estimates or an unsafe hypothetical full-resident run for those measurements. Unavailable metrics are labeled with their reason there.
 
 Repeatable gates use the repository's selected-test runner. Relevant suites are `landscape_source_audit.test.js`, the model/import/hierarchy/authoring/planning/city Node suites, and browser suites `landscape_fabrication`, `landscape_authoring`, `landscape_streaming`, `landscape_appearance`, `landscape_planning`, `landscape_city_binding`, `landscape_large_editing`, `landscape_lifecycle` and `landscape_performance`. They cover valid/invalid schemas, deterministic edits and atomic failures, native fidelity, menu/direct entry, camera/inspection controls, stale/corrupt/canceled requests, independent leases, budget pressure, exact source queries, semantic appearance independence, persistence, source navigation and release. Browser verification is sequential and closes its pages afterward; generated captures/receipts remain ignored artifacts.
+
+### AI577 D7 integrated acceptance
+
+`tests/headless/e2e/landscape_acceptance.pwtest.js` verifies a saved, editable copy of the coastal landscape (terrain, appearance,
+multiscale companion, terrain fields and planning sources copied under the gitignored evidence folder and served by an isolated
+fixture server, so the authoring API edits the copy and never the published assets). It runs once per `LANDSCAPE_TEST_SURFACE_CACHE`
+mode and reads the mode the viewer actually ran from `snapshot().surfaceCache`.
+
+- Journey at the shipped profile (1920×1080, DPR 1): the Game POV preset over the beach, FOV 55/20/8° from the beach eye, the
+  shoreline (oblique and 1.7 m), steep ground (coast bluff, rock cliff, steep rock), orthographic sand at 200/60/20 m spans plus a
+  zoom of 10 at 200 m, a top-down native/fine page corner (1000, 1000), the planning infill (700 m) and a 4 km overview. Every stop
+  settles with lighting `ready`, terrain fields `active`, the appearance layer resident, natural presentation `active`
+  (`natural-terrain-inference-v1`, 64/64 natives), the companion `active`, the cache `active` with no missing page when on, geometry
+  meeting its target, appearance degradation limited to the slot-capacity reasons, the ledger inside the shipped profile and zero
+  denials.
+- Stability: a second lap, a pause by the hook and by `visibilitychange` while streaming is in flight, a source reload and a page
+  reload reproduce each first frame within 0.25 sRGB bytes mean and 0.05% of pixels beyond 16 bytes (measured revisits: 0–0.012).
+  The zoom-10 frame equals the 20 m span frame. A page-corner border step stays within twice the interior step.
+- Camera paths: the four D4 temporal paths and a 4 m/frame oblique coastal travel; no frame-to-frame change exceeds 1.35× the median
+  of its six neighbors, and the D4 popping ratio stays within 15% of the D6 measurement of the same path.
+- Edits on the saved copy: a soil edit changes only its projected area (outside within the noise), a 1 m raise stales exactly its
+  native (fields and natural labels fall back explicitly), the pre-raise immutable snapshot still renders the unedited frame with
+  the companion active and fresh fields, and both reverts reproduce the pre-edit frame.
+- Requests: every landscape response delayed 40–440 ms by a hash of its path (arrival order shuffled across heights, covers,
+  material, companion, field and natural-soil pages) converges to the undelayed frames while frames keep rendering; corrupt
+  field, natural-soil and companion pages fail explicitly after their single retry with coarser fallbacks, leave no reservation and
+  recover on a source reload.
+- The historical 128/64 MiB and constrained 48/24 MiB profiles keep complete coverage, bounded peaks and explicit reasons (terrain
+  fields `budget-denied` / `terrain-fields-ceiling`, the cache `unavailable` / `surface-cache-gpu-budget`).
+- Disposal: an empty ledger, every viewer worker terminated, the WebGL context lost and no further frame.
+- Console: no page error, console error or warning, except the shared PBR availability probe's two expected 404s
+  (`assets/public/pbr/_manifest.json`, `red_brick/basecolor.jpg`), which the landscape server deliberately does not serve; the
+  reduced profiles accept only their explicit budget-denial warnings.
+
+Evidence: `tests/artifacts/screens/landscape/ai577/d7/acceptance/` (`journey.json`, `requests-*.json`, `low-budgets.json`,
+lap/temporal/edit captures per cache mode).
+
+`landscape_large_editing` now starts its editable copy at the city fixture's pinned immutable snapshot (`hierarchy-afaf934…`)
+instead of the canonical current revision, so the strict pin is valid at the start; it refuses the canonical material-only
+revision (`materials-bfcf20f7…`) and every edited, prepared and reverted revision, while the pinned city keeps sampling its
+original. All numbers in "Integrated correctness and performance evidence" are unchanged.
 
 ## Remaining integration work
 

@@ -1,7 +1,7 @@
 # Fine landscape surface detail pages
 
 Status: AI577 D2 contract. Implementation and measured results are recorded in
-`prompts/AI_codex_landscape_577_MATERIAL_realistic_landscape_surfaces_and_multiscale_detail.md`.
+`prompts/AI_DONE_codex_landscape_577_MATERIAL_realistic_landscape_surfaces_and_multiscale_detail_DONE.md`.
 
 D1 reconstructs continuous material coverage from the 1.953125 m native cover grid and
 the 15.625 m natural-infill overview. Near the camera that reconstruction is

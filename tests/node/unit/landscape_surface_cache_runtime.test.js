@@ -3,7 +3,8 @@
 // and the incremental indirection rebuild of moving windows.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_SURFACE_CACHE_CONTROLLER, fitLandscapeSurfaceCacheCost, landscapeSurfaceCacheGenerationTarget, nextLandscapeSurfaceCacheQuota } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheController.js';
+import { LANDSCAPE_SURFACE_CACHE_CONTROLLER, fitLandscapeSurfaceCacheCost, landscapeSurfaceCacheBatchCost, landscapeSurfaceCacheGenerationTarget,
+    nextLandscapeSurfaceCacheQuota } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheController.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR, landscapeSurfaceCacheNearBand, landscapeSurfaceCacheNearRanges, landscapeSurfaceCacheNearReach, landscapeSurfaceCacheNearWeight,
     selectLandscapeSurfaceCacheNearTiles } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheInputChange, landscapeSurfaceCachePageInputs, landscapeSurfaceCacheSoilTiers,
@@ -33,11 +34,12 @@ function perspectiveCamera({ eye, target, fovDegrees = 55, aspect = 16 / 9, near
 }
 
 test('Surface cache controller: a line fit of fixed and per-page cost sizes batches the per-page ratio would keep small', () => {
+    assert.equal(LANDSCAPE_SURFACE_CACHE_CONTROLLER.id, 'landscape-surface-cache-controller-v3');
     const line = pages => .35 + .021 * pages;
     const exact = fitLandscapeSurfaceCacheCost([4, 6, 8, 10, 12, 16].map(pages => [pages, line(pages)]));
     assert.equal(exact.fitted, true);
-    assert.ok(Math.abs(exact.fixedMs - .35) < 1e-9 && Math.abs(exact.perPageMs - .021) < 1e-9 && exact.marginMs < 1e-9);
-    // batches kept small by a lack of candidates: the ratio per page (the former controller) charges them the fixed cost; the line does not
+    assert.ok(Math.abs(exact.fixedMs - .35) < 1e-9 && Math.abs(exact.perPageMs - .021) < 1e-9 && exact.marginMs < 1e-9 && exact.outliers === 0);
+    // batches kept small by a lack of candidates: the ratio per page (the D6 controller's predecessor) charges them the fixed cost; the line does not
     let quota = 6;
     const window = [];
     for (let batch = 0; batch < 24; batch++) {
@@ -48,24 +50,65 @@ test('Surface cache controller: a line fit of fixed and per-page cost sizes batc
     assert.ok(Math.abs(quota - (1 - .35) / .021) < .5, `quota ${quota} reaches the line's ${(1 - .35) / .021}`);
     const ratio = 1 / window.map(([pages, ms]) => ms / pages).sort((a, b) => a - b)[Math.floor((window.length - 1) * .75)];
     assert.ok(ratio < 12, `a per-page ratio would stay near ${ratio.toFixed(1)} pages`);
-    // without spread the prior fixed cost applies; a batch over the limit cuts at once; growth is bounded
+    // without spread the prior per-page cost applies with a median intercept; growth is bounded but at least two pages
     const flat = fitLandscapeSurfaceCacheCost([[8, .5], [8, .52], [8, .48]]);
     assert.equal(flat.fitted, false);
-    assert.equal(flat.fixedMs, LANDSCAPE_SURFACE_CACHE_CONTROLLER.priorFixedMs);
-    assert.ok(Math.abs(flat.perPageMs - (.5 - .35) / 8) < 1e-9);
-    assert.equal(nextLandscapeSurfaceCacheQuota({ quota: 20, model: exact, targetMs: 1, limitMs: 1.2, lastMs: 1.5, lastPages: 12, maximum: 64, growth: 1.25, cut: .7 }), 12 * .7);
+    assert.equal(flat.perPageMs, LANDSCAPE_SURFACE_CACHE_CONTROLLER.priorPerPageMs);
+    assert.ok(Math.abs(flat.fixedMs - (.5 - 8 * .021)) < 1e-9);
     assert.equal(nextLandscapeSurfaceCacheQuota({ quota: 8, model: exact, targetMs: 1, limitMs: 1.2, lastMs: .5, lastPages: 8, maximum: 64, growth: 1.25, cut: .7 }), 10);
+    assert.equal(nextLandscapeSurfaceCacheQuota({ quota: 1, model: exact, targetMs: 1, limitMs: 1.2, lastMs: .37, lastPages: 1, maximum: 64, growth: 1.25, cut: .7 }), 3, 'a collapsed quota grows by two pages, not 25%');
+    // a batch whose own cost exceeds the limit cuts at once, whether or not the line explains it (controller v2 held the quota on the second)
+    assert.equal(nextLandscapeSurfaceCacheQuota({ quota: 64, model: exact, targetMs: 1, limitMs: 1.2, lastMs: line(60), lastPages: 60, maximum: 64, growth: 1.25, cut: .7 }), 60 * .7);
+    assert.ok(Math.abs(nextLandscapeSurfaceCacheQuota({ quota: 20, model: exact, targetMs: 1, limitMs: 1.2, lastMs: 3.5, lastPages: 12, maximum: 64, growth: 1.25, cut: .7 }) - 12 * .7) < 1e-9);
+    // the own cost of a batch: an unpack (normally a few hundredths of a millisecond) that took far longer ran another process's work inside its timer
+    // window, so it counts at most four times the recent median (never capped below 0.25 ms) and the rest is external; such a batch does not cut
+    const inflated = landscapeSurfaceCacheBatchCost({ generationMs: .5, unpackMs: 2.4, unpackMedianMs: .04 });
+    assert.ok(Math.abs(inflated.ms - .75) < 1e-9 && Math.abs(inflated.externalMs - 2.15) < 1e-9, JSON.stringify(inflated));
+    assert.deepEqual(landscapeSurfaceCacheBatchCost({ generationMs: .5, unpackMs: .05, unpackMedianMs: .04 }), { ms: .55, externalMs: 0 });
+    const wide = landscapeSurfaceCacheBatchCost({ generationMs: .5, unpackMs: .6, unpackMedianMs: .2 });
+    assert.ok(Math.abs(wide.ms - 1.1) < 1e-9 && wide.externalMs === 0, 'an unpack within four times its median is the batch\'s own');
+    assert.equal(landscapeSurfaceCacheBatchCost({ generationMs: .5, unpackMs: 1, unpackMedianMs: null }).ms, .75, 'before a median the floor caps it');
+    assert.equal(nextLandscapeSurfaceCacheQuota({ quota: 20, model: exact, targetMs: 1, limitMs: 1.2, lastMs: inflated.ms, lastPages: 12, maximum: 64, growth: 1.25, cut: .7 }), 25);
     // noisy batches widen the margin (90th percentile of the residuals) and lower the quota
     const noisy = fitLandscapeSurfaceCacheCost([4, 6, 8, 10, 12, 16, 5, 7, 9, 11].map((pages, i) => [pages, line(pages) + (i % 3 === 0 ? .25 : 0)]));
     assert.ok(noisy.marginMs > .1, `margin ${noisy.marginMs}`);
     const settledQuota = model => nextLandscapeSurfaceCacheQuota({ quota: 64, model, targetMs: 1, limitMs: 1.2, lastMs: .5, lastPages: 8, maximum: 64, growth: 1.25, cut: .7 });
     assert.ok(settledQuota(noisy) < settledQuota(exact), `noisy ${settledQuota(noisy)} against ${settledQuota(exact)}`);
+    // rare outliers (two batches in 24) neither steepen the line nor widen the margin; frequent ones (four in 24, above one in ten) widen it
+    const sizes24 = [4, 6, 8, 10, 12, 16, 5, 7, 9, 11, 13, 15, 6, 8, 10, 12, 14, 9, 7, 5, 11, 13, 8, 10];
+    const spiky = sizes24.map((pages, i) => [pages, line(pages) + (i === 5 ? 3.5 : i === 17 ? 2.9 : 0)]);
+    const robust = fitLandscapeSurfaceCacheCost(spiky);
+    assert.ok(Math.abs(robust.perPageMs - .021) < 1e-6 && Math.abs(robust.fixedMs - .35) < 1e-6 && robust.marginMs < 1e-6, JSON.stringify(robust));
+    assert.equal(robust.outliers, 2);
+    const frequent = fitLandscapeSurfaceCacheCost(sizes24.map((pages, i) => [pages, line(pages) + (i % 6 === 1 ? .6 : 0)]));
+    assert.ok(Math.abs(frequent.marginMs - .6) < 1e-6 && Math.abs(frequent.perPageMs - .021) < 1e-6, JSON.stringify(frequent));
+    assert.ok(settledQuota(frequent) < settledQuota(robust), `frequent outliers ${settledQuota(frequent)} against rare ${settledQuota(robust)}`);
+    // the tail: with three batches in 24 half a millisecond above the line, the margin (90th percentile) ignores them but the 95th percentile must fit
+    // under the limit, so the batch shrinks from the target's 31 pages to 16.7; a tail beyond the limit halves the batch, never more
+    const tailed = fitLandscapeSurfaceCacheCost(sizes24.map((pages, i) => [pages, line(pages) + (i % 8 === 3 ? .5 : 0)]));
+    assert.ok(Math.abs(tailed.marginMs) < 1e-6 && Math.abs(tailed.tailMs - .5) < 1e-6, JSON.stringify(tailed));
+    assert.ok(Math.abs(settledQuota(tailed) - (1.2 - .35 - .5) / .021) < 1e-6, `tail quota ${settledQuota(tailed)}`);
+    const extreme = fitLandscapeSurfaceCacheCost(sizes24.map((pages, i) => [pages, line(pages) + (i % 8 === 3 ? 3 : 0)]));
+    assert.ok(Math.abs(settledQuota(extreme) - (1 - .35) / .021 / 2) < 1e-6, `extreme tail quota ${settledQuota(extreme)}`);
+    // the D6 failure: one-page batches with two spikes in the window held the quota at one page; it now recovers to the line's size within a few batches
+    let recovering = 1;
+    const history = Array.from({ length: 24 }, (_, i) => [1, line(1) + (i === 3 ? 3.3 : i === 11 ? 2.9 : 0)]);
+    const sizes = [];
+    for (let batch = 0; batch < 16; batch++) {
+        const pages = Math.max(1, Math.round(recovering));
+        history.push([pages, line(pages)]); history.shift();
+        recovering = nextLandscapeSurfaceCacheQuota({ quota: recovering, model: fitLandscapeSurfaceCacheCost(history), targetMs: 1, limitMs: 1.2, lastMs: line(pages), lastPages: pages, maximum: 64, growth: 1.25, cut: .7 });
+        sizes.push(Math.round(recovering));
+    }
+    assert.ok(sizes[5] >= 10 && sizes.at(-1) >= 25, `recovering quotas ${sizes.join(', ')}`);
     // the target: the budget, or the headroom below the frame period and its margin, never below the floor
     const target = frameGpuMs => landscapeSurfaceCacheGenerationTarget({ frameGpuMs, budgetMs: 1, periodMs: 1000 / 60, marginMs: 2, floorMs: .3 });
     assert.equal(target(null), 1);
     assert.equal(target(5), 1);
     assert.ok(Math.abs(target(14) - (1000 / 60 - 16)) < 1e-9);
     assert.equal(target(15.5), .3);
+    // the runtime passes the whole budget as the floor while pages the current view samples are missing (AI577 D7)
+    assert.equal(landscapeSurfaceCacheGenerationTarget({ frameGpuMs: 17.5, budgetMs: 1, periodMs: 1000 / 60, marginMs: 2, floorMs: 1 }), 1);
 });
 
 test('Surface cache near field: the band ends at one mip-0 texel and the weight mirrors the cache footprint metric', () => {

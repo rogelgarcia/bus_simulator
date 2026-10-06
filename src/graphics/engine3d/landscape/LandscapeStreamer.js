@@ -331,6 +331,9 @@ export class LandscapeStreamer {
         record.model?.dispose();
         record.model = null;
         this.records.delete(record.id);
+        // an evicted prefetch (a consumer lease release can evict it) stops being one at once: a stale id would make the next refinement's
+        // cancelPrefetch evict that chunk's new build record before the task is set, leaving the task waiting forever
+        this.prefetchIds.delete(record.id);
         record.chunk = null;
         record.buffers = null;
         this.evictedCount++;

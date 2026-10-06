@@ -251,6 +251,36 @@ test('Landscape D3: denied sibling admission restores an existing source-only le
     await page.evaluate(() => window.__landscapeTestHooks.dispose());
 });
 
+// AI577 D7: a consumer lease on a prefetched chunk (a Game POV query) evicted it on release but left its prefetch id; the next refinement that needed the
+// chunk reserved a new build record, which cancelPrefetch then evicted as that stale prefetch, so the refinement waited forever and streaming never settled
+test('Landscape AI577 D7: a consumer lease released over a prefetched chunk cannot stall the refinement that needs it', async ({ page }) => {
+    test.setTimeout(90000);
+    await openGeometryOnly(page);
+    const prefetched = 'l3/c2/r6', parent = manifest.chunks.find(chunk => chunk.id === prefetched).parentId;
+    // looking north from above the coast, the native chunk behind the camera is a source-only prefetch of a resident level-2 leaf
+    await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), { position: [1000, 45, 1136], target: [1080, 2, 1286], projection: 'perspective', fov: 55, zoom: 1 });
+    await page.waitForFunction(id => { const stream = window.__landscapeTestHooks.snapshot().streaming;
+        return stream.settled && stream.prefetchIds.includes(id) && stream.residentSourceIds.includes(id) && stream.activeWorkers === 0; }, prefetched, { timeout: 60000 });
+    expect((await snapshot(page)).streaming.residentLeafIds).toContain(parent);
+    // one task, no frame in between: a Game POV style query leases and releases the prefetched chunk, then the camera turns to look at it
+    const released = await page.evaluate(async id => {
+        const hooks = window.__landscapeTestHooks;
+        await hooks.acquireConsumer([id], { consumer: 'pov-query', priority: 100, accuracy: 'authoritative' });
+        hooks.releaseConsumer('pov-query');
+        const stream = hooks.snapshot().streaming;
+        hooks.setCamera({ position: [1073.29, 11.15, 930.06], target: [1076.58, 6.65, 941.62], projection: 'perspective', fov: 55, zoom: 1 });
+        return { prefetchIds: stream.prefetchIds, residentIds: stream.residentIds };
+    }, prefetched);
+    expect(released.residentIds, 'the released prefetch record is evicted').not.toContain(prefetched);
+    expect(released.prefetchIds, 'an evicted prefetch leaves the prefetch set at once').not.toContain(prefetched);
+    await page.waitForFunction(id => { const stream = window.__landscapeTestHooks.snapshot().streaming; return stream.settled && stream.residentLeafIds.includes(id); }, prefetched, { timeout: 30000 });
+    const completed = await settle(page);
+    expect(completed.streaming.transition).toBeNull();
+    assertBounds(completed);
+    await writeFile(path.join(artifacts, 'released-prefetch-refinement.json'), JSON.stringify({ released, completed: completed.streaming }, null, 2));
+    await page.evaluate(() => window.__landscapeTestHooks.dispose());
+});
+
 test('Landscape D3: camera reuses a pending leased build after canceling and revisiting its area', async ({ page }) => {
     test.setTimeout(60000);
     await page.addInitScript(() => {

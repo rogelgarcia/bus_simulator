@@ -1,26 +1,28 @@
 // Generates, stores and resolves the runtime surface cache: GPU atlases, page generation, residency, demand and the cached frame's uniforms.
 // @ts-check
-// AI577 D6 (landscape-surface-cache-v1, contract in LandscapeSurfaceCacheLayout.js; runtime landscape-surface-cache-runtime-v2). Pages are generated
-// on the GPU by the unlit generation variant of the terrain program, which draws each rendered tile's own surface through a top-down orthographic
-// projection of its page block, so every footprint-driven fade and filter evaluates for the page texel. The generation program has one output: it
-// packs three bytes per float into an RGBA32F scratch of up to 64 pages, and a tiny unpack program copies each page into its level-0 atlas slots and
-// box-filters it into its level-1 slots and the half-resolution response atlas, one target per draw (ANGLE's D3D11 backend compiles another pixel
-// shader executable at the first draw of a multiple-output program: 5.2 s of GPU-process stall for the generation program, 0.5 s for a
-// multiple-target unpack). Pages generate in blocks of up to 4x4 neighbours of one mip packed into the scratch; every (block, tile) pair of a frame is
-// one pooled mesh drawn in a single render through one identity camera, with the block's world-to-clip mapping as its model matrix and the block's
-// scratch rectangle as its viewport (a camera per block re-uploaded every program uniform per draw), drawing only the tile rows under the block. The
-// unpack goes straight to WebGL with its own vertex array. A controller on GPU timer queries (LandscapeSurfaceCacheController.js) sizes each frame's
-// batch from a fitted line of fixed and per-page cost to a target of 1 ms, less when the view's own frame leaves less headroom (p95 objective
-// 1.2 ms), within a bounded CPU time; missing pages come first (coarse and near first), then stale and provisional ones. A missing page whose inputs
-// are still settling generates at once as a provisional version and is regenerated once they settled. A page publishes atomically: it renders and
-// unpacks in one frame before the indirection points at the new slot, and a stale version keeps rendering until then. Invalidation is monotonic
-// (LandscapeSurfaceCacheInputs.js): inputs that only coarsened never make a page stale. The deterministic CPU demand of LandscapeSurfaceCacheDemand
-// plans the pages per camera, replanned when the camera moved, turned or rescaled enough, with motion and turn prefetch and a motion LOD bias. The
-// near pass (LandscapeSurfaceCacheNearPass.js) evaluates the near field per pixel over the cached frame. Atlases, scratch and their framebuffers are
-// raw WebGL2 objects (targets across texture levels and layers are not expressible with three.js render targets); three.js binds them through its
-// state cache, renders into them through external framebuffer targets and samples them through ExternalTexture wrappers; a lost context detaches
-// the cached frame and a restored one recreates them and regenerates from the root. The atlases, scratch and indirection are charged to the shared
-// ledger under their own ceiling (3/8 of the GPU limit, never the streams' reserve).
+// AI577 D6 (landscape-surface-cache-v1, contract in LandscapeSurfaceCacheLayout.js; runtime landscape-surface-cache-runtime-v3 since AI577 D7: a
+// viewport capacity, controller-v3, a median frame headroom, a full budget while the view shows fallback, motion bias from 16 m/s and 60 degrees per
+// second, zoom prefetch). Pages are generated on the GPU by the unlit generation variant of the terrain program, which draws each rendered tile's own
+// surface through a top-down orthographic projection of its page block, so every footprint-driven fade and filter evaluates for the page texel. The
+// generation program has one output: it packs three bytes per float into an RGBA32F scratch of up to 64 pages, and a tiny unpack program copies each
+// page into its level-0 atlas slots and box-filters it into its level-1 slots and the half-resolution response atlas, one target per draw (ANGLE's
+// D3D11 backend compiles another pixel shader executable at the first draw of a multiple-output program: 5.2 s of GPU-process stall for the
+// generation program, 0.5 s for a multiple-target unpack). Pages generate in blocks of up to 4x4 neighbours of one mip packed into the scratch; every
+// (block, tile) pair of a frame is one pooled mesh drawn in a single render through one identity camera, with the block's world-to-clip mapping as
+// its model matrix and the block's scratch rectangle as its viewport (a camera per block re-uploaded every program uniform per draw), drawing only
+// the tile rows under the block. The unpack goes straight to WebGL with its own vertex array. A controller on GPU timer queries
+// (LandscapeSurfaceCacheController.js) sizes each frame's batch from a fitted line of fixed and per-page cost to a target of 1 ms, less when the
+// view's own frame leaves less headroom unless pages the view samples are missing (p95 objective 1.2 ms), within a bounded CPU time; missing pages
+// come first (coarse and near first), then stale and provisional ones. A missing page whose inputs are still settling generates at once as a
+// provisional version and is regenerated once they settled. A page publishes atomically: it renders and unpacks in one frame before the indirection
+// points at the new slot, and a stale version keeps rendering until then. Invalidation is monotonic (LandscapeSurfaceCacheInputs.js): inputs that
+// only coarsened never make a page stale. The deterministic CPU demand of LandscapeSurfaceCacheDemand plans the pages per camera, replanned when the
+// camera moved, turned or rescaled enough, with motion and turn prefetch and a motion LOD bias. The near pass (LandscapeSurfaceCacheNearPass.js)
+// evaluates the near field per pixel over the cached frame. Atlases, scratch and their framebuffers are raw WebGL2 objects (targets across texture
+// levels and layers are not expressible with three.js render targets); three.js binds them through its state cache, renders into them through
+// external framebuffer targets and samples them through ExternalTexture wrappers; a lost context detaches the cached frame and a restored one
+// recreates them and regenerates from the root. The atlases, scratch and indirection are charged to the shared ledger under their own ceiling (the
+// GPU limit less the streams' reserve).
 import * as THREE from 'three';
 import { createLandscapeShaderPayload, landscapeTerrainUniformVectors, landscapeTerrainVariantUniformVectors } from '../../shaders/materials/landscape/LandscapeShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
@@ -31,23 +33,32 @@ import { LANDSCAPE_SURFACE_CACHE_DEMAND, chooseLandscapeSurfaceCacheCenter, crea
 import { LandscapeSurfaceCacheIndirection, LandscapeSurfaceCacheResidency } from './LandscapeSurfaceCacheResidency.js';
 import { LANDSCAPE_SURFACE_CACHE_INPUTS, indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheGlobalKey, landscapeSurfaceCacheInputChange, landscapeSurfaceCachePageInputs,
     landscapeSurfaceCacheSoilTiers, landscapeSurfaceCacheTierRank } from './LandscapeSurfaceCacheInputs.js';
-import { fitLandscapeSurfaceCacheCost, landscapeSurfaceCacheGenerationTarget, nextLandscapeSurfaceCacheQuota } from './LandscapeSurfaceCacheController.js';
+import { LANDSCAPE_SURFACE_CACHE_CONTROLLER, fitLandscapeSurfaceCacheCost, landscapeSurfaceCacheBatchCost, landscapeSurfaceCacheGenerationTarget,
+    nextLandscapeSurfaceCacheQuota } from './LandscapeSurfaceCacheController.js';
 import { landscapeCameraSnapshot } from './LandscapeStreamer.js';
 import { LandscapeSurfaceCacheNearPass } from './LandscapeSurfaceCacheNearPass.js';
 import { landscapeSurfaceCacheNearBand } from './LandscapeSurfaceCacheNearField.js';
 
 export const LANDSCAPE_SURFACE_CACHE_RUNTIME = Object.freeze({
-    id: 'landscape-surface-cache-runtime-v2',
+    id: 'landscape-surface-cache-runtime-v3',
     // generation budget: a batch targets generationBudgetMs of GPU time, less when the view's own frame leaves less headroom below the frame period
     // (the measured main frame plus frameMarginMs), never below generationFloorMs; generationLimitMs is the per-batch ceiling the controller defends
     // (its p95 objective): the quota is the page count whose fitted cost (fixed + per page over the last quotaWindow batches, plus their residual
-    // spread) meets the target (LandscapeSurfaceCacheController.js), cut at once to 70% when a batch exceeds the ceiling, growing by at most 25% per
-    // timed batch
+    // spread) meets the target and whose 95th percentile fits under the ceiling (LandscapeSurfaceCacheController.js), cut at once to 70% when a
+    // batch's own GPU time exceeds the ceiling, growing by 25% (at least two pages) per timed batch
     generationBudgetMs: 1,
     generationLimitMs: 1.2,
     generationFloorMs: .3,
     framePeriodMs: 1000 / 60,
     frameMarginMs: 2,
+    // AI577 D7: the headroom is judged on the median GPU time of the view's last frameWindow frames (one slow frame, such as another process's GPU
+    // work, held the target at its floor for 80 frames in a 5 m/s walk while pages went missing), and while pages the current view samples are
+    // missing (coarser fallback on screen) the target is the whole budget (fallbackFloorMs): at 3840x2160 a view's own frame takes 15-27 ms (the near
+    // pass draws most of the lower screen), so the headroom held the target at its floor and a batch's fixed part (0.4 ms with a 48-layer atlas) left
+    // room for one to five pages per frame while up to 290 (walking) and 244 (15 m/s, measured with a 0.6 ms floor) pages the view samples were
+    // missing; a frame already past the frame period gains nothing from a smaller batch
+    frameWindow: 30,
+    fallbackFloorMs: 1,
     initialQuota: 8,
     quotaWindow: 24,
     quotaGrowth: 1.25,
@@ -57,10 +68,14 @@ export const LANDSCAPE_SURFACE_CACHE_RUNTIME = Object.freeze({
     unstableRecheckFrames: 6,
     // motion bias of the demand: above biasSpeed (or biasTurnSpeed while turning) the refinement footprint grows by (speed / biasSpeed) up to
     // 2^maxBias (one mip coarser at twice the speed), so fast flight and fast pans request a coherent coarser ring the generation keeps up with
-    // (about 1200 pages per second at the 1 ms budget) instead of a patchwork of missing pages over coarser ancestors; it relaxes at
-    // biasRelaxPerSecond mips per second once the camera slows
-    biasSpeed: 6,
-    biasTurnSpeed: 30 * Math.PI / 180,
+    // instead of a patchwork of missing pages over coarser ancestors; it relaxes at biasRelaxPerSecond mips per second once the camera slows.
+    // AI577 D7: 16 m/s and 60 degrees per second at 1920x1080 (D6: 6 m/s and 30): the bias coarsens the whole frame, one full mip from 12 m/s and 60
+    // degrees per second at the D6 thresholds, while the controller-v3 generation keeps up with walking, 15 m/s flight and 45 degree per second turns.
+    // Finer drawing buffers divide both thresholds by the square root of their pixels over 1920x1080 (3840x2160: 8 m/s and 30 degrees per second):
+    // the pages a motion uncovers grow with the pixels, and at 3840x2160 a 15 m/s flight left up to 1,353 pages missing at full detail
+    biasSpeed: 16,
+    biasTurnSpeed: 60 * Math.PI / 180,
+    biasReferencePixels: 1920 * 1080,
     maxBias: 1,
     biasRelaxPerSecond: 2,
     cpuBudgetMs: 4,
@@ -79,6 +94,12 @@ export const LANDSCAPE_SURFACE_CACHE_RUNTIME = Object.freeze({
     turnPrefetchSeconds: .25,
     turnPrefetchMaxRadians: 20 * Math.PI / 180,
     turnPrefetchMinimumSpeed: 10 * Math.PI / 180,
+    // AI577 D7: a perspective camera zooming in faster than zoomPrefetchMinimumRate (natural log of its pixel footprint per second) also plans the
+    // view with that footprint extrapolated zoomPrefetchSeconds ahead (at most zoomPrefetchMaxRatio of the current footprint, one mip), so the finer
+    // rings a zoom is about to need generate before they show
+    zoomPrefetchSeconds: .5,
+    zoomPrefetchMinimumRate: .1,
+    zoomPrefetchMaxRatio: .5,
     compileWaitMs: 60000,
     programCache: 3,
     heightRangeMeters: Object.freeze([-2000, 8000]),
@@ -95,10 +116,11 @@ export const LANDSCAPE_SURFACE_CACHE_OFF = Object.freeze({ recipe: LANDSCAPE_SUR
  * Whether a surface cache can run, decided before anything is allocated: the device checks and the atlas fit against the ledger. headroom false
  * judges the budget profile alone (the ledger's limits, not its current use): a view choosing its tiles' program variant asks before the streams it
  * replaces have released their bytes, and the cache constructor checks the headroom again when it allocates.
- * @param {{renderer:any,budget:any,bounds:{minX:number,maxX:number,minZ:number,maxZ:number},coverageSlots:number,targetSlots?:number,headroom?:boolean}} options
+ * @param {{renderer:any,budget:any,bounds:{minX:number,maxX:number,minZ:number,maxZ:number},coverageSlots:number,targetSlots?:number,windowPages?:number,headroom?:boolean}} options
+ *   targetSlots and windowPages are the capacity (landscapeSurfaceCacheCapacity of the view's drawing buffer)
  * @returns {{admitted:boolean,reason:string|null,fit:any}} reason also names the degradation of an admitted atlas (null when it fits its target)
  */
-export function landscapeSurfaceCacheAdmission({ renderer, budget, bounds, coverageSlots, targetSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, headroom = true }) {
+export function landscapeSurfaceCacheAdmission({ renderer, budget, bounds, coverageSlots, targetSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, windowPages = LANDSCAPE_SURFACE_CACHE.windowPages, headroom = true }) {
     const gl = renderer.getContext();
     const shared = landscapeTerrainUniformVectors(), variant = landscapeTerrainVariantUniformVectors().variantVectors;
     if (!renderer.capabilities.isWebGL2) return { admitted: false, reason: 'surface-cache-device-webgl2', fit: null };
@@ -106,7 +128,7 @@ export function landscapeSurfaceCacheAdmission({ renderer, budget, bounds, cover
     if (!gl.getExtension('EXT_color_buffer_float')) return { admitted: false, reason: 'surface-cache-device-float-target', fit: null };
     const ledger = budget.snapshot();
     const fit = fitLandscapeSurfaceCache({ limits: ledger.limits, available: headroom ? { gpuBytes: ledger.limits.gpuBytes - ledger.gpuBytes } : null,
-        geometry: landscapeSurfaceCacheGeometry(bounds), targetSlots, maxTextureSize: renderer.capabilities.maxTextureSize, maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) });
+        geometry: landscapeSurfaceCacheGeometry(bounds, { windowPages }), targetSlots, maxTextureSize: renderer.capabilities.maxTextureSize, maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) });
     return { admitted: fit.slots > 0, reason: fit.reason, fit };
 }
 
@@ -119,17 +141,20 @@ const cpuWindow = samples => {
 
 export class LandscapeSurfaceCache {
     /**
-     * @param {{renderer:any,budget:any,loaded:any,coverageSlots:number,targetSlots?:number,anisotropy?:number,near?:{mode?:'on'|'off',startTexels?:number,endTexels?:number}}} options
+     * @param {{renderer:any,budget:any,loaded:any,coverageSlots:number,targetSlots?:number,windowPages?:number,capacityReason?:string|null,anisotropy?:number,
+     *   near?:{mode?:'on'|'off',startTexels?:number,endTexels?:number}}} options
      *   budget is the shared residency ledger; loaded the landscape overview (bounds, root heights); coverageSlots the compiled coverage slot count of the
-     *   view's terrain programs; near the near pass mode and hand-over band (landscape-surface-cache-near-v1)
+     *   view's terrain programs; targetSlots and windowPages the capacity (AI577 D7, landscapeSurfaceCacheCapacity) and capacityReason its degradation
+     *   (surface-cache-viewport-capacity beyond the policy's limits); near the near pass mode and hand-over band (landscape-surface-cache-near-v1)
      */
-    constructor({ renderer, budget, loaded, coverageSlots, targetSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, anisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy, near = {} }) {
+    constructor({ renderer, budget, loaded, coverageSlots, targetSlots = LANDSCAPE_SURFACE_CACHE.targetSlots, windowPages = LANDSCAPE_SURFACE_CACHE.windowPages,
+        capacityReason = null, anisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy, near = {} }) {
         if (![1, 2, 4, 8, 16].includes(anisotropy)) throw new Error(`[LandscapeSurfaceCache] anisotropy must be 1, 2, 4, 8 or 16; received ${anisotropy}`);
-        Object.assign(this, { renderer, budget, loaded, anisotropy, coverageSlots });
+        Object.assign(this, { renderer, budget, loaded, anisotropy, coverageSlots, capacityReason });
         this.nearOptions = { mode: near.mode ?? 'on', band: landscapeSurfaceCacheNearBand({ startTexels: near.startTexels, endTexels: near.endTexels }), texels: { startTexels: near.startTexels, endTexels: near.endTexels } };
         this.near = null;
         this.prefix = `surface-cache/${crypto.randomUUID()}`;
-        this.geometry = landscapeSurfaceCacheGeometry(loaded.manifest.bounds);
+        this.geometry = landscapeSurfaceCacheGeometry(loaded.manifest.bounds, { windowPages });
         this.bounds = loaded.manifest.bounds;
         this.envelope = createLandscapeSurfaceCacheTerrainEnvelope(loaded.chunk);
         this.status = 'unavailable';
@@ -153,12 +178,15 @@ export class LandscapeSurfaceCache {
         this.stats = { dirtyBy: { tiles: 0, masks: 0, soils: 0, fields: 0, global: 0 }, staleBy: { global: 0, tiles: 0, masks: 0, soils: 0 }, staleMarked: 0, keptCoarser: 0,
             provisionalGenerated: 0, pagesGenerated: 0, pagesLastFrame: 0, regenerated: 0, framesWithGeneration: 0, unstableSkips: 0, capacityStops: 0, flushes: 0, evictions: 0, cpuMs: 0, generationCpuMs: 0,
             demandMs: 0, demandUpdates: 0, identityChecks: 0, uploadBytes: 0, clearedBlocks: 0, peakGenerationCpuMs: 0, rootGeneratedAtMs: null, createdAtMs: performance.now() };
-        this.gpu = { samples: [], window: [], model: null, perPageMs: null, quota: RUNTIME.initialQuota, pending: [], lastMs: null, maxMs: 0, disjoint: 0, supported: false };
+        this.gpu = { samples: [], window: [], unpacks: [], model: null, perPageMs: null, quota: RUNTIME.initialQuota, pending: [], lastMs: null, maxMs: 0, disjoint: 0, supported: false,
+            spikes: 0, external: 0, externalMs: 0 };
+        // GPU time of the view's recent frames (median for the generation headroom)
+        this.frameSamples = new Float64Array(RUNTIME.frameWindow).fill(NaN);
         this.program = { key: null, material: null, ready: false, milliseconds: null, timedOut: false, started: 0, compiles: 0 };
         // linked generation programs by key (at most RUNTIME.programCache): a program variant switched back (an A/B toggle) reuses its linked program
         this.programs = new Map();
         const gl = renderer.getContext();
-        const admission = landscapeSurfaceCacheAdmission({ renderer, budget, bounds: this.bounds, coverageSlots, targetSlots });
+        const admission = landscapeSurfaceCacheAdmission({ renderer, budget, bounds: this.bounds, coverageSlots, targetSlots, windowPages });
         this.fit = admission.fit;
         if (!admission.admitted) { this.reason = admission.reason; return; }
         this.atlasKey = `${this.prefix}/atlas`;
@@ -172,7 +200,7 @@ export class LandscapeSurfaceCache {
         this.#createAtlases(gl);
         this.residency = new LandscapeSurfaceCacheResidency({ slots: this.layout.slots });
         this.indirection = new LandscapeSurfaceCacheIndirection({ geometry: this.geometry });
-        this.indirectionTexture = new THREE.DataArrayTexture(this.indirection.data, LANDSCAPE_SURFACE_CACHE.windowPages, LANDSCAPE_SURFACE_CACHE.windowPages, this.geometry.mips);
+        this.indirectionTexture = new THREE.DataArrayTexture(this.indirection.data, this.geometry.windowPages, this.geometry.windowPages, this.geometry.mips);
         Object.assign(this.indirectionTexture, { format: THREE.RGBAIntegerFormat, type: THREE.UnsignedByteType, internalFormat: 'RGBA8UI', magFilter: THREE.NearestFilter,
             minFilter: THREE.NearestFilter, generateMipmaps: false, flipY: false });
         this.indirectionTexture.needsUpdate = true;
@@ -494,14 +522,19 @@ export class LandscapeSurfaceCache {
     /**
      * One frame: demand, identity refresh, generation within its GPU and CPU budgets, indirection upload and the frame uniforms. Called before the
      * view renders, after the geometry and appearance streams updated.
-     * @param {{dt:number,camera:any,viewportHeight:number,uploadAllowance?:number,frameGpuMs?:number|null}} frame frameGpuMs is the GPU time of the view's last
-     *   completed frame (null when unknown), which sizes the generation budget's headroom
+     * @param {{dt:number,camera:any,viewportHeight:number,viewportWidth?:number|null,uploadAllowance?:number,frameGpuMs?:number|null}} frame frameGpuMs is the GPU time
+     *   of the view's last completed frame (null when unknown); the median of the recent frames' values sizes the generation budget's headroom;
+     *   viewportWidth (drawing-buffer pixels, with viewportHeight) scales the motion bias thresholds
      * @returns {number} uploaded bytes
      */
-    update({ dt, camera, viewportHeight, uploadAllowance = Infinity, frameGpuMs = null }) {
+    update({ dt, camera, viewportHeight, viewportWidth = null, uploadAllowance = Infinity, frameGpuMs = null }) {
         const started = performance.now();
         this.frame++;
-        this.frameGpuMs = Number.isFinite(frameGpuMs) ? frameGpuMs : null;
+        this.biasScale = Math.sqrt(Math.max(1, (viewportWidth ?? 0) * viewportHeight / RUNTIME.biasReferencePixels));
+        if (Number.isFinite(frameGpuMs)) this.frameSamples[this.frame % this.frameSamples.length] = frameGpuMs;
+        const frames = this.frameSamples.filter(Number.isFinite).sort();
+        this.lastFrameGpuMs = Number.isFinite(frameGpuMs) ? frameGpuMs : null;
+        this.frameGpuMs = frames.length ? frames[Math.floor(frames.length / 2)] : null;
         this.stats.pagesLastFrame = 0;
         this.stats.blocksLastFrame = 0;
         this.stats.uploadBytes = 0;
@@ -555,7 +588,7 @@ export class LandscapeSurfaceCache {
             enabled: this.ready && this.indirectionUploaded && variant.surfaceCache && !variant.diagnostics && this.stream.mode !== 'wireframe' });
         step('near');
         this.status = this.ready ? 'active' : 'bootstrap';
-        this.reason = this.ready ? (this.capacityLimited ? 'surface-cache-capacity' : this.fit.reason) : 'surface-cache-root-pending';
+        this.reason = this.ready ? (this.capacityLimited ? 'surface-cache-capacity' : this.fit.reason ?? this.capacityReason) : 'surface-cache-root-pending';
         this.stats.cpuMs = performance.now() - started;
         this.cpuSamples[this.frame % this.cpuSamples.length] = this.stats.cpuMs;
         return uploaded;
@@ -664,21 +697,36 @@ export class LandscapeSurfaceCache {
         return landscapeCameraSnapshot(probe, viewportHeight);
     }
 
+    // a perspective camera zooming in: the same camera with its pixel footprint extrapolated zoomPrefetchSeconds ahead (at most zoomPrefetchMaxRatio of
+    // the current footprint), as a prefetch view
+    #zoomAhead(camera, viewportHeight, previous, seconds) {
+        if (!(seconds > 0) || !camera.isPerspectiveCamera || previous.projection !== 'perspective') return null;
+        const footprint = (fovY, zoom) => Math.tan(fovY / 2) / zoom, rate = Math.log(footprint(camera.fov * Math.PI / 180, camera.zoom) / footprint(previous.fovYRadians, previous.zoom)) / seconds;
+        if (!(rate < -RUNTIME.zoomPrefetchMinimumRate)) return null;
+        const probe = camera.clone();
+        probe.zoom = camera.zoom / Math.max(RUNTIME.zoomPrefetchMaxRatio, Math.exp(rate * RUNTIME.zoomPrefetchSeconds));
+        probe.updateProjectionMatrix();
+        probe.updateMatrixWorld(true);
+        return landscapeCameraSnapshot(probe, viewportHeight);
+    }
+
     #plan(snapshot, camera, viewportHeight, nearStart) {
         const started = performance.now(), previous = this.lastCamera, seconds = previous ? (started - this.lastPlanTime) / 1000 : 0;
         const velocity = previous && seconds > 0 ? { x: (snapshot.position.x - previous.position.x) / seconds, y: (snapshot.position.y - previous.position.y) / seconds,
             z: (snapshot.position.z - previous.position.z) / seconds } : null;
         const turned = previous && snapshot.projection === 'perspective' ? this.#turnAhead(camera, viewportHeight, previous, seconds) : null;
+        const zoomed = previous ? this.#zoomAhead(camera, viewportHeight, previous, seconds) : null;
         const speed = velocity ? Math.hypot(velocity.x, velocity.y, velocity.z) : 0, d = snapshot.direction, p = previous?.direction;
         const turnSpeed = p && seconds > 0 ? Math.acos(Math.min(1, Math.max(-1, d.x * p.x + d.y * p.y + d.z * p.z))) / seconds : 0;
-        const wanted = Math.min(RUNTIME.maxBias, Math.max(0, Math.log2(Math.max(speed, 1e-6) / RUNTIME.biasSpeed), Math.log2(Math.max(turnSpeed, 1e-9) / RUNTIME.biasTurnSpeed)));
+        const scale = this.biasScale ?? 1;
+        const wanted = Math.min(RUNTIME.maxBias, Math.max(0, Math.log2(Math.max(speed, 1e-6) * scale / RUNTIME.biasSpeed), Math.log2(Math.max(turnSpeed, 1e-9) * scale / RUNTIME.biasTurnSpeed)));
         this.motionBias = Math.max(wanted, (this.motionBias ?? 0) - RUNTIME.biasRelaxPerSecond * seconds);
         const ground = this.envelope(snapshot.position.x, snapshot.position.z, snapshot.position.x, snapshot.position.z);
         this.center = chooseLandscapeSurfaceCacheCenter({ geometry: this.geometry, camera: snapshot, groundHeight: (ground.min + ground.max) / 2, previous: this.center });
         this.indirection.setCenter(this.center);
         const capacity = Math.max(1, this.layout.slots - LANDSCAPE_SURFACE_CACHE.reservedSlots);
         let plan = planLandscapeSurfaceCacheDemand({ geometry: this.geometry, camera: snapshot, center: this.center, heightRange: this.envelope, anisotropy: this.anisotropy, capacity, velocity,
-            bounds: this.bounds, nearStart, views: turned ? [turned] : [], lodBias: this.motionBias });
+            bounds: this.bounds, nearStart, views: [turned, zoomed].filter(Boolean), lodBias: this.motionBias });
         if (this.feedback.length) { plan = mergeLandscapeSurfaceCacheFeedback({ geometry: this.geometry, plan, feedback: this.feedback, capacity }); this.feedback = []; }
         this.demandSeq++;
         const keys = new Set();
@@ -687,7 +735,8 @@ export class LandscapeSurfaceCache {
         this.carried = (this.desired ?? []).filter(page => !keys.has(page.key) && !this.residency.get(page.key));
         this.desired = plan.pages;
         this.lastPlan = { desired: plan.desired, kept: plan.pages.length, visited: plan.visited, limited: plan.limited, byMip: plan.byMip, prefetch: plan.pages.filter(page => page.prefetch).length,
-            feedback: plan.feedback ?? 0, pruned: plan.pruned ?? 0, turnPrefetch: !!turned, carried: this.carried.length, motionBias: this.motionBias };
+            feedback: plan.feedback ?? 0, pruned: plan.pruned ?? 0, turnPrefetch: !!turned, zoomPrefetch: !!zoomed, carried: this.carried.length, motionBias: this.motionBias,
+            biasScale: this.biasScale ?? 1 };
         this.lastCamera = { position: { ...snapshot.position }, direction: { ...snapshot.direction }, fovYRadians: snapshot.fovYRadians, zoom: snapshot.zoom, viewportHeight: snapshot.viewportHeight,
             orthoHeight: snapshot.orthoHeight, projection: snapshot.projection };
         this.lastPlanTime = started;
@@ -746,6 +795,7 @@ export class LandscapeSurfaceCache {
         for (const page of this.desired) { const record = this.residency.get(page.key); if (!record) missing.push(page); else if (record.stale || record.provisional) stale.push(page); }
         for (const page of this.carried ?? []) if (!this.residency.get(page.key)) missing.push(page);
         this.pendingMissing = missing.length;
+        this.pendingMissingInView = missing.reduce((count, page) => count + (page.prefetch ? 0 : 1), 0);
         this.pendingStale = stale.length;
         const quota = this.quota, limit = 2 * quota + 16;
         const candidates = [];
@@ -826,10 +876,13 @@ export class LandscapeSurfaceCache {
     /** Pages generated in the next frame: the timer-driven quota. */
     get quota() { return Math.max(1, Math.min(RUNTIME.maximumPagesPerFrame, Math.round(this.gpu.quota))); }
 
-    /** GPU milliseconds a generation batch targets: the budget, or the headroom the view's last frame leaves below the frame period, whichever is less. */
+    /**
+     * GPU milliseconds a generation batch targets: the budget, or the headroom the view's recent frames leave below the frame period, whichever is less,
+     * never below the floor (fallbackFloorMs while pages the current view samples are missing).
+     */
     get generationTargetMs() {
         return landscapeSurfaceCacheGenerationTarget({ frameGpuMs: this.frameGpuMs ?? null, budgetMs: RUNTIME.generationBudgetMs, periodMs: RUNTIME.framePeriodMs,
-            marginMs: RUNTIME.frameMarginMs, floorMs: RUNTIME.generationFloorMs });
+            marginMs: RUNTIME.frameMarginMs, floorMs: this.pendingMissingInView > 0 ? RUNTIME.fallbackFloorMs : RUNTIME.generationFloorMs });
     }
 
     // world rectangle of a block's pages plus one gutter around them
@@ -1007,23 +1060,29 @@ export class LandscapeSurfaceCache {
             gl.deleteQuery(entry.query);
             gl.deleteQuery(entry.unpackQuery);
             if (disjoint) { this.gpu.disjoint++; continue; }
-            this.gpu.lastMs = ms;
-            this.gpu.maxMs = Math.max(this.gpu.maxMs, ms);
-            this.gpu.samples.push({ ms, pages: entry.pages, blocks: entry.blocks, generationMs, unpackMs, submitMs: entry.submitMs, draws: entry.draws });
+            // the batch's own cost: the unpack beyond a few times its recent median is another process's work inside its timer window
+            const own = landscapeSurfaceCacheBatchCost({ generationMs, unpackMs, unpackMedianMs: this.gpu.unpacks.length ? median(this.gpu.unpacks) : null });
+            this.gpu.unpacks.push(unpackMs);
+            if (this.gpu.unpacks.length > RUNTIME.quotaWindow) this.gpu.unpacks.shift();
+            if (own.externalMs > 0) { this.gpu.external++; this.gpu.externalMs += own.externalMs; }
+            this.gpu.lastMs = own.ms;
+            this.gpu.maxMs = Math.max(this.gpu.maxMs, own.ms);
+            this.gpu.samples.push({ ms: own.ms, timerMs: ms, pages: entry.pages, blocks: entry.blocks, generationMs, unpackMs, submitMs: entry.submitMs, draws: entry.draws });
             this.gpu.total = (this.gpu.total ?? 0) + 1;
             if (this.gpu.samples.length > 240) this.gpu.samples.shift();
-            this.gpu.perPageMs = this.gpu.perPageMs === null ? ms / entry.pages : .7 * this.gpu.perPageMs + .3 * ms / entry.pages;
+            this.gpu.perPageMs = this.gpu.perPageMs === null ? own.ms / entry.pages : .7 * this.gpu.perPageMs + .3 * own.ms / entry.pages;
             // the quota from the fitted cost line of the recent batches (LandscapeSurfaceCacheController.js)
-            this.gpu.window.push([entry.pages, ms]);
+            this.gpu.window.push([entry.pages, own.ms]);
             if (this.gpu.window.length > RUNTIME.quotaWindow) this.gpu.window.shift();
             this.gpu.model = fitLandscapeSurfaceCacheCost(this.gpu.window);
+            if (own.ms - this.gpu.model.fixedMs - this.gpu.model.perPageMs * entry.pages > this.gpu.model.outlierMs) this.gpu.spikes++;
             this.gpu.quota = nextLandscapeSurfaceCacheQuota({ quota: this.gpu.quota, model: this.gpu.model, targetMs: this.generationTargetMs, limitMs: RUNTIME.generationLimitMs,
-                lastMs: ms, lastPages: entry.pages, maximum: RUNTIME.maximumPagesPerFrame, growth: RUNTIME.quotaGrowth, cut: RUNTIME.quotaCut });
+                lastMs: own.ms, lastPages: entry.pages, maximum: RUNTIME.maximumPagesPerFrame, growth: RUNTIME.quotaGrowth, cut: RUNTIME.quotaCut });
         }
     }
 
-    // the indirection uploads in the frame its pages publish (a reused slot must never be read through a stale entry); at most one 16 KiB layer per
-    // mip, so it is always admitted and only counted against the frame's upload allowance
+    // the indirection uploads in the frame its pages publish (a reused slot must never be read through a stale entry); at most one layer per mip
+    // (16 KiB with 64-page windows, 64 KiB with 128), so it is always admitted and only counted against the frame's upload allowance
     #upload(rebuilt) {
         if (!rebuilt.length && this.indirectionUploaded) return 0;
         const bytes = this.indirectionUploaded ? rebuilt.length * this.indirection.layerBytes : this.indirection.data.byteLength;
@@ -1063,11 +1122,12 @@ export class LandscapeSurfaceCache {
         const residentByMip = Array.from({ length: this.geometry.mips }, () => 0), desiredByMip = Array.from({ length: this.geometry.mips }, () => 0);
         let stale = 0, resident = 0, provisional = 0;
         for (const record of this.residency.pages.values()) { residentByMip[record.mip]++; resident++; if (record.stale) stale++; if (record.provisional) provisional++; }
-        let missing = 0, staleDesired = 0, provisionalDesired = 0;
+        let missing = 0, missingInView = 0, staleDesired = 0, provisionalDesired = 0;
+        const missingByMip = Array.from({ length: this.geometry.mips }, () => 0);
         for (const page of this.desired) {
             desiredByMip[page.mip]++;
             const record = this.residency.get(page.key);
-            if (!record) missing++; else if (record.stale) staleDesired++; else if (record.provisional) provisionalDesired++;
+            if (!record) { missing++; missingByMip[page.mip]++; if (!page.prefetch) missingInView++; } else if (record.stale) staleDesired++; else if (record.provisional) provisionalDesired++;
         }
         const samples = this.gpu.samples.map(sample => sample.ms), entries = this.budget.snapshot().entries;
         // settled also waits for the near program while the near pass is on (its program links in parallel after the cache is ready)
@@ -1077,14 +1137,15 @@ export class LandscapeSurfaceCache {
             recipe: LANDSCAPE_SURFACE_CACHE.id, runtime: RUNTIME.id, demandRecipe: LANDSCAPE_SURFACE_CACHE_DEMAND.id, status: this.status, reason: this.reason, ready: this.ready, settled,
             // the cached frame program draws the cache (instead of the vertex-color bootstrap) only while this is set: the root page is resident and uploaded
             frameReady: this.appearance?.uniforms.uSurfaceCacheState.value.x === 1,
-            geometry: { ...this.geometry, pageTexels: LANDSCAPE_SURFACE_CACHE.pageTexels, gutterTexels: LANDSCAPE_SURFACE_CACHE.gutterTexels, windowPages: LANDSCAPE_SURFACE_CACHE.windowPages },
+            geometry: { ...this.geometry, pageTexels: LANDSCAPE_SURFACE_CACHE.pageTexels, gutterTexels: LANDSCAPE_SURFACE_CACHE.gutterTexels },
             atlas: { slots: this.layout.slots, targetSlots: this.fit.targetSlots, layers: this.layout.layers, layerTexels: this.layout.layerTexels, slotTexels: LANDSCAPE_SURFACE_CACHE.slotTexels,
                 slotBytes: this.layout.slotBytes, bytes: this.fit.atlasBytes, scratchBytes: this.fit.scratchBytes, gpuBytes: this.fit.gpuBytes, ceilingBytes: this.fit.ceilingBytes,
                 fitReason: this.fit.reason, formats: LANDSCAPE_SURFACE_CACHE.formats,
                 anisotropy: this.anisotropy, anisotropySupported: this.anisotropySupported },
             indirection: { bytes: this.fit.indirectionBytes, center: this.center ? { ...this.center } : null, rebuilds: this.indirection.rebuilds, uploaded: this.indirectionUploaded },
             ledger: { atlas: entries.find(entry => entry.key === this.atlasKey) ?? null, indirection: entries.find(entry => entry.key === this.indirectionKey) ?? null },
-            pages: { resident, stale, provisional, desired: this.desired.length, missing, staleDesired, provisionalDesired, unstable: this.pendingUnstable ?? 0, residentByMip, desiredByMip,
+            pages: { resident, stale, provisional, desired: this.desired.length, missing, missingInView, staleDesired, provisionalDesired, unstable: this.pendingUnstable ?? 0, residentByMip, desiredByMip,
+                missingByMip,
                 freeSlots: this.residency.freeSlots,
                 evictions: this.residency.evictions, capacityLimited: !!this.capacityLimited },
             misses: missing,
@@ -1092,9 +1153,11 @@ export class LandscapeSurfaceCache {
                 pagesTotal: this.stats.pagesGenerated, pagesLastFrame: this.stats.pagesLastFrame, regenerated: this.stats.regenerated, framesWithGeneration: this.stats.framesWithGeneration,
                 cpuMsLastFrame: this.stats.generationCpuMs, peakCpuMs: this.stats.peakGenerationCpuMs, gpuSupported: this.gpu.supported, gpuMsLast: this.gpu.lastMs, gpuMsMax: this.gpu.maxMs,
                 gpuMsMedian: median(samples), gpuMsPerPage: this.gpu.perPageMs, gpuSamples: this.gpu.total ?? samples.length,
-                recent: this.gpu.samples.slice(-32).map(sample => [sample.ms, sample.pages, sample.blocks, sample.generationMs, sample.unpackMs, sample.submitMs, sample.draws]), disjoint: this.gpu.disjoint,
+                recent: this.gpu.samples.slice(-32).map(sample => [sample.ms, sample.pages, sample.blocks, sample.generationMs, sample.unpackMs, sample.submitMs, sample.draws, sample.timerMs]),
+                disjoint: this.gpu.disjoint, external: this.gpu.external, externalMs: this.gpu.externalMs,
                 budgetMs: RUNTIME.generationBudgetMs,
-                limitMs: RUNTIME.generationLimitMs, targetMs: this.generationTargetMs, frameGpuMs: this.frameGpuMs ?? null, quota: this.quota,
+                limitMs: RUNTIME.generationLimitMs, targetMs: this.generationTargetMs, frameGpuMs: this.frameGpuMs ?? null, lastFrameGpuMs: this.lastFrameGpuMs ?? null, quota: this.quota,
+                spikes: this.gpu.spikes, controller: LANDSCAPE_SURFACE_CACHE_CONTROLLER.id,
                 blocksLastFrame: this.stats.blocksLastFrame, renderCpu: this.stats.renderCpu ?? null,
                 rootGeneratedAtMs: this.stats.rootGeneratedAtMs, unstableSkips: this.stats.unstableSkips, capacityStops: this.stats.capacityStops, provisional: this.stats.provisionalGenerated,
                 model: this.gpu.model ? { ...this.gpu.model } : null },
@@ -1115,7 +1178,7 @@ export class LandscapeSurfaceCache {
         let mip = Math.min(this.geometry.rootMip, Math.max(0, Math.floor(Math.log2(Math.max(footprint, 1e-9) / this.geometry.texel0Meters))));
         while (mip < this.geometry.rootMip) {
             const size = landscapeSurfaceCachePageMeters(this.geometry, mip), origin = this.indirection.origins[mip], px = Math.floor(vx / size), pz = Math.floor(vz / size);
-            if (origin && px >= origin.x && pz >= origin.z && px < origin.x + LANDSCAPE_SURFACE_CACHE.windowPages && pz < origin.z + LANDSCAPE_SURFACE_CACHE.windowPages) break;
+            if (origin && px >= origin.x && pz >= origin.z && px < origin.x + this.geometry.windowPages && pz < origin.z + this.geometry.windowPages) break;
             mip++;
         }
         const size = landscapeSurfaceCachePageMeters(this.geometry, mip), px = Math.floor(vx / size), pz = Math.floor(vz / size), entry = this.indirection.entry(mip, px, pz);

@@ -22,7 +22,7 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | --- | --- |
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
-| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3); 512 / 448 MiB with the AI577 D6 surface cache on (`LANDSCAPE_SURFACE_CACHE_BUDGETS`) |
+| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3); 512 / 448 MiB with the surface cache on at 1920 × 1080, the default since AI577 D7 (`landscapeSurfaceCacheBudgets` of the display: 588 at 2560×1440, 950 at 3840×2160) |
 | Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |
@@ -142,7 +142,10 @@ an atlas and run uncached. Run close in time to the uncached run: GPU median 4.1
 5.6/5.6 (p95 5.8 against 11.4), CPU frame median 0.7 against 0.5 ms, estimated GPU current/peak 201/325 against
 43/167 MiB, settled startup 8.6/3.8 s against 7.4/0.8 s (a warm reload regenerates every page). Whole-run GPU
 timings drift 1–2 ms between runs; only paired measurements compare tightly. Receipts:
-`tests/artifacts/screens/landscape/ai577/d6/cache-final/suites-on|off/`.
+`tests/artifacts/screens/landscape/ai577/d6/cache-final/suites-on|off/`. AI577 D7 runs the route with the default (cache on):
+512/448 MiB, frame median 17.5 ms (p95 18.1), peak estimated GPU 339 MiB against 167 MiB at 512/256 with the cache off
+(receipts `tests/artifacts/screens/landscape/ai577/d7/cache-default/suites-default|off/`); paired 1440p/4K GPU and the
+motion review are in LANDSCAPE_APPEARANCE_RUNTIME.md.
 
 ## Verification
 

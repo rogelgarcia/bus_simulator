@@ -67,3 +67,8 @@ Future placement must explicitly select terrain-relative/absolute elevation, ver
 `tests/node/unit/landscape_city_binding.test.js` covers retained identity, invalid data/paths/capabilities, nonzero origins/yaw/Y conversion, partial tiles, actual CityMap and JS module roundtrips, stable seed/dimension behavior, shrink refusal, disabled entries, reservation transforms and renderer-free native sampling. Existing city map/placement/spec tests remain regression gates.
 
 `tests/headless/e2e/landscape_city_binding.pwtest.js` exercises real Map Debugger load/apply/settings/rendered toggle/export/import/reload and City/PVS/illumination refusal. Its tiny routed test document reuses the canonical importmap without expanding server access. Evidence belongs under `tests/artifacts/screens/landscape/ai576/d6/city-binding/`.
+
+The fixture keeps its AI 576 pin. The nature pass (`materials-a7f93a9…`, `manifest.12fc8d5c….json`) and AI577 D1a
+(`materials-bfcf20f7…`, `manifest.496f91b9….json`) published material-only revisions: only the landscape revision and the soil
+material IDs differ from the pinned snapshot. The strict pin refuses both; `landscape_city_binding.test.js` proves the refusals,
+records that difference (the review basis a future explicit rebind would cite) and validates the explicit rebind path.
