@@ -25,7 +25,7 @@ test('Transition entry loads the matching material contract despite an older cac
     }).catch(error => ({ loaded: false, stack: error.stack })));
     expect(result, result.stack).toMatchObject({ loaded: true, edgeStrips: true });
     expect(oldRequests).toBe(0); expect(modules.length).toBeGreaterThan(0);
-    expect(result.colors.every(color => color.join(',') === '1.04,1.03,1.02')).toBe(true);
+    expect(result.colors.every(color => color.join(',') === '1.03,1,1.4')).toBe(true);
     await expect(page.locator('#scene-loading')).toBeHidden();
     await expect(page.locator('#transition-panel-toggle')).toBeEnabled();
     expect(errors).toEqual([]);

@@ -3,7 +3,7 @@ import test, { expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const output = path.resolve('tests/artifacts/screens/grass_debug_v2/transition_lab/blending');
+const output = path.resolve('tests/artifacts/screens/grass_debug_v2/transition_lab/fade_styles/blending');
 test.use({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, video: 'off', trace: 'off',
     launchOptions: { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined, args: ['--force-color-profile=srgb'] } });
 
@@ -11,7 +11,7 @@ test('Blended patches preserve coverage and avoid cached-selection popping', asy
     test.setTimeout(240000); await mkdir(output, { recursive: true }); const errors = [], rows = [], motion = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto('/debug_tools/grass_transition_scene.html?revision=transition-blend-1#front');
+    await page.goto('/debug_tools/grass_transition_scene.html?revision=card-continuity&lod3=cards#front');
     await page.waitForFunction(() => !!window.__grassTransitionReadiness); await page.evaluate(() => window.__grassTransitionReadiness);
     await page.evaluate(() => { const s = window.__grassTransitionScene; s.setAnimating(false); s.setHelpers(false); s.setPanelCollapsed(true); });
     await page.addStyleTag({ content: '#scene-panel, #scene-performance { visibility:hidden !important; }' });
@@ -42,7 +42,7 @@ test('Blended patches preserve coverage and avoid cached-selection popping', asy
                     }
                 });
                 return { ...s.getSnapshot(), duplicates,
-                    coverageErrors: cells.filter(c => masks[c.id] !== assignment.renderMasks[c.id] || ground[c.id] !== Number(!!(masks[c.id] & 15))).length };
+                    coverageErrors: cells.filter(c => masks[c.id] !== assignment.renderMasks[c.id] || ground[c.id] !== Number(!!(masks[c.id] & 31))).length };
             }, mode);
             rows.push({ bearing, mode, snapshot: row });
             await page.screenshot({ path: path.join(output, `${mode}_${bearing}.png`) });
@@ -88,16 +88,18 @@ test('Blended patches preserve coverage and avoid cached-selection popping', asy
         const { createGrassTransitionBlendMaterials } = await import('/src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionBlend.js');
         const s = window.__grassTransitionScene, materials = createGrassTransitionBlendMaterials(), bands = s.getSnapshot().selection.transitionBands;
         materials.configure(bands);
-        const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .01, 100);
-        const geometry = new THREE.PlaneGeometry(200, 200); geometry.rotateX(-Math.PI / 2);
+        // Keep the probe small because real geometry now evaluates its own distance,
+        // not a constant at the instance origin. It must still cover the full target.
+        const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(-.00001, .00001, .00001, -.00001, .01, 100);
+        const geometry = new THREE.PlaneGeometry(.001, .001); geometry.rotateX(-Math.PI / 2);
         const red = new THREE.MeshBasicMaterial({color:0xff0000, toneMapped:false}), blue = new THREE.MeshBasicMaterial({color:0x0000ff, toneMapped:false});
         const target = new THREE.WebGLRenderTarget(64, 64), oldTarget = s.renderer.getRenderTarget(), rows = [];
         const clear = s.renderer.getClearColor(new THREE.Color()), alpha = s.renderer.getClearAlpha();
         try {
             s.renderer.setRenderTarget(target); s.renderer.setClearColor(0xff00ff, 1);
-            for (let level = 0; level < 4; level++) for (const fraction of [0, .25, .5, .75, 1]) {
-                const near = new THREE.InstancedMesh(geometry, materials.material(red, level), 1);
-                const far = new THREE.InstancedMesh(geometry, materials.material(blue, level + 1), 1);
+            for (let level = 0; level < 5; level++) for (const fraction of [0, .25, .5, .75, 1]) {
+                const near = new THREE.InstancedMesh(geometry, materials.material(red, level, 0, 'dissolve'), 1);
+                const far = new THREE.InstancedMesh(geometry, materials.material(blue, level + 1, 0, 'dissolve'), 1);
                 for (const mesh of [near, far]) { mesh.setMatrixAt(0, new THREE.Matrix4()); mesh.frustumCulled = false; scene.add(mesh); }
                 const distance = bands[level].start + (bands[level].end - bands[level].start) * fraction;
                 camera.position.set(0, 5, distance); camera.lookAt(0, 0, 0); camera.updateMatrixWorld(true);

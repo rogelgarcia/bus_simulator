@@ -7,7 +7,13 @@ vec3 grassCanopyView = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vViewPos
 float grassCanopyElevation = abs(dot(grassCanopyView, viewMatrix[1].xyz));
 // The paired 2 m source needs extra oblique overlap; retain its measured top-view coverage.
 float grassCanopyObliqueDepth = 1.0 + 0.45 * pow(1.0 - grassCanopyElevation, 2.0);
-float grassCanopyCoveragePower = 0.884 * grassCanopyObliqueDepth / max(grassCanopyElevation, 0.1);
+#ifdef GRASS_TRANSITION_CANOPY_COVERAGE
+    // The card population retains litter gaps at shallow bus angles. Prevent
+    // inverse elevation from turning the far canopy into fully green paint.
+    float grassCanopyCoveragePower = 0.884 * grassCanopyObliqueDepth / max(grassCanopyElevation, 0.3);
+#else
+    float grassCanopyCoveragePower = 0.884 * grassCanopyObliqueDepth / max(grassCanopyElevation, 0.1);
+#endif
 #ifdef GRASS_TRANSITION_CANOPY_COVERAGE
     // Match the shortened distant leaves, not the uncompressed capture volume.
     // Eight sun-relative bearings, measured leaf masks at 14 / 18 / 24 metres.

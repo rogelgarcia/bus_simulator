@@ -4,11 +4,12 @@ import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { createGrassDebugV2FreeCamera } from './GrassDebugV2FreeCamera.js?v=transition-navigation-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
 import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=transition-lighting-1';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=transition-blend-startup-1';
-import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=transition-band-1';
-import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=transition-blend-1';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=opaque-dissolve-1';
+import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=opaque-dissolve-1';
+import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=opaque-dissolve-1';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { createGrassDebugV2TransitionExperiments, GRASS_TRANSITION_EXPERIMENTS } from './GrassDebugV2TransitionExperiments.js';
+import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=opaque-dissolve-1';
 import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 
 const loading = document.querySelector('#scene-loading');
@@ -22,10 +23,15 @@ export async function createGrassDebugV2TransitionScene() {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .02, 250);
     const lighting = new GrassDebugV2Lighting({ renderer, scene, camera, retainSceneDepth: true });
     const assets = await loadGrassDebugV2TransitionAssets({ renderer, lighting, offline: new URLSearchParams(location.search).get('assets') === 'compressed', onProgress: message => { loading.textContent = message; } });
-    const fields = createGrassDebugV2TransitionFields({ ...assets, fieldSize: 32, gap: 1 });
+    const bridgeCards = await createGrassDebugV2ViewCards({ renderer, source: assets.sources.LOD2, profile: 'bridge',
+        onProgress: message => { loading.textContent = message; } });
+    const fields = createGrassDebugV2TransitionFields({ ...assets, fieldSize: 32, gap: 1,
+        bridge: { templates: bridgeCards.templates.cards, material: bridgeCards.material, textureBytes: bridgeCards.getSnapshot().textureBytes } });
+    let lod4Mode = 'cards';
     const experiments = createGrassDebugV2TransitionExperiments(renderer, lighting.environment, lighting.sunRef.direction);
     let experiment = 'recommended';
     let experimentRequest = 0;
+    let lod3Mode = 'geometry', viewCards = null, viewCardsPromise = null, lod3Request = 0;
     scene.add(fields.group);
     const axis = [-120, -32.5, -.5, .5, 32.5, 120], positions = [], uv = [], indices = [];
     const coordinate = new THREE.Vector3();
@@ -58,10 +64,10 @@ export async function createGrassDebugV2TransitionScene() {
     const gpu = getOrCreateGpuFrameTimer(renderer);
     const shadowTarget = new THREE.WebGLRenderTarget(1, 1);
     const shadowLevels = new Uint8Array(fields.cells.length).fill(2);
-    const flatLevels = new Uint8Array(fields.cells.length).fill(4), noSideLeaves = new Uint8Array(fields.cells.length);
+    const flatLevels = new Uint8Array(fields.cells.length).fill(5), noSideLeaves = new Uint8Array(fields.cells.length);
     const forcedSideLeaves = new Uint8Array(fields.cells.length), perimeterCells = fields.cells.filter(cell => cell.edge);
     let configuration = 'distance';
-    let levels, renderMasks = null, shadowGenerations = 0, soilOnly = false, showHelpers = true, pose = 'front';
+    let levels, renderMasks = null, shadowGenerations = 0, soilOnly = false, showHelpers = false, pose = 'front';
     let animating = false, frame = null, previous = performance.now(), lastTelemetry = 0, drive = false;
     let renderedFrames = 0, frameCpuTotalMs = 0, frameCpuMaxMs = 0;
     const frameDraws = { triangles: 0, calls: 0, lines: 0, points: 0 };
@@ -162,10 +168,50 @@ export async function createGrassDebugV2TransitionScene() {
         if (value === 'recommended') url.searchParams.delete('experiment'); else url.searchParams.set('experiment', value);
         history.replaceState(null, '', url);
     };
+    const setLod3Mode = async value => {
+        if (!['geometry', 'cards', 'cards-sparse', 'cards-full'].includes(value)) throw new Error('Unknown LOD3 representation: ' + value);
+        const request = ++lod3Request;
+        if (value !== 'geometry' && !viewCards) {
+            loading.hidden = false;
+            loading.textContent = 'Preparing camera-facing grass cards…';
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            try {
+                viewCardsPromise ||= createGrassDebugV2ViewCards({ renderer, source: assets.sources.LOD2,
+                    onProgress: message => { loading.textContent = message; } });
+                viewCards = await viewCardsPromise;
+                appearanceMaterials.add(viewCards.material);
+            } catch (error) { viewCardsPromise = null; throw error; }
+            finally { loading.hidden = true; }
+        }
+        if (request !== lod3Request) return;
+        fields.setLod3Representation(value === 'geometry' ? null : { templates: viewCards.templates[value], material: viewCards.material,
+            textureBytes: viewCards.getSnapshot().textureBytes });
+        lod3Mode = value;
+        document.querySelector('#transition-lod3').value = value;
+        const url = new URL(location.href);
+        if (value === 'geometry') url.searchParams.delete('lod3'); else url.searchParams.set('lod3', value);
+        history.replaceState(null, '', url);
+    };
+    const setLod4Mode = value => {
+        if (!Object.hasOwn(bridgeCards.templates, value)) throw new Error('Unknown LOD4 representation: ' + value);
+        fields.setLod4Representation({ templates: bridgeCards.templates[value], material: bridgeCards.material,
+            textureBytes: bridgeCards.getSnapshot().textureBytes });
+        lod4Mode = value; document.querySelector('#transition-lod4').value = value;
+        const url = new URL(location.href);
+        if (value === 'cards') url.searchParams.delete('lod4'); else url.searchParams.set('lod4', value);
+        history.replaceState(null, '', url);
+    };
+    const setFadeStyle = value => {
+        fields.setFadeStyle(value);
+        document.querySelector('#transition-fade').value = value;
+        const url = new URL(location.href);
+        if (value === 'dissolve') url.searchParams.delete('fade'); else url.searchParams.set('fade', value);
+        history.replaceState(null, '', url);
+    };
     const setSettings = settings => {
         selection.setSettings(settings);
         const state = selection.getSnapshot();
-        fields.configureBlend(state.transitionBands); updateSelection(true);
+        fields.configureBlend(state.transitionBands, state.bridgeEnabled); updateSelection(true);
         configureGrassDebugV2TransitionAppearance(appearanceMaterials, state.effectiveDistances);
         state.distances.forEach((distance, i) => {
             document.querySelector('#transition-limit-' + i).value = distance;
@@ -173,6 +219,7 @@ export async function createGrassDebugV2TransitionScene() {
             half.textContent = '½ ' + Number((distance / 2).toFixed(3)) + ' m';
             half.classList.toggle('is-active', state.scale === .5);
         });
+        document.querySelector('#transition-bridge').checked = state.bridgeEnabled;
         document.querySelector('#transition-movement').value = state.movementThreshold;
         document.querySelector('#transition-interval').value = state.intervalMs;
         document.querySelector('#transition-side-leaves').value = state.sideLeafDistance;
@@ -180,9 +227,10 @@ export async function createGrassDebugV2TransitionScene() {
         document.querySelector('#transition-band').value = state.transitionFraction * 100;
         document.querySelector('#transition-mode').value = state.transitionMode;
         document.querySelector('#transition-band-ranges').textContent = state.transitionFraction
-            ? state.transitionBands.map(band => `L${band.from}→${band.to}: ${Number(band.start.toFixed(2))}–${Number(band.end.toFixed(2))} m`).join(' · ')
+            ? state.transitionBands.filter((_, i) => state.bridgeEnabled || i !== 3).map(band => `L${band.from}→${band.to}: ${Number(band.start.toFixed(2))}–${Number(band.end.toFixed(2))} m`).join(' · ')
             : 'Abrupt switches';
         const url = new URL(location.href);
+        if (state.bridgeEnabled) url.searchParams.delete('bridge'); else url.searchParams.set('bridge', 'off');
         if (state.transitionMode === 'blend') url.searchParams.delete('transitionMode'); else url.searchParams.set('transitionMode', state.transitionMode);
         if (state.transitionFraction === .5) url.searchParams.delete('transition'); else url.searchParams.set('transition', String(state.transitionFraction * 100));
         history.replaceState(null, '', url);
@@ -237,7 +285,7 @@ export async function createGrassDebugV2TransitionScene() {
             document.querySelector('#scene-performance').textContent = 'GPU ' + (mean === null ? '—' : mean.toFixed(2))
                 + ' ms total · Triangles ' + frameDraws.triangles.toLocaleString() + ' · Draws ' + frameDraws.calls
                 + ' · LOD scan ' + state.averageCpuMs.toFixed(3) + ' ms · ' + state.scans + ' scans · ' + state.skippedStationary + ' reused frames';
-            const counts = configuration !== 'distance' ? [0, 0, 0, 0, fields.cells.length] : state.counts;
+            const counts = configuration !== 'distance' ? [0, 0, 0, 0, 0, fields.cells.length] : state.counts;
             document.querySelector('#transition-counts').textContent = counts.map((count, i) => 'L' + i + ': ' + count).join(' · ');
         }
     };
@@ -276,6 +324,9 @@ export async function createGrassDebugV2TransitionScene() {
     const experimentSelect = document.querySelector('#transition-experiment');
     for (const [value, label] of Object.entries(GRASS_TRANSITION_EXPERIMENTS)) experimentSelect.add(new Option(label, value));
     bind('#transition-experiment', 'change', element => setExperiment(element.value));
+    bind('#transition-lod3', 'change', element => setLod3Mode(element.value));
+    bind('#transition-lod4', 'change', element => setLod4Mode(element.value));
+    bind('#transition-bridge', 'change', element => setSettings({ bridgeEnabled: element.checked }));
     bind('#transition-reset', 'click', () => setPose(pose));
     bind('#transition-full', 'click', () => setDistanceScale(1));
     bind('#transition-half', 'click', () => setDistanceScale(.5));
@@ -285,16 +336,18 @@ export async function createGrassDebugV2TransitionScene() {
     bind('#transition-shadows', 'change', element => setShadows(element.checked));
     bind('#transition-drive', 'change', element => { drive = element.checked; });
     bind('#transition-speed', 'input', element => navigation.setSpeed(Number(element.value)));
-    for (let i = 0; i < 4; i++) bind('#transition-limit-' + i, 'change', () => setSettings({
-        distances: Array.from({ length: 4 }, (_, n) => Number(document.querySelector('#transition-limit-' + n).value)) }));
+    for (let i = 0; i < 5; i++) bind('#transition-limit-' + i, 'change', () => setSettings({
+        distances: Array.from({ length: 5 }, (_, n) => Number(document.querySelector('#transition-limit-' + n).value)) }));
     bind('#transition-movement', 'change', element => setSettings({ movementThreshold: Number(element.value) }));
     bind('#transition-interval', 'change', element => setSettings({ intervalMs: Number(element.value) }));
     bind('#transition-side-leaves', 'change', element => setSettings({ sideLeafDistance: Number(element.value) }));
     bind('#transition-only-side-leaves', 'change', element => setSettings({ sideLeafDistance: Number(element.value) }));
     bind('#transition-mode', 'change', element => setSettings({ transitionMode: element.value }));
+    bind('#transition-fade', 'change', element => setFadeStyle(element.value));
     bind('#transition-band', 'change', element => setSettings({ transitionFraction: Number(element.value) / 100 }));
     window.addEventListener('resize', resize);
-    resize(); setPose(location.hash.slice(1) || 'front'); setSettings({});
+    resize(); setHelpers(false); setPose(location.hash.slice(1) || 'front'); setSettings({ bridgeEnabled: new URLSearchParams(location.search).get('bridge') !== 'off' });
+    setFadeStyle(new URLSearchParams(location.search).get('fade') || 'dissolve');
     setConfiguration(new URLSearchParams(location.search).get('configuration') || 'distance');
     setOptimization(new URLSearchParams(location.search).get('optimization') || 'optimized');
     await setExperiment(new URLSearchParams(location.search).get('experiment')
@@ -302,10 +355,12 @@ export async function createGrassDebugV2TransitionScene() {
     loading.textContent = 'Caching field shadows…'; refreshShadows();
     await renderer.compileAsync(scene, camera);
     selection.resetMetrics(); controls.forEach(control => { control.disabled = false; });
+    await setLod3Mode(new URLSearchParams(location.search).get('lod3') || 'geometry');
+    setLod4Mode(new URLSearchParams(location.search).get('lod4') || 'cards');
     loading.hidden = true; setAnimating(true); canvas.focus();
     return Object.freeze({ renderer, scene, camera, lighting, fields, selection, navigation, step, setAnimating, setPose, canopy: assets.canopy,
-        setSettings, setDistanceScale, setSoilOnly, setShadows, setHelpers, setConfiguration, setOptimization, setExperiment, updateSelection, setPanelCollapsed,
-        getSnapshot: () => ({ pose, configuration, experiment, soilOnly, helpers: showHelpers, position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
+        setSettings, setFadeStyle, setDistanceScale, setSoilOnly, setShadows, setHelpers, setConfiguration, setOptimization, setExperiment, setLod3Mode, setLod4Mode, updateSelection, setPanelCollapsed,
+        getSnapshot: () => ({ pose, configuration, experiment, lod3Mode, lod4Mode, bridgeCards: bridgeCards.getSnapshot(), viewCards: viewCards?.getSnapshot() ?? null, soilOnly, helpers: showHelpers, position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
             cameraHeight: GRASS_FIELD_BUS_CAMERA.heightMeters, cameraPitch: GRASS_FIELD_BUS_CAMERA.pitchDegrees,
             fields: fields.getSnapshot(), selection: selection.getSnapshot(), lighting: lighting.getSnapshot(),
             shadows: { enabled: renderer.shadowMap.enabled, canopyMode: fields.getSnapshot().optimization === 'original' ? 'general' : 'baked-only', generations: shadowGenerations, cached: !renderer.shadowMap.needsUpdate && !sun.shadow.needsUpdate,
@@ -316,7 +371,7 @@ export async function createGrassDebugV2TransitionScene() {
         dispose() {
             setAnimating(false); events.forEach(remove => remove()); window.removeEventListener('resize', resize);
             gpu.resetSamples(); sun.shadow.dispose();
-            navigation.dispose(); helpers.dispose(); fields.dispose(); experiments.dispose(); groundGeometry.dispose(); assets.dispose(); shadowTarget.dispose();
+            navigation.dispose(); helpers.dispose(); fields.dispose(); viewCards?.dispose(); bridgeCards.dispose(); experiments.dispose(); groundGeometry.dispose(); assets.dispose(); shadowTarget.dispose();
             lighting.dispose(); renderer.dispose();
         }
     });

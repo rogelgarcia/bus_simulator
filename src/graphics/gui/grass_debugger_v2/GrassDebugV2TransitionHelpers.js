@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { DEFAULT_TRANSITION_DISTANCES, TRANSITION_LEVELS } from './GrassDebugV2TransitionSelection.js';
 
-export const GRASS_TRANSITION_COLORS = Object.freeze([0x42d9e8, 0x5595ff, 0xf1d35a, 0xef9147, 0xad76eb]);
+export const GRASS_TRANSITION_COLORS = Object.freeze([0x42d9e8, 0x5595ff, 0xf1d35a, 0xef9147, 0xad76eb, 0x73be79]);
 
 /** @typedef {import('./GrassDebugV2TransitionSelection.js').TransitionCell} TransitionCell */
 
@@ -114,7 +114,7 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
     ringGroup.name = 'Grass transition cached camera distance limits';
     ringGroup.position.y = 0.23;
     const ringGeometry = createRingGeometry();
-    const rings = GRASS_TRANSITION_COLORS.slice(0, 4).map((color, index) => {
+    const rings = GRASS_TRANSITION_COLORS.slice(0, 5).map((color, index) => {
         const ring = new THREE.LineLoop(ringGeometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, toneMapped: false }));
         ring.name = `${TRANSITION_LEVELS[index]} outer distance limit`;
         ring.renderOrder = 1002;
@@ -123,9 +123,9 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
     });
     const labels = GRASS_TRANSITION_COLORS.map(createRingLabel);
     for (const label of labels) ringGroup.add(label.sprite);
-    const cachedDistances = new Float64Array(4).fill(NaN);
-    const cachedStarts = new Float64Array(4).fill(NaN);
-    const startRings = GRASS_TRANSITION_COLORS.slice(0, 4).map((color, index) => {
+    const cachedDistances = new Float64Array(5).fill(NaN);
+    const cachedStarts = new Float64Array(5).fill(NaN);
+    const startRings = GRASS_TRANSITION_COLORS.slice(0, 5).map((color, index) => {
         const ring = new THREE.LineLoop(ringGeometry, new THREE.LineDashedMaterial({ color, dashSize: .025, gapSize: .02,
             transparent: true, opacity: .8, depthTest: false, depthWrite: false, toneMapped: false }));
         ring.computeLineDistances();
@@ -137,26 +137,29 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
 
     /** @param {readonly number[]} limits @param {readonly {start:number,end:number}[]} [bands] */
     function updateDistances(limits, bands) {
-        if (limits.length !== 4 || limits.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value <= limits[i - 1]))) {
-            throw new RangeError('Grass transition helpers require four increasing positive limits.');
+        if (bands) limits = bands.map(band => band.end);
+        if (limits.length !== 5 || limits.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value < limits[i - 1]))) {
+            throw new RangeError('Grass transition helpers require five increasing positive limits.');
         }
         let changed = false;
-        for (let i = 0; i < 4; i++) if (limits[i] !== cachedDistances[i] || (bands?.[i]?.start ?? limits[i]) !== cachedStarts[i]) changed = true;
+        for (let i = 0; i < 5; i++) if (limits[i] !== cachedDistances[i] || (bands?.[i]?.start ?? limits[i]) !== cachedStarts[i]) changed = true;
         if (!changed) return;
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
             cachedDistances[i] = limits[i];
             const start = bands?.[i]?.start ?? limits[i];
             cachedStarts[i] = start;
+            const active = i !== 3 || limits[3] !== limits[4];
+            rings[i].visible = labels[i].sprite.visible = active;
             rings[i].scale.set(limits[i], 1, limits[i]);
-            startRings[i].visible = start < limits[i];
+            startRings[i].visible = active && start < limits[i];
             startRings[i].scale.set(start, 1, start);
             labels[i].setText(start < limits[i]
-                ? `L${i}→${i + 1}: ${Number(start.toFixed(2))}–${Number(limits[i].toFixed(2))} m`
+                ? `L${bands?.[i]?.from ?? i}→${bands?.[i]?.to ?? i + 1}: ${Number(start.toFixed(2))}–${Number(limits[i].toFixed(2))} m`
                 : `${TRANSITION_LEVELS[i]} < ${Number(limits[i].toFixed(2))} m`);
             labels[i].sprite.position.set(limits[i] * 0.707, 0.32 + i * 0.12, -limits[i] * 0.707);
         }
-        labels[4].setText(`LOD4 ≥ ${Number(limits[3].toFixed(2))} m`);
-        labels[4].sprite.position.set(-limits[3] * 0.76, 0.32, -limits[3] * 0.76);
+        labels[5].setText(`LOD5 ≥ ${Number(limits[4].toFixed(2))} m`);
+        labels[5].sprite.position.set(-limits[4] * 0.76, 0.32, -limits[4] * 0.76);
     }
     updateDistances(distances);
     group.add(overlay, outlines, ringGroup);
@@ -168,7 +171,7 @@ export function createGrassDebugV2TransitionHelpers({ cells, distances = DEFAULT
             let changed = false;
             for (let i = 0; i < levels.length; i++) {
                 if (levels[i] === previousLevels[i]) continue;
-                if (!Number.isInteger(levels[i]) || levels[i] < 0 || levels[i] > 4) throw new RangeError(`Invalid grass helper LOD for cell ${i}.`);
+                if (!Number.isInteger(levels[i]) || levels[i] < 0 || levels[i] > 5) throw new RangeError(`Invalid grass helper LOD for cell ${i}.`);
                 previousLevels[i] = levels[i];
                 overlay.setColorAt(i, palette[levels[i]]);
                 changed = true;

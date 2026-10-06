@@ -2,11 +2,13 @@
 // @ts-check
 // Cell-center distances keep circular helpers honest; a one-meter cell has at most 0.71 m of spatial quantization.
 
-export const DEFAULT_TRANSITION_DISTANCES = Object.freeze([1, 2, 5, 18]);
-export const TRANSITION_LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4']);
+export const DEFAULT_TRANSITION_DISTANCES = Object.freeze([0.6, 0.8, 1, 16, 32]);
+export const TRANSITION_LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4', 'LOD5']);
+// Half-cell diagonal plus the widest expanded card, including its size variation.
+const GEOMETRY_SUPPORT_METERS = 1.4;
 
 /** @typedef {{centerX:number, centerZ:number, edge?:number, minX?:number, maxX?:number, minZ?:number, maxZ?:number}} TransitionCell */
-/** @typedef {{distances?:readonly number[], scale?:number, movementThreshold?:number, intervalMs?:number, sideLeafDistance?:number, transitionFraction?:number, transitionMode?:'blend'|'patches'}} TransitionSettings */
+/** @typedef {{distances?:readonly number[], scale?:number, movementThreshold?:number, intervalMs?:number, sideLeafDistance?:number, transitionFraction?:number, transitionMode?:'blend'|'patches', bridgeEnabled?:boolean}} TransitionSettings */
 
 /** @param {number} value @param {string} name @param {boolean} allowZero */
 function assertPositive(value, name, allowZero = false) {
@@ -18,7 +20,7 @@ function assertPositive(value, name, allowZero = false) {
 /** @param {TransitionSettings} options */
 function validateSettings(options) {
     const distances = options.distances ?? DEFAULT_TRANSITION_DISTANCES;
-    if (distances.length !== 4) throw new RangeError('Grass transitions require four distance limits.');
+    if (distances.length !== 5) throw new RangeError('Grass transitions require five distance limits.');
     for (let i = 0; i < distances.length; i++) {
         assertPositive(distances[i], `distances[${i}]`);
         if (i && distances[i] <= distances[i - 1]) throw new RangeError('Grass distance limits must increase strictly.');
@@ -29,6 +31,8 @@ function validateSettings(options) {
     const sideLeafDistance = options.sideLeafDistance ?? 35;
     const transitionFraction = options.transitionFraction ?? .5;
     const transitionMode = options.transitionMode ?? 'blend';
+    const bridgeEnabled = options.bridgeEnabled ?? true;
+    if (typeof bridgeEnabled !== 'boolean') throw new RangeError('Bridge selection must be boolean.');
     if (!['blend', 'patches'].includes(transitionMode)) throw new RangeError('Unknown grass transition mode.');
     if (!Number.isFinite(transitionFraction) || transitionFraction < 0 || transitionFraction > 1)
         throw new RangeError('Transition fraction must be between zero and one.');
@@ -36,7 +40,16 @@ function validateSettings(options) {
     assertPositive(movementThreshold, 'movementThreshold', true);
     assertPositive(intervalMs, 'intervalMs', true);
     assertPositive(sideLeafDistance, 'sideLeafDistance', true);
-    return { distances: Array.from(distances), scale, movementThreshold, intervalMs, sideLeafDistance, transitionFraction, transitionMode };
+    return { distances: Array.from(distances), scale, movementThreshold, intervalMs, sideLeafDistance, transitionFraction, transitionMode, bridgeEnabled };
+}
+
+function transitionBands({ distances, scale, transitionFraction, bridgeEnabled }) {
+    const bands = distances.map((end, i) => ({ from: i, to: i + 1,
+        start: (end - (end - (i ? distances[i - 1] : 0)) * transitionFraction) * scale, end: end * scale }));
+    // Both material slots share the same range when comparing the previous direct
+    // LOD3→canopy path. The unused LOD4 has no render candidates or geometry work.
+    if (!bridgeEnabled) bands[4] = { ...bands[3], to: 5 };
+    return bands;
 }
 
 /** Stable world-space ranks avoid reshuffling when the camera, cell order or batch membership changes.
@@ -64,9 +77,9 @@ export class GrassDebugV2TransitionSelection {
     #patchLimitsSquared;
     #renderMasks;
     #renderChangedCount = 0;
-    #supportMinSquared = new Float64Array(5);
-    #supportMaxSquared = new Float64Array(5);
-    #midpointsSquared = new Float64Array(4);
+    #supportMinSquared = new Float64Array(6);
+    #supportMaxSquared = new Float64Array(6);
+    #midpointsSquared = new Float64Array(5);
     #guardMeters = 0;
     #settings;
     #movementSquared = 0;
@@ -91,7 +104,7 @@ export class GrassDebugV2TransitionSelection {
         this.#sideLeaves = new Uint8Array(cells.length);
         this.#changedIndices = new Int32Array(cells.length);
         this.#patchThresholds = new Float64Array(cells.length);
-        this.#patchLimitsSquared = new Float64Array(cells.length * 4);
+        this.#patchLimitsSquared = new Float64Array(cells.length * 5);
         this.#renderMasks = new Uint8Array(cells.length);
         for (let i = 0; i < cells.length; i++) {
             const cell = cells[i];
@@ -128,21 +141,21 @@ export class GrassDebugV2TransitionSelection {
     }
 
     #applySettings() {
-        const { distances, scale, movementThreshold, transitionFraction } = this.#settings;
+        const { movementThreshold } = this.#settings;
         // Cover the largest lab speed (5 m/s × Shift 5) between scans, plus accumulated sub-threshold motion.
         this.#guardMeters = movementThreshold + this.#settings.intervalMs * .025;
-        const starts = distances.map((end, i) => (end - (end - (i ? distances[i - 1] : 0)) * transitionFraction) * scale);
-        for (let level = 0; level < 4; level++) {
-            const end = distances[level] * scale, previous = level ? distances[level - 1] * scale : 0;
-            const width = (end - previous) * transitionFraction;
+        const bands = transitionBands(this.#settings), starts = bands.map(band => band.start);
+        for (let level = 0; level < 5; level++) {
+            const { start, end } = bands[level], width = end - start;
             this.#midpointsSquared[level] = (end - width / 2) ** 2;
             for (let cell = 0; cell < this.#levels.length; cell++)
-                this.#patchLimitsSquared[cell * 4 + level] = (end - width + width * this.#patchThresholds[cell]) ** 2;
+                this.#patchLimitsSquared[cell * 5 + level] = (end - width + width * this.#patchThresholds[cell]) ** 2;
         }
-        for (let level = 0; level < 5; level++) {
-            this.#supportMinSquared[level] = level ? Math.max(0, starts[level - 1] - this.#guardMeters) ** 2 : 0;
-            this.#supportMaxSquared[level] = level < 4 ? (distances[level] * scale + this.#guardMeters) ** 2 : Infinity;
+        for (let level = 0; level < 6; level++) {
+            this.#supportMinSquared[level] = level ? Math.max(0, starts[level - 1] - this.#guardMeters - GEOMETRY_SUPPORT_METERS) ** 2 : 0;
+            this.#supportMaxSquared[level] = level < 5 ? (bands[level].end + this.#guardMeters + GEOMETRY_SUPPORT_METERS) ** 2 : Infinity;
         }
+        if (!this.#settings.bridgeEnabled) this.#supportMinSquared[4] = Infinity;
         this.#movementSquared = movementThreshold ** 2;
         this.#sideLeafDistanceSquared = this.#settings.sideLeafDistance ** 2;
         this.#dirty = true;
@@ -193,16 +206,16 @@ export class GrassDebugV2TransitionSelection {
             const dz = this.#centerZ[i] - z;
             const distanceSquared = dx * dx + dz * dz;
             let level = 0;
-            while (level < 4 && distanceSquared >= (blend ? this.#midpointsSquared[level] : this.#patchLimitsSquared[i * 4 + level])) level++;
+            while (level < 5 && distanceSquared >= (blend ? this.#midpointsSquared[level] : this.#patchLimitsSquared[i * 5 + level])) level++;
             let mask = 1 << level;
             if (blend) {
                 mask = 0;
-                for (let candidate = 0; candidate < 5; candidate++)
+                for (let candidate = 0; candidate < 6; candidate++)
                     if (distanceSquared >= this.#supportMinSquared[candidate] && distanceSquared <= this.#supportMaxSquared[candidate]) mask |= 1 << candidate;
             }
             if (mask !== this.#renderMasks[i]) { this.#renderMasks[i] = mask; this.#renderChangedCount++; }
             this.#counts[level]++;
-            const sideLeaves = Number((mask & 16) && this.#edges[i] && distanceSquared <= this.#sideLeafDistanceSquared);
+            const sideLeaves = Number((mask & 32) && this.#edges[i] && distanceSquared <= this.#sideLeafDistanceSquared);
             if (this.#sideLeaves[i] !== sideLeaves) { this.#sideLeaves[i] = sideLeaves; this.#sideLeavesChangedCount++; }
             if (this.#levels[i] === level) continue;
             this.#levels[i] = level;
@@ -238,11 +251,11 @@ export class GrassDebugV2TransitionSelection {
             sideLeafDistance: this.#settings.sideLeafDistance,
             transitionFraction: this.#settings.transitionFraction,
             transitionMode: this.#settings.transitionMode,
+            bridgeEnabled: this.#settings.bridgeEnabled,
             blendGuardMeters: this.#guardMeters,
+            geometrySupportMeters: GEOMETRY_SUPPORT_METERS,
             blendCandidateCells: this.#renderMasks.reduce((sum, mask) => sum + Number((mask & (mask - 1)) !== 0), 0),
-            transitionBands: this.#settings.distances.map((end, i, distances) => ({ from: i, to: i + 1,
-                start: (end - (end - (i ? distances[i - 1] : 0)) * this.#settings.transitionFraction) * this.#settings.scale,
-                end: end * this.#settings.scale })),
+            transitionBands: transitionBands(this.#settings),
             transitionMethod: !this.#settings.transitionFraction ? 'abrupt' : this.#settings.transitionMode === 'blend' ? 'complementary-screen-door' : 'stable-spatial-patches',
             counts: Array.from(this.#counts),
             lastScanMs: Number.isFinite(this.#lastScanMs) ? this.#lastScanMs : null,

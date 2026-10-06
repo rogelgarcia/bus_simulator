@@ -4,14 +4,14 @@ import { createShaderPayload, loadShaderSourceSet } from '../../core/ShaderLoade
 export const grassTransitionBlendParsShader = createShaderPayload({
     shaderId: 'materials.grass.transition-blend.pars',
     sourceSet: await loadShaderSourceSet({
-        vertexPath: 'materials/grass/grass_transition_blend_pars.vert.glsl',
-        fragmentPath: 'materials/grass/grass_transition_blend_pars.frag.glsl'
+        vertexPath: 'materials/grass/grass_transition_blend_pars.vert.glsl?v=opaque-dissolve-1',
+        fragmentPath: 'materials/grass/grass_transition_blend_pars.frag.glsl?v=opaque-dissolve-1'
     })
 });
 export const grassTransitionBlendShader = createShaderPayload({
     shaderId: 'materials.grass.transition-blend',
     sourceSet: await loadShaderSourceSet({
-        vertexPath: 'materials/grass/grass_transition_blend.vert.glsl',
-        fragmentPath: 'materials/grass/grass_transition_blend.frag.glsl'
+        vertexPath: 'materials/grass/grass_transition_blend.vert.glsl?v=opaque-dissolve-1',
+        fragmentPath: 'materials/grass/grass_transition_blend.frag.glsl?v=opaque-dissolve-1'
     })
 });

@@ -12,7 +12,7 @@ async function inspectCoverage(page) {
         const s = window.__grassTransitionScene, state = s.getSnapshot();
         const cells = s.fields.cells, byPosition = new Map(cells.map(cell => [cell.centerX + ',' + cell.centerZ, cell.id]));
         const main = new Uint8Array(cells.length), ground = new Uint8Array(cells.length), actual = new Uint8Array(cells.length).fill(255);
-        const counts = [0, 0, 0, 0, 0], matrix = s.camera.matrix.clone(), unknown = [], canopyEdges = [];
+        const counts = [0, 0, 0, 0, 0, 0], matrix = s.camera.matrix.clone(), unknown = [], canopyEdges = [];
         s.fields.group.traverse(mesh => {
             if (!mesh.isInstancedMesh || !mesh.visible) return;
             const level = mesh.userData.grassTransitionLevel, isGround = mesh.name.endsWith('-Ground');
@@ -24,7 +24,7 @@ async function inspectCoverage(page) {
                 if (isGround) ground[id]++;
                 else {
                     main[id]++; actual[id] = level; counts[level]++;
-                    if (level === 4) {
+                    if (level === 5) {
                         const edges = mesh.geometry.attributes.grassTransitionOpenEdges;
                         canopyEdges.push({ id, interior: !!mesh.userData.grassCanopyInterior,
                             triangles: mesh.geometry.index.count / 3,
@@ -37,11 +37,11 @@ async function inspectCoverage(page) {
         for (const cell of cells) {
             const distance = Math.hypot(cell.centerX - s.camera.position.x, cell.centerZ - s.camera.position.z);
             let expected = 0;
-            while (expected < 4 && distance >= state.selection.effectiveDistances[expected]) expected++;
+            while (expected < 5 && distance >= state.selection.effectiveDistances[expected]) expected++;
             if (state.soilOnly) {
                 if (main[cell.id] !== 0 || ground[cell.id] !== 1) invalid.push(cell.id);
             } else {
-                if (main[cell.id] !== 1 || ground[cell.id] + Number(actual[cell.id] === 4) !== 1) invalid.push(cell.id);
+                if (main[cell.id] !== 1 || ground[cell.id] + Number(actual[cell.id] === 5) !== 1) invalid.push(cell.id);
                 if (actual[cell.id] !== expected) mismatches.push(cell.id);
             }
         }
@@ -51,7 +51,7 @@ async function inspectCoverage(page) {
             const cell = cells[record.id], size = state.fields.fieldSize;
             const neighbors = [cell.x > 0 ? cell.id - 1 : -1, cell.x < size - 1 ? cell.id + 1 : -1,
                 cell.z > 0 ? cell.id - size : -1, cell.z < size - 1 ? cell.id + size : -1];
-            const expected = neighbors.map(id => Number(id >= 0 && actual[id] < 4));
+            const expected = neighbors.map(id => Number(id >= 0 && actual[id] < 5));
             openEdgeCount += expected.reduce((sum, value) => sum + value, 0);
             const interior = state.fields.optimization === 'optimized' && !cell.edge && expected.every(value => value === 0);
             if (record.interior !== interior || record.triangles !== (interior ? 2 : 32)
@@ -76,13 +76,13 @@ async function inspectWorldUvs(page) {
         const results = [];
         try {
             renderer.shadowMap.enabled = false;
-            s.fields.applyLevels(new Uint8Array(s.fields.cells.length).fill(4));
+            s.fields.applyLevels(new Uint8Array(s.fields.cells.length).fill(5));
             for (const mode of ['canopy', 'soil']) {
                 s.fields.setSoilOnly(mode === 'soil'); s.fields.group.updateMatrixWorld(true);
                 const scene = new THREE.Scene(), meshes = [], materials = [], matrices = [];
                 s.fields.group.traverse(source => {
                     if (!source.isInstancedMesh || !source.visible || !source.name.startsWith('GrassTransitionField_0-')) return;
-                    if (mode === 'canopy' ? source.userData.grassTransitionLevel !== 4 : !source.name.endsWith('-Ground')) return;
+                    if (mode === 'canopy' ? source.userData.grassTransitionLevel !== 5 : !source.name.endsWith('-Ground')) return;
                     const material = cloneMaterialShaderContract(source.material);
                     material.toneMapped = false;
                     registerMaterialShaderHook(material, { id: 'test.transition-uv-output', priority: 1000, variantKey: '1',
@@ -127,7 +127,7 @@ async function inspectInternalRamp(page) {
         const THREE = await import('three');
         const { cloneMaterialShaderContract, registerMaterialShaderHook } = await import('/src/graphics/shaders/core/MaterialShaderHookRegistry.js');
         const s = window.__grassTransitionScene, renderer = s.renderer;
-        const savedLevels = new Uint8Array(s.updateSelection(true).levels), levels = new Uint8Array(savedLevels.length).fill(4);
+        const savedLevels = new Uint8Array(s.updateSelection(true).levels), levels = new Uint8Array(savedLevels.length).fill(5);
         const hole = s.fields.cells.find(cell => cell.centerX === -16 && cell.centerZ === -16);
         if (!hole) throw new Error('Internal ramp probe requires the center cell of the first field.');
         levels[hole.id] = 2;
@@ -138,7 +138,7 @@ async function inspectInternalRamp(page) {
         try {
             s.fields.applyLevels(levels); s.fields.group.updateMatrixWorld(true); renderer.shadowMap.enabled = false;
             s.fields.group.traverse(source => {
-                if (!source.isInstancedMesh || !source.visible || source.userData.grassTransitionLevel !== 4
+                if (!source.isInstancedMesh || !source.visible || source.userData.grassTransitionLevel !== 5
                     || !source.name.startsWith('GrassTransitionField_0-')) return;
                 const material = cloneMaterialShaderContract(source.material);
                 registerMaterialShaderHook(material, { id: 'test.transition-ramp-height', priority: 1000, variantKey: '1',
@@ -253,13 +253,16 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
             window.__grassTransitionScene.setAnimating(false); window.__grassTransitionScene.step(0);
         });
         await expect(page.locator('#scene-loading')).toBeHidden();
+        expect(await page.evaluate(() => window.__grassTransitionScene.getSnapshot().selection.distances)).toEqual([.6, .8, 1, 16, 32]);
+        // Keep the established all-level geometry/seam scenario at its original ranges.
+        await page.evaluate(() => window.__grassTransitionScene.setSettings({ distances: [1, 2, 5, 18, 32] }));
         const initial = await inspectCoverage(page); evidence.initial = initial;
         expect(initial.state.fields.cells).toBe(4096);
         expect(initial.state.fields.fields).toHaveLength(4);
         expect(initial.state.fields.fieldSize).toBe(32);
         expect(initial.state.fields.selectionCellMeters).toBe(1);
         expect(initial.state.fields.groundLayersPerCell).toBe(1);
-        expect(initial.state.selection.distances).toEqual([1, 2, 5, 18]);
+        expect(initial.state.selection.distances).toEqual([1, 2, 5, 18, 32]);
         expect(initial.counts).toEqual(initial.state.selection.counts);
         expect(initial.counts.every(count => count > 0)).toBe(true);
         expect(initial.invalid).toEqual([]); expect(initial.mismatches).toEqual([]); expect(initial.unknown).toEqual([]);
@@ -290,8 +293,8 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
 
         await page.locator('#transition-half').click();
         const half = await inspectCoverage(page); evidence.half = half;
-        expect(half.state.selection.effectiveDistances).toEqual([0.5, 1, 2.5, 9]);
-        expect(half.counts[4]).toBeGreaterThan(initial.counts[4]);
+        expect(half.state.selection.effectiveDistances).toEqual([0.5, 1, 2.5, 9, 16]);
+        expect(half.counts[5]).toBeGreaterThan(initial.counts[5]);
         expect(half.invalid).toEqual([]); expect(half.mismatches).toEqual([]);
         expect(half.openEdgeCount).toBeGreaterThan(0); expect(half.invalidOpenEdges).toEqual([]);
         expect(half.state.shadows.generations).toBe(initial.state.shadows.generations);
@@ -336,7 +339,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
         await page.evaluate(() => window.__grassTransitionScene.step(0));
         evidence.soil = await inspectCoverage(page);
         expect(evidence.soil.state.soilOnly).toBe(true);
-        expect(evidence.soil.counts).toEqual([0, 0, 0, 0, 0]);
+        expect(evidence.soil.counts).toEqual([0, 0, 0, 0, 0, 0]);
         expect(evidence.soil.groundInstances).toBe(4096);
         expect(evidence.soil.invalid).toEqual([]);
         await page.locator('#transition-soil').uncheck();
@@ -393,7 +396,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
             });
             const expected = s.fields.cells.filter(cell => {
                 const distance = Math.hypot(cell.centerX - s.camera.position.x, cell.centerZ - s.camera.position.z);
-                return cell.edge && distance >= state.selection.effectiveDistances[3] && distance <= state.selection.sideLeafDistance;
+                return cell.edge && distance >= state.selection.effectiveDistances[4] && distance <= state.selection.sideLeafDistance;
             }).map(cell => cell.centerX + ',' + cell.centerZ);
             return { state, actual: actual.sort(), expected: expected.sort() };
         });
@@ -418,7 +421,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
         await expect(page.locator('#transition-half')).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('#transition-half-3')).toHaveText('½ 9 m');
         expect((await inspectSides()).state.selection.sideLeafDistance).toBe(35);
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
             const input = await page.locator('#transition-limit-' + i).boundingBox();
             const half = await page.locator('#transition-half-' + i).boundingBox();
             const label = await page.locator('label[for="transition-limit-' + i + '"]').boundingBox();
@@ -458,7 +461,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
             return { before, after: s.getSnapshot(), invalid };
         });
         expect(evidence.flatLod4.invalid).toEqual([]);
-        expect(evidence.flatLod4.after.fields.levels).toEqual([0, 0, 0, 0, 4096]);
+        expect(evidence.flatLod4.after.fields.levels).toEqual([0, 0, 0, 0, 0, 4096]);
         expect(evidence.flatLod4.after.fields.triangles).toBe(8192);
         expect(evidence.flatLod4.after.fields.sideLeafCells).toBe(0);
         expect(evidence.flatLod4.after.selection.scans).toBe(evidence.flatLod4.before.selection.scans);
@@ -492,7 +495,7 @@ test('Transition lab selects one abrupt LOD per cell, reuses stationary assignme
             return { states, disabled: disabled.shadows, enabled: enabled.shadows, glError: enabled.glError };
         });
         for (const value of evidence.lod4Factors.states) {
-            expect(value.glError).toBe(0); expect(value.fields.levels).toEqual([0, 0, 0, 0, 4096]);
+            expect(value.glError).toBe(0); expect(value.fields.levels).toEqual([0, 0, 0, 0, 0, 4096]);
             expect(value.fields.sideLeafCells > 0).toBe(value.configuration === 'lod4-elevated-sides');
             for (const geometry of value.geometry) {
                 expect(geometry.fastShadow).toBe(1);

@@ -58,7 +58,7 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     const sourceMaterial = createGrassDebugV2Material({ vertexColors: true, color: original.color, roughness: original.roughness,
         normalMap: original.normalMap, normalScale: original.normalScale, roughnessMap: original.roughnessMap,
         defines: { GRASS_LEAF_TRANSLUCENCY: 1, USE_UV: 1 } });
-    onProgress('Preparing five grass levels…');
+    onProgress('Preparing grass source levels…');
     const generated = ['LOD0_SMART', 'LOD1', 'LOD2'].map(lod => createGrassDebugV2FieldLod({ lod,
         placements: manifest.placements, seed: manifest.seed, material: sourceMaterial }));
     const detail = createGrassDebugV2FieldDetail({ source: generated[2].mesh, width: manifest.widthMeters, depth: manifest.depthMeters });
@@ -77,7 +77,7 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     // Opt in only after baking. The general material still supports external occluders in the field lab.
     for (const material of Object.values(canopy.materials)) {
         // Linear leaf-only probe, normalized by coverage; litter retains its own base color.
-        material.userData.grassFloorLeafColorScale.value.set(1.04, 1.03, 1.02);
+        material.userData.grassFloorLeafColorScale.value.set(1.03, 1.0, 1.4);
         material.defines = { ...material.defines, GRASS_CANOPY_BAKED_SHADOW_ONLY: 1, GRASS_TRANSITION_CANOPY_COVERAGE: 1 };
         material.needsUpdate = true;
     }

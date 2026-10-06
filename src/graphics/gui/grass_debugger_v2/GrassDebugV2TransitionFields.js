@@ -4,11 +4,11 @@ import * as THREE from 'three';
 import { cloneMaterialShaderContract, registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { grassTransitionFieldUvShader, grassTransitionFieldCanopyShader } from '../../shaders/materials/grass/GrassTransitionFieldShaderLoader.js';
-import { createGrassTransitionBlendMaterials } from './GrassDebugV2TransitionBlend.js?v=transition-blend-startup-1';
+import { createGrassTransitionBlendMaterials } from './GrassDebugV2TransitionBlend.js?v=opaque-dissolve-1';
 import { createGrassTransitionChunks } from './GrassDebugV2TransitionChunks.js';
 import { grassTransitionCanopyProfile, createGrassTransitionCanopyGeometry } from './GrassDebugV2TransitionCanopy.js';
 
-const LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4']);
+const LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4', 'LOD5']);
 const TEMPLATE_CENTERS = Object.freeze([[-.5, -.5], [.5, -.5], [-.5, .5], [.5, .5]]);
 
 function sourceLeaves(mesh) {
@@ -141,13 +141,14 @@ function boundaryMask(x, z, size) {
 
 /**
  * Source geometry and textures remain owned by the caller. Selection updates are explicit; there is no frame callback.
- * @param {{sources:Record<string,THREE.Mesh|THREE.Group>,detail:object,canopy:object,litterMaterial?:THREE.Material,
+ * @param {{sources:Record<string,THREE.Mesh|THREE.Group>,detail:object,canopy:object,bridge:object,litterMaterial?:THREE.Material,
  * soilMaterial:THREE.Material,soilUv:THREE.Matrix3,litterUv?:THREE.Matrix3,fieldSize?:number,gap?:number}} options
  */
-export function createGrassDebugV2TransitionFields({ sources, detail, canopy, litterMaterial, soilMaterial, soilUv, litterUv, fieldSize = 32, gap = 1 }) {
+export function createGrassDebugV2TransitionFields({ sources, detail, canopy, bridge, litterMaterial, soilMaterial, soilUv, litterUv, fieldSize = 32, gap = 1 }) {
     if (!Number.isInteger(fieldSize) || fieldSize < 2 || fieldSize % 2 || !(gap > 0) || !Number.isFinite(gap)
         || !soilMaterial?.isMaterial || !soilUv?.isMatrix3 || (litterMaterial && !litterUv?.isMatrix3)
-        || !detail?.decode?.isVector3 || !detail.group?.isGroup || !canopy?.materials?.all)
+        || !detail?.decode?.isVector3 || !detail.group?.isGroup || !canopy?.materials?.all
+        || bridge?.templates?.length !== 4 || !bridge.material?.isMaterial)
         throw new Error('Transition fields require even metre dimensions, positive gaps and complete source materials/mappings.');
     for (const lod of LEVELS.slice(0, 3)) {
         const mesh = sources[lod];
@@ -168,8 +169,10 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
     }
     templates.LOD3 = detailTemplates(detail);
     const canopyGeometry = surfaceGeometry(canopyShape.height, canopyShape.ramp), flatCanopyGeometry = surfaceGeometry(canopyShape.height), groundCanopyGeometry = surfaceGeometry(0), groundGeometry = surfaceGeometry(litterMaterial ? .005 : 0);
-    templates.LOD4 = TEMPLATE_CENTERS.map(() => canopyGeometry);
-    Object.values(templates).flat().forEach(geometry => geometries.add(geometry)); geometries.add(groundGeometry); geometries.add(flatCanopyGeometry); geometries.add(groundCanopyGeometry);
+    templates.LOD4 = bridge.templates;
+    templates.LOD5 = TEMPLATE_CENTERS.map(() => canopyGeometry);
+    Object.entries(templates).filter(([lod]) => lod !== 'LOD4').flatMap(([, values]) => values).forEach(geometry => geometries.add(geometry));
+    geometries.add(groundGeometry); geometries.add(flatCanopyGeometry); geometries.add(groundCanopyGeometry);
     const soil = surfaceMaterial(soilMaterial, soilUv), litter = litterMaterial ? surfaceMaterial(litterMaterial, litterUv) : soil;
     materials.add(soil); materials.add(litter);
     function batch(geometry, material, capacity, name, parent, castShadow = false) {
@@ -192,24 +195,24 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             delete material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY; materials.add(material);
         }
         const batches = LEVELS.map((lod, level) => TEMPLATE_CENTERS.map((_, quadrant) => {
-            const material = level === 4 ? canopyMaterial : level === 3 ? detail.material : sources[lod].material;
+            const material = level === 5 ? canopyMaterial : level === 4 ? bridge.material : level === 3 ? detail.material : sources[lod].material;
             const capacity = fieldSize * fieldSize / 4;
-            const geometry = level === 4 ? templates[lod][quadrant].clone() : templates[lod][quadrant];
-            if (level === 4) {
+            const geometry = level === 5 ? templates[lod][quadrant].clone() : templates[lod][quadrant];
+            if (level === 5) {
                 geometry.setAttribute('grassTransitionOpenEdges', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
                     .setUsage(THREE.DynamicDrawUsage));
                 geometries.add(geometry);
             }
             const entry = batch(geometry, material, capacity, node.name + '-' + lod + '-' + quadrant, node, level < 3);
-            if (level === 4) entry.canopyGeometry = geometry;
+            if (level === 5) entry.canopyGeometry = geometry;
             entry.mesh.userData.grassTransitionLevel = level;
-            if (level === 4) entry.mesh.userData.grassCanopy = true;
+            if (level === 5) entry.mesh.userData.grassCanopy = true;
             else entry.mesh.userData.grassLeafCount = templates[lod][quadrant].userData.grassLeafCount;
             return entry;
         }));
         // World-space UVs let every interior cell share one batch, regardless of source quadrant.
-        const interior = batch(flatCanopyGeometry, flatCanopyMaterial, fieldSize * fieldSize, node.name + '-LOD4-Interior', node);
-        Object.assign(interior.mesh.userData, { grassTransitionLevel: 4, grassCanopy: true, grassCanopyInterior: true });
+        const interior = batch(flatCanopyGeometry, flatCanopyMaterial, fieldSize * fieldSize, node.name + '-LOD5-Interior', node);
+        Object.assign(interior.mesh.userData, { grassTransitionLevel: 5, grassCanopy: true, grassCanopyInterior: true });
         const ground = batch(groundGeometry, litter, fieldSize * fieldSize, node.name + '-Ground', node), fringes = new Map();
         ground.mesh.userData.grassTransitionGround = true;
         for (let z = 0; z < fieldSize; z++) for (let x = 0; x < fieldSize; x++) {
@@ -238,14 +241,19 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
     let optimization = 'optimized';
     let materialTransform = material => material;
     let edgeStrips = false;
-    let selectedCounts = [0, 0, 0, 0, 0];
+    let selectedCounts = [0, 0, 0, 0, 0, 0];
+    let lod3Representation = null, lod4Representation = bridge;
+    let bridgeEnabled = true;
+    let fadeStyle = 'dissolve';
+    const coverageMode = level => level === 2 ? (lod3Representation ? 2 : 0)
+        : level === 3 ? (lod3Representation ? 1 : 0) + (bridgeEnabled ? 2 : 0) : level === 4 ? 1 : 0;
     function route(entry, id, mixed, level) {
         if (!mixed) { entry.pending.push(id); return; }
         let target = blendBatches.get(entry);
         if (!target) {
             const geometry = entry.mesh.geometry.attributes.grassTransitionOpenEdges ? entry.mesh.geometry.clone() : entry.mesh.geometry;
             if (geometry !== entry.mesh.geometry) geometries.add(geometry);
-            target = batch(geometry, blendMaterials.material(entry.mesh.material, level), entry.mesh.instanceMatrix.count,
+            target = batch(geometry, blendMaterials.material(entry.mesh.material, level, coverageMode(level), fadeStyle), entry.mesh.instanceMatrix.count,
                 entry.mesh.name + '-Blend', entry.mesh.parent);
             target.mesh.userData = { ...entry.mesh.userData, grassTransitionBlend: true, grassTransitionBlendLevel: level };
             target.sourceGeometry = entry.mesh.geometry;
@@ -257,14 +265,14 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             if (target.mesh.geometry !== entry.mesh.geometry) geometries.add(target.mesh.geometry);
             target.members = []; // Force fresh bounds after switching surface shape.
         }
-        target.mesh.material = blendMaterials.material(entry.mesh.material, level);
+        target.mesh.material = blendMaterials.material(entry.mesh.material, level, coverageMode(level), fadeStyle);
         target.mesh.position.copy(entry.mesh.position);
         target.pending.push(id);
     }
     function rebuild() {
         const before = performance.now();
         allBatches.forEach(entry => { entry.pending = []; });
-        selectedCounts = [0, 0, 0, 0, 0];
+        selectedCounts = [0, 0, 0, 0, 0, 0];
         for (const field of fields) {
             field.ground.mesh.material = soilOnly ? soil : litter;
             field.ground.mesh.position.y = soilOnly && litterMaterial ? -.005 : 0;
@@ -275,28 +283,28 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             if (soilOnly) { field.ground.pending.push(cell.id); continue; }
             // Elevated canopy and floor footprints differ at oblique angles. Keep litter underneath
             // the band so their projected patch edges cannot expose holes.
-            if (mask & 15) field.ground.pending.push(cell.id);
-            for (let level = 0; level < 5; level++) {
+            if (mask & 31) field.ground.pending.push(cell.id);
+            for (let level = 0; level < 6; level++) {
                 if (!(mask & (1 << level))) continue;
-                const profile = level === 4 && edgeStrips && optimization === 'optimized' && !flatLod4
+                const profile = level === 5 && edgeStrips && optimization === 'optimized' && !flatLod4
                     ? grassTransitionCanopyProfile(cell, canopyLevels, fieldSize) : 0;
                 // Shape changes sit outside visible blend support, so cache updates cannot pop the ramp.
-                const interior = level === 4 && optimization === 'optimized' && lod4Surface === 'beveled' && !cell.edge
+                const interior = level === 5 && optimization === 'optimized' && lod4Surface === 'beveled' && !cell.edge
                     && canopyLevels[cell.id - 1] === 4 && canopyLevels[cell.id + 1] === 4
                     && canopyLevels[cell.id - fieldSize] === 4 && canopyLevels[cell.id + fieldSize] === 4 && !profile;
                 let entry = interior ? field.interior : field.batches[level][cell.template];
-                if (edgeStrips && level === 4 && !interior && optimization === 'optimized' && !flatLod4) {
+                if (edgeStrips && level === 5 && !interior && optimization === 'optimized' && !flatLod4) {
                     if (!field.strips.has(profile)) {
                         const geometry = createGrassTransitionCanopyGeometry(profile, canopyShape);
                         geometries.add(geometry);
-                        const strip = batch(geometry, materialTransform(field.flatCanopyMaterial), fieldSize * fieldSize, field.node.name + '-LOD4-Strip-' + profile, field.node);
-                        Object.assign(strip.mesh.userData, { grassTransitionLevel: 4, grassCanopy: true, grassCanopyStrip: true });
+                        const strip = batch(geometry, materialTransform(field.flatCanopyMaterial), fieldSize * fieldSize, field.node.name + '-LOD5-Strip-' + profile, field.node);
+                        Object.assign(strip.mesh.userData, { grassTransitionLevel: 5, grassCanopy: true, grassCanopyStrip: true });
                         field.strips.set(profile, strip);
                     }
                     entry = field.strips.get(profile);
                 }
                 route(entry, cell.id, mixed, level);
-                if (level === 4 && cell.edge && sideLeaves[cell.id]) route(field.fringes.get(cell.template + ':' + cell.edge), cell.id, mixed, 4);
+                if (level === 5 && cell.edge && sideLeaves[cell.id]) route(field.fringes.get(cell.template + ':' + cell.edge), cell.id, mixed, 5);
             }
         }
         for (const entry of allBatches) {
@@ -333,7 +341,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             const beveled = optimization === 'original' ? field.originalCanopyMaterial : field.canopyMaterial;
             field.interior.mesh.material = materialTransform(flat);
             for (const entry of field.strips.values()) entry.mesh.material = materialTransform(flat);
-            for (const entry of field.batches[4]) {
+            for (const entry of field.batches[5]) {
                 entry.mesh.geometry = lod4Surface === 'ground' ? groundCanopyGeometry : flatLod4 ? flatCanopyGeometry : entry.canopyGeometry;
                 entry.mesh.material = materialTransform(flatLod4 ? flat : beveled);
                 entry.mesh.computeBoundingBox(); entry.mesh.computeBoundingSphere();
@@ -343,8 +351,41 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
     const buildMilliseconds = performance.now() - started;
     const api = {
         group, cells: publicCells, bounds: fieldBounds,
+        setFadeStyle(value) {
+            if (!['coverage', 'alpha', 'staggered', 'dissolve'].includes(value)) throw new Error('Invalid grass fade style.');
+            if (value === fadeStyle) return;
+            fadeStyle = value; rebuild();
+        },
+        setLod3Representation(representation = null) {
+            if (representation && (representation.templates?.length !== 4 || !representation.material?.isMaterial))
+                throw new Error('LOD3 representation requires four templates and one material.');
+            lod3Representation = representation;
+            for (const field of fields) field.batches[3].forEach((entry, quadrant) => {
+                entry.mesh.geometry = representation ? representation.templates[quadrant] : templates.LOD3[quadrant];
+                entry.mesh.material = representation ? representation.material : detail.material;
+                entry.mesh.userData.grassLeafCount = entry.mesh.geometry.userData.grassLeafCount;
+                entry.members = [-1]; // Upload unchanged membership with the new geometry bounds.
+            });
+            rebuild();
+        },
+        setLod4Representation(representation) {
+            if (representation?.templates?.length !== 4 || !representation.material?.isMaterial)
+                throw new Error('LOD4 representation requires four templates and one material.');
+            lod4Representation = representation;
+            for (const field of fields) field.batches[4].forEach((entry, quadrant) => {
+                entry.mesh.geometry = representation.templates[quadrant];
+                entry.mesh.material = representation.material;
+                entry.mesh.userData.grassLeafCount = 0;
+                entry.members = [-1];
+            });
+            rebuild();
+        },
         setChunkSize: chunks.setSize,
-        configureBlend: blendMaterials.configure,
+        configureBlend(bands, enabled = true) {
+            if (typeof enabled !== 'boolean') throw new Error('Bridge selection must be boolean.');
+            blendMaterials.configure(bands);
+            if (bridgeEnabled !== enabled) { bridgeEnabled = enabled; rebuild(); }
+        },
         setEdgeStrips(value) {
             if (typeof value !== 'boolean') throw new Error('Edge-strip selection requires a boolean.');
             if (value === edgeStrips) return;
@@ -376,13 +417,13 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
         /** @param {Uint8Array} next @param {Uint8Array|null} [nextSideLeaves] @param {Uint8Array|null} [nextMasks] */
         applyLevels(next, nextSideLeaves = null, nextMasks = null) {
             if (disposed) throw new Error('Transition fields were disposed.');
-            if (!(next instanceof Uint8Array) || next.length !== cells.length || next.some(level => level > 4))
-                throw new Error('Transition levels must be a Uint8Array containing one LOD index 0â€“4 for every cell.');
+            if (!(next instanceof Uint8Array) || next.length !== cells.length || next.some(level => level > 5))
+                throw new Error('Transition levels must be a Uint8Array containing one LOD index 0–5 for every cell.');
             if (nextSideLeaves !== null && (!(nextSideLeaves instanceof Uint8Array) || nextSideLeaves.length !== cells.length
                 || nextSideLeaves.some(value => value > 1))) throw new Error('Side-leaf visibility requires one 0/1 value per cell.');
             if (nextMasks !== null && (!(nextMasks instanceof Uint8Array) || nextMasks.length !== cells.length
-                || nextMasks.some((mask, i) => mask < 1 || mask > 31 || !(mask & (1 << next[i])))))
-                throw new Error('Grass render masks must contain the dominant level and only LOD0–4.');
+                || nextMasks.some((mask, i) => mask < 1 || mask > 63 || !(mask & (1 << next[i])))))
+                throw new Error('Grass render masks must contain the dominant level and only LOD0–5.');
             const masksChanged = renderMasks.some((mask, i) => mask !== (nextMasks ? nextMasks[i] : 1 << next[i]));
             scans++;
             const sidesChanged = nextSideLeaves !== null && nextSideLeaves.some((value, i) => value !== sideLeaves[i]);
@@ -391,7 +432,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             levels.set(next);
             for (let i = 0; i < cells.length; i++) {
                 renderMasks[i] = nextMasks ? nextMasks[i] : 1 << next[i];
-                canopyLevels[i] = renderMasks[i] & 16 ? 4 : 3;
+                canopyLevels[i] = renderMasks[i] & 32 ? 4 : 3;
             }
             rebuild(); return true;
         },
@@ -407,16 +448,19 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             const geometryBytes = chunks.getSnapshot().geometryBytes + [...geometries].reduce((sum, geometry) => sum + (geometry.index?.array.byteLength ?? 0)
                 + Object.values(geometry.attributes).reduce((bytes, attribute) => bytes + attribute.array.byteLength, 0), 0);
             return { fields: fields.map(field => ({ index: field.index, ...field.bounds })), fieldSize, gap, selectionCellMeters: 1,
-                cells: cells.length, levels: [...selectedCounts], soilOnly, flatLod4, lod4Surface, optimization, edgeStrips, activeBatches: active.length, mainBatchCapacity: allBatches.length,
+                cells: cells.length, levels: [...selectedCounts], soilOnly, flatLod4, lod4Surface, optimization, edgeStrips, fadeStyle, activeBatches: active.length, mainBatchCapacity: allBatches.length,
                 lod4InteriorCells: fields.reduce((sum, field) => sum + field.interior.mesh.count, 0),
-                lod4GridCells: flatLod4 ? 0 : fields.reduce((sum, field) => sum + field.batches[4].reduce((n, entry) => n + entry.mesh.count, 0), 0),
+                lod4GridCells: flatLod4 ? 0 : fields.reduce((sum, field) => sum + field.batches[5].reduce((n, entry) => n + entry.mesh.count, 0), 0),
                 triangles, geometryBytes, chunks: chunks.getSnapshot(), instanceBytes: allBatches.reduce((sum, entry) => sum + entry.mesh.instanceMatrix.array.byteLength, 0) + chunks.getSnapshot().instanceBytes,
                 templateLeaves: Object.fromEntries(LEVELS.slice(0, 4).map(lod => [lod, templates[lod].map(geometry => geometry.userData.grassLeafCount)])),
                 blendCandidateCells: renderMasks.reduce((sum, mask) => sum + Number((mask & (mask - 1)) !== 0), 0),
                 blendBatches: active.filter(entry => entry.mesh.userData.grassTransitionBlend).length,
-                extraTextureBytes: 0, buildMilliseconds, selectionScans: scans, instanceUploads: uploads, lastApplyMilliseconds, totalApplyMilliseconds,
+                extraTextureBytes: (lod3Representation?.textureBytes ?? 0) + (lod4Representation?.textureBytes ?? 0),
+                lod4CardsPerSquareMeter: lod4Representation?.templates[0].userData.grassViewCards ?? 0,
+                lod3CardsPerSquareMeter: lod3Representation?.templates[0].userData.grassViewCards ?? 0,
+                buildMilliseconds, selectionScans: scans, instanceUploads: uploads, lastApplyMilliseconds, totalApplyMilliseconds,
                 sideLeafCells: fields.reduce((sum, field) => sum + [...field.fringes.values()].reduce((count, fringe) => count + fringe.mesh.count, 0), 0),
-                perimeterPolicy: 'LOD2 fringe only on true field edges; canopy meets litter along exposed internal edges', groundLayersPerCell: renderMasks.some(mask => (mask & 16) && (mask & 15)) && !soilOnly ? 2 : 1 };
+                perimeterPolicy: 'LOD2 fringe only on true field edges; canopy meets litter along exposed internal edges', groundLayersPerCell: renderMasks.some(mask => (mask & 32) && (mask & 31)) && !soilOnly ? 2 : 1 };
         },
         dispose() {
             if (disposed) return;
@@ -424,6 +468,6 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, li
             chunks.dispose(); blendMaterials.dispose(); geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose()); group.clear();
         }
     };
-    api.applyLevels(new Uint8Array(cells.length).fill(4));
+    api.applyLevels(new Uint8Array(cells.length).fill(5));
     return Object.freeze(api);
 }

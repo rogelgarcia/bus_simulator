@@ -1,7 +1,7 @@
 # Grass distance-transition lab
 
 Entry point: `debug_tools/grass_transition_scene.html`. This separate lab reuses
-the authored field's grass, litter and 1K LOD4 canopy maps. Lighting resolves from
+the authored field's grass, litter and 1K canopy maps (now LOD5 in this lab). Lighting resolves from
 the same live settings as the game, rather than the geometry export. The existing
 single-field lab links to it and retains its manual LOD comparisons.
 The transition lab now defaults to 4× canopy anisotropic filtering and simple
@@ -19,27 +19,365 @@ the scene bypasses it, while deliberate missing-export failures remain visible.
 
 ## Scene and selection
 
+### Opaque dissolve (2026-10-05)
+
+`?revision=opaque-dissolve-1&lod3=cards` replaces the broad card opacity fade
+with a shared, static, one-pixel interleaved-gradient threshold. Adjacent levels
+use opposite sides of the threshold at equal fade weights; surviving fragments
+keep their original color and depth writes. Existing MSAA alpha coverage remains
+on atlas leaf edges, but no longer carries transition opacity. There is no
+frame-varying seed, extra texture lookup, render target, or CPU card sorting.
+The existing cached candidate selection and distance bands are unchanged.
+
+The Fade control and `setFadeStyle` API retain `coverage` (previous), `alpha`
+(ordinary transparency on card handoffs), and `staggered` (short, world-seeded
+per-card windows at LOD3/4). `dissolve` is the default; `?fade=...` persists a
+comparison choice. Staggering applies only while the larger-card bridge is active.
+
+Matched front, rear and side bus renders show the dissolve's classified leaf
+green channel stays between isolated LOD3/4 values in the middle of the band.
+Ordinary alpha darkens those samples, and whole-card staggering increases local
+coverage variation. Reversing draw order changed 132,789 pixels with alpha and
+177 with the dissolve, at a 3/255 threshold. The latter is not a claim of exact
+order invariance for coincident grass geometry; synthetic boundary probes are
+order independent and have no holes. The color classifier is a fixed green
+proxy, not a semantic leaf-ID mask.
+
+All alternatives use the same atlas memory. Previous coverage and dissolve
+both draw 109 batches / 880,047 triangles front, 109 / 880,185 rear, and
+100 / 388,289 side, including scene passes. No GPU-time improvement is claimed:
+external GPU utilization remained 100%. Tests cover three matched views, eight
+bearings, all five boundary probes, front/rear 6 m drives, reload and UI toggles.
+
+Evidence and interactive comparison:
+`tests/artifacts/screens/grass_debug_v2/transition_lab/fade_styles/index.html`.
+Generate it after the visual tests with
+`node tests/headless/visual/grass_transition_fade_report.mjs`.
+Fine pixel grain can remain without TAA. Different card clump shapes and the
+flat canopy are still representation differences, beyond what a fade can fix.
+
+### Card continuity correction (2026-10-05)
+
+`?revision=card-continuity-1&lod3=cards` keeps the six levels and the
+0.6 / 0.8 / 1 / 16 / 32 m switches below, with these corrections:
+
+- Fade weights use the decoded, expanded vertex position, rather than one
+  weight for an entire one-metre cell. Narrow near-camera bands therefore
+  remain spatially continuous. MSAA and complementary coverage policies stay
+  unchanged; there are no extra fragment texture samples.
+- CPU candidate selection adds a 1.4 m geometry envelope to its existing
+  1.45 m movement guard. This covers leaf/card overhangs while retaining the
+  50 ms / 0.2 m scan gates. Bounding volumes include card size variation.
+- Both card populations use world-seeded jitter within evenly distributed
+  strata. The former repeated two-metre best-candidate layout is removed.
+  Stable yaw variation (±31.5°), width (88–112%), depth (90–110%) and height
+  (90–100%) break aligned silhouettes. Roots and source images do not shuffle
+  during camera movement; height only decreases from the existing source-calibrated card.
+- LOD4 captures a 75 × 32 cm strip instead of 75 × 22 cm, and spans 62 cm of
+  ground instead of 37 cm. Four cards/m² and all three atlas sizes are unchanged.
+  The rejected 42 cm source-depth trial produced excessively dense clumps.
+- Entry points, card materials and shader sources share a new cache revision,
+  preventing a refreshed lab from borrowing earlier blend or placement code.
+
+Evidence: `tests/artifacts/screens/grass_debug_v2/transition_lab/card_continuity/`.
+`grass_cards_continuity.pwtest.js` compares blended and isolated levels from
+front, rear, steep and low cameras. Every measured foreground band below 2 m
+retains at least 65% of the matching LOD2 green coverage (fixed classifier,
+excluding litter). `grass_transition_blending.pwtest.js` now exercises cards,
+all five boundaries, and moving-camera cache rebuilds. Rebuild changes fell
+by over 99% relative to patch switching in the matched front/rear test.
+The unit support sweep includes ±1.4 m vertex offsets between cached scans.
+
+The paired GPU rerun is retained under `card_continuity/performance/`, but its
+timings are inconclusive: round variance was large, including unchanged
+canopy-only rendering, and GPU load was still 100% after the test exited.
+Do not compare these means with the historical timings below. The three
+capture atlases still occupy 67.1 MB per card population, including mipmaps;
+these corrections add no textures. Large cards can still look grouped when
+forced close, outside their intended range, and the far canopy remains flat.
+
+### Initial larger-card LOD4 bridge (2026-10-05; prior to continuity correction)
+
+The transition lab adds a sixth level. The former 1K opaque canopy becomes
+**LOD5** here; the single-field lab's LOD4 names and geometry are unchanged.
+The new **LOD4** uses **75 cm-wide cards at four cards/m²**, versus the
+experimental LOD3's 25 cm-wide cards at twenty/m². It has eight triangles/m²
+rather than forty. Original geometric LOD3 remains selectable and the default;
+use `?lod3=cards` for the calibrated card chain.
+
+New captures use four 75 × 22 cm source strips, eight source bearings, and the
+canonical bus pitch (13.586°). Each capture selects 126–141 source leaves,
+including lateral padding, compared with roughly 47–54 for the near cards.
+Ground span is 37 cm; blade height remains the source's 14.14 cm. These are
+fresh wider captures, not stretched copies of the near atlas. Continuous yaw,
+stable source-image selection, periodic best-candidate placement and width-scaled
+world jitter reuse the existing card shader. No captures or per-card CPU work
+are performed during movement. The initial 30 cm source-depth trial was too
+full; three cards/m² left gaps and six were too dense. Four remains the default,
+with both density alternatives exposed in the LOD4 selector.
+
+Defaults are **0.6 / 0.8 / 1 / 16 / 32 m**. The first four retain the requested
+values; 32 m is the experimental far-canopy default, editable in the new LOD5
+input. The 50% bands are 8.5–16 m for LOD3→4 and 24–32 m for LOD4→5. The
+`LOD4 bridge` checkbox, or `?bridge=off`, bypasses the intermediate population
+and transitions directly from LOD3 to the canopy at 8.5–16 m. Both material
+slots share that band; no LOD4 draw candidates remain. Cached atlases stay
+resident when this comparison switch is off. Helpers show the direct 3→5 band.
+The existing `lod4-*` configuration URLs, `setLod4Surface` and canopy snapshot
+property names remain legacy aliases; the UI correctly labels these as LOD5.
+
+Near/card and card/card boundaries use the existing MSAA sample-coverage path;
+card/canopy remains complementary screen-door coverage. Selection supports six
+levels and five uniform limits, retaining 50 ms / 0.2 m update gates and the
+35 m independent canopy-side cutoff. Shape and material changes are contained
+in the transition lab. The canopy's existing inverse-elevation correction now
+caps its denominator at 0.3 for this lab, and its leaf tint is less saturated.
+This is a constant calibration change, with no new texture fetch or shader
+stage. Litter retains its separate material. The far plane still has less
+parallax and fine contrast than the cards; it is not visually identical.
+
+Evidence and reproducible tests:
+- `tests/headless/visual/specs/grass_wide_cards.pwtest.js`: four bus bearings,
+  isolated 3/4/5 comparisons, 3/4/6 density trials, three full-scene poses,
+  motion, and preserved-source before/after renders.
+- `tests/headless/perf/specs/grass_wide_cards.pwtest.js`: opt in with
+  `GRASS_TRANSITION_BENCHMARK=1`; six paired rounds of thirty hardware queries
+  per variant and matched soil, three 1920 × 1080 bus views, DPR 1, RTX 3060.
+  Staged real batches have independent blend uniforms. Query draining between
+  complete paired cycles prevents overflow of the timer's 24-query queue;
+  incomplete/disjoint blocks fail instead of silently dropping samples.
+- `tests/headless/visual/grass_wide_cards_report.mjs`: build the local report
+  under `tests/artifacts/screens/grass_debug_v2/transition_lab/wide_cards/`.
+  Its `before/` source snapshot and trial captures are gitignored evidence.
+
+Measured GPU milliseconds **above soil**, with cached scene shadows enabled:
+
+| Configuration | Front | Rear | Border | Mean |
+|---|---:|---:|---:|---:|
+| Direct LOD3→canopy | 0.920 | 0.851 | 0.855 | 0.876 |
+| Full chain with wide-card bridge | 1.357 | 1.280 | 1.299 | 1.312 |
+| Isolated LOD3 cards | 1.518 | 1.471 | 1.210 | 1.400 |
+| Isolated LOD4 cards | 1.112 | 1.054 | 0.899 | 1.021 |
+| Isolated canopy, retained side state | 0.163 | 0.147 | 0.148 | 0.153 |
+
+The bridge costs **0.437 ms** over direct-to-canopy in this run. Isolated LOD4
+is about 27% cheaper than isolated LOD3; lower triangle count does not remove
+fragment shading or alpha overlap. CPU selection plus rebuilding averages
+0.341 ms/frame direct versus 0.498 ms/frame with the bridge, across three
+60-frame movement repeats with twelve scans each. No shadow recaptures occur
+in those sequences. GPU clocks are not locked; compare variants within this
+paired run rather than absolute timings from older sessions. Direct mode uses
+the same newly calibrated canopy as the bridge; preserved-source screenshots
+also show the appearance before that calibration.
+
+Three 4096 × 1024 RGBA8 atlases with mipmaps add **67.1 MB (64 MiB)** for LOD4.
+Both card levels total 134.2 MB, excluding existing canopy/source/shadow maps
+and driver overhead. These are uploaded texture-size estimates, not a process
+VRAM reading. Capture targets are released after initialization. Offline asset
+publication remains a separate bake-framework task; no standalone bake command
+was introduced.
+
+
+### Experimental camera-facing LOD3 cards (2026-10-03)
+
+The current `lod3=cards` experiment uses **20 cards/m², each 25 cm wide**.
+`cards-sparse` uses 10 and `cards-full` uses 32; these alternate densities are
+available for experiments but only 20/m² is calibrated and benchmarked here.
+Original geometric LOD3 remains the default. LOD0–2 source geometry/materials,
+The cached geometric shadow source is retained. The later bridge change above
+renumbers the old canopy to LOD5 in this transition lab.
+
+The rejected 50 cm, 10/m² version still had upright tufts and translucent wisps.
+Matched close captures exposed two causes hidden by average-color measurements:
+large capture groups and blending two images containing different source leaves.
+The new 25 × 17 cm source strips are captured at 30° depression, preserving more
+of the diagonal leaf shapes. Eighty periodic best-candidate positions cover each
+2 × 2 m template, with exactly 20 per cell. Ground span stays 32 cm and maximum
+height is unchanged apart from the capture gutter. Splitting the width in half
+keeps roughly the same total support area, at 40 triangles/m² instead of 20.
+
+Each card retains one deterministic image from the 32 captures while continuously
+turning in azimuth. Its captured normal basis rotates with it; no image-sector
+crossfade, recapture or per-card CPU update occurs. This replaces six fragment
+texture fetches with three. Constant linear material tint is 0.76 / 0.84 / 0.305.
+The three 4096 × 1024 RGBA8 atlases remain **67.1 MB / 64 MiB with mipmaps**,
+shared across fields and density settings, with 512 × 256 captures and 4× filtering.
+
+Only when cards are selected, the LOD2-outgoing / LOD3-incoming band uses MSAA
+alpha-to-coverage instead of the conspicuous 8 × 8 screen-door pattern. The square
+root coverage ramp limits density loss between unrelated leaf populations.
+Depth testing/writing stays enabled without transparency sorting. Other bands
+and original leaf mode keep the previous complementary dither. The lab's
+multisampled framebuffer is required for this coverage variant. This is an
+approximation: finite sample counts and per-cell band weights can still change
+density, and inclined cards cannot reproduce per-leaf parallax or world-fixed
+blade orientation at every angle.
+
+Eight bus poses (14/24 m field-centre positions × 0/45/90/180°) are supplemented
+by three close 2 m-high, 30°-tilted views, an azimuth orbit, and a 2 m advance
+through the near boundary. The optional saved previous source produces matched
+before/after close captures. All outputs remain gitignored in
+`tests/artifacts/screens/grass_debug_v2/transition_lab/view_cards_fidelity/`.
+The report includes LOD2, preceding cards, current cards and real transitions.
+Classified green coverage over 6–18 m is 73.96% for LOD2, 75.59% for previous
+cards and 73.69% for current cards. Classified grass-only RGB is respectively
+107.69/129.08/55.02, 109.33/129.45/59.28 and 106.92/128.63/56.48. These are
+screen-space proxies, not semantic masks or proof of visual equivalence.
+
+Current paired RTX 3060 / Chrome benchmark at 1920 × 1080, DPR 1, shadows cached.
+GPU milliseconds **above matched soil-only rendering**:
+
+| Configuration / view | Original LOD3 leaves | Revised 20 cards/m² |
+|---|---:|---:|
+| Full distance LODs / front | 3.919 | 2.974 |
+| Full distance LODs / rear | 4.183 | 2.976 |
+| Full distance LODs / border | 3.978 | 2.328 |
+| LOD3 only / front | 7.047 | 2.778 |
+| LOD3 only / rear | 7.360 | 2.439 |
+| LOD3 only / border | 6.586 | 2.198 |
+
+Six paired rounds × 30 samples with rotating/reversed order. Mean savings:
+31.5% full scene and 64.7% isolated LOD3. All six paired saving intervals exclude
+zero. Moving selection plus batch CPU averages 0.413 ms/frame for leaves and
+0.366 for cards; this small difference is not a demonstrated CPU improvement.
+No scans, uploads or shadow regeneration occur during stationary timed blocks.
+Absolute times differ from previous sessions; GPU clocks/desktop load are not
+locked. Compare variants within this run, not timings across historical runs.
+
+Run the selected visual and opt-in perf `grass_view_cards.pwtest.js` tests, then
+`node tests/headless/visual/grass_view_cards_report.mjs` to regenerate the report.
+
+#### Previous 50 cm coverage attempt (historical)
+
+The following describes the preceding implementation and its measurements;
+its source is preserved only in the local comparison artifacts.
+
+The LOD3 selector retains original geometric leaves as the default and adds
+50 cm alpha cards at 4, **10** or 16 cards/m². URLs use `lod3=cards-sparse`,
+`lod3=cards` or `lod3=cards-full`. Only the 10-card mode is calibrated against
+LOD2 in the revised experiment. LOD0–2 and geometric LOD3 are unchanged.
+
+The revised capture uses four 50 × 13 cm source strips, each seen from eight
+azimuths at bus pitch. Lateral neighbour leaves are included before cropping,
+so the strips do not taper into isolated clumps. Forty best-candidate positions
+are balanced periodically over a 2 × 2 m area, with exactly ten in each 1 m cell.
+World-space jitter is limited to ±1.75 cm instead of ±15 cm; source-image variants
+also vary across the field. Cards turn continuously in azimuth but preserve a
+shallow incline with a 32 cm ground span. This distributes coverage over the
+ground instead of crushing it into an upright billboard. Captured leaf normals
+remain in world space, and adjacent captured views blend smoothly.
+
+Grass-only color samples under game lighting calibrate one constant material
+tint in linear space (0.88 / 0.98 / 0.40), without changing litter or introducing
+a per-fragment color-correction operation. The existing lighting, tip compression
+and complementary LOD blending remain shared. No per-card CPU updates, ongoing
+captures or texture uploads occur during motion. The cached LOD2 shadow source
+is unchanged. There are two triangles per card and no extra ground layer. A trial
+reusing LOD4's ground texture filled holes but produced excessive green coverage;
+it was rejected in favour of the inclined cards over the existing litter floor.
+
+Each capture remains 512 × 256 pixels. Three 4096 × 1024 RGBA8 atlases with
+mipmaps and 4× anisotropic filtering add **67.1 MB (64 MiB)**, unchanged from the
+initial experiment. Textures are shared by every field and density. They remain
+resident when switching back to leaves for comparison and are disposed with the
+scene. `fields.extraTextureBytes` reports the active representation, whereas
+`viewCards.textureBytes` reports the retained atlas allocation.
+
+A fixed green-pixel classifier applied to browser-composited screenshots excludes
+sky, paths and field edges. Mean coverage over 6–10 / 10–14 / 14–18 m bands,
+14/24 m field-centre positions and front/side/rear bearings is 73.9% for LOD2,
+82.0% for the previous cards, and 75.2% for revised cards. Grass-only mean RGB is
+105.8/127.2/53.8, 116.6/138.0/61.9 and 107.7/127.8/58.3 respectively. Low-coverage
+32-pixel blocks fall from 2.93% to 0.89% (LOD2: 0.28%). These are classification
+proxies, not semantic masks or proof of visual equivalence. Close views retain
+softer detail and some repeated structures. Captures have one elevation and no
+per-leaf depth reprojection; original leaves remain the default.
+
+Revised paired benchmark on RTX 3060 / Chrome, 1920 × 1080, DPR 1. GPU
+milliseconds **above matched soil-only rendering**, shadows enabled and cached:
+
+| Configuration / view | Original LOD3 leaves | Revised 10 cards/m² |
+|---|---:|---:|
+| Full distance LODs / front | 2.049 | 1.368 |
+| Full distance LODs / rear | 2.168 | 1.318 |
+| Full distance LODs / border | 2.303 | 1.548 |
+| LOD3 only / front | 5.155 | 1.958 |
+| LOD3 only / rear | 4.721 | 1.890 |
+| LOD3 only / border | 4.098 | 1.500 |
+
+Six paired rounds × 30 samples per view/version and soil, with rotating/reversed
+order. All six saving intervals exclude zero. Average savings are 35.1% for the
+full scene and 61.7% for isolated LOD3. Moving selection plus batch CPU averages
+0.377 ms/frame for leaves and 0.348 for cards; this small difference is not a
+proven CPU speedup. Full/front triangle submissions fall from 1,590,575 to 685,579
+at the same 90 draw calls. Isolated/front falls from 4,696,119 to 90,167 triangles
+at 23 draws. Timed stationary blocks have zero LOD scans, uploads or shadow
+regenerations. GPU clocks/desktop load were not locked: compare paired variants
+within this run, not absolute timings across historical runs.
+
+Run the selected visual and opt-in performance `grass_view_cards.pwtest.js`
+tests, then `node tests/headless/visual/grass_view_cards_report.mjs`. The visual
+set uses eight bus-height poses (14/24 m field-centre distances, 0/45/90/180°),
+LOD2 references and a 30–60° orbit. Original geometric LOD3 restoration, zero
+GL errors, unchanged capture metadata through motion and default-disabled
+helpers are checked. Images, raw samples and the split-view report live under
+`tests/artifacts/screens/grass_debug_v2/transition_lab/view_cards_coverage/`.
+The original card screenshots and report remain in `view_cards/` as historical
+evidence; they are not visual pass/fail baselines.
+
+#### Initial trial (historical; before coverage correction)
+
+The first trial used circular source patches, upright camera-facing billboards,
+large random placement offsets and 4/9/16 cards per square metre. Its dense
+clumps, bare holes and brighter shading motivated the revised strips above.
+
+RTX 3060 / Chrome, 1920 × 1080, DPR 1; GPU milliseconds **above matched soil**:
+
+| Configuration / view | Original LOD3 | 16 cards/m² | 9 cards/m² | 4 cards/m² |
+|---|---:|---:|---:|---:|
+| Full distance LODs / front | 1.715 | 1.631 | 1.203 | 0.855 |
+| Full distance LODs / rear | 1.667 | 1.563 | 1.157 | 0.781 |
+| Full distance LODs / border | 1.684 | 1.501 | 1.032 | 0.780 |
+| LOD3 only / front | 4.796 | 2.606 | 1.673 | 0.959 |
+| LOD3 only / rear | 4.357 | 2.575 | 1.606 | 0.908 |
+| LOD3 only / border | 3.166 | 2.073 | 1.298 | 0.757 |
+
+Six paired rounds × 30 samples per mode/view, interleaved with soil in rotated
+and reversed order; no outlier filtering. Shadows remain enabled/cached.
+Average full-scene grass savings are 7.3% (16), 33.0% (9), 52.3% (4), with
+visibly lower coverage at smaller densities. The moving CPU selection+batch
+cost averaged 0.349 ms/frame for original leaves and 0.308–0.312 ms/frame for
+cards. These are debug-lab measurements, not whole-game budgets.
+
+### Field layout
+
 Four 32 × 32 m fields form a 2 × 2 layout, separated by 1 m soil paths. The total
 planted area is 4,096 m². Every field contains 1 m selection cells; the same
 four source quadrants from a 2 × 2 m grass template are instanced across them.
 LOD0 uses the current smart geometric LOD0, not the older full reference mesh.
-LOD3 uses the current compact geometric leaves. LOD4 uses the paired opaque
-canopy albedo, normal and roughness maps at 1024².
+LOD3 offers compact geometric leaves or the calibrated near cards. LOD4 uses
+the wider-card bridge. LOD5 uses the paired opaque canopy albedo, normal and
+roughness maps at 1024².
 
-The user-confirmed nominal switches (updated 2026-10-03) are below. The default
+The user-confirmed first four nominal switches, plus the experimental 32 m
+far-canopy switch (updated 2026-10-05), are below. The default
 50% transition band now mixes adjacent levels over the latter half of each range.
 
 | Level | Full distances | Half distances |
 |---|---|---|
-| LOD0 | 0–1 m | 0–0.5 m |
-| LOD1 | 1–2 m | 0.5–1 m |
-| LOD2 | 2–5 m | 1–2.5 m |
-| LOD3 | 5–18 m | 2.5–9 m |
-| LOD4 | ≥18 m | ≥9 m |
+| LOD0 | 0–0.6 m | 0–0.3 m |
+| LOD1 | 0.6–0.8 m | 0.3–0.4 m |
+| LOD2 | 0.8–1 m | 0.4–0.5 m |
+| LOD3 | 1–16 m | 0.5–8 m |
+| LOD4 | 16–32 m | 8–16 m |
+| LOD5 | ≥32 m | ≥16 m |
 
 The original transition-lab benchmark tables later in this document predate this
 distance edit and retain their specified 1 / 3 / 6 / 25 m switches. The newer
 lighting, boundary and band comparisons explicitly use 1 / 2 / 5 / 18 m.
+The card comparison captures/benchmark also explicitly retain 1 / 2 / 5 / 18 m.
+With the current defaults, LOD3→4 blends from 8.5 to 16 m and LOD4→5 from 24 to 32 m.
+Historical sections below retain their original LOD4 canopy terminology and timings.
 The independent side-leaf cutoff remains 35 m.
 
 Distances are horizontal, from the camera's ground projection to each cell's
@@ -354,8 +692,9 @@ does not include the single-field lab's shade-screen object.
 ## Helpers and measurement
 
 Colored cell overlays, field outlines and labeled distance rings show the
-selected LOD areas. The legend lists cell counts. Helpers can be hidden and
-are disabled for all timing samples. The HUD's GPU number is explicitly the
+selected LOD areas. The legend lists cell counts. Helpers are off by default,
+can be enabled with “LOD colors and distance rings”, and remain disabled for
+all timing samples. The HUD's GPU number is explicitly the
 total scene cost; the benchmark report subtracts a matched soil-only baseline.
 The bottom status also shows actual submitted triangles and draw calls from
 the renderer's accumulated frame counters, including postprocessing and any

@@ -4,7 +4,7 @@ document.querySelectorAll('#scene-panel input, #scene-panel select, #scene-panel
     .forEach(control => { control.disabled = true; });
 loading.textContent = 'Loading transition modules…';
 
-window.__grassTransitionReadiness = import('./GrassDebugV2TransitionScene.js?v=transition-blend-startup-1')
+window.__grassTransitionReadiness = import('./GrassDebugV2TransitionScene.js?v=opaque-dissolve-1')
     .then(module => module.createGrassDebugV2TransitionScene())
     .then(viewer => {
         window.__grassTransitionScene = viewer;
