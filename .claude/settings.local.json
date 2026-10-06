@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(SP=\"C:/Users/rogel/AppData/Local/Temp/claude/C--Users-rogel-Projects-bus-simulator-worktrees-buildings/1ac4e976-ad6a-4b93-90f8-c7ce5bb78796/scratchpad\"; cp \"C:/Users/rogel/Projects/bus_simulator_worktrees/buildings/assets/public/pbr/_manifest.json\" \"$SP/_manifest.json.bak\" && python \"$SP/import_lettering.py\" && python -c \"import json; d=json.load\\(open\\(r'C:/Users/rogel/Projects/bus_simulator_worktrees/buildings/assets/public/pbr/_manifest.json'\\)\\); print\\('manifest materials:', [m['slug'] for m in d['materials']]\\)\")",
+      "Bash(UA=\"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/128.0 Safari/537.36\" && D=assets/public/lighting/hdri && curl -sS -L -A \"$UA\" -o \"$D/kloofendal_43d_clear_puresky_4k.hdr\" \"https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/kloofendal_43d_clear_puresky_4k.hdr\" && cp tests/artifacts/blender/bradbury/hdri_candidates/kloofendal_43d_clear_puresky_2k.hdr \"$D/kloofendal_43d_clear_puresky_2k.hdr\" && ls -la \"$D\" && echo \"--- md5 \\(expect 4k 4e0af6bcab0e373639f3b48b6677a2c1, 2k 62f7cb7b1dac5a90a5bbde728606773b\\)\" && md5sum \"$D/kloofendal_43d_clear_puresky_4k.hdr\" \"$D/kloofendal_43d_clear_puresky_2k.hdr\" && echo \"--- check-ignore\" && git check-ignore -v \"$D/kloofendal_43d_clear_puresky_4k.hdr\" \"$D/kloofendal_43d_clear_puresky_2k.hdr\" \"$D/kloofendal_43d_clear_puresky.source.json\")"
     ]
   }
 }
