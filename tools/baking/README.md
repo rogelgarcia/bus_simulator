@@ -46,8 +46,10 @@ The first implementation executes sequentially, including Blender and browser jo
 
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
+| `vegetation/branchlets` | Connected exterior branchlets for all mature LOD0 and LOD1 forms; immutable accepted wood | Explicit review only; [workflow](../bake_vegetation/branchlets/README.md) |
 | `vegetation/lod0` | Bake immutable mature references into low triangle wood and front/underside canopy spray cards; export and compare all 15 models | Explicit stage-only phases, stable reference hashes, no gameplay publication; [workflow](../bake_vegetation/lod0/README.md) |
 | `vegetation/lod0-library` | Install the accepted core-canopy LOD0 library with shared compressed canopy maps and per-variant wood maps | Explicit opt-in catalog publication; preserved review gates, authenticated files and rollback; [workflow](../bake_vegetation/lod0_library/README.md) |
+| `vegetation/lod1` | Reproject interior foliage and cluster exterior leaf patches at 40% of installed LOD0 triangles | Explicit review only, no publication; full-tree comparisons; [workflow](../bake_vegetation/lod1/README.md) |
 | `vegetation/showcase` | Packed outdoor scene with all 15 mature models in species plots; warm brown bark and 21 headless Cycles views, including trunk/root close-ups | Explicit review only, outside authoring and production parents; rejects publication; [workflow](../bake_vegetation/showcase/README.md) |
 | `vegetation/surfaces` | Photo PBR replacement review: rebuilt wood, scanned leaf tissue, 15 mature models, 26 Cycles views | Explicit stage-only; authenticated CC0 scans and retained canopy anchors; [workflow](../bake_vegetation/surfaces/README.md) |
 | `vegetation/junctions` | Refine photographic-tree branch collars, bark ridges and descending shoulders; retain foliage and render fork close-ups | Explicit stage-only; manifold wood and unchanged foliage checks; [workflow](../bake_vegetation/junctions/README.md) |

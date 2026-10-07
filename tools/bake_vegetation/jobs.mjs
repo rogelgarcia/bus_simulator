@@ -13,6 +13,8 @@ import { junctionsJob } from './junctions/job.mjs';
 import { growthJob } from './growth/job.mjs';
 import { lod0Job } from './lod0/job.mjs';
 import { lod0LibraryJob } from './lod0_library/job.mjs';
+import { lod1Job } from './lod1/job.mjs';
+import { branchletsJob } from './branchlets/job.mjs';
 
 const HERE = 'tools/bake_vegetation';
 const SPECIES = ['london-plane', 'silver-linden', 'northern-red-oak', 'arrowwood-viburnum', 'american-elm'];
@@ -102,7 +104,7 @@ const createJob = (species, prototype = false) => ({
 });
 const leaves = SPECIES.map(species => createJob(species));
 
-export const vegetationJobs = [...leaves, showcaseJob, surfacesJob, junctionsJob, growthJob, lod0Job, lod0LibraryJob, ...Object.keys(PROTOTYPES).map(species => createJob(species, true)), {
+export const vegetationJobs = [...leaves, showcaseJob, surfacesJob, junctionsJob, growthJob, lod0Job, lod0LibraryJob, lod1Job, branchletsJob, ...Object.keys(PROTOTYPES).map(species => createJob(species, true)), {
     id: 'vegetation', description: 'Explicit original mature vegetation asset authoring, excluded from default production bakes',
     configurationPaths: ['executable'], children: leaves.map(job => job.id)
 }];

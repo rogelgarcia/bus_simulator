@@ -1,0 +1,7 @@
+body { margin: 28px; background: #111c19; color: #e4eee8; font: 18px system-ui; }
+h1 { font-size: 32px; }
+article { margin: 30px 0; }
+img { width: 100%; max-width: 1800px; }
+a { color: #b7deca; }
+.overview { margin: 0; padding: 20px; }
+.overview img { width: 100%; max-width: none; margin-bottom: 20px; }

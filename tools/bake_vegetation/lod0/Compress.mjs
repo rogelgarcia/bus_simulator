@@ -24,11 +24,11 @@ export async function loadEncoder(root) {
         host, host.exports, createRequire(import.meta.url), folder, path.join(folder, 'libktx.js'));
     return host.exports({locateFile: name => path.join(folder, name)});
 }
-function parseGlb(bytes) {
+export function parseGlb(bytes) {
     const size = bytes.readUInt32LE(12);
     return {doc: JSON.parse(bytes.subarray(20, 20 + size)), bin: bytes.subarray(28 + size)};
 }
-function packGlb(doc, bin, replacements, compressed) {
+export function packGlb(doc, bin, replacements, compressed) {
     doc = structuredClone(doc);
     const blocks = [], imageViews = new Map(doc.images.map((image, index) => [image.bufferView, index]));
     let offset = 0;
@@ -70,7 +70,7 @@ function measure(original, decoded, channel) {
     return {psnr: square ? 10 * Math.log10(255 ** 2 / (square / Math.max(1, count * 3))) : 100,
         alphaCoverageError: Math.abs(coverageA - coverageB) / (original.length / 4), meanNormalAngleDegrees: channel === 'normal' ? angle / Math.max(1, count) * 180 / Math.PI : null};
 }
-async function compressImage(ktx, bytes, channel, directory, foliage, highQuality = false) {
+export async function compressImage(ktx, bytes, channel, directory, foliage, highQuality = false) {
     const levels = [decodePng(bytes)];
     for (let level = 1; levels.at(-1).width > 1 || levels.at(-1).height > 1; level++) {
         levels.push(foliage && level <= 5 ? decodePng(await readFile(path.join(directory, `leaf_${channel}_mip${level}.png`))) : downsample(levels.at(-1), channel));
@@ -100,12 +100,13 @@ async function compressImage(ktx, bytes, channel, directory, foliage, highQualit
         } finally { decoded.delete(); }
     } finally { texture.delete(); params.delete(); info.delete(); }
 }
+
 export async function compressModels(options) {
     const ktx = await loadEncoder(options.root), cache = new Map();
     for (const id of options.models) {
-        const [species, variant] = id.split('/'), directory = path.join(options.output, id), file = path.join(directory, `${variant}_lod0.glb`);
+        const [species, variant] = id.split('/'), directory = path.join(options.output, id), stem = `${variant}_lod${options.lodLevel ?? 0}`, file = path.join(directory, `${stem}.glb`);
         let bytes = await readFile(file), parsed = parseGlb(bytes);
-        const source = path.join(directory, `${variant}_lod0_source.glb`);
+        const source = path.join(directory, `${stem}_source.glb`);
         if (parsed.doc.extensionsRequired?.includes('KHR_texture_basisu')) { bytes = await readFile(source); parsed = parseGlb(bytes); }
         else await writeFile(source, bytes);
         const compressed = [], review = [], records = [];
@@ -127,14 +128,14 @@ export async function compressModels(options) {
         }
         const packed = packGlb(parsed.doc, parsed.bin, compressed, true);
         await writeFile(file, packed);
-        await writeFile(path.join(directory, `${variant}_lod0_review.glb`), packGlb(parsed.doc, parsed.bin, review, false));
+        await writeFile(path.join(directory, `${stem}_review.glb`), packGlb(parsed.doc, parsed.bin, review, false));
         await save(path.join(directory, 'compression.json'), {id, textures: records, sourceBytes: bytes.length, compressedBytes: packed.length,
             review: 'Exact UASTC-decoded base-level texels in PNG GLB for Blender. Geometry and material parameters are unchanged.',
             mipPolicy: 'Canopy levels 1–5 preserve per-tile alpha coverage; tiny terminal levels are conventional filtering. Normal vectors are renormalized.'});
         const stats = await json(path.join(directory, 'model.json'));
         stats.glbBytes = packed.length; stats.textureCompression = 'KHR_texture_basisu / UASTC / full mip chains';
         stats.textureGpuBytes = records.reduce((sum, row) => sum + row.blockGpuBytes, 0);
-        stats.files = [...new Set([...stats.files, `${variant}_lod0_source.glb`, `${variant}_lod0_review.glb`])];
+        stats.files = [...new Set([...stats.files, `${stem}_source.glb`, `${stem}_review.glb`])];
         await save(path.join(directory, 'model.json'), stats);
         console.log(`[LOD0] Compressed model ${id}: ${(packed.length / 1048576).toFixed(2)} MiB`);
     }

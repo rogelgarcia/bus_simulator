@@ -1,0 +1,6 @@
+body { margin: 0; background: #111c19; color: #e4eee8; font: 24px Arial; }
+h1 { font-size: 30px; margin: 20px 28px 16px; }
+main { display: flex; }
+figure { width: 50%; margin: 0; }
+figcaption { padding: 12px 28px; background: #23332b; font-size: 23px; }
+img { width: 100%; display: block; }

@@ -1,5 +1,15 @@
 # Offline bake framework
 
+AI594 adds explicit review-only `vegetation/branchlets` with atlas, canopy-only
+build, compression, full-tree render, gallery and validation phases. It preserves
+accepted wood in both mature LODs and rejects gameplay publication.
+
+AI593 adds explicit review-only `vegetation/lod1` with build, compression,
+render, gallery and validation phases. It authenticates LOD0 input GLBs against
+the installed library, preserves their files, rejects publication and reuses the
+shared Blender configuration and UASTC encoder. See
+[LOD1 contract](../graphics/vegetation_lod1.md).
+
 AI592 adds explicit `vegetation/lod0-library` publication of the accepted AI591
 core canopy set. It externalizes authenticated KTX2 maps without changing mesh
 data, validates all 15 models, and uses the shared rollback publisher to install
