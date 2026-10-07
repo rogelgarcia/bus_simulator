@@ -47,6 +47,8 @@ The first implementation executes sequentially, including Blender and browser jo
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
 | `vegetation/branchlets` | Connected exterior branchlets for all mature LOD0 and LOD1 forms; immutable accepted wood | Explicit review only; [workflow](../bake_vegetation/branchlets/README.md) |
+| `vegetation/branchlet-library` | Install the 30 reviewed branchlet GLBs with embedded PBR in `assets/public/vegetation_lods` | Explicit validated publication; [workflow](../bake_vegetation/branchlet_library/README.md) |
+| `vegetation/distant` | LOD3/4 panels, LOD5 view billboards and LOD6 ten-tree cluster plates | Explicit build/compress/render/validate/publish phases; [workflow](../bake_vegetation/distant/README.md) |
 | `vegetation/lod0` | Bake immutable mature references into low triangle wood and front/underside canopy spray cards; export and compare all 15 models | Explicit stage-only phases, stable reference hashes, no gameplay publication; [workflow](../bake_vegetation/lod0/README.md) |
 | `vegetation/lod0-library` | Install the accepted core-canopy LOD0 library with shared compressed canopy maps and per-variant wood maps | Explicit opt-in catalog publication; preserved review gates, authenticated files and rollback; [workflow](../bake_vegetation/lod0_library/README.md) |
 | `vegetation/lod1` | Reproject interior foliage and cluster exterior leaf patches at 40% of installed LOD0 triangles | Explicit review only, no publication; full-tree comparisons; [workflow](../bake_vegetation/lod1/README.md) |

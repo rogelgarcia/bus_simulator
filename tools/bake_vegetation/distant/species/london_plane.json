@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "species": "london_plane",
+  "displayName": "London plane",
+  "seed": 591031,
+  "lod3CanopyClusters": [
+    [0.33634, 0.66938, 0.48605],
+    [0.59403, 0.23727, 0.44719],
+    [0.26118, 0.34033, 0.60469],
+    [0.78212, 0.60236, 0.43126],
+    [0.6565, 0.8215, 0.55594]
+  ],
+  "lod3PanelScale": [0.58, 0.94],
+  "lod3PanelTiltDegrees": 9,
+  "trunkSides": 5,
+  "trunkRings": 4,
+  "trunkTipHeightFraction": 0.48,
+  "clusterSpacingRadiusFactor": 1.75,
+  "clusterSeed": 591103,
+  "reviewAzimuthDegrees": -72,
+  "variants": {
+    "mature_01": {
+      "lod3CanopyClusters": [
+        [0.33634, 0.66938, 0.48605],
+        [0.59403, 0.23727, 0.44719],
+        [0.26118, 0.34033, 0.60469],
+        [0.78212, 0.60236, 0.43126],
+        [0.6565, 0.8215, 0.55594]
+      ]
+    },
+    "mature_02": {
+      "lod3CanopyClusters": [
+        [0.28181, 0.41945, 0.55035],
+        [0.55514, 0.76844, 0.46896],
+        [0.50454, 0.21070, 0.55192],
+        [0.77140, 0.50716, 0.41943],
+        [0.23964, 0.67729, 0.40113]
+      ],
+      "lod3PanelScale": [0.64, 0.93],
+      "lod3PanelTiltDegrees": 11,
+      "trunkTipHeightFraction": 0.47
+    },
+    "mature_03": {
+      "lod3CanopyClusters": [
+        [0.30967, 0.58196, 0.50475],
+        [0.73348, 0.39019, 0.29092],
+        [0.45959, 0.19744, 0.50089],
+        [0.76202, 0.57612, 0.62894],
+        [0.50498, 0.76161, 0.37614]
+      ],
+      "lod3PanelScale": [0.64, 0.95],
+      "lod3PanelTiltDegrees": 8,
+      "trunkTipHeightFraction": 0.47
+    }
+  },
+  "notes": [
+    "Cluster centers come from each accepted AI594 LOD0 layout's five reference clusters; coordinates are normalized 0..1 within exterior-card corner bounds, with Blender Z up and layout basis axes stored as columns.",
+    "Measured exterior crown bounds XYZ in metres: mature_01 min [-5.54260,-7.36707,3.63244], max [7.41354,6.06227,12.55264]; mature_02 min [-6.17597,-7.88135,2.93222], max [6.80623,7.32542,11.27427]; mature_03 min [-6.78516,-6.37431,4.32354], max [7.25353,7.71545,14.78356].",
+    "Cluster reference patch counts are [3105,2123,1485,2180,1187], [2717,1360,2346,2728,1601], and [2310,1755,2154,1390,2387]; preserve these unequal crown lobes rather than equal leaf density across all panels.",
+    "Thirty LOD3 leaf triangles are five clusters of three double-sided two-triangle panels. Panels should bake their own assigned source crown volume, including irregular silhouette and gaps, with source-relative leaf scale preserved.",
+    "Panel scales include projection margin because five core clusters must now cover the exterior branchlets as well. Alpha masks must follow the source silhouette; do not fill each rectangular panel uniformly.",
+    "Fit the LOD3 taper to the connected lower stem rather than all wood vertices in a height slice. Source lower-stem X medians near 0.6 and 2.5 m are +0.05/+0.65 m for mature_01, +0.02/-0.29 m for mature_02, and -0.01/+0.19 m for mature_03. Mature_03 additionally bends toward positive Blender Y by roughly half a metre.",
+    "Four uncapped pentagonal rings produce exactly thirty trunk side triangles. Retain a wider ground ring and two displaced intermediate rings. End the taper inside the canopy; render major lateral bough silhouettes into assigned alpha panels where budget prevents branch geometry.",
+    "Mature_02 has the widest Y span, 15.207 m versus 12.982 m in X, so inspect perpendicular road views. Mature_03 has a higher 4.324 m crown base and a 10.460 m crown height; preserve its long exposed curved bole, separate upper peak and lower right lobe.",
+    "Review at 2.2 m bus eye height from azimuth -72 degrees measured from Blender +X toward +Y, matching the previous comparison direction, then inspect at least three additional azimuths for edge-on crown collapse and gaps above the trunk.",
+    "LOD4 and LOD5 captures must include the recognizable lower fork and basal flare. A combined wood-and-foliage LOD6 plate should represent ten actual staggered mature-tree instances with explicit per-instance positions, rather than ten repeated identical sprites. Two total group triangles amortize to 0.2 triangles per source tree."
+  ]
+}

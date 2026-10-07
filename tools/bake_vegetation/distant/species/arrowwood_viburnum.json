@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "species": "arrowwood_viburnum",
+  "displayName": "Arrowwood viburnum",
+  "seed": 591041,
+  "lod3CanopyClusters": [
+    [0.49751, 0.47470, 0.27827],
+    [0.66672, 0.64376, 0.52222],
+    [0.28937, 0.64435, 0.55598],
+    [0.69164, 0.35568, 0.54027],
+    [0.38425, 0.24013, 0.48378]
+  ],
+  "lod3PanelScale": [0.58, 0.82],
+  "lod3PanelTiltDegrees": 12,
+  "lod3WoodMode": "panels",
+  "trunkSides": 5,
+  "trunkRings": 4,
+  "trunkTipHeightFraction": 0.40,
+  "clusterSpacingRadiusFactor": 1.55,
+  "clusterSeed": 591104,
+  "reviewAzimuthDegrees": -72,
+  "variants": {
+    "mature_01": {
+      "lod3CanopyClusters": [
+        [0.49751, 0.47470, 0.27827],
+        [0.66672, 0.64376, 0.52222],
+        [0.28937, 0.64435, 0.55598],
+        [0.69164, 0.35568, 0.54027],
+        [0.38425, 0.24013, 0.48378]
+      ]
+    },
+    "mature_02": {
+      "lod3CanopyClusters": [
+        [0.46704, 0.45395, 0.28655],
+        [0.63958, 0.32703, 0.39036],
+        [0.40550, 0.70913, 0.68453],
+        [0.28245, 0.43026, 0.54261],
+        [0.70939, 0.57857, 0.53954]
+      ],
+      "lod3PanelScale": [0.52, 0.83],
+      "lod3PanelTiltDegrees": 11
+    },
+    "mature_03": {
+      "lod3CanopyClusters": [
+        [0.61242, 0.45987, 0.35832],
+        [0.23972, 0.52426, 0.56238],
+        [0.80092, 0.49414, 0.53090],
+        [0.44444, 0.42180, 0.38219],
+        [0.56302, 0.69709, 0.61510]
+      ],
+      "lod3PanelScale": [0.44, 0.92],
+      "lod3PanelTiltDegrees": 15
+    }
+  },
+  "notes": [
+    "Five reference cluster centers per variant come directly from the accepted AI594 LOD0 layouts. Values are normalized within exterior-card corner bounds, with Blender Z up; layout basis axes are columns. Preserve the low interior cluster as well as the four peripheral clusters.",
+    "Measured exterior crown bounds XYZ in metres: mature_01 min [-2.01309,-1.93503,0.12435], max [2.07633,2.19054,2.71759]; mature_02 min [-2.63383,-2.02121,0.07469], max [2.82453,2.41295,3.27683]; mature_03 min [-3.35077,-1.71551,-0.00771], max [2.79744,1.97907,2.40208]. These are card corner bounds, not opaque foliage bounds.",
+    "Reference patch counts by cluster are [830,441,619,447,435], [1015,681,383,752,445], and [987,565,736,932,560]. The low interior cluster is dense; equal density or equal height across the five clusters would change the shrub form.",
+    "Use three intersecting double-sided wood silhouette panels for LOD3, totaling six wood triangles. Each captures the actual multi-stem shrub rather than a solid replacement bole. A horizontal intersection of the accepted wood mesh at 0.20 m contains 11, 13, and 13 disconnected stem loops for mature_01, mature_02, and mature_03; preserve their independent ground contacts and transparent gaps. The trunk ring and tip fields are inactive when lod3WoodMode is panels.",
+    "At 0.50 m the wood cross-sections contain 11, 13, and 17 separate loops, confirming the strong spreading and low branching of mature_03. At 0.04 m some basal flares join and yield 7, 9, and 8 loops. These are measured cross-section components, not botanical stem counts.",
+    "Thirty LOD3 foliage triangles allow five clusters of three double-sided two-triangle panels. Panel scales are preferred spans; fit each assigned source partition with a margin so edge shoots are retained. Bake source silhouette, twig organization, density and holes rather than uniformly distributing individual leaves across the rectangle.",
+    "Mature_01 is nearly circular in plan: 4.089 by 4.126 m. Mature_02 is taller and asymmetric, with its highest reference cluster at positive Y and 2.267 m above ground. Mature_03 is a strongly flattened, spreading shrub: 6.148 by 3.695 m in plan, exterior-card height 2.410 m, and two separated extreme X lobes. Do not reuse one common spherical crown for all three variants.",
+    "At the primary 2.2 m bus eye height, the shrub crown is seen more from above than the tall tree crowns. Use moderate panel tilts and inspect the low center for top-view holes; mature_03 needs the maximum allowed 15-degree tilt. Also inspect perpendicular views because its X span is 1.66 times its Y span.",
+    "Review azimuth -72 degrees is measured from Blender +X toward +Y and matches the previous comparison direction. Additional azimuths must confirm that crossed panels do not collapse, that the near-ground canopy remains irregular, and that alpha edges do not create an opaque hedge skirt.",
+    "LOD4 uses at most three wood and three foliage panels, six triangles per category. LOD5 uses a single two-triangle wood silhouette and single two-triangle foliage silhouette aligned as one flat billboard. Alpha must keep the visible stem gaps and the broad species outline.",
+    "LOD6 is one combined two-triangle plate for ten staggered shrub instances, drawn from all three variants with explicit source positions. Use the tighter shrub spacing factor without making a solid horizontal hedge; retain uneven peaks and occasional gaps. Two group triangles amortize to 0.2 total triangles per source instance and are below both category ceilings."
+  ]
+}

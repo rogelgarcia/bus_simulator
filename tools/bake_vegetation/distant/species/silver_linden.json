@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "species": "silver_linden",
+  "displayName": "Silver linden",
+  "seed": 594210,
+  "lod3CanopyClusters": [
+    [0.530142, 0.283068, 0.489476],
+    [0.459673, 0.435423, 0.764613],
+    [0.620098, 0.499576, 0.226811],
+    [0.511424, 0.673866, 0.601222],
+    [0.288875, 0.581842, 0.322521]
+  ],
+  "lod3PanelScale": [0.7, 0.56],
+  "lod3PanelTiltDegrees": 10,
+  "trunkSides": 5,
+  "trunkRings": 4,
+  "trunkTipHeightFraction": 0.54,
+  "clusterSpacingRadiusFactor": 1.8,
+  "clusterSeed": 596210,
+  "reviewAzimuthDegrees": -72,
+  "variants": {
+    "mature_01": {
+      "crownBounds": {
+        "min": [-4.149539, -4.388498, 4.110866],
+        "max": [4.977725, 3.828345, 16.058136]
+      },
+      "lod3CanopyClusters": [
+        [0.530142, 0.283068, 0.489476],
+        [0.459673, 0.435423, 0.764613],
+        [0.620098, 0.499576, 0.226811],
+        [0.511424, 0.673866, 0.601222],
+        [0.288875, 0.581842, 0.322521]
+      ]
+    },
+    "mature_02": {
+      "crownBounds": {
+        "min": [-4.034047, -4.742503, 3.915391],
+        "max": [5.456925, 4.185747, 15.227144]
+      },
+      "lod3CanopyClusters": [
+        [0.373019, 0.625103, 0.565402],
+        [0.517883, 0.490595, 0.72055],
+        [0.241393, 0.566967, 0.291387],
+        [0.64507, 0.550862, 0.418218],
+        [0.572756, 0.446516, 0.169881]
+      ],
+      "lod3PanelScale": [0.74, 0.57],
+      "trunkTipHeightFraction": 0.55
+    },
+    "mature_03": {
+      "crownBounds": {
+        "min": [-4.351651, -4.226311, 4.835659],
+        "max": [4.605721, 3.336536, 16.549633]
+      },
+      "lod3CanopyClusters": [
+        [0.613835, 0.707191, 0.497513],
+        [0.315609, 0.61692, 0.299859],
+        [0.658204, 0.527985, 0.177733],
+        [0.466664, 0.533354, 0.743637],
+        [0.537039, 0.284254, 0.442904]
+      ],
+      "lod3PanelScale": [0.73, 0.57]
+    }
+  },
+  "notes": [
+    "Measured from all three AI594 LOD0 Silver linden layout.json files. Coordinates are Blender Z-up, local to the model; crownBounds contain outer-card corners only, excluding oversized transparent core cards.",
+    "Each normalized point is the corresponding accepted five-center canopy position divided by that variant's outer-card bounds. Use these as partition seeds and fit final panels to the selected source geometry, not to a fixed spherical crown.",
+    "Outer-card crown spans in metres: mature_01 9.127 x 8.217 x 11.947, mature_02 9.491 x 8.928 x 11.312, mature_03 8.957 x 7.563 x 11.714. Retain the vertically tiered, tapered crown and the low lateral lobes.",
+    "Five sides and four open rings yield 30 trunk triangles. Prefer ring heights near the root flare, 1.4 metres, the first fork near 4 metres, and the selected crown tip height. Fit the connected main stem, preserving lateral drift, and put finer fork silhouettes into alpha captures.",
+    "Measured lower-trunk section radii are about 0.50-0.67 metres at 0.12 metres height and 0.28-0.36 metres at 1.4-2.8 metres. Trunk section centers drift up to 0.34 metres horizontally by 2.8 metres. Whole-section bounds above about 4.2 metres include branch forks and must not set the trunk radius.",
+    "Review from the existing -72 degree azimuth at 2.2 metres bus-eye height, then perpendicular and rear azimuths. Protect the raised crown skirt, visible forks, slender summit, and asymmetric side lobes rather than closing all holes with dense panels.",
+    "Preserve pale leaf undersides and coherent branchlet detail in the baked alpha material. Avoid excessive bright underside coverage or an opaque triangular crown when the vertical panel intersections overlap.",
+    "For LOD6 vary all three mature silhouettes within the ten-tree cluster, stagger their heights and depth, and retain trunk gaps below the crown line. A single two-triangle group plate amortizes to 0.2 triangles per tree; do not duplicate backfaces."
+  ]
+}

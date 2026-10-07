@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "species": "american_elm",
+  "displayName": "American elm",
+  "seed": 591041,
+  "lod3CanopyClusters": [
+    [0.45703, 0.61178, 0.37165],
+    [0.21469, 0.51949, 0.55513],
+    [0.46402, 0.27635, 0.44829],
+    [0.72158, 0.71664, 0.47027],
+    [0.77970, 0.40591, 0.45335]
+  ],
+  "lod3PanelScale": [0.66, 0.96],
+  "lod3PanelTiltDegrees": 8,
+  "trunkSides": 5,
+  "trunkRings": 4,
+  "trunkTipHeightFraction": 0.57,
+  "clusterSpacingRadiusFactor": 1.90,
+  "clusterSeed": 591104,
+  "reviewAzimuthDegrees": -72,
+  "variants": {
+    "mature_01": {
+      "lod3CanopyClusters": [
+        [0.45703, 0.61178, 0.37165],
+        [0.21469, 0.51949, 0.55513],
+        [0.46402, 0.27635, 0.44829],
+        [0.72158, 0.71664, 0.47027],
+        [0.77970, 0.40591, 0.45335]
+      ]
+    },
+    "mature_02": {
+      "lod3CanopyClusters": [
+        [0.50025, 0.61232, 0.51017],
+        [0.27931, 0.61265, 0.49924],
+        [0.36894, 0.24754, 0.47616],
+        [0.71077, 0.29250, 0.49016],
+        [0.73820, 0.64088, 0.36229]
+      ],
+      "lod3PanelScale": [0.70, 0.94],
+      "lod3PanelTiltDegrees": 10,
+      "trunkTipHeightFraction": 0.56
+    },
+    "mature_03": {
+      "lod3CanopyClusters": [
+        [0.46855, 0.55297, 0.40746],
+        [0.76716, 0.51901, 0.43023],
+        [0.37415, 0.71711, 0.49807],
+        [0.27002, 0.37023, 0.59013],
+        [0.56690, 0.22813, 0.45282]
+      ],
+      "lod3PanelScale": [0.66, 0.96],
+      "lod3PanelTiltDegrees": 7,
+      "trunkTipHeightFraction": 0.57
+    }
+  },
+  "notes": [
+    "Cluster centers are measured from each accepted AI594 LOD0 layout, normalized 0..1 inside the complete exterior-card corner AABB. Layout coordinates are Blender XYZ with Z up, and basis axes are columns.",
+    "Measured exterior crown bounds XYZ in metres: mature_01 min [-8.36603,-8.60586,10.10383], max [7.20445,8.69097,19.75446]; mature_02 min [-8.48649,-8.29567,9.02842], max [9.20630,9.45485,18.03681]; mature_03 min [-8.24274,-7.96748,10.41743], max [7.95005,8.87642,19.70263].",
+    "Cluster reference patch counts are [5166,3080,4109,4063,3574], [4533,4259,4349,4332,3695], and [4994,3891,3703,3503,4489]. Keep the central cluster and the unequal outer lobes; five identically dense oval sprites would erase the accepted asymmetric crown.",
+    "Five clusters of three double-sided two-triangle alpha panels use thirty foliage triangles. Fit each panel to its own source partition, preserving fine outer twig sprays, irregular gaps, and the source leaf scale. Panel scale is a preference; the final bake extent must contain its actual partition.",
+    "All three accepted trees have a tall curved exposed bole, widening into an open ascending vase of major boughs. Broad fork spread begins around 9 to 10 m; the canopy starts around 9 to 10.4 m. Preserve the lower bough silhouettes and the visible sky between them in the partition bakes, including wood where it protrudes beneath foliage.",
+    "Four uncapped pentagonal rings cost exactly thirty trunk side triangles. Retain the basal flare and sample the source stem's bends rather than making one straight taper. A single geometric taper cannot reproduce the exposed vase forks; carry those silhouettes into the intersecting alpha panels instead of spending an unbudgeted second set of branch triangles.",
+    "Measure stem rings through triangle-plane intersections: the reduced source meshes have very few vertices around some 6 to 8 m heights. Narrow vertex-height bands can return empty or strongly biased samples. Fit the connected central stem rather than averaging detached lateral bough cross-sections.",
+    "Actual triangle-plane section XY medians at Z=2.5/4.5 m are mature_01 [-0.199,0.601]/[0.189,0.518], mature_02 [0.548,0.331]/[0.487,0.167], mature_03 [-0.431,0.189]/[-0.130,0.342]. These opposing lower bends are visible from the bus view and distinguish the variants. Root-flare sections at Z=0.25 m span roughly 1.9 to 2.3 m horizontally; avoid inflating the entire bole to that width.",
+    "Mature_02 is the widest and lowest variant: crown width 17.693 by 17.751 m, crown base 9.028 m. Mature_01 is narrower in X and extended in Y, 15.570 by 17.297 m. Mature_03 has the highest canopy base, 10.417 m, and a higher left lobe. Do not normalize their heights, fill the vase opening, or flatten them into matching spherical crowns.",
+    "Trunk tip fractions 0.57/0.56/0.57 refer to full model height and put the geometric stem inside the lower crown. Ensure the first visible bough alpha begins at that join; otherwise bus-height views reveal a floating crown or a flat-cut trunk top.",
+    "Review the original 2.2 m bus eye height at azimuth -72 degrees from Blender +X toward +Y, and check at least three additional azimuths. Elm's long exposed bole makes missing root flare, disconnected fork silhouettes, and panel-facing collapse easier to see than on the lower broad-canopy species.",
+    "LOD4 and LOD5 alpha bakes must include the complete curved trunk, root flare, vase fork, and foliage. LOD6 should bake ten genuinely staggered instances with mixed mature variants into one combined two-triangle plate, reporting 0.2 total triangles per source tree rather than ten separate sprites. Retain each instance's ground position in its cluster metadata."
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "species": "northern_red_oak",
+  "displayName": "Northern red oak",
+  "seed": 57800,
+  "lod3CanopyClusters": [
+    [0.5079, 0.2814, 0.2844],
+    [0.6933, 0.6901, 0.5418],
+    [0.2836, 0.6842, 0.5050],
+    [0.7587, 0.3212, 0.5601],
+    [0.2429, 0.2407, 0.5669]
+  ],
+  "lod3PanelScale": [0.49, 0.70],
+  "lod3PanelTiltDegrees": 8,
+  "trunkSides": 5,
+  "trunkRings": 4,
+  "trunkTipHeightFraction": 0.55,
+  "clusterSpacingRadiusFactor": 1.15,
+  "clusterSeed": 57861,
+  "reviewAzimuthDegrees": -72,
+  "crownBounds": {
+    "min": [-5.6018, -6.8005, 2.8217],
+    "max": [7.9772, 8.4844, 13.6289]
+  },
+  "variants": {
+    "mature_01": {
+      "seed": 57803
+    },
+    "mature_02": {
+      "seed": 57817,
+      "lod3CanopyClusters": [
+        [0.2834, 0.5436, 0.4582],
+        [0.5286, 0.7774, 0.4843],
+        [0.7544, 0.4036, 0.4131],
+        [0.4186, 0.1728, 0.4833],
+        [0.1743, 0.2607, 0.6339]
+      ],
+      "lod3PanelScale": [0.43, 0.79],
+      "trunkTipHeightFraction": 0.52,
+      "crownBounds": {
+        "min": [-6.2764, -7.6286, 2.5395],
+        "max": [9.1106, 8.7559, 12.0433]
+      }
+    },
+    "mature_03": {
+      "seed": 57829,
+      "lod3CanopyClusters": [
+        [0.2275, 0.6351, 0.4556],
+        [0.8051, 0.5086, 0.5554],
+        [0.7032, 0.5820, 0.2822],
+        [0.5434, 0.7664, 0.6891],
+        [0.3941, 0.2118, 0.5606]
+      ],
+      "lod3PanelScale": [0.51, 0.70],
+      "trunkTipHeightFraction": 0.55,
+      "crownBounds": {
+        "min": [-4.9282, -7.2414, 3.5472],
+        "max": [7.4530, 6.9015, 14.3641]
+      }
+    }
+  },
+  "notes": [
+    "Coordinates are Blender Z up and normalized to [0,1] within the corresponding LOD0 outer-card corner AABB. Each seed is the existing measured canopy-center position; basis columns, not rows, define the source card axes.",
+    "Measured outer-card crown spans for mature_01, mature_02 and mature_03 are respectively 13.5790 x 15.2849 x 10.8072 m, 15.3870 x 16.3845 x 9.5038 m and 12.3813 x 14.1429 x 10.8169 m. Preserve the broader, lower second variant and the higher third variant.",
+    "Measured mean existing vertical core-card width/height scales are [0.4848,0.6936], [0.4254,0.7806] and [0.5075,0.6869]. The slightly rounded-up profile scales are initial fits; expand each final panel to the actual projected source partition so peripheral branchlets are not clipped.",
+    "The lower lobe is essential: mature_01 has a center at Z=5.8955 m and mature_03 at Z=6.6002 m, below their surrounding lobes. Preserve those lobes instead of arranging all five centers in one evenly spaced horizontal ring.",
+    "Five clusters with three double-sided two-triangle panels consume 30 leaf triangles. Include the partition's visible fine branches in the same impostor capture so the lateral oak limbs remain connected visually at bus-eye height.",
+    "Fit the 30-triangle open tapered trunk with five sides and four rings to successive connected cross-sections of the dominant stem. Follow its measured bend rather than the centroid of all wood vertices; canopy branches contaminate whole-mesh slices above roughly 3 m. Use triangle-plane intersections and choose the connected contour nearest the previous trunk center rather than medians of sparsely sampled vertices.",
+    "Root spread must not set the entire trunk radius. Fit the lower ring to the stem/root-flare intersection, taper through the actual stem, and bury the top inside the lower crown. Retain the positive-X lean visible in the three reference stems around 2-3 m.",
+    "Review the -72-degree bus-eye view first, then perpendicular and reverse views. Watch for holes between the five lobes, loss of the broad mature_02 outline, flattened mature_03 upper crown and billboard alpha erosion at small mip levels. Also inspect from below on hills, where a horizontal panel alone becomes unreliable.",
+    "LOD4 captures should retain the whole oak silhouette across crossed alpha panels. LOD5 is a full-tree flat billboard. LOD6 should capture a deterministic mixed-variant ten-oak stand onto one two-triangle plate; do not repeat a single variant at uniform heights or distances. The shared plate costs 0.2 actual triangles per tree total, with wood and foliage sharing those same triangles."
+  ]
+}

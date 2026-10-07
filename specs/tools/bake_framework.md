@@ -1,5 +1,16 @@
 # Offline bake framework
 
+`vegetation/distant` generates the literal-budget LOD3–LOD6 representations,
+including camera-facing view metadata and ten-tree cluster plates. Its separate
+publish phase validates complete species sets before installing them under
+`assets/public/vegetation_distant/`. See the
+[distant LOD contract](../graphics/vegetation_distant_lods.md).
+
+`vegetation/branchlet-library` publishes the validated AI594 LOD0/LOD1 exports to
+`assets/public/vegetation_lods/` through the shared rollback publisher. The
+review-only authoring leaves retain their publication guards. See the
+[installed branchlet contract](../graphics/vegetation_branchlet_library.md).
+
 AI594 adds explicit review-only `vegetation/branchlets` with atlas, canopy-only
 build, compression, full-tree render, gallery and validation phases. It preserves
 accepted wood in both mature LODs and rejects gameplay publication.

@@ -1,5 +1,11 @@
 # Original mature vegetation authoring
 
+The latest optimized exports are installed separately in
+`assets/public/vegetation_lods/`: five species, three forms each, both LOD0 and
+LOD1. Generation code lives in this directory (`lod0/`, `lod1/`, `branchlets/`);
+the [branchlet library installer](branchlet_library/README.md) publishes the
+reviewed GLBs and embedded PBR without changing existing city placements.
+
 Five explicit leaves reuse the shared configuration and bake framework:
 
 ```sh

@@ -17,3 +17,8 @@ shoots. Original geometry is patched into preserved GLBs so wood accessors and
 materials remain identical. Triangle counts are unchanged in both LODs.
 Generated Blender sources, maps, reports and full-tree comparisons belong under
 `tests/artifacts/screens/ai594_branchlet_canopies/final/`.
+
+Install the final GLBs separately with
+`node tools/bake.mjs --target vegetation/branchlet-library --publish`.
+The [installer](../branchlet_library/README.md) revalidates both levels and copies
+the exact reviewed exports to `assets/public/vegetation_lods/`.
