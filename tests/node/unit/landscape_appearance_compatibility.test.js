@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
 import { landscapeAppearanceBindingKey, loadLandscapeAppearanceManifest, LandscapeAppearanceBindingError, validateLandscapeAppearanceManifest, validateLandscapeManifest } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
-const saved = JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', import.meta.url)));
+const cacheSkip = landscapeCacheSkip(['appearance/manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json']);
+const saved = cacheSkip ? null : JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', import.meta.url)));
 const currentUrl = 'https://fixture/terrain/appearance/manifest.json';
 function fixture() {
     const { manifest: defaults } = createLandscapeModelFixture();
@@ -18,7 +20,7 @@ function fixture() {
     return { manifest, current, oldTerrain, oldAppearance };
 }
 
-test('Appearance binding keys use normalized spatial numbers and ordered material IDs, independent of terrain revisions', async () => {
+test('Appearance binding keys use normalized spatial numbers and ordered material IDs, independent of terrain revisions', { skip: cacheSkip }, async () => {
     const { manifest, current, oldTerrain } = fixture(), key = await landscapeAppearanceBindingKey(manifest);
     assert.match(key, /^[a-f0-9]{64}$/);
     assert.equal(await landscapeAppearanceBindingKey(current), key);
@@ -35,7 +37,7 @@ test('Appearance binding keys use normalized spatial numbers and ordered materia
     assert.notEqual(await landscapeAppearanceBindingKey(changedOrder), key);
 });
 
-test('Default appearance lookup loads one binding alias on mismatch; explicit URLs stay strict and pages keep their directory', async () => {
+test('Default appearance lookup loads one binding alias on mismatch; explicit URLs stay strict and pages keep their directory', { skip: cacheSkip }, async () => {
     const { manifest, current, oldTerrain, oldAppearance } = fixture(), requests = [];
     const expectedUrl = new URL(`binding.${await landscapeAppearanceBindingKey(oldTerrain)}.json`, currentUrl).href;
     const fetchImpl = async url => { requests.push(String(url)); return new Response(JSON.stringify(String(url) === expectedUrl ? oldAppearance : current)); };
@@ -51,7 +53,7 @@ test('Default appearance lookup loads one binding alias on mismatch; explicit UR
     assert.deepEqual(requests.splice(0), [expectedUrl]);
 });
 
-test('Binding fallback never hides corruption, oversized responses, unavailable current metadata, or an incompatible alias', async () => {
+test('Binding fallback never hides corruption, oversized responses, unavailable current metadata, or an incompatible alias', { skip: cacheSkip }, async () => {
     const { current, oldTerrain } = fixture();
     const corrupt = structuredClone(current); corrupt.materials[0].tiers[0].channels.baseColor.byteLength++;
     for (const response of [() => new Response(JSON.stringify(corrupt)), () => new Response('{}', { status: 500 }), () => new Response(new Uint8Array(256 * 1024 + 1))]) {

@@ -686,6 +686,15 @@ export class MapDebuggerState {
         this._setPoleInfoData(null);
     }
 
+    // A landscape-bound reference plan boots without its local landscape cache and reports why it is unavailable.
+    _reportLandscapeAvailability() {
+        const city = this.city;
+        if (!city?.landscapeAvailability) return;
+        city.landscapeAvailability.then(availability => {
+            if (availability && this.city === city) this.editorPanel?.setLandscapeAvailability(availability);
+        });
+    }
+
     _applySpec(spec, { resetCamera = false } = {}) {
         const fullSpec = this._normalizeSpec(spec);
         const renderSpec = this._filterSpecForRender(fullSpec);
@@ -697,6 +706,7 @@ export class MapDebuggerState {
         this._spec = this._mergeSanitizedRenderSpec(fullSpec, sanitized);
 
         this.editorPanel?.setSpec(this._spec);
+        this._reportLandscapeAvailability();
         this.editorPanel?.setTab(this._editorTab);
         this.editorPanel?.setRoadParams(this._roadParams);
         this.editorPanel?.setRoadModeEnabled(this._roadModeEnabled);

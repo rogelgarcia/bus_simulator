@@ -9,7 +9,8 @@ node tools/bake.mjs --target landscape/hierarchy --publish
 ```
 
 The default source and optional publication directory is
-`assets/public/landscape/coastal-city`. Use the scoped setting
+`assets/public/landscape/coastal-city`, the gitignored
+[local landscape cache](../README.md#local-landscape-cache). Use the scoped setting
 `--set "landscape/hierarchy:directory=<saved-landscape-directory>"` for another
 saved landscape. `node tools/bake_landscape/hierarchy/run.mjs` is the equivalent
 shared-planner entry point. This maintenance leaf is excluded from `all` and the

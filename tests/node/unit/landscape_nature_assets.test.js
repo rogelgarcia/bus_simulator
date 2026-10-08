@@ -8,10 +8,13 @@ import sandConfig from '../../../assets/public/pbr/aerial_beach_01/pbr.material.
 import { PBR_MATERIAL_CATALOG } from '../../../assets/public/pbr/_catalog_index.js';
 import { validateLandscapeManifest, validateLandscapeAppearanceManifest } from '../../../src/app/landscape/index.js';
 import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const directory = path.resolve('assets/public/landscape/coastal-city');
 const materialSnapshotHash = '12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b';
 const appearanceSnapshotHash = 'aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b';
+const cacheSkip = landscapeCacheSkip([path.basename(createCoastalLandscapeCitySpec().landscape.manifestUrl), `manifest.${materialSnapshotHash}.json`,
+    `appearance/manifest.${appearanceSnapshotHash}.json`]);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function snapshot(folder, sha256) {
@@ -20,7 +23,7 @@ async function snapshot(folder, sha256) {
     return JSON.parse(bytes);
 }
 
-test('Landscape nature assets: beach publication changes only the material binding and revision', async () => {
+test('Landscape nature assets: beach publication changes only the material binding and revision', { skip: cacheSkip }, async () => {
     const original = JSON.parse(await readFile(path.resolve(createCoastalLandscapeCitySpec().landscape.manifestUrl)));
     const published = validateLandscapeManifest(await snapshot(directory, materialSnapshotHash));
     assert.notEqual(published.revision, original.revision);
@@ -31,7 +34,7 @@ test('Landscape nature assets: beach publication changes only the material bindi
     assert.deepEqual(restored, original, 'native channels, raw classifications, source references and authoring history are unchanged');
 });
 
-test('Landscape nature assets: CC0 source identity, source hashes and all nine bounded sand pages authenticate', async () => {
+test('Landscape nature assets: CC0 source identity, source hashes and all nine bounded sand pages authenticate', { skip: cacheSkip }, async () => {
     const landscape = await snapshot(directory, materialSnapshotHash);
     const appearance = validateLandscapeAppearanceManifest(await snapshot(path.join(directory, 'appearance'), appearanceSnapshotHash), landscape);
     const sand = appearance.materials.find(material => material.soilId === 'sand');

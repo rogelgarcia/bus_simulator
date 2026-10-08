@@ -25,7 +25,7 @@ Scoped options (`--set landscape/terrain-fields:<option>=<value>`):
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `directory` | `assets/public/landscape/coastal-city` | Saved landscape to analyze |
+| `directory` | `assets/public/landscape/coastal-city` | Saved landscape to analyze (the gitignored [local landscape cache](../README.md#local-landscape-cache)) |
 | `recipe` | `tools/bake_landscape/terrain_fields/recipe-v1.json` | Exact algorithm parameters (embedded in provenance with its SHA-256) |
 | `imports` | none | Optional retained interoperable maps (see Imports) |
 | `verify-determinism` | `true` | Run the global stage twice and require identical channel hashes and statistics |

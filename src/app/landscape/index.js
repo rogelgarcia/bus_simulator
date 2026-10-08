@@ -21,7 +21,8 @@ export { LANDSCAPE_APPEARANCE_MULTISCALE_FORMAT, LANDSCAPE_APPEARANCE_MULTISCALE
     LANDSCAPE_APPEARANCE_MICRO_ENCODING, LandscapeAppearanceMultiscaleBindingError, validateLandscapeAppearanceMultiscale, validateLandscapeAppearanceMultiscalePage, decodeLandscapeAppearanceMicroTexel } from './LandscapeAppearanceMultiscale.js';
 export { loadLandscapeAppearanceMultiscale, loadLandscapeAppearanceMultiscalePage } from './LandscapeAppearanceMultiscalePayload.js';
 export { createLandscapeAppearancePlanner } from './LandscapeAppearancePlanner.js';
-export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
+export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, resolveCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
+export { LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTORY, LANDSCAPE_CACHE_GUIDE, LANDSCAPE_CACHE_STATUS, landscapeCacheDirectory, probeLandscapeCache, describeLandscapeCacheAvailability } from './LandscapeCache.js';
 export { cityTileLandscapeCoverage } from './LandscapeCityCoverage.js';
 export { LANDSCAPE_REPORT_LIMITS, reportLandscapeTerrain, readLandscapeTerrainReport } from './LandscapeTerrainReports.js';
 export { createLandscapeDependency, checkLandscapeDependency, landscapeChangeInvalidates } from './LandscapeDependencies.js';

@@ -12,10 +12,12 @@ import { landscapeMaterialTierBytes, planLandscapeAppearanceDemand } from '../..
 import { landscapeTextureBytes } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js';
 import { decodeLandscapeAppearanceMicroTexel } from '../../../src/app/landscape/index.js';
 import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const seed = 1207276911, MIB = 1024 * 1024;
 const close = (actual, expected, tolerance = 1e-9, label = '') => assert.ok(Math.abs(actual - expected) <= tolerance, `${label} ${actual} differs from ${expected} by more than ${tolerance}`);
-const appearance = JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.json', import.meta.url), 'utf8'));
+const cacheSkip = landscapeCacheSkip(['appearance/manifest.json']);
+const appearance = cacheSkip ? null : JSON.parse(await readFile(new URL('../../../assets/public/landscape/coastal-city/appearance/manifest.json', import.meta.url), 'utf8'));
 
 function statistics(values) {
     const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -194,7 +196,7 @@ function companion({ capabilities = {}, micro = ['seabed', 'sand'], materialId =
 }
 const shipped = { maxTextureSize: 16384, limits: { gpuBytes: 96 * MIB }, fixedGpuBytes: 81 * 272484 };
 
-test('Multiscale tiers: an active companion pairs micro layers with every tier and adds 1024 tiers, with explicit page sources', () => {
+test('Multiscale tiers: an active companion pairs micro layers with every tier and adds 1024 tiers, with explicit page sources', { skip: cacheSkip }, () => {
     const resolved = resolveLandscapeMultiscaleTiers({ appearance, sidecar: companion(), ...shipped });
     assert.equal(resolved.status, 'active'); assert.equal(resolved.reason, null); assert.equal(resolved.maxResolution, 1024);
     const sand = resolved.materials.find(material => material.soilId === 'sand'), loam = resolved.materials.find(material => material.soilId === 'loam');
@@ -209,7 +211,7 @@ test('Multiscale tiers: an active companion pairs micro layers with every tier a
     assert.equal(resolved.workingSetBytes, landscapeMultiscaleWorkingSetBytes({ fixedGpuBytes: shipped.fixedGpuBytes, materials: resolved.materials }));
 });
 
-test('Multiscale tiers: absence, opt-out, invalid data, capability contracts, budgets and device limits fall back explicitly', () => {
+test('Multiscale tiers: absence, opt-out, invalid data, capability contracts, budgets and device limits fall back explicitly', { skip: cacheSkip }, () => {
     const legacy = landscapeMultiscaleFallback(appearance, 'absent', 'multiscale-sidecar-absent');
     assert.ok(legacy.materials.every(material => material.maps === 3 && material.micro === null && material.tiers.map(tier => tier.resolution).join() === '32,128,512'));
     assert.equal(resolveLandscapeMultiscaleTiers({ appearance, sidecar: null, ...shipped }).status, 'absent');

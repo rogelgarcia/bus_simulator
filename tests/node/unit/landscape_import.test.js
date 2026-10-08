@@ -9,9 +9,11 @@ import { COASTAL_SOURCE_PREFIX, COASTAL_SOURCE_SHA256, crc32, decodeCoastalZip, 
 import { partitionCoastalTile, prepareCoastalLandscape } from '../../../tools/bake_landscape/CoastalPreparation.mjs';
 import { assertCoastalPublicationCompatible, publishPreparedCoastal } from '../../../tools/bake_landscape/CoastalPublication.mjs';
 import { validatePreparedCoastal } from '../../../tools/bake_landscape/CoastalValidation.mjs';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const retained = path.join(root, 'assets/public/landscape/coastal-city');
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'PROVENANCE.json']);
 const evidence = path.join(root, 'tests/artifacts/screens/landscape/ai576/d1/import-tests');
 await mkdir(evidence, { recursive: true });
 const temporary = () => mkdtemp(path.join(evidence, 'fixture-'));
@@ -119,7 +121,7 @@ test('Landscape partitions preserve float32 bits, zero and class IDs across nati
     assert.throws(() => partitionCoastalTile(source, { column: 8, row: 0, stride: 1 }), /Invalid coastal partition/);
 });
 
-test('Retained coastal import authenticates full native coverage, orientation, checkpoints, and all planning records', async () => {
+test('Retained coastal import authenticates full native coverage, orientation, checkpoints, and all planning records', { skip: cacheSkip }, async () => {
     const report = await validatePreparedCoastal((await preparedOriginal()).directory);
     assert.equal(report.sourceSha256, COASTAL_SOURCE_SHA256);
     assert.equal(report.nativeChunks, 64); assert.equal(report.sourceFiles, 29); assert.equal(report.sharedBorders, 112);
@@ -131,7 +133,7 @@ test('Retained coastal import authenticates full native coverage, orientation, c
     assert.deepEqual(report.checkpoints.slice(0, 4).map(point => [point.x, point.z]), [[0, 4000], [4000, 4000], [0, 0], [4000, 0]]);
 });
 
-test('Coastal repeat preparation is byte-identical and corrupt candidates cannot replace a valid manifest', async () => {
+test('Coastal repeat preparation is byte-identical and corrupt candidates cannot replace a valid manifest', { skip: cacheSkip }, async () => {
     const currentBytes = await readFile((await preparedOriginal()).manifestFile);
     const manifest = JSON.parse(currentBytes), provenance = JSON.parse(await readFile(path.join(retained, 'PROVENANCE.json'), 'utf8'));
     const files = new Map();
@@ -147,7 +149,7 @@ test('Coastal repeat preparation is byte-identical and corrupt candidates cannot
     assert.equal(sha256(await readFile(path.join(destination, 'manifest.json'))), sha256(currentBytes));
 });
 
-test('Coastal import refuses changed revisions and authored edits while allowing identical republishing', async () => {
+test('Coastal import refuses changed revisions and authored edits while allowing identical republishing', { skip: cacheSkip }, async () => {
     const manifest = JSON.parse(await readFile((await preparedOriginal()).manifestFile, 'utf8'));
     assert.doesNotThrow(() => assertCoastalPublicationCompatible(null, manifest));
     assert.doesNotThrow(() => assertCoastalPublicationCompatible(structuredClone(manifest), manifest));

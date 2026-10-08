@@ -17,7 +17,8 @@ node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:so
 
 `source-root` defaults to `assets/public/pbr`; a metadata-only checkout must point
 it to the existing folder containing the source images. `directory` defaults to
-`assets/public/landscape/coastal-city` and can select another saved landscape.
+`assets/public/landscape/coastal-city` (the gitignored
+[local landscape cache](../README.md#local-landscape-cache)) and can select another saved landscape.
 `node tools/bake_landscape/appearance/run.mjs` enters the same registered leaf.
 The leaf is excluded from production `all` and the landscape import parent.
 

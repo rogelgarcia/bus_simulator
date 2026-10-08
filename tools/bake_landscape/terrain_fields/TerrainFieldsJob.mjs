@@ -8,6 +8,7 @@ import { readLandscapeFileManifest } from '../../landscape_authoring/LandscapeFi
 import { acquireAuthoringLock, authoringFile, readAuthoringFile, writeImmutableAuthoringFile } from '../../landscape_authoring/AuthoringFiles.mjs';
 import { prepareTerrainFields, publishTerrainFields, validateTerrainFieldsCandidate } from './TerrainFieldsPreparation.mjs';
 import { readTerrainFieldImports } from './TerrainFieldsImports.mjs';
+import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../../src/app/landscape/LandscapeCache.js';
 
 const RECEIPT = 'tests/artifacts/screens/landscape/ai577/d5/terrain-fields-validation.json';
 const pathOption = value => { if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new Error('Terrain field paths must name existing files or directories'); return value; };
@@ -17,7 +18,7 @@ export const terrainFieldsJob = {
     id: 'landscape/terrain-fields', configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Analyze the CURRENT native terrain globally (depressions, flow, wetness, deposition, rock, horizons, sky view, shore distance, natural soil) into validated mask-aligned field pages',
     outputs: [RECEIPT],
-    defaults: { directory: 'assets/public/landscape/coastal-city', recipe: 'tools/bake_landscape/terrain_fields/recipe-v1.json', 'verify-determinism': true },
+    defaults: { directory: LANDSCAPE_DEFAULT_DIRECTORY, recipe: 'tools/bake_landscape/terrain_fields/recipe-v1.json', 'verify-determinism': true },
     options: { directory: pathOption, recipe: pathOption, imports: pathOption, 'verify-determinism': booleanOption },
     async inputs(ctx) {
         const directory = path.resolve(ctx.root, ctx.options.directory), saved = await readLandscapeFileManifest(directory);

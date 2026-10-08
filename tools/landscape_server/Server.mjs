@@ -6,14 +6,16 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createLandscapeAuthoringApi } from './AuthoringApi.mjs';
+import { LANDSCAPE_CACHE_GUIDE, LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/LandscapeCache.js';
 
-const MANIFEST = 'assets/public/landscape/coastal-city/manifest.json';
+// The landscape cache is local and gitignored; a missing cache is served as an explicit 404, never as a broken server.
+const MANIFEST = `${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 export const SELECTION_FILE = 'tests/artifacts/screens/landscape/ai576/selection.latest.json';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const isPbrMetadata = relative => relative === 'assets/public/pbr/_catalog_index.js' || /^assets\/public\/pbr\/[a-z0-9_]+\/pbr\.material\.(?:correction\.)?config\.js$/.test(relative);
 // the game's calibrated sky and catalog HDR environments (and their calibration/provenance JSON) light the viewer like the game
 const isLightingAsset = relative => /^assets\/public\/lighting\/(?:calibrated|hdri)\/[a-z0-9_.-]+\.(?:hdr|json)$/.test(relative);
-const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || isPbrMetadata(relative) || isLightingAsset(relative) || ['src/', 'screens/', 'debug_tools/', 'assets/public/landscape/'].some(prefix => relative.startsWith(prefix));
+const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || isPbrMetadata(relative) || isLightingAsset(relative) || ['src/', 'screens/', 'debug_tools/', `${LANDSCAPE_CACHE_ROOT}/`].some(prefix => relative.startsWith(prefix));
 
 function reply(response, status, body) {
     response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -53,8 +55,11 @@ export function createLandscapeServer({ root, landscapeDirectory }) {
     const workspace = path.resolve(root);
     const landscape = path.resolve(landscapeDirectory ?? path.join(workspace, path.dirname(MANIFEST)));
     const authoring = createLandscapeAuthoringApi({ directory: landscape, readJson, reply });
-    const trusted = Promise.all([realRoots(workspace), realpath(landscape)]);
+    const trusted = realRoots(workspace);
     trusted.catch(() => {});
+    // resolved on demand, so a cache generated or installed while the server runs is picked up
+    let realLandscape = null;
+    const landscapeRoot = async () => realLandscape ??= await realpath(landscape).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     let pendingWrite = Promise.resolve();
     const server = http.createServer(async (request, response) => {
         try {
@@ -101,12 +106,13 @@ export function createLandscapeServer({ root, landscapeDirectory }) {
             if (!['GET', 'HEAD'].includes(request.method)) return reply(response, 405, { error: 'Read-only static files' });
             const relative = pathname === '/' ? 'screens/landscape_fabrication.html' : pathname.slice(1);
             if (!isPublicPath(relative)) return reply(response, 404, { error: 'Not found' });
-            const sourcePrefix = 'assets/public/landscape/coastal-city/';
+            const sourcePrefix = `${path.posix.dirname(MANIFEST)}/`;
             const sourceRequest = relative.startsWith(sourcePrefix);
             const staticRoot = sourceRequest ? landscape : workspace;
             const candidate = path.resolve(staticRoot, sourceRequest ? relative.slice(sourcePrefix.length) : relative);
             if (!candidate.startsWith(staticRoot + path.sep)) return reply(response, 403, { error: 'Invalid path' });
-            const resolved = await realpath(candidate), [roots, realLandscape] = await trusted;
+            if (sourceRequest && !(await landscapeRoot())) return reply(response, 404, { error: `Landscape cache not installed at ${path.posix.dirname(MANIFEST)}; see ${LANDSCAPE_CACHE_GUIDE}` });
+            const resolved = await realpath(candidate), roots = await trusted;
             if (sourceRequest ? !resolved.startsWith(realLandscape + path.sep) : !isPublicPath(logicalPath(roots, resolved) ?? '')) return reply(response, 403, { error: 'Invalid source location' });
             const info = await stat(resolved);
             if (!info.isFile()) return reply(response, 404, { error: 'Not found' });

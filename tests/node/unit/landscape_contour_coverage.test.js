@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { LANDSCAPE_CONTOUR_COVERAGE, buildLandscapeContourCoverage, decodeLandscapeContourSample, sampleLandscapeContourField } from '../../../src/graphics/engine3d/landscape/LandscapeContourCoverage.js';
 import { applyLandscapeContourCoverage, sampleLandscapeSurfaceCoverage } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCoverage.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+
+const cacheSkip = landscapeCacheSkip();
 
 function fixture(soilAt, { columns = 33, rows = 33, originColumn = 0, originRow = 0, spacingX = 1.953125, spacingZ = spacingX, soilCount = 6 } = {}) {
     const sourceHalo = 6, sourceWidth = columns + sourceHalo * 2, sourceHeight = rows + sourceHalo * 2;
@@ -55,7 +58,7 @@ test('Contour coverage: a long digital straight coast becomes a continuous slope
     assert.ok(error(fitted) < error(old) / 8, `${error(fitted)} versus ${error(old)}`);
 });
 
-test('Contour coverage: the captured retained coastal run smooths its actual four- and five-row source steps', async () => {
+test('Contour coverage: the captured retained coastal run smooths its actual four- and five-row source steps', { skip: cacheSkip }, async () => {
     const manifestUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
     const manifest = JSON.parse(await readFile(manifestUrl)), descriptor = manifest.chunks.find(chunk => chunk.id === 'l3/c2/r6');
     const source = await readFile(new URL(descriptor.channels.landCover.url, manifestUrl));

@@ -10,6 +10,7 @@ import { inspectAppearanceSources, prepareLandscapeAppearance, validateAppearanc
 import { appearanceCompatibilityOption, readAppearanceCompatibilitySnapshot } from './AppearanceCompatibility.mjs';
 import { prepareAppearanceMaterialBindings } from './AppearanceMaterialBindings.mjs';
 import { readAppearanceMultiscaleRequest, inspectAppearanceMultiscaleSources } from './AppearanceMultiscale.mjs';
+import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/LandscapeCache.js';
 
 const MULTISCALE_RECEIPT = 'tests/artifacts/screens/landscape/ai577/d4/appearance-multiscale-validation.json';
 const pathOption = value => { if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new Error('Appearance source/directory must be an existing path'); return value; };
@@ -17,7 +18,7 @@ export const appearanceJob = {
     id: 'landscape/appearance', configurationPaths: ['pythonExecutable'], codePaths: ['tools/bake_landscape'],
     description: 'Prepare independent authenticated PBR texture tiers from existing public catalog imagery without loading terrain heights',
     outputs: ['tests/artifacts/screens/landscape/ai576/d4/appearance-validation.json', MULTISCALE_RECEIPT],
-    defaults: { directory: 'assets/public/landscape/coastal-city', 'source-root': 'assets/public/pbr' },
+    defaults: { directory: LANDSCAPE_DEFAULT_DIRECTORY, 'source-root': 'assets/public/pbr' },
     options: { directory: pathOption, 'source-root': pathOption, 'compatibility-snapshot': appearanceCompatibilityOption, 'material-bindings': pathOption, multiscale: pathOption },
     async inputs(ctx) {
         const directory = path.resolve(ctx.root, ctx.options.directory), sourceRoot = path.resolve(ctx.root, ctx.options['source-root']);

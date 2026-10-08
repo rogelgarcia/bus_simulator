@@ -6,10 +6,12 @@ import { createLandscapeModelFixture } from './landscape_model_fixture.js';
 import { validateLandscapeManifest, createLandscapeAppearancePlanner, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailSupport, landscapeSurfaceDetailInputs,
     landscapeSurfaceDetailKey, landscapeSurfaceDetailSeed, landscapeSurfaceDetailRecipeHash, landscapeRegionIntersectsBounds, LANDSCAPE_SURFACE_DETAIL_FORMAT } from '../../../src/app/landscape/index.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, validateLandscapeSurfaceDetailRecipe } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json']);
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
-const coastal = validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
-const coastalAppearance = JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
+const coastal = cacheSkip ? null : validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
+const coastalAppearance = cacheSkip ? null : JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
 const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE;
 const anchor = { x: 1071.2890625, z: 914.0625 };
 
@@ -51,7 +53,7 @@ function visibleBox(node, planes) {
     return planes.every(p => p.x * (p.x >= 0 ? b.maxX : b.minX) + p.y * (p.y >= 0 ? node.maxHeight : node.minHeight) + p.z * (p.z >= 0 ? b.maxZ : b.minZ) + p.w >= 0);
 }
 
-test('Surface detail index: fine descriptors derive lazily from the grid as frozen generated pages', () => {
+test('Surface detail index: fine descriptors derive lazily from the grid as frozen generated pages', { skip: cacheSkip }, () => {
     const index = createLandscapeSurfaceDetailIndex(coastal, { levels: 3 }), native = coastal.chunks.find(chunk => chunk.id === 'l3/c2/r6');
     const page = index.descriptor('l6/c17/r49');
     assert.deepEqual({ ...page, bounds: { ...page.bounds }, spacing: { ...page.spacing } }, { id: 'l6/c17/r49', level: 6, column: 17, row: 49, startColumn: 544, startRow: 1568,
@@ -86,7 +88,7 @@ test('Surface detail index: fine descriptors derive lazily from the grid as froz
     assert.equal(Object.keys(index).some(key => Array.isArray(index[key])), false);
 });
 
-test('Surface detail support: canonical native windows cover warp, override and query reach plus the smoothing dependency margin', () => {
+test('Surface detail support: canonical native windows cover warp, override and query reach plus the smoothing dependency margin', { skip: cacheSkip }, () => {
     const format = LANDSCAPE_SURFACE_DETAIL_FORMAT, sha = id => coastal.chunks.find(chunk => chunk.id === id).channels.landCover.sha256, grid = coastal.grid;
     const corner = landscapeSurfaceDetailSupport(coastal, createLandscapeSurfaceDetailIndex(coastal, { levels: 3 }).descriptor('l5/c8/r24'), recipe);
     assert.deepEqual(corner.owners.map(owner => owner.id), ['l3/c1/r5', 'l3/c2/r5', 'l3/c1/r6', 'l3/c2/r6']);
@@ -175,7 +177,7 @@ test('Surface detail identity: an override changes exactly the keys whose influe
     assert.ok(changed > 0 && unchanged > 0, `${changed} changed, ${unchanged} unchanged`);
 });
 
-test('Surface detail identity: recipe, seed, owned cover and overview infill inputs change keys', () => {
+test('Surface detail identity: recipe, seed, owned cover and overview infill inputs change keys', { skip: cacheSkip }, () => {
     const index = createLandscapeSurfaceDetailIndex(coastal, { levels: 3 }), id = 'l6/c17/r49', key = (manifest, options = {}) => landscapeSurfaceDetailKey(
         landscapeSurfaceDetailInputs(manifest, id, options.recipe ?? recipe, options.seed ?? landscapeSurfaceDetailSeed(coastal.id, recipe)));
     const baseline = key(coastal);
@@ -207,7 +209,7 @@ test('Surface detail identity: recipe, seed, owned cover and overview infill inp
     assert.throws(() => index.inputs(id, recipe, -1), /seed/);
 });
 
-test('Surface detail planning: existing appearance outputs stay byte-identical with or without fine levels', () => {
+test('Surface detail planning: existing appearance outputs stay byte-identical with or without fine levels', { skip: cacheSkip }, () => {
     const plain = createLandscapeAppearancePlanner(coastal, coastalAppearance), disabled = createLandscapeAppearancePlanner(coastal, coastalAppearance, { surfaceDetail: { levels: 0 } });
     const detailed = createLandscapeAppearancePlanner(coastal, coastalAppearance, { surfaceDetail: { levels: 3 } });
     assert.equal(plain.surfaceDetail, null); assert.equal(disabled.surfaceDetail, null); assert.equal(detailed.surfaceDetail.finestLevel, 6);
@@ -226,7 +228,7 @@ test('Surface detail planning: existing appearance outputs stay byte-identical w
     }
 });
 
-test('Surface detail planning: fixed-position orthographic and perspective zoom refine fine levels below the native masks', () => {
+test('Surface detail planning: fixed-position orthographic and perspective zoom refine fine levels below the native masks', { skip: cacheSkip }, () => {
     const planner = createLandscapeAppearancePlanner(coastal, coastalAppearance, { surfaceDetail: { levels: 3 } });
     const finest = plan => Math.max(0, ...plan.detail.visibleIds.map(id => planner.surfaceDetail.descriptor(id).level));
     assert.deepEqual([3000, 600, 400, 200, 120, 60].map(height => finest(planner.plan(orthographic(height)))), [0, 0, 4, 5, 6, 6]);
@@ -248,7 +250,7 @@ test('Surface detail planning: fixed-position orthographic and perspective zoom 
     assert.ok(new Set(wide.detail.desiredIds).size === wide.detail.desiredIds.length);
 });
 
-test('Surface detail planning: 65% hysteresis, frustum exclusion, level limits and explicit configuration errors', () => {
+test('Surface detail planning: 65% hysteresis, frustum exclusion, level limits and explicit configuration errors', { skip: cacheSkip }, () => {
     const planner = createLandscapeAppearancePlanner(coastal, coastalAppearance, { surfaceDetail: { levels: 3 } }), level = id => planner.surfaceDetail.descriptor(id).level;
     const zoomed = planner.plan(orthographic(200));
     assert.ok(zoomed.detail.visibleIds.some(id => level(id) === 5));

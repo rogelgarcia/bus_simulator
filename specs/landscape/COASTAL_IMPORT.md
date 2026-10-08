@@ -94,7 +94,8 @@ finished streets/runways. Water-depth/submerged queries use height relative to
 sea level independently from these categories.
 
 All 29 archived files (32,860,674 bytes) are retained verbatim under
-`assets/public/landscape/coastal-city/source/<archive-sha256>/`. Each has its own
+`assets/public/landscape/coastal-city/source/<archive-sha256>/` in the gitignored
+[local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache) (never tracked or distributed through Git/LFS since AI 595). Each has its own
 stable reference ID, role, hash, encoding, and byte length in the manifest:
 
 - `districts.json` and `district_ids.png` preserve district identities, boundaries,
@@ -120,8 +121,8 @@ preserve local revisions; the D1 importer only reproduces the authenticated base
 
 `node tools/bake.mjs --target landscape/coastal-import --set
 "landscape/coastal-import:source=<source.zip>"` selects only the Node CPU leaf.
-Its optional `--publish` installs validated output at the canonical retained
-directory. The domain is registered but excluded from `all`, so a source import
+Its optional `--publish` installs validated output at the canonical directory of the
+[local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache). The domain is registered but excluded from `all`, so a source import
 cannot trigger unrelated expensive bakes. It uses the shared configuration and
 checkpoint machinery; no machine-specific standalone command is added.
 

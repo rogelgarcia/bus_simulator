@@ -3,6 +3,7 @@
 
 import { PickerPopup } from '../shared/PickerPopup.js';
 import { serializeCitySpecToModule } from '../../../app/city/specs/CitySpecAuthoring.js';
+import { describeLandscapeCacheAvailability } from '../../../app/landscape/LandscapeCache.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -200,7 +201,7 @@ export class MapDebuggerEditorPanel {
 
     setSpec(spec) {
         this._spec = spec && typeof spec === 'object' ? spec : null;
-        this.setStatus(this._spec?.landscape ? `Landscape reference plan: ${this._spec.landscape.landscapeId}. Terrain is shown in Landscape Fabrication; roads, parcels and reservations here are schematic. Terrain gameplay and bakes are unsupported.` : '');
+        this.setStatus(this._spec?.landscape ? this._landscapeStatus(null) : '');
         const citySeed = typeof this._spec?.seed === 'string' ? this._spec.seed : '';
         if (this.seedInput) this.seedInput.value = citySeed;
         if (this.widthInput) this.widthInput.value = String(this._spec?.width ?? '');
@@ -213,6 +214,14 @@ export class MapDebuggerEditorPanel {
         this._renderBuildings(buildings);
 
         this._refreshExportText();
+    }
+
+    _landscapeStatus(availability) {
+        return `Landscape reference plan: ${this._spec.landscape.landscapeId}. Terrain is shown in Landscape Fabrication; roads, parcels and reservations here are schematic. Terrain gameplay and bakes are unsupported. ${describeLandscapeCacheAvailability(availability)}`;
+    }
+
+    setLandscapeAvailability(availability) {
+        if (this._spec?.landscape) this.setStatus(this._landscapeStatus(availability));
     }
 
     setStatus(message) {

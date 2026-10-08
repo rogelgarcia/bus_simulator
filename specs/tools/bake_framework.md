@@ -248,7 +248,7 @@ replace an authored/changed current revision. Existing lighting, material and
 visibility gates are unchanged. See [the landscape workflow](../../tools/bake_landscape/README.md).
 
 The separate `landscape/hierarchy` maintenance leaf reads the current saved
-native payloads from its scoped `directory` (default coastal retained assets),
+native payloads from its scoped `directory` (default: the local coastal cache),
 without reimporting source or losing authored revisions. It creates every
 intermediate node, measures exact native-relative error, and uses one native
 chunk at a time under a 4 MiB working-array cap. This leaf always plans against a
@@ -296,6 +296,16 @@ refused if the terrain changed since planning or if a current sidecar belongs to
 It claims only its receipt `tests/artifacts/screens/landscape/ai577/d5/terrain-fields-validation.json`.
 See [LANDSCAPE_TERRAIN_FIELDS.md](../landscape/LANDSCAPE_TERRAIN_FIELDS.md) and the
 [terrain-field workflow](../../tools/bake_landscape/terrain_fields/README.md).
+
+Every landscape leaf publishes into the local landscape cache `assets/public/landscape/<id>/`, which is
+gitignored as a whole and never tracked or distributed through Git/LFS (AI 595). `landscape/cache-install`
+is the explicit Node-only leaf (`configurationPaths: []`, `always`) that installs a cache bundle: a copy of one
+landscape directory selected by the required scoped `bundle`. It authenticates every file by its content
+address or a hashed manifest/provenance record before writing, then installs immutable files first and the
+current sidecar and terrain pointers last under the authoring lock, restoring previous pointers if a switch
+fails. A destination pointer the bundle does not retain is never overwritten. It claims only its receipt
+`tests/artifacts/landscape_cache_history/cache-install-validation.json`. See the
+[local cache workflow](../../tools/bake_landscape/README.md) and [cache install](../../tools/bake_landscape/cache_install/README.md).
 
 Explicit browser-only diagnostic plans may declare `configurationPaths` on every
 selected job. The shared loader then requires and checks only that union of machine

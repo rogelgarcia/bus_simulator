@@ -20,7 +20,9 @@ batches while preserving D2 exact queries and last-batch revert. The store uses
 the pure API from `src/app/landscape/index.js`; no edit depends on camera LOD,
 mesh indices, filtered cover imagery, or runtime appearance settings.
 
-The default directory is `assets/public/landscape/coastal-city`. Every command
+The default directory is `assets/public/landscape/coastal-city`, the gitignored
+[local landscape cache](../bake_landscape/README.md#local-landscape-cache); without it,
+commands stop with `[LandscapeCache] manifest.json is not installed …`. Every command
 accepts `--directory <directory>` for an isolated saved landscape. Source
 preparation remains under the registered `landscape/coastal-import`,
 `landscape/hierarchy`, and `landscape/appearance` bake leaves.

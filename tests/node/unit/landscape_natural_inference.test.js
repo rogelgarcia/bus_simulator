@@ -15,6 +15,7 @@ import { createLandscapeSurfaceDetailPage } from '../../../src/graphics/engine3d
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailWorkerBytes } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailPages.js';
 import { buildLandscapeMeshBuffers } from '../../../src/graphics/engine3d/landscape/LandscapeMeshBuffers.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 // LandscapeMaskPages imports three for its texture array only; its reservations run on a stub
 const stub = source => `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`;
@@ -28,12 +29,13 @@ const hooks = registerHooks({ resolve(specifier, context, nextResolve) {
 const { LandscapeMaskPages } = await import(maskUrl.href);
 hooks.deregister();
 
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'fields/manifest.json']);
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
-const coastalJson = JSON.parse(await readFile(coastalUrl, 'utf8'));
-const coastal = validateLandscapeManifest(coastalJson);
-const sidecarFile = new URL('fields/manifest.json', coastalUrl), sidecarBytes = await readFile(sidecarFile), sidecar = JSON.parse(sidecarBytes);
+const coastalJson = cacheSkip ? null : JSON.parse(await readFile(coastalUrl, 'utf8'));
+const coastal = cacheSkip ? null : validateLandscapeManifest(coastalJson);
+const sidecarFile = new URL('fields/manifest.json', coastalUrl), sidecarBytes = cacheSkip ? null : await readFile(sidecarFile), sidecar = cacheSkip ? null : JSON.parse(sidecarBytes);
 const MANIFEST_URL = 'https://fixture.invalid/coastal-city/manifest.json', FIELDS_URL = 'https://fixture.invalid/coastal-city/fields/manifest.json';
-const soilIds = coastal.soil.catalog.map(soil => soil.id), soilIndex = id => soilIds.indexOf(id);
+const soilIds = cacheSkip ? null : coastal.soil.catalog.map(soil => soil.id), soilIndex = id => soilIds.indexOf(id);
 const files = new Map();
 const fileBytes = async url => { if (!files.has(url.href)) files.set(url.href, new Uint8Array(await readFile(url))); return files.get(url.href); };
 const chunkOf = (manifest, id) => manifest.chunks.find(chunk => chunk.id === id);
@@ -45,9 +47,9 @@ const loadNatural = async (entry, url) => {
     return Uint8Array.from(await fileBytes(new URL(entry.url, sidecarFile)));
 };
 const naturalPage = async id => { const entry = sidecar.pages.find(page => page.id === id).naturalSoil; return entry ? fileBytes(new URL(entry.url, sidecarFile)) : null; };
-const overview = chunkOf(coastal, coastal.overviewId), overviewCover = (await loadCover(overview.id)).landCover;
+const overview = cacheSkip ? null : chunkOf(coastal, coastal.overviewId), overviewCover = cacheSkip ? null : (await loadCover(overview.id)).landCover;
 const presentationOf = manifest => createLandscapeNaturalPresentation(manifest, { descriptor: chunkOf(manifest, manifest.overviewId), landCover: overviewCover });
-const presentation = presentationOf(coastal);
+const presentation = cacheSkip ? null : presentationOf(coastal);
 
 function fetchFor(body = sidecarBytes, status = 200) {
     const requests = [];
@@ -62,7 +64,7 @@ async function sourceFor(manifest = coastal, { body, status, mode = 'terrain', l
     return Object.assign(source, { requests });
 }
 
-const terrain = await sourceFor();
+const terrain = cacheSkip ? null : await sourceFor();
 
 function staleManifest(ids) {
     const draft = structuredClone(coastalJson);
@@ -120,7 +122,7 @@ async function expectedDisplay(manifest, display, globalColumn, globalRow, cover
     return display.sample(x, z, cover, labels[(globalRow - chunk.startRow) * 257 + globalColumn - chunk.startColumn]) >> 4;
 }
 
-test('Natural inference: the shared source binds the published sidecar, reports every native and shares one load', async () => {
+test('Natural inference: the shared source binds the published sidecar, reports every native and shares one load', { skip: cacheSkip }, async () => {
     assert.equal(terrain.status, 'active');
     assert.equal(terrain.requests.length, 1);
     const snapshot = terrain.snapshot();
@@ -154,7 +156,7 @@ test('Natural inference: the shared source binds the published sidecar, reports 
     third.release();
 });
 
-test('Natural inference: planning samples display the published labels identically at every level, page border and halo', async () => {
+test('Natural inference: planning samples display the published labels identically at every level, page border and halo', { skip: cacheSkip }, async () => {
     const chain = await Promise.all(['l0/c0/r0', 'l1/c0/r0', 'l2/c1/r1', 'l3/c3/r3', 'l3/c4/r3'].map(id => mask(id)));
     const shared = compareShared(chain);
     assert.ok(shared > 50000, `${shared} shared samples compared`);
@@ -185,7 +187,7 @@ test('Natural inference: planning samples display the published labels identical
     for (const i of [0, 1000, 33024, 66048]) assert.deepEqual([...buffers.colors.slice(i * 3, i * 3 + 3)], linear(palette.get(soilIds[labels[i]])), `vertex ${i}`);
 });
 
-test('Natural inference: a stale native keeps the overview infill for exactly its samples at every level, without seams', async () => {
+test('Natural inference: a stale native keeps the overview infill for exactly its samples at every level, without seams', { skip: cacheSkip }, async () => {
     const edited = staleManifest(['l3/c3/r3']), source = await sourceFor(edited), display = presentationOf(edited);
     assert.equal(source.status, 'active-partial');
     assert.equal(source.reason, 'terrain-fields-stale-chunks');
@@ -216,7 +218,7 @@ test('Natural inference: a stale native keeps the overview infill for exactly it
     assert.deepEqual([all.status, all.reason, all.describe(['l3/c3/r3']).active], ['stale', 'terrain-fields-all-chunks-stale', false]);
 });
 
-test('Natural inference: absent, disabled, invalid and mismatched sidecars fall back everywhere with an explicit status', async () => {
+test('Natural inference: absent, disabled, invalid and mismatched sidecars fall back everywhere with an explicit status', { skip: cacheSkip }, async () => {
     const absent = await sourceFor(coastal, { body: '', status: 404 });
     assert.deepEqual([absent.status, absent.reason, absent.errors.length], ['absent', 'terrain-fields-404', 0]);
     assert.deepEqual(absent.snapshot().natives, { total: 64, terrain: 0, overview: 64 });
@@ -256,7 +258,7 @@ test('Natural inference: absent, disabled, invalid and mismatched sidecars fall 
     assert.equal(LANDSCAPE_NATURAL_INFERENCE.defaultMode, 'terrain');
 });
 
-test('Natural inference: ordered soil overrides still win over terrain labels, including an explicit override to unknown', async () => {
+test('Natural inference: ordered soil overrides still win over terrain labels, including an explicit override to unknown', { skip: cacheSkip }, async () => {
     const sand = { type: 'rectangle', minX: 1700, maxX: 1800, minZ: 2200, maxZ: 2300 }, unknown = { type: 'circle', center: { x: 1760, z: 2260 }, radius: 15 };
     const edited = withOverrides(coastal, [{ soilId: 'sand', region: sand }, { soilId: 'unknown', region: unknown }]), display = presentationOf(edited);
     const source = await sourceFor(edited);
@@ -277,7 +279,7 @@ test('Natural inference: ordered soil overrides still win over terrain labels, i
     assert.ok(chain[1].soils.includes(soilIndex('unknown')), 'an explicit unknown override keeps its material interest');
 });
 
-test('Natural inference: generated fine pages read the same labels and v4 identities separate recipes and policies', async () => {
+test('Natural inference: generated fine pages read the same labels and v4 identities separate recipes and policies', { skip: cacheSkip }, async () => {
     const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE, seed = landscapeSurfaceDetailSeed(coastal.id, recipe), index = createLandscapeSurfaceDetailIndex(coastal, { levels: 3 });
     const id = 'l6/c31/r28', descriptor = index.descriptor(id), owners = index.support(descriptor, recipe).owners.map(owner => owner.id);
     const terrainRequest = terrain.describe(owners), base = { manifest: coastal, descriptor, recipe, seed, presentation, loadCover };
@@ -335,7 +337,7 @@ test('Natural inference: generated fine pages read the same labels and v4 identi
     assert.deepEqual(landscapeNaturalSoilIdentity(coastal, null, ['l3/c3/r3']), [{ id: 'l3/c3/r3', policy: LANDSCAPE_NATURAL_SOIL.overview }]);
 });
 
-test('Natural inference: pages are validated and their worker bytes are reserved in the mask, detail and build accounting', async () => {
+test('Natural inference: pages are validated and their worker bytes are reserved in the mask, detail and build accounting', { skip: cacheSkip }, async () => {
     const page = await naturalPage('l3/c3/r3'), chunk = chunkOf(coastal, 'l3/c3/r3');
     assert.deepEqual(landscapeNaturalSoilIndices(coastal), ['seabed', 'sand', 'loam', 'forest', 'rock'].map(soilIndex).sort((a, b) => a - b));
     assert.equal(validateLandscapeNaturalSoilPage(coastal, chunk, page), page);

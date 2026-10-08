@@ -9,10 +9,12 @@ import { LANDSCAPE_MATERIAL_CALIBRATION, landscapeMaterialCalibration } from '..
 import { landscapeMaterialResponseDefinition } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialResponse.js';
 import { landscapeMaterialSamplingDefinition, landscapeHexNormalSlope } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialSampling.js';
 import { landscapeReflectedRadiance } from '../../../src/graphics/engine3d/landscape/LandscapeLightingModel.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+const cacheSkip = landscapeCacheSkip(['appearance/manifest.json', 'appearance/multiscale.json']);
 const directory = path.resolve('assets/public/landscape/coastal-city/appearance');
-const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
-const multiscale = JSON.parse(await readFile(path.join(directory, 'multiscale.json'), 'utf8'));
+const manifest = cacheSkip ? null : JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+const multiscale = cacheSkip ? null : JSON.parse(await readFile(path.join(directory, 'multiscale.json'), 'utf8'));
 const LUMA = [.2126, .7152, .0722], srgb = v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
 const page = async channel => new Uint8Array(await readFile(path.join(directory, channel.url)));
 const tierOf = definition => multiscale.materials.find(entry => entry.soilId === definition.soilId).tiers.find(tier => tier.resolution === 1024);
@@ -44,7 +46,7 @@ function rotationSpread(bytes, strength, mean) {
     return (Math.max(...values) - Math.min(...values)) / average;
 }
 
-test('Material calibration: every coastal material has an entry measured from its published 1024 normal page, and every tier shares the mean slope', async () => {
+test('Material calibration: every coastal material has an entry measured from its published 1024 normal page, and every tier shares the mean slope', { skip: cacheSkip }, async () => {
     assert.equal(LANDSCAPE_MATERIAL_CALIBRATION.id, 'landscape-material-calibration-v1');
     for (const definition of manifest.materials) {
         const entry = LANDSCAPE_MATERIAL_CALIBRATION.materials[definition.materialId], tier = tierOf(definition);
@@ -58,7 +60,7 @@ test('Material calibration: every coastal material has an entry measured from it
     assert.ok(Math.atan(Math.hypot(...grass)) * 180 / Math.PI > 2, 'the grass page leans by more than two degrees');
 });
 
-test('Material calibration: de-leaned pages may rotate freely; the grass lean alone produced the low-sun hexagon patches', async () => {
+test('Material calibration: de-leaned pages may rotate freely; the grass lean alone produced the low-sun hexagon patches', { skip: cacheSkip }, async () => {
     for (const definition of manifest.materials) {
         const sampling = landscapeMaterialSamplingDefinition(definition.soilId), entry = LANDSCAPE_MATERIAL_CALIBRATION.materials[definition.materialId];
         if (sampling.rotationRangeDegrees === 0) continue;
@@ -69,7 +71,7 @@ test('Material calibration: de-leaned pages may rotate freely; the grass lean al
     }
 });
 
-test('Material calibration: effective shaded albedo lies inside each physical reference range; only materials outside it are scaled', async () => {
+test('Material calibration: effective shaded albedo lies inside each physical reference range; only materials outside it are scaled', { skip: cacheSkip }, async () => {
     const n = [0, 1, 0], l = [Math.sin(Math.PI / 4), Math.cos(Math.PI / 4), 0], v = [0, 1, 0], seen = new Set();
     for (const definition of manifest.materials) {
         const entry = LANDSCAPE_MATERIAL_CALIBRATION.materials[definition.materialId], tier = tierOf(definition), adjustments = definition.calibration.adjustments;

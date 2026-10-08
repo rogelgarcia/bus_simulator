@@ -6,6 +6,10 @@ available port; port 8001 is reserved for other worktrees and is rejected.
 
 This server is a development handoff tool, not an offline terrain bake command.
 Terrain preparation uses the registered `landscape/coastal-import` bake leaf.
+It serves the landscape from the gitignored
+[local landscape cache](../bake_landscape/README.md#local-landscape-cache). Without an
+installed cache it still serves the viewer, and cache requests answer 404 with
+`Landscape cache not installed …` guidance that the viewer reports.
 Opening a browser is separate: the server itself uses no GPU. Open the viewer only
 while inspecting or testing and close it afterward.
 

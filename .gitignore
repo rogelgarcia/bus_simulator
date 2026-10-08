@@ -4,7 +4,6 @@
 /assets/*
 !/assets/public/
 /assets/public/*
-!/assets/public/landscape/
 !/assets/public/pbr/
 /assets/public/pbr/**
 !/assets/public/pbr/*/
@@ -12,10 +11,9 @@
 !/assets/public/pbr/*/pbr.material.config.js
 !/assets/public/pbr/*/pbr.material.correction.config.js
 !/assets/public/pbr/*/pbr.landscape.config.json
-/assets/public/landscape/**/authoring.lock
-/assets/public/landscape/**/authoring.lock.recovering
-/assets/public/landscape/**/*.partial
-/assets/public/landscape/**/authoring-interrupted-*.json
+# Generated landscape cache: local only, never tracked or distributed through Git/LFS. Keep this the last
+# assets rule and never re-include anything beneath it (tools/bake_landscape/README.md, "Local landscape cache").
+/assets/public/landscape/
 /tools/baking/blender.local.json
 /downloads
 /docs

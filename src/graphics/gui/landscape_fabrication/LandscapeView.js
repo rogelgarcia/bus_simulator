@@ -5,7 +5,8 @@ import { LandscapeCameraController } from './LandscapeCameraController.js';
 import { LANDSCAPE_NAVIGATION } from './LandscapeNavigationState.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
-import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/index.js';
+import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS,
+    LANDSCAPE_DEFAULT_DIRECTORY, probeLandscapeCache, describeLandscapeCacheAvailability } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
 import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
 import { LandscapeAppearanceStreamer } from '../../engine3d/landscape/LandscapeAppearanceStreamer.js';
@@ -29,7 +30,7 @@ import { LANDSCAPE_SURFACE_CACHE_RUNTIME, LandscapeSurfaceCache, landscapeSurfac
 import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 
-const DEFAULT_SOURCE = '/assets/public/landscape/coastal-city/manifest.json';
+const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 
 /** Generated surface-detail modes: levels below the native cover grid (25 cm reaches 0.244 m samples on the coast). */
 export const LANDSCAPE_SURFACE_DETAIL_MODES = Object.freeze({ off: 0, '50cm': 2, '25cm': 3 });
@@ -138,6 +139,7 @@ export class LandscapeView {
         this.selectionSequence = 0;
         this.handoffQueue = Promise.resolve();
         this.disposed = false;
+        this.cacheAvailability = null;
         this.frameIndex = 0;
         this.peakUploadedBytes = 0;
         this.loadSequence = 0;
@@ -237,6 +239,7 @@ export class LandscapeView {
             if (!this.bookmarkStore || this.bookmarkStore.landscapeId !== loaded.manifest.id) this.bookmarkStore = new LandscapeBookmarks({ landscapeId: loaded.manifest.id, source: this.source });
             this.panel.bookmarks(this.bookmarkStore.snapshot());
             this.lastError = null;
+            this.cacheAvailability = null;
             this.stream = stream;
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
@@ -272,8 +275,13 @@ export class LandscapeView {
             this.perfBar.requestUpdate();
         } catch (error) {
             if (error.name === 'AbortError' || sequence !== this.loadSequence || this.disposed) return;
-            this.panel.notice(`Landscape update rejected: ${error.message}. ${this.loaded ? 'The last valid revision remains visible.' : 'Check the prepared manifest and local server.'}`);
-            this.panel.text('status', this.loaded ? `Showing last valid revision ${this.loaded.manifest.revision}` : 'No valid terrain loaded');
+            // the landscape cache is local (never tracked by Git); without a loaded revision, say whether it is missing, stale or incomplete
+            const cache = this.loaded ? null : await probeLandscapeCache(this.source, { signal: this.loadAbort.signal, payloads: true }).catch(() => null);
+            if (sequence !== this.loadSequence || this.disposed) return;
+            this.cacheAvailability = cache;
+            if (cache && !cache.available) this.panel.notice(describeLandscapeCacheAvailability(cache));
+            else this.panel.notice(`Landscape update rejected: ${error.message}. ${this.loaded ? 'The last valid revision remains visible.' : 'Check the prepared manifest and local server.'}`);
+            this.panel.text('status', this.loaded ? `Showing last valid revision ${this.loaded.manifest.revision}` : cache && !cache.available ? `No landscape loaded: cache ${cache.status}` : 'No valid terrain loaded');
             this.lastError = error.message;
         } finally {
             this.budget.release(loadKey);
@@ -994,6 +1002,7 @@ export class LandscapeView {
             ready: !!this.loaded, disposed: this.disposed, mode: this.mode, revision: this.loaded?.manifest.revision,
             selection: this.selection, camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray(), projection: this.projection, fov: this.perspectiveFov, orthoHeight: this.orthoHeight, zoom: this.camera.zoom },
             source: this.source, lastError: this.lastError ?? null, frameIndex: this.frameIndex,
+            cache: this.cacheAvailability ? { status: this.cacheAvailability.status, reason: this.cacheAvailability.reason ?? null } : null,
             loadTiming: this.loadTiming ? { ...this.loadTiming } : null, terrainProgram: (this.loadingStream ?? this.stream)?.programCompile ?? null,
             terrainProgramVariant: (this.loadingStream ?? this.stream)?.programVariantState() ?? null,
             helpers: { grid: this.grid.visible, axes: this.axes.visible },

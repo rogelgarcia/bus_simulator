@@ -1,5 +1,75 @@
 # Landscape preparation
 
+## Local landscape cache
+
+Everything these leaves publish (manifests, snapshots, payloads, field and
+appearance pages, binding aliases, the retained source archive and
+`PROVENANCE.json`) is a **local cache** under `assets/public/landscape/<id>/`
+(`LANDSCAPE_CACHE_ROOT` in `src/app/landscape/LandscapeCache.js`). The whole
+directory is gitignored; it is never committed and never distributed through Git
+or Git LFS (AI 595 removed it from the branch history). In worktrees,
+`assets/` is a junction to the main checkout, so every worktree shares one cache.
+`tests/node/unit/landscape_cache_tracking.test.js` fails if any cache publication
+is tracked or staged, or if an ignore rule could re-include the root.
+
+A missing, stale, incomplete or corrupt cache is an availability state, not a
+boot failure: `probeLandscapeCache` / `resolveCityLandscape` report `missing`,
+`stale`, `incomplete`, `invalid` or `unreachable` with the action to take; the Map
+Debugger reference plan and Landscape Fabrication show that report, the landscape
+server still serves the viewer (cache requests answer 404 with guidance), and the
+bake/authoring tools stop with a `[LandscapeCache] … is not installed` message.
+
+After a clean clone (run `npm ci` first: the bake planner loads every registered
+domain), choose one way to obtain the cache. The first bake invocation creates the
+shared ignored `tools/baking/blender.local.json` and stops once; the landscape
+leaves below need no executable paths except `landscape/appearance`
+(`pythonExecutable` with Pillow/NumPy).
+
+1. **Install a cache bundle** (exact canonical data, including the snapshot the
+   coastal city pins). A bundle is a copy of one landscape directory, for example
+   an extracted archive downloaded from the project's external cache host, or a
+   copy of another machine's `assets/public/landscape/coastal-city/`:
+
+   ```sh
+   node tools/bake.mjs --target landscape/cache-install --set "landscape/cache-install:bundle=<bundle-directory>"
+   node tools/bake.mjs --target landscape/cache-install --set "landscape/cache-install:bundle=<bundle-directory>" --publish
+   ```
+
+   See [cache_install/README.md](cache_install/README.md). No external host is
+   configured yet; until one is, bundles are shared out of band.
+2. **Generate from the source ZIP** (deterministic; two independent runs are
+   byte-identical). Obtain `coastal_city_terrain_v2.zip` (SHA-256
+   `21702aab6210e2b576666b3fd5a4b6d48884e0372447357bee10dd8ea3d463ce`, the
+   user-supplied design archive; conventionally kept in the ignored `downloads/`),
+   then publish the terrain leaves in order:
+
+   ```sh
+   node tools/bake.mjs --target landscape/coastal-import --set "landscape/coastal-import:source=<source.zip>" --publish
+   node tools/bake.mjs --target landscape/hierarchy --publish
+   ```
+
+   Then publish `landscape/appearance` (it reads the PBR source images under
+   `assets/public/pbr` and needs the shipped `multiscale-v1.json` request; see
+   [its README](appearance/README.md)) and `landscape/terrain-fields`
+   ([README](terrain_fields/README.md)). AI 595 verified the import and hierarchy
+   steps in a clean clone: their output is byte-identical to the canonical cache
+   except the current terrain manifest's revision. A regenerated cache carries today's material
+   bindings, so it does not contain the older terrain snapshot that
+   `CoastalLandscapeCitySpec` pins (`manifest.58fc7471….json`, revision
+   `hierarchy-afaf934f8eb8fe074a0affb0`): the city then reports its landscape as
+   `stale` until a canonical bundle is installed or the city is explicitly rebound.
+3. **Restore this machine's last committed cache** (one-time, local only): the
+   pre-rewrite recovery ref `backup/codex-landscape-before-cache-removal-20261008`
+   and the local LFS store still hold the published files. AI 595 exported them
+   into the ignored cache and verified every hash; the ref and LFS objects stay
+   until the user deletes/prunes them.
+
+Validate an installed cache in place at any time with
+`node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city')).passed))"`
+or by running `landscape/cache-install` without `--publish` against it.
+
+## Preparation leaves
+
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
 `node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current
 native grid as a whole (depressions, flow, wetness, deposition, rock exposure,
@@ -61,7 +131,7 @@ user-supplied prototype terrain, not survey measurements; the supplied package
 does not specify a license. `PROVENANCE.json` records those facts without
 inventing attribution or license terms.
 
-Publication owns `assets/public/landscape/coastal-city/`:
+Publication owns the local, gitignored cache directory `assets/public/landscape/coastal-city/`:
 
 - `manifest.json`: current schema-1 identity, spatial descriptors, channel
   hashes/sizes, soil mapping, and separate reference inventory.
@@ -116,6 +186,13 @@ Select each test through `tests/.selected_test`, then run
 - `tests/node/unit/landscape_hierarchy.test.js`: all prepared levels, exact errors,
   immutable publication, authored history and all-ancestor edit/revert behavior.
 - `tests/node/unit/bake_framework.test.js`: existing framework regression gates.
+- `tests/node/unit/landscape_cache_tracking.test.js`, `landscape_cache_availability.test.js`,
+  `landscape_cache_install.test.js` and `landscape_cache_cold_checkout.test.js`: the
+  AI 595 local-cache guard, availability fallback, bundle installation, and a clean
+  clone of the committed branch (fallback, tooling, install and regeneration).
+
+Tests that read the installed coastal cache skip with the install/generate
+guidance when it is absent (`tests/shared/landscapeCacheTest.js`).
 
 Import tests reconstruct the original preparation from authenticated retained
 source references, so later saved terrain revisions remain independent of that

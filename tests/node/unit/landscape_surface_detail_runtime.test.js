@@ -10,16 +10,18 @@ import { LANDSCAPE_SURFACE_DETAIL_CACHE, LandscapeSurfaceDetailCache, landscapeS
 import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, LandscapeSurfaceDetailPages, landscapeSurfaceDetailCapacity, landscapeSurfaceDetailWorkerBytes,
     landscapeSurfaceDetailDisabledSnapshot } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailPages.js';
 import { landscapeSurfaceDetailScratchBytes } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailField.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const MIB = 1024 * 1024;
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json']);
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
-const coastal = validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
-const appearance = JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
-const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE, seed = landscapeSurfaceDetailSeed(coastal.id, recipe);
-const pageBytes = landscapeCoverageMaskLayout(coastal.chunks[0]).pageBytes;
+const coastal = cacheSkip ? null : validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
+const appearance = cacheSkip ? null : JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
+const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE, seed = cacheSkip ? null : landscapeSurfaceDetailSeed(coastal.id, recipe);
+const pageBytes = cacheSkip ? null : landscapeCoverageMaskLayout(coastal.chunks[0]).pageBytes;
 const slots = { total: 81, native: 17, detail: 64 };
 
-test('Surface detail runtime: fine slot capacity follows device slots, levels and the appearance GPU headroom', () => {
+test('Surface detail runtime: fine slot capacity follows device slots, levels and the appearance GPU headroom', { skip: cacheSkip }, () => {
     assert.equal(pageBytes, 261 * 261 * 4);
     const materialBytes = 6 * 3 * (landscapeTextureBytes(512) + landscapeTextureBytes(32)) + 3 * landscapeTextureBytes(128);
     const sized = limits => landscapeSurfaceDetailCapacity({ levels: 3, coverageSlots: slots, limits, pageBytes, nativeCapacity: 17, materials: appearance.materials });
@@ -41,7 +43,7 @@ test('Surface detail runtime: fine slot capacity follows device slots, levels an
     assert.deepEqual([disabled.enabled, disabled.capacity, disabled.pending, disabled.missingWork], [false, 0, 0, false]);
 });
 
-test('Surface detail cache: profile capacity is 48 pages when shipped, bounded below and zero without fine detail', () => {
+test('Surface detail cache: profile capacity is 48 pages when shipped, bounded below and zero without fine detail', { skip: cacheSkip }, () => {
     assert.equal(LANDSCAPE_SURFACE_DETAIL_CACHE.maxPages, 48);
     assert.equal(landscapeSurfaceDetailCacheCapacity({ limits: { cpuBytes: 384 * MIB, gpuBytes: 192 * MIB }, pageBytes, levels: 3 }), 48 * pageBytes);
     assert.equal(landscapeSurfaceDetailCacheCapacity({ limits: { cpuBytes: 128 * MIB, gpuBytes: 64 * MIB }, pageBytes, levels: 2 }), Math.floor(8 * MIB / pageBytes) * pageBytes);
@@ -155,7 +157,7 @@ const camera = { position: { x: 1061, y: 11, z: 888 } };
 const plan = (ids, pixels = {}) => ({ visibleMaskIds: ['l3/c2/r6', 'l3/c1/r6'], pixelsPerMeterById: { 'l3/c2/r6': 900, 'l3/c1/r6': 20 },
     detail: { visibleIds: ids, pixelsById: Object.fromEntries(ids.map(id => [id, pixels[id] ?? 10])), pixelsPerMeterById: Object.fromEntries(ids.map(id => [id, 40])) } });
 
-test('Surface detail pages: planning keeps fine ancestors, requires natively wanted parents and respects the slot capacity', t => {
+test('Surface detail pages: planning keeps fine ancestors, requires natively wanted parents and respects the slot capacity', { skip: cacheSkip }, t => {
     const { detail, masks, index } = setup(t, { capacity: 3 });
     const near = 'l6/c17/r49', far = 'l6/c8/r49', second = 'l5/c10/r24';
     assert.deepEqual([index.nativeAncestorId(near), index.nativeAncestorId(far), index.nativeAncestorId(second)], ['l3/c2/r6', 'l3/c1/r6', 'l3/c2/r6']);
@@ -169,7 +171,7 @@ test('Surface detail pages: planning keeps fine ancestors, requires natively wan
     assert.equal(detail.capacityLimited, false);
 });
 
-test('Surface detail pages: cached pages need no worker, uploads stay bounded and evicted resident pages return to the cache', t => {
+test('Surface detail pages: cached pages need no worker, uploads stay bounded and evicted resident pages return to the cache', { skip: cacheSkip }, t => {
     const { detail, masks, pool, cache, index, shared } = setup(t);
     const id = 'l4/c4/r12', inputs = index.inputs(index.descriptor(id), recipe, seed), identity = landscapeSurfaceDetailKey(inputs);
     const pixels = new Uint8Array(pageBytes).fill(7);
@@ -201,7 +203,7 @@ test('Surface detail pages: cached pages need no worker, uploads stay bounded an
     assert.equal(shared.snapshot().entries.some(value => value.key === record.key), false);
 });
 
-test('Surface detail pages: generation reserves scratch, uniform results free the slot and descendants inherit uniformity', async t => {
+test('Surface detail pages: generation reserves scratch, uniform results free the slot and descendants inherit uniformity', { skip: cacheSkip }, async t => {
     const { detail, masks, pool, index, shared } = setup(t);
     const id = 'l4/c4/r12', child = 'l5/c8/r24', grandchild = 'l6/c17/r49';
     detail.plan(plan([grandchild]), camera);
@@ -224,7 +226,7 @@ test('Surface detail pages: generation reserves scratch, uniform results free th
     assert.equal(index.isFine(grandchild), true);
 });
 
-test('Surface detail pages: failed generation keeps the parent, records the identity and retries once after 2.5 s', async t => {
+test('Surface detail pages: failed generation keeps the parent, records the identity and retries once after 2.5 s', { skip: cacheSkip }, async t => {
     const { detail, masks, pool, advance } = setup(t);
     const id = 'l4/c4/r12', settle = () => new Promise(resolve => setTimeout(resolve, 0));
     detail.plan(plan([id]), camera);
@@ -250,7 +252,7 @@ test('Surface detail pages: failed generation keeps the parent, records the iden
     assert.deepEqual([snapshot.errors[0].attempts, snapshot.missingWork, snapshot.degradationReason], [2, false, 'surface-detail-request-failed']);
 });
 
-test('Surface detail pages: obsolete work is canceled and a budget refusal is explicit degradation', async t => {
+test('Surface detail pages: obsolete work is canceled and a budget refusal is explicit degradation', { skip: cacheSkip }, async t => {
     const { detail, masks, pool, shared } = setup(t);
     detail.plan(plan(['l4/c4/r12']), camera);
     detail.update(8 * MIB);

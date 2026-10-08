@@ -18,7 +18,7 @@ D6 adds an optional city-owned landscape reference. It does not make flat-city r
 }
 ```
 
-The binding owns a landscape ID, pinned revision, explicit supported subregion and landscape-to-city rigid transform. IDs use the landscape stable-identifier contract. Manifest URLs are safe relative JSON paths under retained `assets/public/landscape/`: no external origin, machine path, traversal, encoded path, query or fragment. Unknown schema/capabilities fail. Scale must equal one; nonfinite values fail. Validation against a loaded manifest also checks exact ID/revision and subregion containment. Stale revisions require explicit rebinding after dependent plans are reviewed; loading never silently adopts changed terrain.
+The binding owns a landscape ID, pinned revision, explicit supported subregion and landscape-to-city rigid transform. IDs use the landscape stable-identifier contract. Manifest URLs are safe relative JSON paths under the [local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache) root `assets/public/landscape/` (`LANDSCAPE_CACHE_ROOT`): no external origin, machine path, traversal, encoded path, query or fragment. Unknown schema/capabilities fail. Scale must equal one; nonfinite values fail. Validation against a loaded manifest also checks exact ID/revision and subregion containment. Stale revisions require explicit rebinding after dependent plans are reviewed; loading never silently adopts changed terrain.
 
 `loadCityLandscape(binding,{baseUrl,fetchImpl,signal})` loads only the bounded manifest and returns `{binding,manifest,manifestUrl}` after verification. `baseUrl` is the HTTP(S) application root; the browser default derives it from this module's location. Native acquisition/reports then use the existing public APIs. No editor, DOM, Three.js, Node filesystem, full-raster or displayed-LOD dependency is introduced.
 
@@ -42,7 +42,13 @@ cityY = landscapeY + translation.y
 
 ## Actual authoring path
 
-`src/app/city/specs/CoastalLandscapeCitySpec.js`, registry ID `coastal-landscape`, pins an immutable retained coastal manifest with negative city origin. It uses the existing `burban` catalog/parcel model and a fixed-size `bus_start` reservation. Source roads, districts and reference markers remain separate planning data, not automatically placed objects.
+`src/app/city/specs/CoastalLandscapeCitySpec.js`, registry ID `coastal-landscape`, pins an immutable content-addressed coastal manifest (`manifest.58fc7471….json`, revision `hierarchy-afaf934f8eb8fe074a0affb0`) with negative city origin. It uses the existing `burban` catalog/parcel model and a fixed-size `bus_start` reservation. Source roads, districts and reference markers remain separate planning data, not automatically placed objects.
+
+## Cache availability (AI 595)
+
+The pinned manifest lives in the local, gitignored landscape cache, which a clean checkout does not have. `resolveCityLandscape(binding, options)` is the boot-time, non-throwing counterpart of the strict `loadCityLandscape`: it validates the binding (an invalid binding still throws) and returns `probeLandscapeCache`'s availability with the binding. `available` carries the validated manifest; `missing` (no cache), `stale` (the installed cache does not retain the pinned snapshot, or another revision), `incomplete` (overview payload absent), `invalid` (hash/schema/identity mismatch) and `unreachable` carry a reason and the action to take. The Map Debugger reference plan boots without the landscape and appends `describeLandscapeCacheAvailability` to its status line.
+
+A cache regenerated from the source ZIP carries the current uniform material bindings and therefore never contains the pinned D3 hierarchy snapshot; the city reports `stale` until a canonical cache bundle is installed (`landscape/cache-install`) or the binding is explicitly reviewed and rebound. `tests/node/unit/landscape_cache_availability.test.js` covers every state, including that regeneration case, and checks the installed pin byte for byte when a cache is present.
 
 `CitySpecAuthoring.normalizeCitySpec` is used by `MapDebuggerState._normalizeSpec` and bound `CityMap.fromSpec`. Bound inputs require explicit positive dimensions/tile size and finite tile-center origin. `CityMap.exportSpec`, existing editor JSON export and **Download JS** retain binding, authored parcel squares/limits, reservation records, stable IDs/catalog references and disabled `rendered:false` entries. Parcel data does not become solved footprints. `serializeCitySpecToModule` creates an executable factory; `importCitySpecModule` passes it through the same normalization boundary. JS modules remain authoritative; test exports remain ignored artifacts.
 

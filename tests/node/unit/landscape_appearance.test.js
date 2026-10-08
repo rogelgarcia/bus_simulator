@@ -6,9 +6,11 @@ import { createHash } from 'node:crypto';
 import { createLandscapeModelFixture as createBaseLandscapeFixture } from './landscape_model_fixture.js';
 import { validateLandscapeAppearanceManifest, loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLandscapeCoverMask,
     createLandscapeAppearancePlanner, createLandscapeViewPlanner, applyLandscapeEditBatch, validateLandscapeManifest } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+const cacheSkip = landscapeCacheSkip(['appearance/manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json']);
 const retained = new URL('../../../assets/public/landscape/coastal-city/appearance/', import.meta.url);
-const saved = JSON.parse(await readFile(new URL('manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', retained), 'utf8'));
+const saved = cacheSkip ? null : JSON.parse(await readFile(new URL('manifest.aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b.json', retained), 'utf8'));
 function createLandscapeModelFixture(options) {
     const fixture = createBaseLandscapeFixture(options), manifest = fixture.manifest;
     fixture.manifest = validateLandscapeManifest({ ...manifest, soil: { ...manifest.soil,
@@ -21,7 +23,7 @@ function appearance(manifest) {
 }
 const ortho = { projection: 'orthographic', position: { x: 0, y: 1000, z: 18 }, viewportHeight: 1080, orthoHeight: 1500, zoom: 1 };
 
-test('Appearance schema preserves catalog identity across height/soil revisions and reordered JSON fields', () => {
+test('Appearance schema preserves catalog identity across height/soil revisions and reordered JSON fields', { skip: cacheSkip }, () => {
     const { manifest } = createLandscapeModelFixture(), value = structuredClone(appearance(manifest));
     value.bounds = Object.fromEntries(Object.entries(value.bounds).reverse()); value.grid = Object.fromEntries(Object.entries(value.grid).reverse());
     assert.ok(Object.isFrozen(validateLandscapeAppearanceManifest(value, { ...manifest, revision: 'new-height-revision' })));
@@ -34,7 +36,7 @@ test('Appearance schema preserves catalog identity across height/soil revisions 
     assert.throws(() => validateLandscapeAppearanceManifest({ ...value, landscapeId: 'different' }, manifest), /spatial identity/);
 });
 
-test('Appearance schema opts into relative relief explicitly while retaining legacy opaque ORM alpha', () => {
+test('Appearance schema opts into relative relief explicitly while retaining legacy opaque ORM alpha', { skip: cacheSkip }, () => {
     const { manifest } = createLandscapeModelFixture(), legacy = structuredClone(appearance(manifest));
     for (const material of legacy.materials) delete material.height;
     assert.ok(validateLandscapeAppearanceManifest(legacy, manifest).materials.every(material => material.height === undefined));
@@ -48,7 +50,7 @@ test('Appearance schema opts into relative relief explicitly while retaining leg
     }
 });
 
-test('Appearance selection refines on flat terrain independently from geometry, mask density and material texels', () => {
+test('Appearance selection refines on flat terrain independently from geometry, mask density and material texels', { skip: cacheSkip }, () => {
     const { manifest } = createLandscapeModelFixture({ heightAt: () => 10 });
     const view = createLandscapeViewPlanner(manifest), planner = createLandscapeAppearancePlanner(manifest, appearance(manifest));
     const overview = planner.plan(ortho), nearCamera = { ...ortho, orthoHeight: 32 }, near = planner.plan(nearCamera);
@@ -66,7 +68,7 @@ test('Appearance selection refines on flat terrain independently from geometry, 
     assert.deepEqual(planner.plan({ ...ortho, orthoHeight: 3000 }, { previousMaskIds: near.desiredMaskIds, previousTier: near.desiredTier }).desiredMaskIds, overview.desiredMaskIds);
 });
 
-test('Perspective appearance density responds to fixed-position FOV and viewport with bounded source limits', () => {
+test('Perspective appearance density responds to fixed-position FOV and viewport with bounded source limits', { skip: cacheSkip }, () => {
     const { manifest } = createLandscapeModelFixture({ heightAt: () => 10 });
     const planner = createLandscapeAppearancePlanner(manifest, appearance(manifest));
     const camera = { projection: 'perspective', position: { x: 0, y: 1000, z: 18 }, direction: { x: 0, y: -1, z: 0 }, viewportHeight: 1080, fovYRadians: Math.PI / 2, zoom: 1 };
@@ -78,7 +80,7 @@ test('Perspective appearance density responds to fixed-position FOV and viewport
     assert.throws(() => planner.plan(camera, { targetMaskPixels: 0 }), /positive/);
 });
 
-test('Appearance selection budgets texels at each physical period and its available tiers, independently of fixed-position orthographic zoom', () => {
+test('Appearance selection budgets texels at each physical period and its available tiers, independently of fixed-position orthographic zoom', { skip: cacheSkip }, () => {
     const { manifest } = createLandscapeModelFixture({ heightAt: () => 10 }), sidecar = appearance(manifest);
     const ordinary = createLandscapeAppearancePlanner(manifest, sidecar), calibrated = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 16 } } });
     const finer = createLandscapeAppearancePlanner(manifest, sidecar, { materialTiling: { loam: { tileMeters: 16 } }, materialTiers: { loam: [32, 128, 512, 1024] } });
@@ -99,7 +101,7 @@ test('Appearance selection budgets texels at each physical period and its availa
     assert.throws(() => createLandscapeAppearancePlanner(manifest, sidecar, { materialTiers: { missing: [32] } }), /unknown material tier/);
 });
 
-test('Material requests authenticate one bounded raw page and refuse budget, corrupt, oversized and stale work', async () => {
+test('Material requests authenticate one bounded raw page and refuse budget, corrupt, oversized and stale work', { skip: cacheSkip }, async () => {
     const page = saved.materials[0].tiers[0].channels.baseColor, bytes = await readFile(new URL(page.url, retained));
     let requests = 0;
     const fetchImpl = async () => { requests++; return new Response(bytes); }, manifestUrl = 'https://fixture/appearance/manifest.json';
@@ -114,7 +116,7 @@ test('Material requests authenticate one bounded raw page and refuse budget, cor
     await assert.rejects(loadLandscapeAppearanceManifest(manifestUrl, { fetchImpl: async () => new Response(new Uint8Array(256 * 1024 + 1)) }), /exceeds/);
 });
 
-test('Categorical mask loading fetches only cover, preserves planning classes, and updates every sampled soil level by revision', async () => {
+test('Categorical mask loading fetches only cover, preserves planning classes, and updates every sampled soil level by revision', { skip: cacheSkip }, async () => {
     const fixture = createLandscapeModelFixture({ heightAt: () => 10, coverAt: (c, r) => (c + r) % 8 }), { manifest } = fixture;
     const options = { manifestUrl: 'https://fixture/fixture/manifest.json', fetchImpl: fixture.fetchImpl };
     const original = await loadLandscapeCoverMask(manifest, 'l0/c0/r0', options);

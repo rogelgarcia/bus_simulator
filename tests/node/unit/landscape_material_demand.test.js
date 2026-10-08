@@ -9,6 +9,7 @@ import { landscapeMaterialTierBytes, planLandscapeAppearanceDemand } from '../..
 import { landscapeCoverageMaskLayout } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceDetailSeed } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { LandscapeSurfaceDetailPages } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailPages.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 // the page classes import three and the PBR pipeline for texture objects only; their demand and streaming decisions run on stubs
 const stub = source => `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`;
@@ -30,11 +31,12 @@ const [{ LandscapeMaterialPages }, { LandscapeMaskPages }] = await Promise.all(m
 hooks.deregister();
 
 const MIB = 1024 * 1024;
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json']);
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
-const coastal = validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
-const coastalAppearance = JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
+const coastal = cacheSkip ? null : validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
+const coastalAppearance = cacheSkip ? null : JSON.parse(await readFile(new URL('appearance/manifest.json', coastalUrl), 'utf8'));
 const periods = { unknown: 4, seabed: 30, sand: 30, loam: 4, forest: 4, rock: 4 };
-const planner = createLandscapeAppearancePlanner(coastal, coastalAppearance, { materialTiling: Object.fromEntries(Object.entries(periods).map(([soilId, tileMeters]) => [soilId, { tileMeters }])),
+const planner = cacheSkip ? null : createLandscapeAppearancePlanner(coastal, coastalAppearance, { materialTiling: Object.fromEntries(Object.entries(periods).map(([soilId, tileMeters]) => [soilId, { tileMeters }])),
     materialTiers: Object.fromEntries(Object.keys(periods).map(soilId => [soilId, [32, 128, 512, 1024]])), surfaceDetail: { levels: 3 } });
 
 function perspective(position, target, fovDegrees, aspect = 16 / 9, near = .1, far = 6000) {
@@ -48,7 +50,7 @@ function perspective(position, target, fovDegrees, aspect = 16 / 9, near = .1, f
         frustumPlanes: [plane(r, f, tx), plane(negate(r), f, tx), plane(u, f, ty), plane(negate(u), f, ty), { ...f, w: -(dot(f) + near) }, { ...negate(f), w: dot(f) + far }] };
 }
 
-test('Material demand: each material requests its tier from the densest visible page where it occurs, with its own period and 65% hysteresis', () => {
+test('Material demand: each material requests its tier from the densest visible page where it occurs, with its own period and 65% hysteresis', { skip: cacheSkip }, () => {
     const plan = planner.plan(perspective({ x: 1090, y: 30, z: 1110 }, { x: 1105, y: 20, z: 1130 }, 55));
     assert.deepEqual(Object.keys(plan.pixelsPerMeterById), [...plan.visibleMaskIds]);
     for (const id of plan.visibleMaskIds) {
@@ -76,7 +78,7 @@ test('Material demand: each material requests its tier from the densest visible 
     assert.throws(() => planner.desiredMaterialTiers({ loam: 1 }, { targetTexelPixels: 0 }), /texel target/);
 });
 
-const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE, pageBytes = landscapeCoverageMaskLayout(coastal.chunks[0]).pageBytes, index = createLandscapeSurfaceDetailIndex(coastal, { levels: 3 });
+const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE, pageBytes = cacheSkip ? null : landscapeCoverageMaskLayout(coastal.chunks[0]).pageBytes, index = cacheSkip ? null : createLandscapeSurfaceDetailIndex(coastal, { levels: 3 });
 
 // a resident native chain over l3/c2/r6 (seabed, sand, loam), a resident unsplit neighbor l3/c1/r6 (forest, rock) and a real fine-page planner
 function residentMasks() {
@@ -93,7 +95,7 @@ function residentMasks() {
     return masks;
 }
 
-test('Material demand: a native page split into visible fine leaves lends no density of its own; each leaf lends its density to its finest resolved page', () => {
+test('Material demand: a native page split into visible fine leaves lends no density of its own; each leaf lends its density to its finest resolved page', { skip: cacheSkip }, () => {
     const masks = residentMasks(), interests = plan => LandscapeMaskPages.prototype.interests.call(masks, plan);
     // the camera stands over l3/c2/r6: l5/c8/r24 resolves to the resident sand-only l4/c4/r12, l4/c5/r12 has no fine page yet and resolves to its native page
     const split = { visibleMaskIds: ['l3/c2/r6', 'l3/c1/r6'], pixelsPerMeterById: { 'l3/c2/r6': 4e9, 'l3/c1/r6': 20 },

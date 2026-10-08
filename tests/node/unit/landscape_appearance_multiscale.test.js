@@ -7,15 +7,18 @@ import { createHash } from 'node:crypto';
 import { LANDSCAPE_APPEARANCE_MULTISCALE_LIMIT, LANDSCAPE_APPEARANCE_MULTISCALE_TIERS, LandscapeAppearanceMultiscaleBindingError, decodeLandscapeAppearanceMicroTexel,
     landscapeAppearanceBindingKey, loadLandscapeAppearanceMultiscale, loadLandscapeAppearanceMultiscalePage, loadLandscapeAppearancePage,
     validateLandscapeAppearanceManifest, validateLandscapeAppearanceMultiscale } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const directory = path.resolve('assets/public/landscape/coastal-city/appearance');
 const extendedAppearance = 'e7856366836d5cbf8a0c7d5ebb77862ca625dd08460b7c4b710b3a0cc6801ca8';
 const multiscaleSnapshot = '07ec6c0aa26a77487d75959480171c7c1aa4e85565aac643fb34c31d5b339683';
 const olderAppearance = 'aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b';
+const cacheSkip = landscapeCacheSkip(['appearance/manifest.json', `appearance/manifest.${extendedAppearance}.json`, `appearance/manifest.${olderAppearance}.json`,
+    `appearance/multiscale.${multiscaleSnapshot}.json`]);
 const url = 'https://fixture/terrain/appearance/multiscale.json';
 const json = async name => JSON.parse(await readFile(path.join(directory, name), 'utf8'));
-const appearance = await json(`manifest.${extendedAppearance}.json`);
-const sidecar = await json(`multiscale.${multiscaleSnapshot}.json`);
+const appearance = cacheSkip ? null : await json(`manifest.${extendedAppearance}.json`);
+const sidecar = cacheSkip ? null : await json(`multiscale.${multiscaleSnapshot}.json`);
 const sand = value => value.materials.find(material => material.soilId === 'sand');
 
 function reorder(value) {
@@ -38,7 +41,7 @@ function respond(body, init) {
     return async () => new Response(typeof body === 'string' || body instanceof Uint8Array ? body : JSON.stringify(body), init);
 }
 
-test('Appearance multiscale: the published companion validates strictly against the appearance it extends and is deeply frozen', async () => {
+test('Appearance multiscale: the published companion validates strictly against the appearance it extends and is deeply frozen', { skip: cacheSkip }, async () => {
     const value = await validateLandscapeAppearanceMultiscale(sidecar, appearance);
     assert.ok(isDeepFrozen(value));
     assert.equal(value.appearanceRevision, appearance.revision);
@@ -51,13 +54,13 @@ test('Appearance multiscale: the published companion validates strictly against 
     assert.ok(Buffer.byteLength(JSON.stringify(sidecar)) < LANDSCAPE_APPEARANCE_MULTISCALE_LIMIT);
 });
 
-test('Appearance multiscale: validation is independent of JSON key order in both the companion and the appearance', async () => {
+test('Appearance multiscale: validation is independent of JSON key order in both the companion and the appearance', { skip: cacheSkip }, async () => {
     const reordered = await validateLandscapeAppearanceMultiscale(reorder(sidecar), reorder(appearance));
     assert.deepEqual(reordered, await validateLandscapeAppearanceMultiscale(sidecar, appearance));
     assert.equal(await landscapeAppearanceBindingKey(reorder(appearance)), sidecar.bindingKey);
 });
 
-test('Appearance multiscale: another landscape, appearance revision or binding is a typed binding mismatch', async () => {
+test('Appearance multiscale: another landscape, appearance revision or binding is a typed binding mismatch', { skip: cacheSkip }, async () => {
     const cases = [
         mutated(value => { value.landscapeId = 'another-landscape'; }),
         mutated(value => { value.appearanceRevision = 'appearance-000000000000000000000000'; }),
@@ -71,7 +74,7 @@ test('Appearance multiscale: another landscape, appearance revision or binding i
         'structural corruption is never reported as an innocent binding mismatch');
 });
 
-test('Appearance multiscale: unknown soils, missing tiers, oversize pages, bad encodings and unknown fields are rejected', async () => {
+test('Appearance multiscale: unknown soils, missing tiers, oversize pages, bad encodings and unknown fields are rejected', { skip: cacheSkip }, async () => {
     const rejections = {
         'unknown soil': value => { sand(value).soilId = 'dunes'; },
         'material order': value => { value.materials.reverse(); },
@@ -104,7 +107,7 @@ test('Appearance multiscale: unknown soils, missing tiers, oversize pages, bad e
     await assert.rejects(validateLandscapeAppearanceMultiscale(sidecar, { ...appearance, schemaVersion: 2 }), /unsupported appearance schema/);
 });
 
-test('Appearance multiscale: a missing companion resolves to null so the runtime keeps schema-1 behavior', async () => {
+test('Appearance multiscale: a missing companion resolves to null so the runtime keeps schema-1 behavior', { skip: cacheSkip }, async () => {
     const requests = [];
     let cancelled = false;
     const missing = new ReadableStream({ cancel() { cancelled = true; } });
@@ -117,7 +120,7 @@ test('Appearance multiscale: a missing companion resolves to null so the runtime
     assert.ok(isDeepFrozen(loaded));
 });
 
-test('Appearance multiscale: network, size, JSON, binding and cancellation failures stay explicit', async () => {
+test('Appearance multiscale: network, size, JSON, binding and cancellation failures stay explicit', { skip: cacheSkip }, async () => {
     await assert.rejects(loadLandscapeAppearanceMultiscale(url, { appearance, fetchImpl: respond('{}', { status: 500 }) }), /HTTP 500/);
     await assert.rejects(loadLandscapeAppearanceMultiscale(url, { appearance, fetchImpl: respond('{}', { status: 403 }) }), /HTTP 403/);
     await assert.rejects(loadLandscapeAppearanceMultiscale(url, { appearance, fetchImpl: respond(new Uint8Array(LANDSCAPE_APPEARANCE_MULTISCALE_LIMIT + 1)) }), /exceeds/);
@@ -131,7 +134,7 @@ test('Appearance multiscale: network, size, JSON, binding and cancellation failu
     await assert.rejects(loadLandscapeAppearanceMultiscale('file:///multiscale.json', { appearance, fetchImpl: respond(sidecar) }), /HTTP\(S\)/);
 });
 
-test('Appearance multiscale: 1024 pages load through the companion page loader with hash, size and budget authentication', async () => {
+test('Appearance multiscale: 1024 pages load through the companion page loader with hash, size and budget authentication', { skip: cacheSkip }, async () => {
     const page = sand(sidecar).tiers[0].channels.baseColor, bytes = await readFile(path.join(directory, page.url));
     const requests = [];
     const loaded = await loadLandscapeAppearanceMultiscalePage(page, { manifestUrl: url, fetchImpl: async input => { requests.push(input); return new Response(bytes); } });
@@ -171,7 +174,7 @@ test('Appearance multiscale: micro texels decode the encoding round trip within 
     for (const invalid of [[256, 0, 0, 0, .5], [0, 0, 0, 1.5, .5], [0, 0, 0, 0, 0], [0, 0, 0, 0, 2]]) assert.throws(() => decodeLandscapeAppearanceMicroTexel(...invalid));
 });
 
-test('Appearance multiscale: schema-1 consumers and their sidecar remain unchanged by the companion', async () => {
+test('Appearance multiscale: schema-1 consumers and their sidecar remain unchanged by the companion', { skip: cacheSkip }, async () => {
     const current = await readFile(path.join(directory, 'manifest.json'));
     assert.equal(createHash('sha256').update(current).digest('hex'), extendedAppearance, 'the D4 companion publication did not rewrite the schema-1 sidecar');
     const value = validateLandscapeAppearanceManifest(JSON.parse(current));

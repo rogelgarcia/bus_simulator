@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createLandscapeAuthoringStore, LANDSCAPE_AUTHORING_BUDGETS } from './LandscapeAuthoringStore.mjs';
 import { atomicAuthoringWrite, readAuthoringFile } from './AuthoringFiles.mjs';
 import { bindLandscapeBatchTemplate, bindLandscapeStateBatchTemplate } from './BatchTemplate.mjs';
-import { LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js';
+import { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/index.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const HELP = `Landscape authoring
@@ -16,7 +16,7 @@ const HELP = `Landscape authoring
   node tools/landscape_authoring/run.mjs apply --batch <batch.json>
   node tools/landscape_authoring/run.mjs revert --expected-revision <revision> [--batch-id <last-batch-id>]
 
-All commands accept --directory <landscape-directory> (default: assets/public/landscape/coastal-city).
+All commands accept --directory <landscape-directory> (default: ${LANDSCAPE_DEFAULT_DIRECTORY}, the local gitignored cache).
 Exact selection queries admit at most four native chunks. All regions must stay inside the source bounds.
 Edit batches stream large regions through an 8 MiB working set; named polygons, grading and smoothing are supported.
 Apply requires an explicit revision and validated data operations. Stale or duplicate batches fail without publishing.
@@ -51,7 +51,7 @@ async function jsonFile(file, signal, maximum = LANDSCAPE_AUTHORING_BUDGETS.maxB
 async function run(signal) {
     const { command, values } = parse(process.argv.slice(2));
     if (command === 'help') { process.stdout.write(HELP); return; }
-    const directory = path.resolve(values.directory ?? path.join(root, 'assets/public/landscape/coastal-city'));
+    const directory = path.resolve(values.directory ?? path.join(root, LANDSCAPE_DEFAULT_DIRECTORY));
     const store = createLandscapeAuthoringStore({ directory });
     if (values.output) {
         const output = path.relative(directory, path.resolve(values.output)).replaceAll('\\', '/');

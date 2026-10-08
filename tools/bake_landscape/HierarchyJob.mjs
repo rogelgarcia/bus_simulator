@@ -8,12 +8,13 @@ import { readLandscapeFileManifest } from '../landscape_authoring/LandscapeFileI
 import { acquireAuthoringLock, authoringFile, readAuthoringFile, writeImmutableAuthoringFile } from '../landscape_authoring/AuthoringFiles.mjs';
 import { prepareLandscapeHierarchy } from './HierarchyPreparation.mjs';
 import { publishLandscapeHierarchy, validateHierarchyCandidate } from './HierarchyPublication.mjs';
+import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/LandscapeCache.js';
 
 export const hierarchyJob = {
     id: 'landscape/hierarchy', always: true, configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Prepare and validate a complete measured hierarchy from CURRENT saved native chunks; optionally publish without resetting authored terrain',
     outputs: ['tests/artifacts/screens/landscape/ai576/d3/hierarchy-validation.json'],
-    defaults: { directory: 'assets/public/landscape/coastal-city' },
+    defaults: { directory: LANDSCAPE_DEFAULT_DIRECTORY },
     options: { directory: value => { if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new Error('Hierarchy directory must be an existing landscape path'); return value; } },
     async inputs(ctx) {
         const directory = path.resolve(ctx.root, ctx.options.directory), current = await readLandscapeFileManifest(directory);

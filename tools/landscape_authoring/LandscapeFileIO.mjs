@@ -1,11 +1,20 @@
 // Reads independently authenticated landscape chunks for bounded authoring and hierarchy preparation.
 // @ts-check
-import { decodeLandscapeChannel, validateLandscapeManifest, LANDSCAPE_MANIFEST_BYTE_LIMIT } from '../../src/app/landscape/index.js';
+import { decodeLandscapeChannel, validateLandscapeManifest, LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CACHE_GUIDE } from '../../src/app/landscape/index.js';
 import { authoringFile, authoringHash, readAuthoringFile } from './AuthoringFiles.mjs';
+
+/** A missing manifest means the local, never-tracked landscape cache is absent or incomplete; say how to produce it (keeps code ENOENT). */
+function landscapeCacheReadError(error, directory, relative) {
+    if (error?.code !== 'ENOENT') return error;
+    const missing = new Error(`[LandscapeCache] ${relative} is not installed in ${directory}. The landscape cache is local and never tracked by Git: generate it with the landscape bake leaves or install a bundle with node tools/bake.mjs --target landscape/cache-install; see ${LANDSCAPE_CACHE_GUIDE}`, { cause: error });
+    return Object.assign(missing, { code: 'ENOENT' });
+}
 
 /** @param {string} directory @param {string} [relative] @param {{signal?:AbortSignal}} [options] */
 export async function readLandscapeFileManifest(directory, relative = 'manifest.json', { signal } = {}) {
-    const bytes = await readAuthoringFile(authoringFile(directory, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT, { signal });
+    let bytes;
+    try { bytes = await readAuthoringFile(authoringFile(directory, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT, { signal }); }
+    catch (error) { throw landscapeCacheReadError(error, directory, relative); }
     return { bytes, manifest: validateLandscapeManifest(JSON.parse(bytes.toString('utf8'))) };
 }
 

@@ -1,4 +1,5 @@
 // Retains an explicitly bound coastal planning subregion with existing parcel ownership.
+// The pinned manifest lives in the local, gitignored landscape cache; without it the city reports the landscape unavailable (AI 595).
 // @ts-check
 export function createCoastalLandscapeCitySpec() {
     return {

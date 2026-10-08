@@ -9,19 +9,21 @@ import { LANDSCAPE_TERRAIN_FIELD_CHANNELS, LANDSCAPE_TERRAIN_FIELDS_FILTER, LAND
 import { LANDSCAPE_TERRAIN_FIELD_RUNTIME, LandscapeTerrainFieldPages, landscapeTerrainFieldMeta, landscapeTerrainFieldProgress } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainFieldPages.js';
 import { buildLandscapeAppearanceLayer, landscapeAppearanceLayerWorkBytes, landscapePlanningCoverMask } from '../../../src/graphics/engine3d/landscape/LandscapeTerrainAppearance.js';
 import { readLandscapeFileChunk } from '../../../tools/landscape_authoring/LandscapeFileIO.mjs';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'fields/manifest.json']);
 const directory = path.resolve('assets/public/landscape/coastal-city');
-const manifestBytes = await readFile(path.join(directory, 'manifest.json'));
-const manifest = validateLandscapeManifest(JSON.parse(manifestBytes));
-const sidecarBytes = await readFile(path.join(directory, 'fields/manifest.json'));
-const sidecar = JSON.parse(sidecarBytes);
+const manifestBytes = cacheSkip ? null : await readFile(path.join(directory, 'manifest.json'));
+const manifest = cacheSkip ? null : validateLandscapeManifest(JSON.parse(manifestBytes));
+const sidecarBytes = cacheSkip ? null : await readFile(path.join(directory, 'fields/manifest.json'));
+const sidecar = cacheSkip ? null : JSON.parse(sidecarBytes);
 const pageBytes = new Map();
 const pageOf = async id => {
     const entry = sidecar.pages.find(page => page.id === id).fields;
     if (!pageBytes.has(entry.url)) pageBytes.set(entry.url, new Uint8Array(await readFile(path.join(directory, 'fields', entry.url))));
     return pageBytes.get(entry.url);
 };
-const rootChunk = await readLandscapeFileChunk(directory, manifest, manifest.overviewId);
+const rootChunk = cacheSkip ? null : await readLandscapeFileChunk(directory, manifest, manifest.overviewId);
 const vector = (x = 0, y = 0, z = 0, w = 0) => ({ x, y, z, w, set(a, b, c, d) { Object.assign(this, { x: a, y: b, z: c, w: d }); return this; } });
 
 function harness({ fetchBody = sidecarBytes, status = 200, landscape = manifest, budget = {}, mode = 'auto', failFirst = false, layerFails = false } = {}) {
@@ -66,7 +68,7 @@ function harness({ fetchBody = sidecarBytes, status = 200, landscape = manifest,
     return { fields, uniforms, records, uploads, requests, shared, place, settle };
 }
 
-test('Terrain field pages: pages follow resident mask slots into layers 4s..4s+3 and arrive through the packed uMaskMeta.w fade', async () => {
+test('Terrain field pages: pages follow resident mask slots into layers 4s..4s+3 and arrive through the packed uMaskMeta.w fade', { skip: cacheSkip }, async () => {
     const h = harness();
     await h.fields.initialize();
     assert.equal(h.fields.status, 'active');
@@ -97,7 +99,7 @@ test('Terrain field pages: pages follow resident mask slots into layers 4s..4s+3
     assert.equal(landscapeTerrainFieldProgress(2), 0, 'fine slots carry no field');
 });
 
-test('Terrain field pages: the JavaScript sampler reads exactly the uploaded bytes through the shader slot walk', async () => {
+test('Terrain field pages: the JavaScript sampler reads exactly the uploaded bytes through the shader slot walk', { skip: cacheSkip }, async () => {
     const h = harness();
     await h.fields.initialize();
     h.place('l0/c0/r0', 0); h.place('l1/c0/r1', 2); h.place('l2/c1/r2', 5); h.place('l3/c2/r5', 9);
@@ -115,7 +117,7 @@ test('Terrain field pages: the JavaScript sampler reads exactly the uploaded byt
     assert.ok(landscapeTerrainSkyVisibility(sample.fields.skyView, { x: 0, y: 1, z: 0 }) <= 1);
 });
 
-test('Terrain field pages: an evicted or moved mask page takes its field page with it', async () => {
+test('Terrain field pages: an evicted or moved mask page takes its field page with it', { skip: cacheSkip }, async () => {
     const h = harness();
     await h.fields.initialize();
     h.place('l0/c0/r0', 0); h.place('l1/c1/r0', 1);
@@ -131,7 +133,7 @@ test('Terrain field pages: an evicted or moved mask page takes its field page wi
     assert.equal(h.fields.snapshot().evicted, 1);
 });
 
-test('Terrain field pages: edited chunks are never loaded, their cells are flagged and ancestors stay partially usable', async () => {
+test('Terrain field pages: edited chunks are never loaded, their cells are flagged and ancestors stay partially usable', { skip: cacheSkip }, async () => {
     const edited = structuredClone(JSON.parse(manifestBytes)), target = edited.chunks.find(chunk => chunk.id === 'l3/c2/r5');
     target.channels.height.sha256 = 'c'.repeat(64); edited.revision = 'edited-terrain';
     const h = harness({ landscape: validateLandscapeManifest(edited) });
@@ -149,7 +151,7 @@ test('Terrain field pages: edited chunks are never loaded, their cells are flagg
     assert.equal(outside.availability, 1, 'the partial root page still serves fresh cells');
 });
 
-test('Terrain field pages: a failed page retries once, absent, invalid, mismatched and disabled sidecars are explicit', async () => {
+test('Terrain field pages: a failed page retries once, absent, invalid, mismatched and disabled sidecars are explicit', { skip: cacheSkip }, async () => {
     const h = harness({ failFirst: true });
     await h.fields.initialize();
     h.place('l0/c0/r0', 0);
@@ -171,7 +173,7 @@ test('Terrain field pages: a failed page retries once, absent, invalid, mismatch
     for (const value of [absent, invalid, mismatch, off]) assert.equal(value.shared.snapshot().cpuBytes, 0, `${value.fields.status} holds no bytes`);
 });
 
-test('Terrain field pages: a failed or unaffordable appearance-layer derivation keeps the root page and leaves the layer absent', async () => {
+test('Terrain field pages: a failed or unaffordable appearance-layer derivation keeps the root page and leaves the layer absent', { skip: cacheSkip }, async () => {
     const failed = harness({ layerFails: true });
     await failed.fields.initialize();
     failed.place('l0/c0/r0', 0);
@@ -192,7 +194,7 @@ test('Terrain field pages: a failed or unaffordable appearance-layer derivation 
     assert.ok(!denied.requests.includes('appearance-layer'), 'no derivation runs without its reservation');
 });
 
-test('Terrain field pages: the array has its own ceiling, constrained profiles are budget-denied and disposal releases everything', async () => {
+test('Terrain field pages: the array has its own ceiling, constrained profiles are budget-denied and disposal releases everything', { skip: cacheSkip }, async () => {
     const small = harness({ budget: { cpuBytes: 128 * 1024 * 1024, gpuBytes: 64 * 1024 * 1024 } });
     await small.fields.initialize();
     assert.deepEqual([small.fields.status, small.fields.reason], ['budget-denied', 'terrain-fields-ceiling']);

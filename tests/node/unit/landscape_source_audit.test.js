@@ -10,9 +10,11 @@ import { COASTAL_SOURCE_SHA256, decodeGrayscaleIdsPng, sha256 } from '../../../t
 import { COASTAL_CHECKPOINTS } from '../../../tools/bake_landscape/CoastalSource.mjs';
 import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
 import { validateLandscapeManifest, validateLandscapeCityBinding, landscapeGridToWorld } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const directory = path.join(root, 'assets/public/landscape/coastal-city');
+const cacheSkip = landscapeCacheSkip([path.basename(createCoastalLandscapeCitySpec().landscape.manifestUrl), 'PROVENANCE.json']);
 const evidence = path.join(root, 'tests/artifacts/screens/landscape/ai576/d7');
 
 async function authenticate(file, expected) {
@@ -33,7 +35,7 @@ async function readExact(handle, buffer, position) {
     }
 }
 
-test('Landscape D7 source audit: pinned manifest, all retained records and native float/category bits remain authentic', async () => {
+test('Landscape D7 source audit: pinned manifest, all retained records and native float/category bits remain authentic', { skip: cacheSkip }, async () => {
     const binding = createCoastalLandscapeCitySpec().landscape;
     const manifestFile = path.join(root, binding.manifestUrl), manifestBytes = await readFile(manifestFile);
     const expectedManifestHash = path.basename(manifestFile).match(/^manifest\.([a-f0-9]{64})\.json$/)?.[1];

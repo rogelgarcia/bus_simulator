@@ -1,9 +1,10 @@
 // Displays an explicitly schematic city plan without activating flat terrain or city bake caches.
+// The bound landscape cache is local and optional: its availability is probed in the background and reported, never required to boot.
 // @ts-check
 import * as THREE from 'three';
 import { CityMap } from '../../../app/city/CityMap.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
-import { landscapePointToCity } from '../../../app/landscape/LandscapeCityBinding.js';
+import { landscapePointToCity, resolveCityLandscape } from '../../../app/landscape/LandscapeCityBinding.js';
 
 /** @param {object} spec */
 export function createLandscapeReferenceCity(spec) {
@@ -35,9 +36,12 @@ export function createLandscapeReferenceCity(spec) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     const material = new THREE.LineBasicMaterial({ color: 0x83cee7 });
     group.add(new THREE.LineSegments(geometry, material));
+    const probe = new AbortController();
+    const landscapeAvailability = resolveCityLandscape(map.landscape, { signal: probe.signal }).catch(error => error?.name === 'AbortError' ? null
+        : { available: false, status: 'invalid', reason: error.message, action: 'Check the city landscape binding.' });
     let restore = null;
     return {
-        isLandscapeReferencePlan: true, map, group, genConfig,
+        isLandscapeReferencePlan: true, map, group, genConfig, landscapeAvailability,
         config: { size: genConfig.size, fogNear: 1e5, fogFar: 1e6 },
         attach(engine) {
             restore = { background: engine.scene.background, fog: engine.scene.fog, far: engine.camera.far };
@@ -57,6 +61,6 @@ export function createLandscapeReferenceCity(spec) {
             restore = null;
         },
         update() {},
-        dispose() { geometry.dispose(); material.dispose(); }
+        dispose() { probe.abort(); geometry.dispose(); material.dispose(); }
     };
 }

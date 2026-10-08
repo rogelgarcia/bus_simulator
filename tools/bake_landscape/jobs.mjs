@@ -11,8 +11,10 @@ import { publishPreparedCoastal } from './CoastalPublication.mjs';
 import { hierarchyJob } from './HierarchyJob.mjs';
 import { appearanceJob } from './AppearanceJob.mjs';
 import { terrainFieldsJob } from './terrain_fields/TerrainFieldsJob.mjs';
+import { cacheInstallJob } from './CacheInstallJob.mjs';
+import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/LandscapeCache.js';
 
-const DESTINATION = 'assets/public/landscape/coastal-city';
+const DESTINATION = LANDSCAPE_DEFAULT_DIRECTORY;
 
 function sourceOption(value) {
     if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new Error('Coastal source must be an existing ZIP path');
@@ -52,7 +54,7 @@ export const coastalImportJob = {
     }
 };
 
-export const landscapeJobs = Object.freeze([coastalImportJob, hierarchyJob, appearanceJob, terrainFieldsJob, {
+export const landscapeJobs = Object.freeze([coastalImportJob, hierarchyJob, appearanceJob, terrainFieldsJob, cacheInstallJob, {
     id: 'landscape', configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Explicit authored landscape preparation; no Blender, browser, or unrelated production bakes',
     children: ['landscape/coastal-import']

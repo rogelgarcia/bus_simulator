@@ -12,7 +12,8 @@ material relief within the continuous terrain coverage support.
 
 ## Sidecar and material identity
 
-The canonical sidecar is `assets/public/landscape/coastal-city/appearance/manifest.json`.
+The canonical sidecar is `assets/public/landscape/coastal-city/appearance/manifest.json` in the gitignored
+[local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache) (AI 595).
 It has `format: landscape-appearance`, `schemaVersion: 1`, a content-derived
 `revision`, `landscapeId`, `preparedFromRevision`, `bounds`, `grid`, `orientation`,
 `materials` and `provenance`. Spatial identity compares required values, not JSON

@@ -2,6 +2,7 @@
 // @ts-check
 import { validateLandscapeManifest } from './LandscapeManifest.js';
 import { loadLandscapeManifest } from './LandscapePayload.js';
+import { LANDSCAPE_CACHE_ROOT, probeLandscapeCache } from './LandscapeCache.js';
 import { validateLandscapeRegion } from './LandscapeRegions.js';
 import { clonePlainData, freezeData, requireBounds, requireCondition, requireFinite, requireId, requireRelativeUrl } from './internal/LandscapeValidation.js';
 
@@ -16,7 +17,7 @@ export function validateLandscapeCityBinding(input, { manifest } = {}) {
     requireId(binding.landscapeId, 'binding.landscapeId');
     requireId(binding.revision, 'binding.revision');
     requireRelativeUrl(binding.manifestUrl, 'binding.manifestUrl');
-    requireCondition(binding.manifestUrl.startsWith('assets/public/landscape/') && binding.manifestUrl.endsWith('.json'), 'binding.manifestUrl must reference retained assets/public/landscape/ JSON');
+    requireCondition(binding.manifestUrl.startsWith(`${LANDSCAPE_CACHE_ROOT}/`) && binding.manifestUrl.endsWith('.json'), `binding.manifestUrl must reference ${LANDSCAPE_CACHE_ROOT}/ cache JSON`);
     requireBounds(binding.extent, 'binding.extent');
     for (const axis of ['x', 'y', 'z']) requireFinite(binding.transform?.translation?.[axis], `binding.transform.translation.${axis}`);
     requireFinite(binding.transform?.yawDegrees, 'binding.transform.yawDegrees');
@@ -89,6 +90,26 @@ export async function loadCityLandscape(input, { baseUrl = new URL('../../../', 
     const manifest = await loadLandscapeManifest(manifestUrl, { fetchImpl, signal });
     validateLandscapeCityBinding(binding, { manifest });
     return Object.freeze({ binding, manifest, manifestUrl });
+}
+
+/**
+ * Boot-time counterpart of loadCityLandscape: the landscape cache is local and may be absent, stale or incomplete, so the city boots without
+ * its landscape and reports why instead of failing. An invalid binding is still a spec error and throws.
+ * @param {LandscapeCityBinding} input @param {{baseUrl?:string|URL,fetchImpl?:typeof fetch,signal?:AbortSignal,payloads?:boolean}} [options]
+ * @returns {Promise<{binding:LandscapeCityBinding} & import('./LandscapeCache.js').LandscapeCacheAvailability>}
+ */
+export async function resolveCityLandscape(input, { baseUrl = new URL('../../../', import.meta.url), fetchImpl, signal, payloads = true } = {}) {
+    const binding = validateLandscapeCityBinding(input);
+    const base = new URL(baseUrl);
+    requireCondition(base.protocol === 'http:' || base.protocol === 'https:', 'city landscape loading requires an HTTP(S) application base URL');
+    const availability = await probeLandscapeCache(new URL(binding.manifestUrl, base).href, { fetchImpl, signal, expectedRevision: binding.revision, payloads });
+    if (!availability.available) return Object.freeze({ ...availability, binding });
+    try { validateLandscapeCityBinding(binding, { manifest: availability.manifest }); }
+    catch (error) {
+        return Object.freeze({ available: false, status: 'invalid', manifestUrl: availability.manifestUrl, binding, reason: error.message,
+            action: 'Review the city landscape binding against the installed manifest and rebind explicitly.' });
+    }
+    return Object.freeze({ ...availability, binding });
 }
 
 /** Rejects flat-only consumers before they load geometry or caches. @param {object} spec @param {string} consumer */

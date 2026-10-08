@@ -6,10 +6,12 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { decodeLandscapeAppearanceMicroTexel, validateLandscapeAppearanceManifest, validateLandscapeAppearanceMultiscale, validateLandscapeManifest } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const directory = path.resolve('assets/public/landscape/coastal-city/appearance');
 const snapshot = '07ec6c0aa26a77487d75959480171c7c1aa4e85565aac643fb34c31d5b339683';
 const extended = 'e7856366836d5cbf8a0c7d5ebb77862ca625dd08460b7c4b710b3a0cc6801ca8';
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json', 'appearance/multiscale.json', `appearance/manifest.${extended}.json`, `appearance/multiscale.${snapshot}.json`]);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async name => JSON.parse(await readFile(path.join(directory, name), 'utf8'));
 const page = async entry => readFile(path.join(directory, entry.url));
@@ -23,7 +25,7 @@ async function published() {
     return { bytes, appearance, value: await validateLandscapeAppearanceMultiscale(JSON.parse(bytes), appearance) };
 }
 
-test('Landscape multiscale assets: the D4 companion snapshot extends the current schema-1 appearance and terrain', async () => {
+test('Landscape multiscale assets: the D4 companion snapshot extends the current schema-1 appearance and terrain', { skip: cacheSkip }, async () => {
     const { bytes, value } = await published();
     const current = await readFile(path.join(directory, 'multiscale.json'));
     assert.deepEqual(await readFile(path.join(directory, `multiscale.${hash(current)}.json`)), current, 'current companion has an immutable snapshot');
@@ -34,7 +36,7 @@ test('Landscape multiscale assets: the D4 companion snapshot extends the current
     assert.ok(bytes.length < 256 * 1024);
 });
 
-test('Landscape multiscale assets: the CC0 micro source retains provider, scale, recipe and source hashes', async () => {
+test('Landscape multiscale assets: the CC0 micro source retains provider, scale, recipe and source hashes', { skip: cacheSkip }, async () => {
     const { value } = await published();
     const config = (await import(pathToFileURL(path.resolve('assets/public/pbr/landscape_sand_micro_v1/pbr.material.config.js')).href)).default;
     const recipe = JSON.parse(await readFile(path.resolve('assets/public/pbr/landscape_sand_micro_v1/pbr.landscape.config.json'), 'utf8'));
@@ -59,7 +61,7 @@ test('Landscape multiscale assets: the CC0 micro source retains provider, scale,
     }
 });
 
-test('Landscape multiscale assets: every 1024 base page authenticates and is the aligned native source of its schema-1 512 page', async () => {
+test('Landscape multiscale assets: every 1024 base page authenticates and is the aligned native source of its schema-1 512 page', { skip: cacheSkip }, async () => {
     const { value, appearance } = await published();
     const seen = new Set();
     for (const material of value.materials) {
@@ -87,7 +89,7 @@ test('Landscape multiscale assets: every 1024 base page authenticates and is the
     assert.equal(seen.size, 12, 'six soil bindings over four unique materials');
 });
 
-test('Landscape multiscale assets: micro pages are mean-neutral, homogeneous and seamless at every tier', async () => {
+test('Landscape multiscale assets: micro pages are mean-neutral, homogeneous and seamless at every tier', { skip: cacheSkip }, async () => {
     const { value } = await published();
     const micro = value.materials.find(material => material.soilId === 'sand').micro;
     assert.equal(micro.luminanceRange, .625);

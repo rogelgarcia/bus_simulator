@@ -6,7 +6,11 @@ Status: D1–D5 verified; D6 planning integration verified in the standalone vie
 
 `screens/landscape_fabrication.html` is the independent viewer. The Fabrication
 menu registers it as shortcut **8**. It renders the canonical prepared manifest at
-`assets/public/landscape/coastal-city/manifest.json`; the optional `landscape`
+`assets/public/landscape/coastal-city/manifest.json` in the gitignored
+[local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache). Without an installed cache the viewer probes it and
+reports `Landscape cache missing|stale|incomplete|invalid` with the install/generate
+action (snapshot `cache`), and the landscape server still serves the page while
+answering cache requests with 404 guidance. The optional `landscape`
 query parameter selects a different compatible manifest for inspection/testing.
 Models, view planning and the residency ledger belong to `src/app/landscape/`.
 The reusable Three.js/worker adapter lives under

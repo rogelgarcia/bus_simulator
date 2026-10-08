@@ -14,22 +14,24 @@ import { LANDSCAPE_SURFACE_BOUNDARY, createLandscapeSurfaceBoundaries, landscape
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, validateLandscapeSurfaceDetailRecipe, landscapeSurfacePairProfile, landscapeSurfaceDetailSearchRadius, landscapeSurfaceDetailSeed,
     landscapeSurfaceWarpUniforms } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { createLandscapeSurfaceDetailPage, createLandscapeNearFieldEvaluator, sampleLandscapeSurfaceDetail, landscapeSurfaceDetailUniformSoil, landscapeSurfaceDetailScratchBytes } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailField.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const recipe = LANDSCAPE_SURFACE_DETAIL_RECIPE;
 const still = validateLandscapeSurfaceDetailRecipe({ ...structuredClone(recipe), warp: { ...structuredClone(recipe.warp), amplitudes: [0, 0, 0, 0] }, breakup: { ...structuredClone(recipe.breakup), amplitudes: [0, 0, 0, 0] } });
 const UNIFORM = LANDSCAPE_CONTOUR_COVERAGE.uniformSupportCode;
 const NATIVE = 1.953125, WARP = recipe.warp.amplitudes.reduce((sum, value) => sum + value, 0);
 const PAIRS = []; for (let first = 0; first < 6; first++) for (let second = first + 1; second < 6; second++) PAIRS.push([first, second]);
+const cacheSkip = landscapeCacheSkip();
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
-const coastal = validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
+const coastal = cacheSkip ? null : validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
 const coverCache = new Map();
 async function coastalCover(id) {
     if (!coverCache.has(id)) coverCache.set(id, new Uint8Array(await readFile(new URL(coastal.chunks.find(chunk => chunk.id === id).channels.landCover.url, coastalUrl))));
     return coverCache.get(id);
 }
-const coastalOverview = coastal.chunks.find(chunk => chunk.id === coastal.overviewId);
-const coastalPresentation = createLandscapeNaturalPresentation(coastal, { descriptor: coastalOverview, landCover: await coastalCover(coastalOverview.id) });
-const coastalSeed = landscapeSurfaceDetailSeed(coastal.id, recipe), coastalIndex = createLandscapeSurfaceDetailIndex(coastal, { levels: 3 });
+const coastalOverview = cacheSkip ? null : coastal.chunks.find(chunk => chunk.id === coastal.overviewId);
+const coastalPresentation = cacheSkip ? null : createLandscapeNaturalPresentation(coastal, { descriptor: coastalOverview, landCover: await coastalCover(coastalOverview.id) });
+const coastalSeed = cacheSkip ? null : landscapeSurfaceDetailSeed(coastal.id, recipe), coastalIndex = cacheSkip ? null : createLandscapeSurfaceDetailIndex(coastal, { levels: 3 });
 const coastalPages = new Map();
 
 function random(seed) { let state = seed >>> 0; return () => (state = Math.imul(state, 1664525) + 1013904223 >>> 0) / 4294967296; }
@@ -165,7 +167,7 @@ function glslWarpMirror(source, uniforms, defines) {
     };
 }
 
-test('Surface noise: integer-hashed gradient noise is bit-stable, salted, smooth and strictly bounded, with ridged breakup octaves', () => {
+test('Surface noise: integer-hashed gradient noise is bit-stable, salted, smooth and strictly bounded, with ridged breakup octaves', { skip: cacheSkip }, () => {
     assert.deepEqual([landscapeNoiseSalt(0, 0, 0), landscapeNoiseSalt(3989206803, 1, 2), landscapeNoiseSalt(4294967295, 2, 0)], [1624822673, 1995532019, 2515639072]);
     assert.deepEqual([[.5, .5, 123], [10.25, -3.75, 987654321], [-7.125, 1e3 + .0625, 42]].map(([u, v, salt]) => landscapeLatticeNoise(u, v, salt)),
         [-0.44922422887176294, 0.06379158603426209, -0.1013011978426502]);
@@ -204,7 +206,7 @@ test('Surface noise: integer-hashed gradient noise is bit-stable, salted, smooth
     assert.throws(() => createLandscapeSurfaceWarp({ seed: 1, wavelengths: [1], amplitudes: [1], shaping: 'cubic' }), /shaping/);
 });
 
-test('Surface warp: about one meter of mean displacement per axis, bounded peak, no folding, and an exact float32 GLSL mirror', async t => {
+test('Surface warp: about one meter of mean displacement per axis, bounded peak, no folding, and an exact float32 GLSL mirror', { skip: cacheSkip }, async t => {
     const warp = createLandscapeSurfaceWarp({ seed: coastalSeed, wavelengths: [...recipe.warp.wavelengths], amplitudes: [...recipe.warp.amplitudes], shaping: recipe.warp.shaping });
     assert.equal(warp.maxDisplacement, WARP);
     assert.ok(WARP <= LANDSCAPE_SURFACE_DETAIL_MAX_WARP_METERS && recipe.warp.amplitudes.reduce((sum, a, k) => sum + 2 * Math.PI * a / recipe.warp.wavelengths[k], 0) <= LANDSCAPE_SURFACE_DETAIL_MAX_WARP_SLOPE);
@@ -253,7 +255,7 @@ test('Surface warp: about one meter of mean displacement per axis, bounded peak,
     t.diagnostic(`float32 GLSL mirror vs JavaScript warp: max difference ${difference.toExponential(2)} m over ${points.length} points`);
 });
 
-test('Surface detail recipe: data-driven pair profiles, per-level search radii and validated variants', () => {
+test('Surface detail recipe: data-driven pair profiles, per-level search radii and validated variants', { skip: cacheSkip }, () => {
     assert.ok(Object.isFrozen(recipe) && Object.isFrozen(recipe.pairProfiles.pairs[0].soils) && Object.isFrozen(recipe.warp.amplitudes) && Object.isFrozen(recipe.boundary.loops));
     assert.deepEqual([recipe.id, recipe.family, recipe.levels, recipe.transitionReferenceWidth, recipe.maxTransitionWidth, recipe.measuredDetail], ['landscape-surface-detail-v4', 'landscape-surface-detail', 3, .75, 2.5, false]);
     const { family, ...unversioned } = structuredClone(recipe);
@@ -310,7 +312,7 @@ test('Surface detail recipe: data-driven pair profiles, per-level search radii a
     assert.equal(LANDSCAPE_SURFACE_COVERAGE.haloSamples, LANDSCAPE_SURFACE_DETAIL_FORMAT.storedHaloSamples);
 });
 
-test('Near-field evaluator: the allocation-free D1 reconstruction equals the reference at zero footprint, including edges and exterior clamps', async t => {
+test('Near-field evaluator: the allocation-free D1 reconstruction equals the reference at zero footprint, including edges and exterior clamps', { skip: cacheSkip }, async t => {
     const fixture = fixtureContext({ chunkIntervals: 16, maxLevel: 2, coverAt: (column, row) => (column * 7 + row * 3) % 11 < 4 ? 3 : column > row ? 1 : (column + row) % 9 === 0 ? 5 : 2 });
     const cases = [{ manifest: coastal, presentation: coastalPresentation, id: 'l3/c2/r6', loadCover: async id => ({ landCover: await coastalCover(id) }) },
         { manifest: coastal, presentation: coastalPresentation, id: 'l3/c0/r0', loadCover: async id => ({ landCover: await coastalCover(id) }) },
@@ -469,7 +471,7 @@ test('Vector boundaries: overlapping windows with different extents answer bit-i
     assert.ok(boundaryAnswers > 1000, `${boundaryAnswers} of ${compared}`);
 });
 
-test('Vector boundaries: straight coastal edges stay within half a native cell of the D1 fitted contour', async t => {
+test('Vector boundaries: straight coastal edges stay within half a native cell of the D1 fitted contour', { skip: cacheSkip }, async t => {
     const masks = new Map(), fine = new Map(), weights = new Float64Array(6);
     const nativeAt = async (x, z) => {
         const id = `l3/c${Math.floor(x / 500)}/r${Math.floor((4000 - z) / 500)}`;
@@ -506,7 +508,7 @@ test('Vector boundaries: straight coastal edges stay within half a native cell o
     t.diagnostic(`worst distance to the D1 fitted contour without warp or breakup: ${report.join(', ')}`);
 });
 
-test('Fine pages: generation is deterministic, reads only authenticated native cover and stays within its scratch estimate', async t => {
+test('Fine pages: generation is deterministic, reads only authenticated native cover and stays within its scratch estimate', { skip: cacheSkip }, async t => {
     for (const id of ['l4/c4/r12', 'l5/c8/r24', 'l6/c17/r49']) {
         const descriptor = coastalIndex.descriptor(id), loads = [], used = new Set();
         let active = 0, peak = 0;
@@ -547,7 +549,7 @@ test('Fine pages: generation is deterministic, reads only authenticated native c
     await assert.rejects(createLandscapeSurfaceDetailPage({ ...base, recipe: { ...structuredClone(recipe), distance: 'nearest-same-pair-crossing-polyline' }, loadCover: coastalCover }), /unsupported/);
 });
 
-test('Fine pages: shared borders and halos are bit-identical across adjacent pages, native page borders and the landscape exterior', async () => {
+test('Fine pages: shared borders and halos are bit-identical across adjacent pages, native page borders and the landscape exterior', { skip: cacheSkip }, async () => {
     for (const [a, b] of [['l6/c17/r49', 'l6/c18/r49'], ['l6/c17/r49', 'l6/c17/r50'], ['l6/c17/r49', 'l6/c18/r50'], ['l6/c18/r49', 'l6/c17/r50'], ['l6/c15/r49', 'l6/c16/r49'],
         ['l6/c15/r47', 'l6/c16/r48'], ['l6/c16/r47', 'l6/c15/r48'], ['l5/c8/r24', 'l5/c7/r24'], ['l5/c8/r23', 'l5/c8/r24'], ['l4/c4/r12', 'l4/c4/r11'], ['l4/c4/r12', 'l4/c3/r12']]) {
         const first = coastalIndex.descriptor(a), second = coastalIndex.descriptor(b), { compared, mismatches } = compareShared(await coastalPage(a), first, await coastalPage(b), second);
@@ -572,7 +574,7 @@ test('Fine pages: shared borders and halos are bit-identical across adjacent pag
     assert.ok(exterior > 0);
 });
 
-test('Fine pages: stored labels agree with their pair codes, exact unwarped semantics and nearest native cover', async () => {
+test('Fine pages: stored labels agree with their pair codes, exact unwarped semantics and nearest native cover', { skip: cacheSkip }, async () => {
     let valid = 0, uniform = 0, invalid = 0;
     for (const id of ['l6/c17/r49', 'l6/c16/r48', 'l5/c8/r24']) {
         const descriptor = coastalIndex.descriptor(id), page = await coastalPage(id), ratio = 2 ** (descriptor.level - coastal.grid.maxLevel), spacing = descriptor.spacing.x;
@@ -604,7 +606,7 @@ test('Fine pages: stored labels agree with their pair codes, exact unwarped sema
     assert.ok(valid > 1000 && uniform > 10000 && invalid > 0, `${valid} valid, ${uniform} uniform, ${invalid} invalid`);
 });
 
-test('Fine pages: uniform markers are exactly one-hot for every fragment of their cell and every footprint', async () => {
+test('Fine pages: uniform markers are exactly one-hot for every fragment of their cell and every footprint', { skip: cacheSkip }, async () => {
     let checked = 0;
     for (const id of ['l6/c17/r49', 'l5/c8/r24']) {
         const descriptor = coastalIndex.descriptor(id), page = await coastalPage(id), next = random(31), spacing = descriptor.spacing.x, candidates = [];
@@ -635,7 +637,7 @@ test('Fine pages: uniform markers are exactly one-hot for every fragment of thei
     assert.ok(checked > 400, `${checked}`);
 });
 
-test('Fine pages: no unsaturated ramp or label change reaches a uniform-marker cell with the wide transition bands', async t => {
+test('Fine pages: no unsaturated ramp or label change reaches a uniform-marker cell with the wide transition bands', { skip: cacheSkip }, async t => {
     const factor = Math.max(recipe.pairProfiles.default.breakup, ...recipe.pairProfiles.pairs.map(entry => entry.breakup), ...recipe.pairProfiles.partners.map(entry => entry.breakup));
     const band = recipe.maxTransitionWidth / 2 + recipe.breakup.amplitudes.reduce((sum, value) => sum + value, 0) * (1 + recipe.breakup.ridgedMix / 2) * factor;
     let checked = 0, nearRamp = 0, closest = Infinity;
@@ -699,7 +701,7 @@ test('Fine pages: one-native-cell strips and single-sample islands remain presen
     assert.ok(islandTexels > 8, `${islandTexels}`);
 });
 
-test('Fine pages: no isolated speckle survives generation on real coastal pages, including triple junctions', async t => {
+test('Fine pages: no isolated speckle survives generation on real coastal pages, including triple junctions', { skip: cacheSkip }, async t => {
     let components = 0, small = 0;
     for (const id of ['l6/c16/r48', 'l6/c17/r48', 'l6/c16/r49', 'l6/c17/r49', 'l6/c17/r47', 'l6/c27/r8', 'l5/c8/r23', 'l5/c8/r24', 'l4/c4/r12']) {
         const page = await coastalPage(id), width = 261, labels = new Uint8Array(width * width), seen = new Uint8Array(width * width), stack = [];
@@ -789,7 +791,7 @@ test('Fine pages: painted overrides skip hidden edges and read the soil just out
     assert.ok(Math.abs(covered.boundary.distanceMeters - coveredDistance) < 1e-9);
 });
 
-test('Fine pages: inspection exposes internals that reproduce stored texels and bounded procedural displacement', async () => {
+test('Fine pages: inspection exposes internals that reproduce stored texels and bounded procedural displacement', { skip: cacheSkip }, async () => {
     const descriptor = coastalIndex.descriptor('l6/c17/r49'), page = await coastalPage('l6/c17/r49'), next = random(5), breakupBound = recipe.breakup.amplitudes.reduce((sum, value) => sum + value, 0) * (1 + recipe.breakup.ridgedMix / 2);
     let boundaries = 0;
     for (let i = 0; i < 24; i++) {
@@ -826,7 +828,7 @@ test('Fine pages: inspection exposes internals that reproduce stored texels and 
     await assert.rejects(sampleLandscapeSurfaceDetail({ manifest: coastal, descriptor, recipe, seed: coastalSeed, presentation: coastalPresentation, loadCover: coastalCover, x: 0, z: 0 }), /outside page/);
 });
 
-test('Uniform proof: resident native masks resolve uniform fine pages conservatively and agree with generation', async () => {
+test('Uniform proof: resident native masks resolve uniform fine pages conservatively and agree with generation', { skip: cacheSkip }, async () => {
     const native = id => coastal.chunks.find(chunk => chunk.id === id), mask = async id => ({ descriptor: native(id),
         pixels: (await createLandscapeCoverageMask({ manifest: coastal, manifestUrl: coastalUrl.href, presentation: coastalPresentation, chunkId: id, loadCover: async owner => ({ landCover: await coastalCover(owner) }) })).pixels });
     const sea = await mask('l3/c0/r5'), proven = [], unproven = [];

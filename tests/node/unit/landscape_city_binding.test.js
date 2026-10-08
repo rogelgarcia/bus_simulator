@@ -13,12 +13,15 @@ import { createCityConfig } from '../../../src/app/city/CityConfig.js';
 import { createCitySpecById } from '../../../src/app/city/specs/CitySpecRegistry.js';
 import { normalizeCitySpec, applyCitySpecSettings, serializeCitySpecToModule, importCitySpecModule } from '../../../src/app/city/specs/CitySpecAuthoring.js';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const city = () => createCitySpecById('coastal-landscape', createCityConfig());
+const cacheSkip = landscapeCacheSkip([city().landscape.manifestUrl.split('/').pop(), 'manifest.12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b.json',
+    'manifest.496f91b93facbbc9183d939d4da4e758852270fa71ed19e732ad1fa944127c20.json']);
 const mapFrom = spec => CityMap.fromSpec(spec, createCityConfig());
 const closePoint = (a, b) => { for (const axis of Object.keys(b)) assert.ok(Math.abs(a[axis] - b[axis]) < 1e-9, `${axis}: ${a[axis]} vs ${b[axis]}`); };
 
-test('Landscape city binding: registered JS fixture pins a retained immutable manifest', async () => {
+test('Landscape city binding: registered JS fixture pins a retained immutable manifest', { skip: cacheSkip }, async () => {
     const spec = city(), manifest = JSON.parse(await readFile(spec.landscape.manifestUrl, 'utf8'));
     const binding = validateLandscapeCityBinding(spec.landscape, { manifest });
     assert.ok(Object.isFrozen(binding.transform.translation));
@@ -32,7 +35,7 @@ test('Landscape city binding: registered JS fixture pins a retained immutable ma
 
 // The nature pass and AI577 D1a published material-only revisions after AI 576 bound the fixture; the city has not reviewed them, so its strict
 // pin refuses both. The difference check is the review record an explicit rebind would cite.
-test('Landscape city binding: the fixture pin refuses retained material-only publications until an explicit rebind', async () => {
+test('Landscape city binding: the fixture pin refuses retained material-only publications until an explicit rebind', { skip: cacheSkip }, async () => {
     const binding = city().landscape, directory = binding.manifestUrl.slice(0, binding.manifestUrl.lastIndexOf('/'));
     const snapshot = async name => {
         const bytes = await readFile(`${directory}/${name}`);

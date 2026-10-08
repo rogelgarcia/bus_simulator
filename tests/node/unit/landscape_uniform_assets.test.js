@@ -7,10 +7,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PBR_MATERIAL_CATALOG } from '../../../assets/public/pbr/_catalog_index.js';
 import { LANDSCAPE_SOIL_CATALOG, validateLandscapeManifest, validateLandscapeAppearanceManifest, landscapeAppearanceBindingKey } from '../../../src/app/landscape/index.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const directory = path.resolve('assets/public/landscape/coastal-city');
 const previousTerrain = '12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b';
 const previousAppearance = 'aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b';
+const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json', `manifest.${previousTerrain}.json`, `appearance/manifest.${previousAppearance}.json`]);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
 const expected = Object.freeze({ unknown: 'pbr.landscape_soil_uniform_v1', seabed: 'pbr.aerial_beach_01', sand: 'pbr.aerial_beach_01',
@@ -22,7 +24,7 @@ async function current() {
     return { landscape, appearance };
 }
 
-test('Uniform landscape assets: defaults and current snapshots replace only material bindings while retaining old revisions', async () => {
+test('Uniform landscape assets: defaults and current snapshots replace only material bindings while retaining old revisions', { skip: cacheSkip }, async () => {
     const { landscape, appearance } = await current();
     assert.deepEqual(Object.fromEntries(LANDSCAPE_SOIL_CATALOG.map(soil => [soil.id, soil.materialId])), expected);
     assert.deepEqual(Object.fromEntries(landscape.soil.catalog.map(soil => [soil.id, soil.materialId])), expected);
@@ -43,7 +45,7 @@ test('Uniform landscape assets: defaults and current snapshots replace only mate
     assert.equal(appearance.preparedFromRevision, landscape.revision);
 });
 
-test('Uniform landscape assets: source licenses, recipes, source-height data and every bounded page authenticate', async () => {
+test('Uniform landscape assets: source licenses, recipes, source-height data and every bounded page authenticate', { skip: cacheSkip }, async () => {
     const { appearance } = await current();
     for (const material of appearance.materials) {
         assert.equal(material.materialId, expected[material.soilId]);
@@ -76,7 +78,7 @@ test('Uniform landscape assets: source licenses, recipes, source-height data and
     assert.equal(rock.source.technique, 'procedural');
 });
 
-test('Uniform landscape assets: accepted sand RGB, normal, source scale and calibration remain byte-identical', async () => {
+test('Uniform landscape assets: accepted sand RGB, normal, source scale and calibration remain byte-identical', { skip: cacheSkip }, async () => {
     const { appearance } = await current();
     const old = await json(path.join(directory, 'appearance', `manifest.${previousAppearance}.json`));
     const sand = appearance.materials.find(material => material.soilId === 'sand');
@@ -94,7 +96,7 @@ test('Uniform landscape assets: accepted sand RGB, normal, source scale and cali
     }
 });
 
-test('Uniform landscape assets: replacements retain fine detail without broad color islands or new tiling seams', async () => {
+test('Uniform landscape assets: replacements retain fine detail without broad color islands or new tiling seams', { skip: cacheSkip }, async () => {
     const { appearance } = await current();
     for (const material of appearance.materials.filter(entry => entry.materialId.startsWith('pbr.landscape_'))) {
         const page = material.tiers[2].channels.baseColor;

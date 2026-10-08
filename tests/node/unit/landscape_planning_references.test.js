@@ -6,14 +6,16 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadLandscapePlanningReferences, normalizeLandscapePlanningReference, LANDSCAPE_PLANNING_LIMITS } from '../../../src/app/landscape/LandscapePlanningReferences.js';
+import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+const cacheSkip = landscapeCacheSkip();
 const directory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../assets/public/landscape/coastal-city');
-const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+const manifest = cacheSkip ? null : JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
 const manifestUrl = 'https://landscape.test/coastal/manifest.json';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const readReference = async reference => JSON.parse(await readFile(path.join(directory, reference.url), 'utf8'));
 
-test('Retained coastal planning references preserve district IDs and road XYZ while exposing exact XZ geometry', async () => {
+test('Retained coastal planning references preserve district IDs and road XYZ while exposing exact XZ geometry', { skip: cacheSkip }, async () => {
     const requested = [];
     const result = await loadLandscapePlanningReferences(manifest, { manifestUrl, fetchImpl: async url => {
         const relative = new URL(url).pathname.slice('/coastal/'.length); requested.push(relative);
@@ -38,7 +40,7 @@ test('Retained coastal planning references preserve district IDs and road XYZ wh
     assert.equal(result.dependency.length, 4); assert.ok(result.pointCount < LANDSCAPE_PLANNING_LIMITS.points);
 });
 
-test('Planning source hashes and declared file bounds are checked before interpreting coordinates', async () => {
+test('Planning source hashes and declared file bounds are checked before interpreting coordinates', { skip: cacheSkip }, async () => {
     let calls = 0;
     await assert.rejects(loadLandscapePlanningReferences(manifest, { manifestUrl, fetchImpl: async url => {
         calls++;
@@ -53,7 +55,7 @@ test('Planning source hashes and declared file bounds are checked before interpr
     assert.equal(calls, 0);
 });
 
-test('Planning normalization refuses ambiguous XYZ, invalid footprints, and out-of-bounds source coordinates', async () => {
+test('Planning normalization refuses ambiguous XYZ, invalid footprints, and out-of-bounds source coordinates', { skip: cacheSkip }, async () => {
     const reference = manifest.references.find(value => value.role === 'planning-beach-reservations'), original = await readReference(reference);
     assert.throws(() => normalizeLandscapePlanningReference(manifest, reference, { ...original, coordinate_order: 'X,Y map coordinates' }), /coordinate convention/);
     const outside = structuredClone(original); outside.points[0].xyz_m[2] = 100000;
@@ -62,7 +64,7 @@ test('Planning normalization refuses ambiguous XYZ, invalid footprints, and out-
     assert.throws(() => normalizeLandscapePlanningReference(manifest, reference, footprint), /footprint dimensions/);
 });
 
-test('Duplicate generated feature IDs fail and canceled loads cannot publish planning records', async () => {
+test('Duplicate generated feature IDs fail and canceled loads cannot publish planning records', { skip: cacheSkip }, async () => {
     const input = structuredClone(manifest), reference = input.references.find(value => value.role === 'planning-road-centerlines');
     const data = await readReference(reference); data.roads = [data.roads[0], data.roads[0]];
     const bytes = new TextEncoder().encode(JSON.stringify(data)); reference.byteLength = bytes.length; reference.sha256 = hash(bytes); input.references = [reference];
