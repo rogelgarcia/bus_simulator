@@ -1,6 +1,6 @@
 // AI 595: a clean checkout of the committed branch has no landscape cache, still runs the fallback and tooling paths, and the registered bake
 // leaves install or regenerate the cache into the ignored location. Evidence: tests/artifacts/landscape_cache_history/cold*.
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -37,6 +37,13 @@ async function cleanCheckout(name) {
     return directory;
 }
 const shareNodeModules = directory => symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction');
+// never leave a junction to the shared node_modules behind in the evidence tree; the clones stay for inspection
+after(() => {
+    for (const name of ['cold', 'cold-generate']) {
+        const link = path.join(evidence, name, 'node_modules');
+        if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) unlinkSync(link);
+    }
+});
 const record = (name, text) => writeFile(path.join(evidence, name), text);
 
 test('Cold checkout: no cache is checked out, and the fallback and tooling paths report it instead of failing', { skip, timeout: 10 * 60 * 1000 }, async () => {
