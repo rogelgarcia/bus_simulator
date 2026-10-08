@@ -174,6 +174,34 @@ Evidence: `tests/artifacts/landscape_cache_history/` (commit map, object invento
 - Optionally rebind `CoastalLandscapeCitySpec` to a regenerated revision if regeneration (not bundles) becomes the distribution path.
 - Original commit messages are unchanged and still describe the data they used to publish.
 
+### Follow-up: PBR configuration out of Git LFS — 2026-10-08
+
+A review found that the branch still stored its small authored PBR configuration as Git LFS pointers (because of
+the `assets/public/** filter=lfs` rule), while `main` tracks nothing under `assets/` and has no LFS files.
+
+- **Second rewrite:** `main..codex/landscape` was rewritten again in an isolated bare clone with a filter-branch
+  index filter. Each of the 93 PBR pointer versions became its exact content blob (every one verified against its
+  LFS oid and size), and from the first commit that tracks PBR configuration (D4) onward `.gitattributes` lifts the
+  LFS rule for `_catalog_index.js`, `pbr.material.config.js`, `pbr.material.correction.config.js` and
+  `pbr.landscape.config.json` (`!filter !diff !merge -text`). Two independent runs produced the same tip.
+- **Exact bytes:** three configs are CRLF (`bradbury_top_band_terracotta_ornament`,
+  `bradbury_wall_terracotta_brick_tileable`, `dry_litter`); the published appearance bindings record their SHA-256,
+  so `-text` keeps every config byte-identical instead of normalizing line endings.
+- **Result:** 0 LFS pointers reachable from `main..codex/landscape`, `git lfs ls-files` empty at the tip, commits 1–3
+  unchanged, 19 commits rewritten with identical author/committer/date/message; still no landscape cache path.
+- **Hashes:** the hashes earlier in this record predate the follow-up: rewritten D7 `37257b9d` → `f132da48`, AI 595
+  repair `7ec55f13` → `1fc9f1e4`, cold-checkout cleanup `59f38ab8` → `38293972`. Full map:
+  `tests/artifacts/landscape_cache_history/pbr_plain_git/rewrite_commit_map.md`. Recovery ref (local only):
+  `backup/codex-landscape-before-pbr-plain-git-20261008` → `59f38ab8`.
+- **Safety:** the branch moved index-only again; `git status` (161 lines) and the 799-file `assets/public/pbr`
+  inventory are identical before and after.
+- **Guards:** `tests/node/unit/pbr_config_storage.test.js` (no pointer in index or HEAD; tracked and future config
+  paths resolve to no LFS filter and `-text`); the clean-checkout test imports the committed PBR catalog without LFS.
+- **Remote `main` and tags:** reviewed and left unchanged. They hold 11 raw binary blobs (10.6 MiB): 3 current files
+  (`favicon.ico`, the basis transcoder `.wasm`, a precomputed bigcity2 bake) and 8 history-only January 2026 files
+  (7 textures and an old Rapier `.wasm`) that predate the landscape work; purging them would mean rewriting `main`
+  and its tags, which this prompt forbids.
+
 ## On completion
 - Mark the AI document as DONE in the first line
 - Rename in `prompts/` to `prompts/AI_DONE_codex_landscape_595_PROJECTMAINTENANCE_remove_landscape_cache_from_git_history_DONE.md`

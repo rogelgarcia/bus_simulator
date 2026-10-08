@@ -51,6 +51,11 @@ test('Cold checkout: no cache is checked out, and the fallback and tooling paths
     assert.equal(git(clone, 'ls-files', '--', LANDSCAPE_CACHE_ROOT), '', 'nothing under the cache root is tracked');
     assert.equal(existsSync(path.join(clone, LANDSCAPE_CACHE_ROOT)), false, 'a clean checkout has no landscape cache');
     assert.equal(git(clone, 'status', '--porcelain'), '');
+    // PBR configuration is plain Git content: even a checkout without Git LFS imports the real committed catalog
+    const catalog = run(clone, ['--input-type=module', '-e', "const { PBR_MATERIAL_CATALOG } = await import('./assets/public/pbr/_catalog_index.js'); console.log(PBR_MATERIAL_CATALOG.length);"]);
+    await record('cold-pbr-catalog.txt', catalog.output);
+    assert.equal(catalog.status, 0, catalog.output);
+    assert.ok(Number(catalog.output.trim().split('\n').at(-1)) > 0, 'the committed PBR catalog lists its materials');
     shareNodeModules(clone);
 
     const tests = run(clone, ['--test', 'tests/node/unit/landscape_cache_tracking.test.js', 'tests/node/unit/landscape_cache_availability.test.js',

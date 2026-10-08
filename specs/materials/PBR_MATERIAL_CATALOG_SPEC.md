@@ -19,6 +19,7 @@ Canonical files:
 
 Notes:
 - `assets/public/pbr/_manifest.json` is **not** the runtime source of truth. It may still exist for download/probe/asset tooling.
+- Where a branch tracks the catalog (`_catalog_index.js` and the per-material `pbr.material.config.js`, `pbr.material.correction.config.js` and `pbr.landscape.config.json` files), they are ordinary Git content, never Git LFS pointers: `.gitattributes` lifts the `assets/public/**` LFS rule for exactly these paths and keeps their bytes unconverted (`-text`), because landscape appearance provenance records each config by SHA-256. Texture images stay out of Git. `tests/node/unit/pbr_config_storage.test.js` guards this.
 
 ---
 

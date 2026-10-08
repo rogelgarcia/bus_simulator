@@ -26,7 +26,9 @@ The six bindings come from `manifest.soil.catalog`, retaining their stable globa
 PBR IDs and physical `tileMeters`. The exact global `_catalog_index.js`, its whole
 config import closure, and the six used correction configs are retained in
 `assets/public/pbr`. This preserves the shared material catalog rather than
-creating a second registry. Only metadata is copied there; raw bounded pages
+creating a second registry. These configs are tracked as ordinary Git content,
+never Git LFS, with their exact bytes: the appearance provenance records each by
+SHA-256 (see `specs/materials/PBR_MATERIAL_CATALOG_SPEC.md`). Only metadata is copied there; raw bounded pages
 are published below `coastal-city/appearance/`.
 
 Each material has independent 32, 128 and 512 pixel square baseColor, normal and
