@@ -3053,22 +3053,55 @@ _brick_srgb = _a.reshape(-1, 4)[:, :3].astype(_np.float64).mean(0)
 #     weathered set on every moulding face, and a second on every face of the cornice pieces: its soot read as a blotchy
 #     pattern across the flat fascia.)
 #   the piers take the taupe storefront pillars, 1 m a tile.
-# The terracotta and the taupe are box-projected on object coordinates like the stone before. The weathered set is a 4:1
-# strip, 2 x 0.5 m a tile, and is seen only where a surface faces down, so it is projected straight from below: object x
-# over 2 m and y over 0.5 m, the same 1024 px a metre both ways on every soffit whichever way the moulding runs. (Box
-# projection, tried first, drew it out 16:1 into wood-grain streaks across the soffits.)
+# The terracotta and the taupe are box-projected on object coordinates like the stone before. The weathered set is seen
+# only where a surface faces down. It is the pack's second revision (user 2026-10-08: "there is a
+# Bradbury_Cornice_PBR_3xWidth with a wider texture for the under cornice area, install and substitute it"): a 12:1
+# strip, 6 x 0.5 m a tile at 1024 px a metre, its soot over three unique 2 m sections. Its long side has to run along
+# the cornice for the width to count, and a cornice runs along x on one face and along y on the next, so it is mapped by
+# a UV map of its own, gf_under, written on every moulding mesh by gf_under_uv below: in metres, along each face's own
+# run (its longest horizontal edge) and across it. Earlier cuts: box projection drew the first, 2 m strip 16:1 into
+# wood-grain streaks across the soffits; a projection straight from below (object x over 2 m, y over 0.5 m) kept its
+# density but laid its short side along the cornices that run along y.
 # The materials keep their names: the wear layer classes them as stone by name.
 GF_SETS = {"top": ("bradbury_entrance_terracotta", (1.0, 1.0, 1.0)),
-           "under": ("bradbury_cornice_weathered_terracotta", (2.0, 0.5, None)),    # None: projected from below (x, y) alone
+           "under": ("bradbury_cornice_weathered_terracotta", (6.0, 0.5, None)),    # None: on the gf_under UV map (metres along / across the run)
            "pier": ("bradbury_storefront_pillars_taupe", (1.0, 1.0, 1.0))}
 GF_UNDER_FROM, GF_UNDER_TO = 0.30, 0.65         # -normal.z where the weathered set starts, and where it is full
+GF_UNDER_UV = "gf_under"
+def gf_under_uv(o):
+    # metres along each face's own run -- the direction of its longest horizontal edge -- and across it, as a UV map of
+    # its own; the direction is made canonical (pointing +x, or +y when it runs along y) so the faces of one straight run
+    # share it and the strip neither turns nor mirrors from face to face. Mesh coordinates: the moulding stands upright
+    # at scale 1. The mesh's active and render UV maps are left as they were.
+    me = o.data
+    act = me.uv_layers.active_index
+    ren = next((i for i, l in enumerate(me.uv_layers) if l.active_render), None)
+    uvl = me.uv_layers.get(GF_UNDER_UV) or me.uv_layers.new(name=GF_UNDER_UV)
+    if ren is not None:
+        me.uv_layers.active_index = act; me.uv_layers[ren].active_render = True
+    V, L, U = me.vertices, me.loops, uvl.data
+    for pl in me.polygons:
+        li = list(pl.loop_indices); best = (0.0, 1.0, 0.0)
+        for k in range(len(li)):
+            a, b = V[L[li[k]].vertex_index].co, V[L[li[(k + 1) % len(li)]].vertex_index].co
+            dx, dy = b.x - a.x, b.y - a.y; hl = math.hypot(dx, dy)
+            if hl > best[0]: best = (hl, dx / hl, dy / hl)
+        _, dx, dy = best
+        if dx < -1e-6 or (abs(dx) <= 1e-6 and dy < 0.0): dx, dy = -dx, -dy
+        for i in li:
+            q = V[L[i].vertex_index].co
+            U[i].uv = (q.x * dx + q.y * dy, q.x * -dy + q.y * dx)
 def gf_sample(nt, key, tc, y):
     # one set's (colour x AO, roughness, normal) sockets, box-projected on object coordinates at its tile (metres per axis)
     folder, tile = GF_SETS[key]; d = os.path.join(PBR_DIR, folder)
-    below = tile[2] is None
+    below = tile[2] is None                                                       # on the gf_under UV map, in metres
     mp = nt.nodes.new('ShaderNodeMapping'); mp.location = (-1100, y)
-    mp.inputs["Scale"].default_value = (1.0 / tile[0], 1.0 / tile[1], 0.0 if below else 1.0 / tile[2])   # from below: z drops out
-    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    mp.inputs["Scale"].default_value = (1.0 / tile[0], 1.0 / tile[1], 1.0 if below else 1.0 / tile[2])
+    if below:
+        uvn = nt.nodes.new('ShaderNodeUVMap'); uvn.uv_map = GF_UNDER_UV; uvn.location = (-1300, y - 150)
+        nt.links.new(uvn.outputs["UV"], mp.inputs["Vector"])
+    else:
+        nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
     def tex(fn, cs, dy):
         fp = os.path.join(d, fn); assert os.path.exists(fp), f"{fp} (run make_ground_floor_pbr.py)"
         im = bpy.data.images.load(fp, check_existing=True); im.name = f"pbr_{folder}_{os.path.splitext(fn)[0]}"
@@ -3155,6 +3188,7 @@ n_gs = n_gp = 0
 for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_", "fit_pier_"))]:   # fit_pier_*: the zone's blocks beside the pilasters, in the moulding
     if o.type != 'MESH': continue
     o.data.materials.clear(); o.data.materials.append(STONE_PBR); n_gs += 1
+    gf_under_uv(o)
 for o in [f for f in FIT.objects if f.type == 'MESH' and f.name == "fit_piers"]:                          # the pier ring alone is the pillars
     o.data.materials.clear(); o.data.materials.append(PIER_PBR); n_gp += 1
 def _srgb_of(lin): return tuple(int(round(255 * (12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055))) for v in lin)

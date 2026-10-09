@@ -7795,7 +7795,7 @@ the pack's promises first: one size per material, the ORM equal to the separate 
 |---|---|---|---|---|
 | `pbr.bradbury_storefront_pillars_taupe` | 01_Storefront_Pillars_Taupe | 1 m | (161, 140, 124) | the storefront piers (`fit_piers`) |
 | `pbr.bradbury_entrance_terracotta` | 02_Entrance_Ornaments_Terracotta | 1 m | (185, 136, 112) | the portal's stone and every face of the ground-floor moulding |
-| `pbr.bradbury_cornice_weathered_terracotta` | 03_Cornice_Weathered_Terracotta | 2 x 0.5 m strip | (158, 120, 97) | the moulding's undersides only (+ `dirt_mask.png`, informational) |
+| `pbr.bradbury_cornice_weathered_terracotta` | 03_Cornice_Weathered_Terracotta, revision 2 (`Bradbury_Cornice_PBR_3xWidth.zip`) | 6 x 0.5 m strip, 6144 x 512 | (166, 119, 95) | the moulding's undersides only (+ `dirt_mask.png`, informational) |
 
 - **The moulding** (`PBR_bradbury_ground_stone`, `assemble_building.py`, the entablature, fascia strip, upper band,
   cornice, crown, bead, dentils, zone and its blocks, band tops: 99 meshes) is the entrance terracotta, and turns to the
@@ -7803,8 +7803,17 @@ the pack's promises first: one size per material, the ORM equal to the separate 
   (`GF_UNDER_FROM/TO`), so a soffit is wholly weathered, a wall face or a top not at all. The user's direction, same
   day, after the first two cuts (the weathered set on the whole moulding, then on every face of the cornice pieces):
   "the horizontal areas look too much like a pattern ... they should use the same as the pillars [the portal's], and
-  then use the dirty texture only for underneath cornice areas". The weathered strip is projected straight from below,
-  x over 2 m and y over 0.5 m (1024 px a metre both ways); box projection drew it 16:1 into wood-grain streaks.
+  then use the dirty texture only for underneath cornice areas".
+- **The weathered strip** is the cornice set's second revision (user, same day: "there is a
+  Bradbury_Cornice_PBR_3xWidth with a wider texture for the under cornice area, install and substitute it"): the same
+  material three times as wide, 6 x 0.5 m a tile at 1024 px a metre, its soot over three unique 2 m sections, so along
+  a cornice it repeats every 6 m instead of 2. `make_ground_floor_pbr.py` installs it over the first revision under the
+  same catalog id (the pack has no validation record; the old one is removed). For the width to count, the strip's long
+  side must run along the cornice, which runs along x on 3rd Street and along y on Broadway, so it is mapped by a UV map
+  of its own, `gf_under`, written on every moulding mesh by `gf_under_uv` in `assemble_building.py`: metres along each
+  face's own run (its longest horizontal edge, the direction made canonical so the faces of one run line up) and across
+  it. Earlier: box projection drew the first strip 16:1 into wood-grain streaks; a projection straight from below kept
+  its density but laid its short side along the Broadway cornices.
 - **The piers** (`PBR_bradbury_pier_stone`) take the taupe set, box-projected on object coordinates at 1 m.
 - **The portal** (`portal_lib.fill_sandstone`, `PORTAL_sandstone` and the carved `PORTAL_sandstone_carved`) takes the
   entrance terracotta at 1 m, gained onto `SANDSTONE_SRGB` (the tint below), and the lettering and the frieze flowers,
