@@ -128,9 +128,10 @@ These hold in every variant. Report any deliberate exception for user approval.
   lines, beach profile parameters (berm height, foreshore slope, nearshore bar), and bathymetry.
   Justify them against the references or real coastal analogues. (Declared per variant in the D1 record
   below; they become binding with the gate decision.)
-- [ ] **Gate.** The user selects a variant and approves its targets. Record the decision and date in
-  this file. No later deliverable may assume a variant before this. **Pending: see "D1 decision
-  requested" below.**
+- [x] **Gate.** The user selects a variant and approves its targets. Record the decision and date in
+  this file. No later deliverable may assume a variant before this. **Decided 2026-10-09: variant B
+  `relief-b-raised-80` (80 m high city, roads on the plan alignments at ≤ 6%); the B column of the declared
+  targets is binding; the user left the remaining recommended steps to my judgement.**
 
 ### D2. Terrain synthesis engine
 
@@ -356,9 +357,15 @@ conflicts where a district plane meets a node outside it (resolved to the band m
 near-vertical heightfield faces render as planar walls with horizon-shadow banding (NW-07), which the D2 face
 mask and the L3 rock geometry of AI 602 address, not the terrain.
 
-### D1 decision requested
+### D1 decision — 2026-10-09
 
-The user gate of D1 is open. Please choose, and the choice is recorded here with its date before D4 starts:
+**Decided: variant B `relief-b-raised-80`.** The user chose B on 2026-10-09 and left the other recommended
+steps to my judgement. Consequences: the high city is an 80 m plateau (band 79–81 m) with a 25 m escarpment
+face at 55° over a 33° talus; every plan road stays on its alignment under the 6% sustained rule (5.8% in the
+recipes, no switchbacks); the B column of the declared targets below is binding for D4; the dramatic
+160 m recipe stays in the repository as a study artifact only.
+
+The decision request as it was put (kept for the record):
 
 1. **Variant.** C `relief-c-dramatic-160` matches the original concept (the +160 m crest, the east hill rising
    from +20 m, the west cliff) and is the only variant that makes the high city read from the beach and the

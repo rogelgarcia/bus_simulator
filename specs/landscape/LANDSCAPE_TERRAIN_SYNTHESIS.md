@@ -119,11 +119,30 @@ untouched, so a steep flank crossed by a road leaves a visible bench (the D4 ram
 
 ## Geology channels (`landscape-geology` v1, D2/D4)
 
-Bedrock surface (m), regolith depth (m), deposit type (none, talus, colluvium, alluvium, beach sand, dune sand)
-and thickness (m), lithology/strata index, wear, deposition, flow and drainage class, face mask, coastal zone
-class (offshore, reef, bar, surf, swash, berm, backshore, foredune, platform, bluff toe, bluff face, bluff
-crown, inland), wave exposure. Encoded like the terrain fields (mask-aligned RGBA8 layers with the two-sample
-halo, content-addressed pages, `geology/manifest.json`) with exact JavaScript samplers and a GLSL decode mirror.
+The engine keeps these layers (working grid, float32 unless noted) and the geology sidecar publishes them:
+
+| Layer / channel | Unit, range | Meaning |
+| --- | --- | --- |
+| `bedrock` | m, absolute Y | Bedrock surface: `height − regolith − depositThickness` after erosion; never above `height` |
+| `regolith` | m, 0..8 | Weathered in-place mantle thickness (thermal weathering output) |
+| `depositType` | uint8 enum: 0 none, 1 talus, 2 colluvium, 3 alluvium, 4 beach sand, 5 dune sand, 6 reef rock | Dominant loose deposit at the surface |
+| `depositThickness` | m, 0..30 | Thickness of that deposit |
+| `lithology` | uint8 strata index 0..255 | Index of the stratum the bedrock surface lies in (0 = unstratified) |
+| `wear` | 0..1 | Normalized cumulative fluvial and hydraulic erosion depth (Gaea "wear") |
+| `deposition` | 0..1 | Normalized cumulative sediment deposition |
+| `flow` | 0..1 | Normalized `ln(A / spacing)` of the final surface (same convention as the terrain fields) |
+| `drainage` | uint8 class: 0 hillslope, 1 rill, 2 gully, 3 channel, 4 flat/pond, 5 sea | Drainage class from contributing area and incision |
+| `faceMask` | 0..1 | Slope beyond what the heightfield represents faithfully (smoothstep 55..75°): where L3 rock faces belong |
+| `coastalZone` | uint8 enum: 0 inland, 1 offshore, 2 reef, 3 bar, 4 surf, 5 swash, 6 berm, 7 backshore, 8 foredune, 9 platform, 10 bluff toe, 11 bluff face, 12 bluff crown | Coastal zone class |
+| `waveExposure` | 0..1 | Exposure of the shore to the open-sea fetch (headlands 1, sheltered coves 0), carried inland over the surf and swash |
+
+The sidecar (`geology/manifest.json`, format `landscape-geology`, schema 1) mirrors the terrain-fields layout:
+mask-aligned pages with the two-sample halo, three RGBA8 layers (`bedrockOffset` as `height − bedrock` in
+signed-square 0..32 m, `regolith` linear 8, `depositThickness` linear 30, `wear`, `deposition`, `flow`,
+`waveExposure`, `faceMask` linear; `depositType`, `lithology`, `drainage`, `coastalZone` as exact uint8 pages
+without halo like natural-soil pages), content-addressed pages, a `terrain` binding to the exact revision and
+chunk hashes, strict validation, exact JavaScript samplers (`sampleLandscapeGeologyPage`) and a GLSL decode
+mirror (`chunks/landscape/geology.glsl`).
 
 ## Review poses (`landscape-review-poses` v1)
 
@@ -176,5 +195,7 @@ in the AI 596 prompt file.
 
 ## Status
 
-- D1 relief study: delivered (engine D1 subset, analysis, review poses and captures, three variants); the
-  user gate (variant choice and targets) is pending.
+- D1 relief study: delivered (engine D1 subset, analysis, review poses and captures, three variants).
+  Gate decided 2026-10-09: variant B `relief-b-raised-80` (80 m high city, plan roads at ≤ 6%) with its
+  declared targets (AI 596 prompt file, "Declared targets", column B).
+- D2 terrain synthesis engine: in progress.
