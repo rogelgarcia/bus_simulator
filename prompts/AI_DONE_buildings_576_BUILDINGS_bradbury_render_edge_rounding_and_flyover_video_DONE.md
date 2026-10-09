@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 In the Bradbury block's Blender renders the building's edges are too sharp: every arris of the stone, terracotta,
@@ -47,3 +49,9 @@ Tasks:
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
 - Include the before/after render-time numbers (pose, resolution, samples, device) in the completion summary
+
+## Completion summary
+- Added `wear/edges.py`: a Cycles Bevel node per exterior material (stone 12 mm, terracotta 10, brick 6, wood 6, paint/metal/glazed 4; glass and carved capitals stay sharp), after the existing normal chain, plus a clean worn band (roughness +0.22, colour lift 10%) on the rounded arris; no mesh changes, no noise.
+- Wired into `wear_layer.py` (survives `use_capital_stage.py`), scene switches `edge_round` / `edge_worn` set by `build_scene.py` and `render_wear.py` (`edges=on|off|<scale>`, `edge_worn=`); documented in the BradburyBlock README ("Render-time rounded edges").
+- Before/after stills (5 poses, sheets) and the full 32 s flyover MP4 (768 frames, 1080x1920, edges on) under `tests/artifacts/screens/bradbury_fix/edge_rounding/`.
+- Render-time cost (OptiX GPU only, 1600x1000, 128 spp, same pose, off -> on): portal capital 75 -> 77 s; brick column + band 66 -> 96 s; window surround 68 -> 84 s; hero_3q 44 -> 42 s; st_corner 47 -> 53 s.

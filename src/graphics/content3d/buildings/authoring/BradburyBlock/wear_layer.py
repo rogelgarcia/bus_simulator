@@ -23,7 +23,7 @@
 import bpy, os, sys, time, json, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path: sys.path.insert(0, HERE)
-from wear import paths, geometry as geo, nodes, controls, registry, classes, elevation
+from wear import paths, geometry as geo, nodes, controls, registry, classes, elevation, edges
 from wear.apply import ApplyContext, build_markers
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -139,12 +139,19 @@ def print_materials(title, done, skipped):
     for k in sorted(skipped): print(f"   {'none':<10} left   {k}  [{skipped[k]}]")
 
 
+def print_edges(title, done):
+    print(f"\n{title}: {sum(1 for v in done.values() if v[1])} material(s) with rounded edges (AI 576, wear/edges.py)")
+    for k in sorted(done): print(f"   {done[k][0]:<10} {'rounded' if done[k][1] else 'left   '} {k}  [{done[k][2]}]")
+
+
 # ------------------------------------------------------------------------ 3. the worn portal
 bpy.ops.wm.open_mainfile(filepath=paths.PORTAL)
 layer = nodes.link_layer(paths.NODES)
 portal = bpy.data.collections["PORTAL"]
 done, skipped = wear_objects(list(portal.all_objects), layer, copy_linked=True)
 print_materials("the worn portal", done, skipped)
+portal_edges = edges.round_objects(list(portal.all_objects), classes.classify, classes.NAMES)
+print_edges("the worn portal", portal_edges)
 portal_worn = {k: v for k, v in done.items()}
 for spec in specs:
     if hasattr(spec, "apply_portal"): spec.apply_portal(ApplyContext(spec, results[spec.NAME], log=log))
@@ -164,6 +171,8 @@ log(f"the portal now links from {os.path.basename(paths.WORN_PORTAL)}: {len(pc.a
 layer = nodes.link_layer(paths.NODES)
 done, skipped = wear_objects([o for o in bpy.data.objects if o.library is None], layer, copy_linked=False)
 print_materials("the worn block", done, skipped)
+block_edges = edges.round_objects([o for o in bpy.data.objects if o.library is None], classes.classify, classes.NAMES)
+print_edges("the worn block", block_edges)
 block_worn = {k: v for k, v in done.items()}
 for spec in specs:
     if hasattr(spec, "apply"): spec.apply(ApplyContext(spec, results[spec.NAME], log=log))
@@ -231,6 +240,8 @@ man = dict(
                          if results[s.NAME].mask else None),
                    build=stats[s.NAME])
               for s in specs],
+    edges=dict(radius_m=edges.RADIUS, override=[[rx, r] for rx, r in edges.OVERRIDE], samples=edges.SAMPLES,
+               block={k: list(v) for k, v in block_edges.items()}, portal={k: list(v) for k, v in portal_edges.items()}),
     materials=dict(block={k: list(v) for k, v in block_worn.items()}, portal={k: list(v) for k, v in portal_worn.items()},
                    measured=[dict(cls=r[0], name=r[1], reason=r[2], objects=r[3]) for r in mat_report]),
     objects=dict(block_local=n_local0, worn_block_local=n_local, markers=markers))

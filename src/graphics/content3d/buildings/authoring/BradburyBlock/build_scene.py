@@ -131,7 +131,7 @@ assert BLOCK_KIND == "fixed" or WEAR == "off", "block=game is the untouched game
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path: sys.path.insert(0, HERE)
-from wear import paths as wear_paths, controls as wear_controls
+from wear import paths as wear_paths, controls as wear_controls, edges as wear_edges
 ROOT = os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "..", ".."))   # the repo (worktree) root, as assemble_building.py finds it
 # block=game stands the UNTOUCHED game export in the same scene, on the same cameras, for a before and after from one
 # pose. It is the file assemble_building.py itself opens, so nothing has to be kept in step by hand; it writes its own
@@ -3138,6 +3138,7 @@ except Exception as e: print("look not set:", e)
 
 if WEAR != "off":
     wear_controls.apply(S, WEAR_MODE, WEAR_STRENGTHS)
+    wear_edges.apply(S, *wear_edges.parse(args))      # AI 576: the worn block's materials round their edges by these (no effect on wear=off)
 bpy.ops.wm.save_as_mainfile(filepath=SCENE, compress=True, relative_remap=True)
 print(f"SCENE SAVED {SCENE} | {len(VIEWS)} cameras: {', '.join(VIEWS)} | ground: {GROUND} | block: {BLOCK_KIND} | "
       f"wear: {WEAR}")

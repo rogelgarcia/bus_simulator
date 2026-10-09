@@ -4,6 +4,8 @@
 #
 #   blender -b -P render_wear.py -- [scene=<file.blend>] [wear=on|off|debug] [wear_<feature>=<strength> ...]
 #                                   [view=<camera>] [cam=x,y,z:tx,ty,tz:lens] [shift=<x>,<y>] [frame=<w>:<h>]
+#                                   [edges=on|off|<scale>] [edge_worn=<strength>]
+#                                   [gf_top=r,g,b] [gf_pier=r,g,b] [gf_tone=off]
 #                                   [pct=100] [samples=128] [res=1920] [exposure=0] [devices=hybrid|gpu] [out=<png>]
 #
 #   blender -b -P render_wear.py -- wear=debug wear_probe=1 view=st_up
@@ -28,7 +30,7 @@ import bpy, os, sys, time
 from mathutils import Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path: sys.path.insert(0, HERE)
-from wear import paths, controls
+from wear import paths, controls, edges
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 args = dict(a.split("=", 1) for a in argv if "=" in a)
@@ -47,6 +49,24 @@ if mode != "off" and not any(c.name.startswith("WEAR_") or c.name == controls.SO
         and "wear" not in S:
     raise SystemExit("this scene was built with wear=off (it links the untouched block); render the worn scene instead")
 controls.apply(S, mode, strengths)
+edge_scale, edge_worn = edges.parse(args, S)      # AI 576: edges=on|off|<scale>, edge_worn=<strength>; a saved scene's own otherwise
+edges.apply(S, edge_scale, edge_worn)
+# the ground floor's tone, to try one without a rebuild (assemble_building.gf_tone_override, portal_lib.fill_sandstone):
+# gf_top=r,g,b the moulding and the portal, gf_pier=r,g,b the piers, sRGB 0..255; one not given keeps the built tone;
+# gf_tone=off renders the built tones whatever the scene holds
+def _lin(v):
+    v = float(v) / 255.0
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+if "gf_top" in args or "gf_pier" in args:
+    for key in ("top", "pier"):
+        if f"gf_{key}" in args:
+            S[f"gf_tone_{key}"] = [_lin(v) for v in args[f"gf_{key}"].split(",")]
+        else:
+            m = next((mm for mm in bpy.data.materials if mm.get("gf_tone_key") == key), None)
+            assert m is not None, f"no material carries the built {key} tone: rebuild the block (assemble_building.py)"
+            S[f"gf_tone_{key}"] = list(m["gf_tone_default"])
+    S["gf_tone"] = 1.0
+if args.get("gf_tone", "").lower() == "off": S["gf_tone"] = 0.0
 
 view = args.get("view")
 if "cam" in args:

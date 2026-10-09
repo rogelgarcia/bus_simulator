@@ -259,7 +259,25 @@ def mat_oak_light():
 # with the set's roughness, occlusion and normal map. The pieces exec this file, so the repository is found from the
 # piece's LIB path, from __file__ when there is one, or from the open .blend's place under tests/artifacts; if the set
 # is not there, the old noise ramp stands in, about the same tone.
-SANDSTONE_SRGB = (178, 111, 86)
+# Since 2026-10-08 (user: "i've added pbr textures in Bradbury_Ground_Floor_PBR, this is for the first floor") the stone
+# is the ground-floor pack's entrance terracotta, assets/public/pbr/bradbury_entrance_terracotta (make_ground_floor_pbr.py),
+# "for the entrance pillars, arch, capitals and carved decoration", 1 m a tile, gained onto SANDSTONE_SRGB; the
+# lettering and the frieze flowers (pieces/08_frieze.py), tinted onto SANDSTONE_SRGB, follow it. The dressed sandstone is the fallback when the new set is missing. Saved files take the change through
+# refill_portal_stone.py.
+STONE_SET, STONE_SET_TILE = "bradbury_entrance_terracotta", 1.0
+STONE_SET_OLD, STONE_SET_OLD_TILE = "bradbury_sandstone_dressed", 2.0
+# The same day, the tone, after three rounds with the user (a street photo of the corner: "it is a bit darker
+# originally"; a red-brown tint, "a bit pinkish ... that pink color don't look natural"; the set darkened in its own hue,
+# a "burro fugido" colour; then six candidates rendered side by side): "the surrounding of the capital needs to be
+# closer to its color ... the other parts can be a different color, closer to the capital color". The carved capitals'
+# textures average about (177, 119, 84), but at that albedo the plain stone renders paler and greyer than the carving
+# beside it (its self-shadowing and AO darken and deepen it), so the tone was fitted on the portal close-up: rendered,
+# the capital's front faces and the frieze and shaft beside them measured in the same light, the tone corrected by
+# their ratio per channel (tests/artifacts/screens/bradbury_fix/ground_floor_pbr/capital_tone/fit_tone.py). The second
+# round is taken: much closer to the capital, still warm terracotta and not pink (G/B 1.59; the pink tint had 1.27);
+# the third began to turn the large sunlit faces flat orange. assemble_building.py's GF_TONE reads this constant so the
+# moulding and the portal stay one stone. 185, 136, 112 is the set's own mean.
+SANDSTONE_SRGB = (154, 86, 54)                  # until 2026-10-08 (178, 111, 86); then for a few hours the set's own (185, 136, 112), (165, 102, 80), (151, 111, 91)
 def _repo_root():
     cands = []
     g = globals()
@@ -269,18 +287,23 @@ def _repo_root():
     for c in cands:
         if os.path.isdir(os.path.join(c, "assets", "public", "pbr")): return c
     return cands[-1] if cands else os.getcwd()
-def sandstone_dir(): return os.path.join(_repo_root(), "assets", "public", "pbr", "bradbury_sandstone_dressed")
+def sandstone_dir():
+    # (the set's folder, its tile in metres): the entrance terracotta, else the dressed sandstone
+    for name, tile in ((STONE_SET, STONE_SET_TILE), (STONE_SET_OLD, STONE_SET_OLD_TILE)):
+        d = os.path.join(_repo_root(), "assets", "public", "pbr", name)
+        if os.path.exists(os.path.join(d, "basecolor.jpg")): return d, tile
+    return os.path.join(_repo_root(), "assets", "public", "pbr", STONE_SET), STONE_SET_TILE
 def _srgb_to_lin(c): return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 def fill_sandstone(m, joints=False):
     # builds the material's nodes afresh (also used to rebuild an existing material in place)
     nt = m.node_tree; nt.nodes.clear()
     out = nt.nodes.new("ShaderNodeOutputMaterial"); bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled"); nt.links.new(bsdf.outputs[0], out.inputs[0])
-    tc = nt.nodes.new("ShaderNodeTexCoord"); d = sandstone_dir(); target = tuple(_srgb_to_lin(v / 255.0) for v in SANDSTONE_SRGB)
+    tc = nt.nodes.new("ShaderNodeTexCoord"); d, tile = sandstone_dir(); target = tuple(_srgb_to_lin(v / 255.0) for v in SANDSTONE_SRGB)
     if os.path.exists(os.path.join(d, "basecolor.jpg")):
-        mp = nt.nodes.new("ShaderNodeMapping"); mp.inputs["Scale"].default_value = (0.5, 0.5, 0.5)     # the set is 2 m a side
+        mp = nt.nodes.new("ShaderNodeMapping"); mp.inputs["Scale"].default_value = (1.0 / tile,) * 3          # the set's own tile, metres a side
         nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
         def tex(fn, cs):
-            fp = os.path.join(d, fn); im = bpy.data.images.load(fp, check_existing=True); im.name = "pbr_bradbury_sandstone_dressed_" + os.path.splitext(fn)[0]
+            fp = os.path.join(d, fn); im = bpy.data.images.load(fp, check_existing=True); im.name = "pbr_" + os.path.basename(d) + "_" + os.path.splitext(fn)[0]
             im.colorspace_settings.name = cs
             try: im.filepath = bpy.path.relpath(fp)
             except ValueError: pass
@@ -292,7 +315,17 @@ def fill_sandstone(m, joints=False):
         mean = np.where(a <= 0.04045, a / 12.92, ((a + 0.055) / 1.055) ** 2.4).mean(0)
         g = nt.nodes.new("ShaderNodeMix"); g.data_type = 'RGBA'; g.blend_type = 'MULTIPLY'; g.inputs["Factor"].default_value = 1.0
         nt.links.new(base.outputs["Color"], next(i for i in g.inputs if i.identifier == "A_Color"))
-        next(i for i in g.inputs if i.identifier == "B_Color").default_value = (float(target[0] / mean[0]), float(target[1] / mean[1]), float(target[2] / mean[2]), 1.0)
+        gain = [float(target[k] / mean[k]) for k in range(3)]
+        # the tone, switchable at render time as the block's ground-floor moulding is (assemble_building.gf_tone_override,
+        # the same scene properties: gf_tone 1 and gf_tone_top, a linear colour, give the gain gf_tone_top / the set's mean)
+        on = nt.nodes.new("ShaderNodeAttribute"); on.attribute_type = 'VIEW_LAYER'; on.attribute_name = "gf_tone"
+        tt = nt.nodes.new("ShaderNodeAttribute"); tt.attribute_type = 'VIEW_LAYER'; tt.attribute_name = "gf_tone_top"
+        dv = nt.nodes.new("ShaderNodeVectorMath"); dv.operation = 'DIVIDE'; nt.links.new(tt.outputs["Vector"], dv.inputs[0])
+        dv.inputs[1].default_value = (float(mean[0]), float(mean[1]), float(mean[2]))
+        ov = nt.nodes.new("ShaderNodeMix"); ov.data_type = 'RGBA'; nt.links.new(on.outputs["Fac"], ov.inputs["Factor"])
+        next(i for i in ov.inputs if i.identifier == "A_Color").default_value = (gain[0], gain[1], gain[2], 1.0)
+        nt.links.new(dv.outputs["Vector"], next(i for i in ov.inputs if i.identifier == "B_Color"))
+        nt.links.new(next(o for o in ov.outputs if o.identifier == "Result_Color"), next(i for i in g.inputs if i.identifier == "B_Color"))
         sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
         ao = nt.nodes.new("ShaderNodeMix"); ao.data_type = 'RGBA'; ao.blend_type = 'MULTIPLY'; ao.inputs["Factor"].default_value = 1.0
         nt.links.new(next(o for o in g.outputs if o.identifier == "Result_Color"), next(i for i in ao.inputs if i.identifier == "A_Color"))

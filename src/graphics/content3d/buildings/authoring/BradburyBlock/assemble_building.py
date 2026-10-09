@@ -3040,17 +3040,128 @@ import numpy as _np
 _brick_im = next(n.image for n in BRICK_PBR.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image.colorspace_settings.name == 'sRGB')
 _a = _np.empty(_brick_im.size[0] * _brick_im.size[1] * 4, dtype=_np.float32); _brick_im.pixels.foreach_get(_a)
 _brick_srgb = _a.reshape(-1, 4)[:, :3].astype(_np.float64).mean(0)
-STONE_PBR, _ = stone_material("PBR_bradbury_ground_stone", srgb_to_linear(_brick_srgb * _np.array(STONE_RATIO)))
-PIER_PBR, _ = stone_material("PBR_bradbury_pier_stone", srgb_to_linear(_brick_srgb * _np.array(PIER_RATIO)))
+# The ground-floor pack (user 2026-10-08: "i've added pbr textures in Bradbury_Ground_Floor_PBR, this is for the first
+# floor"), installed in the catalog by make_ground_floor_pbr.py, each set in the pack's own colour, which was made for
+# this facade -- the tones above, STONE_RATIO and PIER_RATIO, are no longer applied:
+#   the moulding -- the entablature, the fascia strip, the upper band, the cornice, crown, bead and dentils, the zone and
+#     its blocks, the band tops -- takes the entrance terracotta, the portal's stone too (portal_lib), 1 m a tile, and
+#     the weathered cornice terracotta on its UNDERSIDES alone: the user, same day, "the horizontal areas look too much
+#     like a pattern ... they should use the same as the pillars [the portal's], and then use the dirty texture only for
+#     underneath cornice areas". The two are blended by the surface's own facing, GF_UNDER_FROM to GF_UNDER_TO of the
+#     world normal pointing down, so a soffit is wholly weathered, a wall face and a top not at all, and a curved profile
+#     turns from one to the other as it turns under -- the geometry's own rule, no mask, no noise. (A first cut put the
+#     weathered set on every moulding face, and a second on every face of the cornice pieces: its soot read as a blotchy
+#     pattern across the flat fascia.)
+#   the piers take the taupe storefront pillars, 1 m a tile.
+# The terracotta and the taupe are box-projected on object coordinates like the stone before. The weathered set is a 4:1
+# strip, 2 x 0.5 m a tile, and is seen only where a surface faces down, so it is projected straight from below: object x
+# over 2 m and y over 0.5 m, the same 1024 px a metre both ways on every soffit whichever way the moulding runs. (Box
+# projection, tried first, drew it out 16:1 into wood-grain streaks across the soffits.)
+# The materials keep their names: the wear layer classes them as stone by name.
+GF_SETS = {"top": ("bradbury_entrance_terracotta", (1.0, 1.0, 1.0)),
+           "under": ("bradbury_cornice_weathered_terracotta", (2.0, 0.5, None)),    # None: projected from below (x, y) alone
+           "pier": ("bradbury_storefront_pillars_taupe", (1.0, 1.0, 1.0))}
+GF_UNDER_FROM, GF_UNDER_TO = 0.30, 0.65         # -normal.z where the weathered set starts, and where it is full
+def gf_sample(nt, key, tc, y):
+    # one set's (colour x AO, roughness, normal) sockets, box-projected on object coordinates at its tile (metres per axis)
+    folder, tile = GF_SETS[key]; d = os.path.join(PBR_DIR, folder)
+    below = tile[2] is None
+    mp = nt.nodes.new('ShaderNodeMapping'); mp.location = (-1100, y)
+    mp.inputs["Scale"].default_value = (1.0 / tile[0], 1.0 / tile[1], 0.0 if below else 1.0 / tile[2])   # from below: z drops out
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    def tex(fn, cs, dy):
+        fp = os.path.join(d, fn); assert os.path.exists(fp), f"{fp} (run make_ground_floor_pbr.py)"
+        im = bpy.data.images.load(fp, check_existing=True); im.name = f"pbr_{folder}_{os.path.splitext(fn)[0]}"
+        im.colorspace_settings.name = cs; im.filepath = bpy.path.relpath(fp)
+        t = nt.nodes.new('ShaderNodeTexImage'); t.image = im; t.location = (-850, y + dy)
+        if not below: t.projection = 'BOX'; t.projection_blend = 0.25
+        nt.links.new(mp.outputs["Vector"], t.inputs["Vector"]); return t, im
+    base, base_im = tex("basecolor.jpg", 'sRGB', 300); arm, _ = tex("arm.png", 'Non-Color', 0); nrm, _ = tex("normal_gl.png", 'Non-Color', -300)
+    sep = nt.nodes.new('ShaderNodeSeparateColor'); sep.location = (-550, y); nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+    ao = nt.nodes.new('ShaderNodeMix'); ao.data_type = 'RGBA'; ao.blend_type = 'MULTIPLY'; ao.location = (-350, y + 250); ao.inputs["Factor"].default_value = 1.0
+    nt.links.new(base.outputs["Color"], next(i for i in ao.inputs if i.identifier == "A_Color"))
+    nt.links.new(sep.outputs["Red"], next(i for i in ao.inputs if i.identifier == "B_Color"))
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nm.location = (-350, y - 300); nm.inputs["Strength"].default_value = 1.0
+    nt.links.new(nrm.outputs["Color"], nm.inputs["Color"])
+    return next(o for o in ao.outputs if o.identifier == "Result_Color"), sep.outputs["Green"], nm.outputs["Normal"], linear_mean(base_im)
+def gf_tone_override(nt, socket, key, gain, mean, loc):
+    # the tone, switchable at render time for comparing candidates without a rebuild (render_wear.py gf_top= / gf_pier=):
+    # with the scene's gf_tone at 1 the gain is the scene's gf_tone_<key> (a linear colour) over the set's own linear mean,
+    # else the built-in gain. A View Layer attribute reads 0 when absent, so a scene without them renders as built.
+    on = nt.nodes.new('ShaderNodeAttribute'); on.attribute_type = 'VIEW_LAYER'; on.attribute_name = "gf_tone"; on.location = (loc[0] - 400, loc[1])
+    tc_ = nt.nodes.new('ShaderNodeAttribute'); tc_.attribute_type = 'VIEW_LAYER'; tc_.attribute_name = f"gf_tone_{key}"; tc_.location = (loc[0] - 400, loc[1] - 200)
+    dv = nt.nodes.new('ShaderNodeVectorMath'); dv.operation = 'DIVIDE'; dv.location = (loc[0] - 200, loc[1] - 200)
+    nt.links.new(tc_.outputs["Vector"], dv.inputs[0]); dv.inputs[1].default_value = (float(mean[0]), float(mean[1]), float(mean[2]))
+    mx = nt.nodes.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.location = loc
+    nt.links.new(on.outputs["Fac"], mx.inputs["Factor"])
+    next(i for i in mx.inputs if i.identifier == "A_Color").default_value = (float(gain[0]), float(gain[1]), float(gain[2]), 1.0)
+    nt.links.new(dv.outputs["Vector"], next(i for i in mx.inputs if i.identifier == "B_Color"))
+    nt.links.new(next(o for o in mx.outputs if o.identifier == "Result_Color"), socket)
+def gf_material(name, top, under=None):
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); out.location = (700, 0)
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (400, 0); nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    bsdf.inputs["Metallic"].default_value = 0.0
+    tc = nt.nodes.new('ShaderNodeTexCoord'); tc.location = (-1300, 0)
+    col, rough, nrm, lin = gf_sample(nt, top, tc, 600)
+    if under:
+        ucol, urough, unrm, _ = gf_sample(nt, under, tc, -600)
+        geo = nt.nodes.new('ShaderNodeNewGeometry'); geo.location = (-550, -1300)
+        sz = nt.nodes.new('ShaderNodeSeparateXYZ'); sz.location = (-350, -1300); nt.links.new(geo.outputs["Normal"], sz.inputs["Vector"])
+        f = nt.nodes.new('ShaderNodeMapRange'); f.location = (-150, -1300); f.clamp = True; f.interpolation_type = 'SMOOTHSTEP'
+        f.inputs["From Min"].default_value, f.inputs["From Max"].default_value = -GF_UNDER_FROM, -GF_UNDER_TO   # normal.z -0.30 -> 0, -0.65 -> 1
+        nt.links.new(sz.outputs["Z"], f.inputs["Value"]); fac = f.outputs["Result"]
+        mc = nt.nodes.new('ShaderNodeMix'); mc.data_type = 'RGBA'; mc.location = (100, 300)
+        nt.links.new(fac, mc.inputs["Factor"])
+        nt.links.new(col, next(i for i in mc.inputs if i.identifier == "A_Color")); nt.links.new(ucol, next(i for i in mc.inputs if i.identifier == "B_Color"))
+        col = next(o for o in mc.outputs if o.identifier == "Result_Color")
+        mr = nt.nodes.new('ShaderNodeMix'); mr.data_type = 'FLOAT'; mr.location = (100, 0)
+        nt.links.new(fac, mr.inputs["Factor"])
+        nt.links.new(rough, next(i for i in mr.inputs if i.identifier == "A_Float")); nt.links.new(urough, next(i for i in mr.inputs if i.identifier == "B_Float"))
+        rough = next(o for o in mr.outputs if o.identifier == "Result_Float")
+        mn = nt.nodes.new('ShaderNodeMix'); mn.data_type = 'VECTOR'; mn.location = (100, -300)
+        nt.links.new(fac, mn.inputs["Factor"])
+        nt.links.new(nrm, next(i for i in mn.inputs if i.identifier == "A_Vector")); nt.links.new(unrm, next(i for i in mn.inputs if i.identifier == "B_Vector"))
+        nz = nt.nodes.new('ShaderNodeVectorMath'); nz.operation = 'NORMALIZE'; nz.location = (250, -300)
+        nt.links.new(next(o for o in mn.outputs if o.identifier == "Result_Vector"), nz.inputs[0]); nrm = nz.outputs["Vector"]
+    if top in GF_TONE:
+        # the tint: the top set's mean, linear, gained per channel onto its tone; the weathered undersides take the same
+        # gain, so their soot stays as much darker than the clean face as the pack made it
+        target = srgb_to_linear(_np.array(GF_TONE[top], dtype=_np.float64) / 255.0); gain = target / lin
+        tn = nt.nodes.new('ShaderNodeMix'); tn.data_type = 'RGBA'; tn.blend_type = 'MULTIPLY'; tn.location = (250, 300); tn.inputs["Factor"].default_value = 1.0
+        nt.links.new(col, next(i for i in tn.inputs if i.identifier == "A_Color"))
+        gf_tone_override(nt, next(i for i in tn.inputs if i.identifier == "B_Color"), top, gain, lin, (50, 600))
+        col = next(o for o in tn.outputs if o.identifier == "Result_Color"); lin = target
+        m["gf_tone_default"] = [float(v) for v in target]; m["gf_tone_key"] = top
+    nt.links.new(col, bsdf.inputs["Base Color"]); nt.links.new(rough, bsdf.inputs["Roughness"]); nt.links.new(nrm, bsdf.inputs["Normal"])
+    m.diffuse_color = (float(lin[0]), float(lin[1]), float(lin[2]), 1.0)
+    return m, lin
+# The tint (user 2026-10-08, with a street photo of the corner: "can we apply some tint in the first floor? it is a bit
+# darker originally"). Each set keeps its texture and is gained per channel onto a tone. Three rounds the same day: the
+# 2026-09-18 red-brown read pink ("that pink color don't look natural"); the sets darkened in their own hue read muddy
+# ("burro fugido"); so six candidates were rendered side by side (render_wear.py gf_top / gf_pier, no rebuild), and the
+# user chose: the storefront piers candidate E's dark brown, GF_TONE["pier"]; "the surrounding of the capital needs to be
+# closer to its color", so the moulding and the portal take portal_lib.SANDSTONE_SRGB, fitted on the portal close-up to
+# the carved capital's rendered colour (see portal_lib), read from there so the two stay one stone.
+# Evidence: tests/artifacts/screens/bradbury_fix/ground_floor_pbr/tint/.
+import re as _re
+_m = _re.search(r"^SANDSTONE_SRGB = \((\d+), (\d+), (\d+)\)", open(os.path.join(HERE, "portal_lib.py"), encoding="utf-8").read(), _re.M)
+assert _m, "SANDSTONE_SRGB not found in portal_lib.py"
+GF_TONE = {"top": tuple(int(v) for v in _m.groups()),      # the moulding = the portal's stone
+           "pier": (108, 70, 52)}                           # candidate E, chocolate brownstone (the user, 2026-10-08)
+STONE_PBR, _gs_lin = gf_material("PBR_bradbury_ground_stone", "top", under="under")
+PIER_PBR, _gp_lin = gf_material("PBR_bradbury_pier_stone", "pier")
 n_gs = n_gp = 0
 for o in list(GCOLL.objects) + [f for f in FIT.objects if f.name.startswith(("fit_band_top", "fit_inset", "fit_bar", "fit_cap_", "fit_zone_", "fit_pier_"))]:   # fit_pier_*: the zone's blocks beside the pilasters, in the moulding
     if o.type != 'MESH': continue
     o.data.materials.clear(); o.data.materials.append(STONE_PBR); n_gs += 1
 for o in [f for f in FIT.objects if f.type == 'MESH' and f.name == "fit_piers"]:                          # the pier ring alone is the pillars
     o.data.materials.clear(); o.data.materials.append(PIER_PBR); n_gp += 1
-def _srgb(ratio): return tuple(int(round(v * 255)) for v in _brick_srgb * _np.array(ratio))
-print(f"the ground floor's stone: the moulding sRGB about {_srgb(STONE_RATIO)} on {n_gs} meshes (the entablature, the strip, the zone and its blocks, the crown, the band tops), "
-      f"the piers about {_srgb(PIER_RATIO)} on {n_gp}; the brick's {tuple(int(round(v * 255)) for v in _brick_srgb)}, the {STONE_SET} set's surface on both, tiled every {STONE_SET_TILE} m")
+def _srgb_of(lin): return tuple(int(round(255 * (12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055))) for v in lin)
+print(f"the ground floor's pack: {GF_SETS['top'][0]} (mean sRGB about {_srgb_of(_gs_lin)}) on {n_gs} moulding meshes (the entablature, the strip, "
+      f"the upper band, the cornice, crown, bead and dentils, the zone and its blocks, the band tops), {GF_SETS['under'][0]} on their undersides "
+      f"(world normal {-GF_UNDER_FROM:+.2f} to {-GF_UNDER_TO:+.2f} down, smoothstep); {GF_SETS['pier'][0]} (about {_srgb_of(_gp_lin)}) on {n_gp} "
+      f"pier mesh(es); the brick's {tuple(int(round(v * 255)) for v in _brick_srgb)}")
 print(f"the trim terracotta: the band's mean colour ({_trim_gain[0]:.3f}, {_trim_gain[1]:.3f}, {_trim_gain[2]:.3f} linear) with terracotta_smooth's normal and ORM, "
       f"a tone per {TRIM_CELL_M} m piece (+-{TRIM_VAR_CELL:.1%}) and a grain (+-{TRIM_VAR_GRAIN:.1%}), box-projected every {TRIM_TILE_M} m; "
       f"on {n_sill} sills and {n_capm} capitals now, and on the band's mouldings, dentils and brackets below")

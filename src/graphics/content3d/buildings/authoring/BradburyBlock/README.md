@@ -7754,3 +7754,88 @@ Evidence: `tests/artifacts/screens/bradbury_scene/item37_taller_city/` (the two 
 `item37_left.png`, `item37_right.png`, `ref_3q_after.png`, `item37_numbers.md`, `frames/`, `tune/numbers_raw.txt`);
 `flyover/` (`bradbury_flyover_quick_540x960.mp4`, `frames_quick/`, `flyover_quick_sheet.png`, `render_quick.log`);
 both scenes rebuilt headless, the GUI Blender not touched.
+
+## Render-time rounded edges (AI 576, 2026-10-05)
+
+Every arris of the stone, terracotta, brick and mouldings was a perfect CG line. `wear/edges.py` puts a Cycles **Bevel
+node** into each exterior material of the worn files, feeding the BSDF's normal after whatever already feeds it (the
+set's normal map, the wear layer's normal), so the textures keep their detail and no mesh is touched. Beside it, a
+clean worn band: where the bevelled normal has turned from the plain one the roughness rises by 0.12 and the colour
+is made 10% brighter in its own hue (no noise, only the arris itself; a lift toward white read as a chalky line, user
+2026-10-07: "the line is too white now. the effect should be subtle indeed"). It runs in `wear_layer.py` right after the wear layer's own
+insertion, so `use_capital_stage.py` rebuilds it; it exists only in the worn files, so a `wear=off` scene has no rounded
+edges.
+
+- **Radius per family** (`RADIUS` in `wear/edges.py`, metres at scale 1): stone 20 mm, terracotta 16 mm, brick 10 mm,
+  wood 8 mm, paint/metal/glazed 6 mm (the third setting: 12/10/6/6/4 was too faint to see, 30/25/15/12/8 with a white
+  lift too strong); glass and the unclassed materials stay as they were. `OVERRIDE` lists materials
+  by name: the carved capitals (`PORTAL_sandstone_carved`) stay sharp, their atlas already breaks the edge.
+  `SAMPLES` (12), `WEAR_FROM/WEAR_TO`, `ROUGH_ADD`, `LIFT` tune the rest. Edit, then `use_capital_stage.py 2 --from wear`.
+- **Switch, from the scene** (custom properties read by Attribute nodes, so linked materials obey): `edge_round` is the
+  scale of every radius (0 = razor edges as before), `edge_worn` the worn band's strength. `build_scene.py -- edges=<scale>
+  edge_worn=<s>` sets them on the scene it builds; `render_wear.py -- edges=on|off|<scale> edge_worn=<s>` on a saved one
+  (the flyover renders the scene's own).
+- **Cost** (first setting; OptiX, 1600x1000, 128 spp, same pose): portal capital 75 s off / 77 s on; brick column and band 66 / 96;
+  window surround 68 / 84; hero_3q 44 / 42; st_corner 47 / 53. Close-ups of masonry cost up to ~40% more, wide views ~0-10%.
+  At the third setting, 2400x1500: 2 to 4 s more on 37 to 80 s, 3 to 5%.
+- Evidence: `tests/artifacts/screens/bradbury_fix/edge_rounding/` (`stills/`, `sheet_*.png`, `flyover/` -- the flyover
+  was rendered at the first setting --, `pair/v2`, `pair/v3`, `far/`).
+
+## The ground floor's PBR pack (2026-10-08)
+
+The user's `downloads/Bradbury_Ground_Floor_PBR.zip` ("this is for the first floor"): three coordinated, AI-generated
+materials, each repeating in U and V. `make_ground_floor_pbr.py` (plain Python, Pillow + NumPy) installs them into the
+game's catalog as `make_flowers_pbr.py` did its pack: `assets/public/pbr/<slug>/` with `basecolor.jpg` (q95 4:4:4, the
+pack's colour unchanged), `normal_gl.png`, `arm.png` (the pack's ORM: AO, roughness, metalness 0), the 16-bit
+`height.png`, the pack's README, material.json and validation record, a `pbr.material.config.js`, an entry in
+`_manifest.json` and an import in `_catalog_index.js` (the game's `PbrMaterialCatalog` resolves all three). It checks
+the pack's promises first: one size per material, the ORM equal to the separate maps, metalness zero, the borders wrapping.
+
+| catalog id | pack folder | tile | mean sRGB | on the building |
+|---|---|---|---|---|
+| `pbr.bradbury_storefront_pillars_taupe` | 01_Storefront_Pillars_Taupe | 1 m | (161, 140, 124) | the storefront piers (`fit_piers`) |
+| `pbr.bradbury_entrance_terracotta` | 02_Entrance_Ornaments_Terracotta | 1 m | (185, 136, 112) | the portal's stone and every face of the ground-floor moulding |
+| `pbr.bradbury_cornice_weathered_terracotta` | 03_Cornice_Weathered_Terracotta | 2 x 0.5 m strip | (158, 120, 97) | the moulding's undersides only (+ `dirt_mask.png`, informational) |
+
+- **The moulding** (`PBR_bradbury_ground_stone`, `assemble_building.py`, the entablature, fascia strip, upper band,
+  cornice, crown, bead, dentils, zone and its blocks, band tops: 99 meshes) is the entrance terracotta, and turns to the
+  weathered cornice where the surface faces down: a smoothstep of the world normal from 0.30 to 0.65 pointing down
+  (`GF_UNDER_FROM/TO`), so a soffit is wholly weathered, a wall face or a top not at all. The user's direction, same
+  day, after the first two cuts (the weathered set on the whole moulding, then on every face of the cornice pieces):
+  "the horizontal areas look too much like a pattern ... they should use the same as the pillars [the portal's], and
+  then use the dirty texture only for underneath cornice areas". The weathered strip is projected straight from below,
+  x over 2 m and y over 0.5 m (1024 px a metre both ways); box projection drew it 16:1 into wood-grain streaks.
+- **The piers** (`PBR_bradbury_pier_stone`) take the taupe set, box-projected on object coordinates at 1 m.
+- **The portal** (`portal_lib.fill_sandstone`, `PORTAL_sandstone` and the carved `PORTAL_sandstone_carved`) takes the
+  entrance terracotta at 1 m, gained onto `SANDSTONE_SRGB` (the tint below), and the lettering and the frieze flowers,
+  tinted onto it, follow. The dressed sandstone stays as the fallback.
+  `mat_sandstone` keeps a material that exists, so the saved files were refilled in place by `refill_portal_stone.py`
+  (`blender -b -P refill_portal_stone.py`: `bradbury_portal.blend`, `ornaments/arch_leaf.blend`, `ornaments/capital.blend`),
+  then `python use_capital_stage.py 2 --from block`. The stage-2 capitals keep their own carved atlas.
+- **The tone** (user, same day, with a street photo of the corner: "can we apply some tint in the first floor? it is a
+  bit darker originally"). Each set keeps its texture and is gained per channel onto a tone (one Multiply on the final
+  colour; the weathered undersides take the moulding's gain). Four rounds:
+  1. the sets onto the 2026-09-18 red-brown, (165, 102, 80) and piers (148, 86, 70): against the brick it lowered green
+     most, a magenta shift -- "a bit pinkish ... that pink color don't look natural";
+  2. the sets darkened in their own hue, (151, 111, 91) and (116, 101, 89), the photo's relation to the brick -- a
+     "burro fugido" colour, muddy;
+  3. six candidates rendered side by side on the street and whole-building views (`tone_palette/palette_*.png`);
+  4. the user's choice: the storefront piers candidate E, (108, 70, 52), `GF_TONE["pier"]`; and "the surrounding of the
+     capital needs to be closer to its color" for everything else. The capitals' textures average about (177, 119, 84),
+     but plain stone at that albedo renders paler and greyer than the carving beside it, so the moulding/portal tone
+     was fitted to the capital's rendered colour on the portal close-up (`capital_tone/fit_tone.py`: render, measure
+     the capital's front faces and the frieze and shaft in the same light, correct per channel) and the second round
+     taken: `portal_lib.SANDSTONE_SRGB` = (154, 86, 54), which `GF_TONE` reads so the moulding and the portal stay one
+     stone; the third began to turn the large sunlit faces flat orange.
+  **Trying a tone without a rebuild**: `render_wear.py -- gf_top=r,g,b gf_pier=r,g,b` (sRGB) renders the saved scene
+  with those tones (scene properties `gf_tone`, `gf_tone_top`, `gf_tone_pier`, read by Attribute nodes in the moulding,
+  pier and portal stone materials; the lettering and the frieze flowers keep the built tint). To keep one, set the
+  constants and run `blender -b -P refill_portal_stone.py` and `python use_capital_stage.py 2 --from block`.
+  Evidence `tint/`, `tone_palette/`, `capital_tone/`, and `after_tint/`, `after_tint2/`, `after_capital/` (the current).
+- `STONE_RATIO`, `PIER_RATIO` and `stone_material` are no longer used on the ground floor (kept above as the record of
+  the tones the user set on 2026-09-18).
+- Evidence: `tests/artifacts/screens/bradbury_fix/ground_floor_pbr/` -- `before/` and `after/` (eight poses, OptiX,
+  2000 wide, 128 spp: `close_pier`, `close_cornice`, `close_portal`, `further_groundfloor`, `further_portal`,
+  `whole_corner`, `whole_hero`, `whole_ref`), `sheets/` (before | after, with a 1:1 crop of the most-changed window),
+  and the superseded cuts `after_v1_whole_moulding_weathered/`, `after_v2_cornice_pieces_weathered/`,
+  `after_v3_box_projected_under/` with their sheets. Render times unchanged (37 to 65 s a pose before and after).
