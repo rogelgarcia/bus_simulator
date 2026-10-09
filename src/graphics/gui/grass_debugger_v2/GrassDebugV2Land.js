@@ -53,15 +53,42 @@ export async function createGrassDebugV2Land(renderer, terrain) {
     ground.name = 'GrassV2DirtTerrain';
     ground.position.set(terrain.centerX, 0, terrain.centerZ);
     ground.receiveShadow = true;
+    let patchGeometry = null, grassVisible = false;
     return Object.freeze({
         ground, materials: Object.freeze(materials),
+        setGrassPatches(patches) {
+            // Preserve the terrain UVs, but avoid shading a second floor beneath the grass.
+            const xs = [...new Set([-terrain.width / 2, ...patches.flatMap(p => [p.minX - terrain.centerX, p.maxX - terrain.centerX]), terrain.width / 2])].sort((a, b) => a - b);
+            const zs = [...new Set([-terrain.depth / 2, ...patches.flatMap(p => [p.minZ - terrain.centerZ, p.maxZ - terrain.centerZ]), terrain.depth / 2])].sort((a, b) => a - b);
+            const positions = [], uvs = [], indices = [];
+            for (const z of zs) for (const x of xs) {
+                positions.push(x, 0, z); uvs.push(x / terrain.width + .5, .5 - z / terrain.depth);
+            }
+            for (let z = 0; z < zs.length - 1; z++) for (let x = 0; x < xs.length - 1; x++) {
+                const centerX = (xs[x] + xs[x + 1]) / 2 + terrain.centerX, centerZ = (zs[z] + zs[z + 1]) / 2 + terrain.centerZ;
+                if (patches.some(p => centerX > p.minX && centerX < p.maxX && centerZ > p.minZ && centerZ < p.maxZ)) continue;
+                const a = z * xs.length + x, b = a + xs.length;
+                indices.push(a, b, a + 1, a + 1, b, b + 1);
+            }
+            patchGeometry?.dispose();
+            patchGeometry = new THREE.BufferGeometry();
+            patchGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            patchGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            patchGeometry.setIndex(indices); patchGeometry.computeVertexNormals();
+            if (grassVisible) ground.geometry = patchGeometry;
+        },
+        setGrassVisible(value) {
+            grassVisible = value;
+            ground.geometry = value && patchGeometry ? patchGeometry : geometry;
+        },
+        dispose() { geometry.dispose(); patchGeometry?.dispose(); },
         setSurface(id) {
             if (!Object.hasOwn(materials, id)) throw new Error(`Unknown Grass Debug land: ${id}`);
             selected = id;
             ground.material = materials[id];
         },
         getSnapshot() {
-            return { ...surfaces[selected] };
+            return { ...surfaces[selected], grassPatchExcluded: grassVisible && !!patchGeometry };
         }
     });
 }

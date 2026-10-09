@@ -4,9 +4,9 @@ import * as THREE from 'three';
 
 const CORNERS = Object.freeze([[1, 4, -1, -1], [2, 4, 1, -1], [1, 8, -1, 1], [2, 8, 1, 1]]);
 
-/** @param {object} cell @param {Uint8Array} levels @param {number} size */
-export function grassTransitionCanopyProfile(cell, levels, size) {
-    const open = (dx, dz) => cell.x + dx >= 0 && cell.x + dx < size && cell.z + dz >= 0 && cell.z + dz < size
+/** @param {object} cell @param {Uint8Array} levels @param {number} size @param {number} depth */
+export function grassTransitionCanopyProfile(cell, levels, size, depth = size) {
+    const open = (dx, dz) => cell.x + dx >= 0 && cell.x + dx < size && cell.z + dz >= 0 && cell.z + dz < depth
         && levels[cell.id + dx + dz * size] < 4;
     const edges = cell.edge | (open(-1, 0) ? 1 : 0) | (open(1, 0) ? 2 : 0) | (open(0, -1) ? 4 : 0) | (open(0, 1) ? 8 : 0);
     const corners = CORNERS.reduce((mask, [xSide, zSide, dx, dz], i) => mask | (!(edges & (xSide | zSide)) && open(dx, dz) ? 1 << i : 0), 0);

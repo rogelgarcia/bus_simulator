@@ -3,13 +3,13 @@ import * as THREE from 'three';
 import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { createGrassDebugV2FreeCamera } from './GrassDebugV2FreeCamera.js?v=transition-navigation-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
-import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=transition-lighting-1';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=opaque-dissolve-1';
+import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=card-coverage-2';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=card-coverage-2';
 import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=opaque-dissolve-1';
 import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=opaque-dissolve-1';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { createGrassDebugV2TransitionExperiments, GRASS_TRANSITION_EXPERIMENTS } from './GrassDebugV2TransitionExperiments.js';
-import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=opaque-dissolve-1';
+import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=card-coverage-2';
 import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 
 const loading = document.querySelector('#scene-loading');
@@ -18,6 +18,7 @@ const controls = document.querySelectorAll('#scene-panel input, #scene-panel sel
 export async function createGrassDebugV2TransitionScene() {
     const canvas = document.querySelector('#scene-canvas');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.localClippingEnabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .02, 250);

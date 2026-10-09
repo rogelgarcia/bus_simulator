@@ -7,15 +7,18 @@ import { createGrassDebugV2Scene, GRASS_V2_TERRAIN } from './GrassDebugV2Scene.j
 import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { GrassDebugV2CameraInput } from './GrassDebugV2CameraInput.js';
 import { GrassDebugV2Benchmark } from './GrassDebugV2Benchmark.js';
-import { GrassDebugV2Grass } from './GrassDebugV2Grass.js';
+import { createGrassDebugV2DistanceGrass } from './GrassDebugV2DistanceGrass.js';
 import { createGrassDebugV2OverviewPose } from './GrassDebugV2CameraPresets.js';
 
 export class GrassDebugV2View {
-    /** @param {{canvas: HTMLCanvasElement, perfBar: object, onBenchmarkChange?: Function}} options */
-    constructor({ canvas, perfBar, onBenchmarkChange = () => {} }) {
+    /** @param {{canvas: HTMLCanvasElement, perfBar: object, onBenchmarkChange?: Function, onGrassChange?: Function, onProgress?: Function}} options */
+    constructor({ canvas, perfBar, onBenchmarkChange = () => {}, onGrassChange = () => {}, onProgress = () => {} }) {
         this.canvas = canvas;
         this.perfBar = perfBar;
         this._onBenchmarkChange = onBenchmarkChange;
+        this._onGrassChange = onGrassChange;
+        this._onProgress = onProgress;
+        this._lastGrassTelemetry = 0;
         this.ready = false;
         this.frameIndex = 0;
         this._lastTime = 0;
@@ -27,7 +30,7 @@ export class GrassDebugV2View {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1600);
-        this.lighting = new GrassDebugV2Lighting({ renderer: this.renderer, scene: this.scene, camera: this.camera });
+        this.lighting = new GrassDebugV2Lighting({ renderer: this.renderer, scene: this.scene, camera: this.camera, retainSceneDepth: true });
         this.gpuTimer = getOrCreateGpuFrameTimer(this.renderer);
         this.perfBar.setRenderer(this.renderer);
         window.addEventListener('resize', this._onResize);
@@ -42,7 +45,6 @@ export class GrassDebugV2View {
             this.lighting.loadEnvironment()
         ]);
         this.content = content;
-        this.grass = new GrassDebugV2Grass({ renderer: this.renderer, scene: this.scene, road: content.road, bus: content.bus });
         this.lighting.applyEnvironment();
         const size = new THREE.Box3().setFromObject(content.bus).getSize(new THREE.Vector3());
         const distance = Math.max(8.5, Math.max(size.x, size.y, size.z) * 1.35);
@@ -59,21 +61,22 @@ export class GrassDebugV2View {
             initialPose: this.busPose
         });
         this.perfBar.setDebugPoseProvider(() => ({ camera: this.camera, bus: content.bus }));
-        this.renderer.shadowMap.autoUpdate = false;
-        this.renderer.shadowMap.needsUpdate = true;
-        this.grass.meshes.LOD3.visible = true;
-        this.grass.mixed.group.visible = true;
         for (const id of Object.keys(content.land.materials)) {
             content.land.setSurface(id);
             this.lighting.applyEnvironment();
             await this.renderer.compileAsync(this.scene, this.camera);
         }
         content.land.setSurface('gravelly_sand');
-        this.grass.setMode('LOD0');
+        this.grass = await createGrassDebugV2DistanceGrass({ renderer: this.renderer, scene: this.scene, camera: this.camera,
+            lighting: this.lighting, road: content.road, bus: content.bus, land: content.land, onProgress: this._onProgress });
+        await this.renderer.compileAsync(this.scene, this.camera);
         this.keyboard = new GrassDebugV2CameraInput(this.controls);
+        const grassLayout = this.grass.getSnapshot();
+        const grassBounds = { ...grassLayout.placement, maxZ: Math.max(...grassLayout.placements.filter(p => p.side === -1).map(p => p.maxZ)) };
         this.benchmark = new GrassDebugV2Benchmark({
             camera: this.camera, controls: this.controls, keyboard: this.keyboard,
             gpuTimer: this.gpuTimer, busPose: this.busPose,
+            busBounds: new THREE.Box3().setFromObject(content.bus), grassBounds,
             getViewport: () => ({ width: this.canvas.width, height: this.canvas.height, pixelRatio: this.renderer.getPixelRatio() }),
             getGrass: () => this.grass.getSnapshot(),
             getLand: () => this.content.land.getSnapshot(),
@@ -86,20 +89,21 @@ export class GrassDebugV2View {
     setCamera(id) {
         if (!['bus', 'overview', 'grass'].includes(id)) throw new Error(`Unknown Grass Debug camera: ${id}`);
         if (this.benchmark?.active) return;
-        this.controls.setLookAt(id === 'grass' ? this.grass.mixed.getCameraPose(this.camera) : id === 'bus' ? this.busPose : createGrassDebugV2OverviewPose());
+        this.controls.setLookAt(id === 'grass' ? this.grass.getCameraPose() : id === 'bus' ? this.busPose : createGrassDebugV2OverviewPose());
+        this.grass.update(this.camera.position, performance.now(), true);
     }
 
-    /** @param {'OFF'|'LOD0'|'LOD3'|'MIXED'} mode */
+    /** @param {'AUTO'|'OFF'|'LOD0'|'LOD1'|'LOD2'|'LOD3'|'LOD4'|'LOD5'} mode */
     setGrassMode(mode) {
         if (!this.ready || this.benchmark.active) return false;
         this.grass.setMode(mode);
         return true;
     }
 
-    /** @param {boolean} visible */
-    setMixedCardBounds(visible) {
-        if (!this.ready || this.benchmark.active || this.grass.mode !== 'MIXED') return false;
-        this.grass.mixed.cardBounds.visible = !!visible;
+    /** @param {'dissolve'|'coverage'|'alpha'|'staggered'} value */
+    setFadeStyle(value) {
+        if (!this.ready || this.benchmark.active) return false;
+        this.grass.setFadeStyle(value);
         return true;
     }
 
@@ -136,12 +140,16 @@ export class GrassDebugV2View {
             this.camera.near = near;
             this.camera.updateProjectionMatrix();
         }
+        this.grass.update(this.camera.position, time);
         this.gpuTimer.beginFrame();
         this.lighting.render(dt);
         this.gpuTimer.endFrame();
         this.frameIndex++;
         this.perfBar.onFrame({ dt, nowMs: time, renderer: this.renderer, frameIndex: this.frameIndex });
         this.benchmark.afterFrame({ nowMs: time, frameMs: dt * 1000, cpuMs: performance.now() - cpuStart });
+        if (this.ready && time - this._lastGrassTelemetry >= 500) {
+            this._lastGrassTelemetry = time; this._onGrassChange();
+        }
     }
 
     getSnapshot() {
@@ -179,6 +187,7 @@ export class GrassDebugV2View {
         this.benchmark?.dispose();
         this.controls?.dispose();
         this.grass?.dispose();
+        this.content?.land?.dispose();
         this.lighting.dispose();
         this.perfBar.setDebugPoseProvider(null);
         const geometries = new Set();

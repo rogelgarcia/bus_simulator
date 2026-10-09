@@ -37,13 +37,18 @@ export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, 
             capture.add(mesh); meshes.push(mesh);
         });
         const externalCasters = meshes.length;
-        for (const tile of tiles.filter(tile => tile.active)) {
+        const receivers = fields.getCanopyMeshes ? fields.getCanopyMeshes() : tiles.filter(tile => tile.active).flatMap(tile => {
+            const result = [];
             scene.getObjectByName('GrassFieldTile_' + (tile.index + 1)).traverse(source => {
                 if (!source.userData.grassCanopy && !source.userData.grassCanopyWall) return;
-                const mesh = new THREE.Mesh(source.geometry, source.material);
-                mesh.matrix.copy(source.matrixWorld); mesh.matrixAutoUpdate = false; mesh.receiveShadow = true;
-                capture.add(mesh); meshes.push(mesh);
+                result.push(source);
             });
+            return result;
+        });
+        for (const source of receivers) {
+            const mesh = source.clone(false);
+            mesh.matrix.copy(source.matrixWorld); mesh.matrixAutoUpdate = false; mesh.receiveShadow = true; mesh.castShadow = false;
+            capture.add(mesh); meshes.push(mesh);
         }
         const previous = { target: renderer.getRenderTarget(), tone: renderer.toneMapping, autoClear: renderer.autoClear,
             color: renderer.getClearColor(new THREE.Color()), alpha: renderer.getClearAlpha(),
@@ -62,7 +67,7 @@ export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, 
             renderer.shadowMap.needsUpdate = previous.shadowUpdate; renderer.shadowMap.autoUpdate = previous.shadowAuto;
             canopy.shadowUniforms.grassCanopyShadowPass.value = generations ? 2 : 0;
             canopy.shadowUniforms.grassCanopyShadowVisibility.value = target.texture;
-            for (const mesh of meshes) capture.remove(mesh);
+            for (const mesh of meshes) { capture.remove(mesh); mesh.dispose?.(); }
             casterMaterials.forEach(material => material.dispose()); light.shadow.dispose(); light.shadow.map = null;
         }
     }

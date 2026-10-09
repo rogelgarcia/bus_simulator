@@ -8,7 +8,7 @@ const moduleSource = (await readFile(new URL('../../../src/graphics/gui/grass_de
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '') + '\nglobalThis.create = createGrassDebugV2FieldCanopy;';
 
 function fixture(failure) {
-    const geometries = [], bakes = [], materials = [], periodic = [], borders = [], reliefs = [], walls = [], injected = new Error('injected-' + failure);
+    const geometries = [], bakes = [], materials = [], periodic = [], borders = [], reliefs = [], walls = [], bases = [], injected = new Error('injected-' + failure);
     class Attribute {
         constructor(array, itemSize, normalized = false) { this.array = array; this.itemSize = itemSize; this.normalized = normalized; this.count = array.length / itemSize; }
         getX(i) { return this.array[i * this.itemSize]; }
@@ -51,6 +51,10 @@ function fixture(failure) {
             return Object.assign(disposable(bakes), { ...profile, profiles: { default: profile } });
         },
         createGrassDebugV2CanopyMaterials: () => ({ all: disposable(materials), grass: disposable(materials) }),
+        createGrassDebugV2CardBase: async () => {
+            if (failure === 'card-base') throw injected;
+            return disposable(bases);
+        },
         createGrassDebugV2CanopyWall: async () => {
             if(failure === 'wall')throw injected;
             return Object.assign(disposable(walls),{group:new Group(),getSnapshot:()=>({triangles:0})});
@@ -72,11 +76,11 @@ function fixture(failure) {
     sourceGeometry.setIndex([0, 1, 2]); sourceGeometry.computeBoundingBox();
     const source = new Mesh(sourceGeometry, {}); source.userData.grassLeafRanges = [{ start: 0, count: 3 }];
     const direction = { x: .5, y: 1, z: .2, clone() { return this; }, normalize() { return this; }, toArray() { return [.5, 1, .2]; } };
-    return { run: () => context.create({ renderer: {}, source, lod2: source, soil: {}, litter: {}, width: 4, depth: 4, shadowDirection: direction, lighting: {} }),
-        sourceGeometry, geometries, bakes, materials, periodic, borders, reliefs, walls, injected };
+    return { run: () => context.create({ renderer: {}, source, lod2: source, soil: {}, litter: {}, width: 4, depth: 4, shadowDirection: direction, lighting: {}, cardBaseDensity: .45 }),
+        sourceGeometry, geometries, bakes, materials, periodic, borders, reliefs, walls, bases, injected };
 }
 
-for (const failure of ['layout', 'second-bake', 'wall', 'relief', 'border']) test('canopy releases owned resources after ' + failure + ' failure', async () => {
+for (const failure of ['layout', 'second-bake', 'card-base', 'wall', 'relief', 'border']) test('canopy releases owned resources after ' + failure + ' failure', async () => {
     const f = fixture(failure);
     await assert.rejects(f.run(), error => error === f.injected);
     assert.equal(f.sourceGeometry.disposals, 0);
@@ -86,6 +90,7 @@ for (const failure of ['layout', 'second-bake', 'wall', 'relief', 'border']) tes
     assert(f.periodic.every(p => p.disposals === 1));
     assert(f.reliefs.every(r => r.disposals === 1));
     assert(f.walls.every(r => r.disposals === 1));
+    assert(f.bases.every(r => r.disposals === 1));
     assert.equal(f.bakes.length, failure === 'layout' ? 0 : failure === 'second-bake' ? 1 : 2);
 });
 
@@ -94,10 +99,12 @@ test('successful canopy keeps persistent resources until explicit disposal', asy
     assert.equal(f.geometries.filter(g => g !== f.sourceGeometry && g.disposals === 1).length, 2);
     assert(f.bakes.every(b => b.disposals === 0)); assert(f.materials.every(m => m.disposals === 0));
     assert(f.periodic.every(p => p.disposals === 1));
+    assert(f.bases.every(r => r.disposals === 0));
     result.dispose();
     assert(f.geometries.filter(g => g !== f.sourceGeometry).every(g => g.disposals === 1));
     assert(f.bakes.every(b => b.disposals === 1)); assert(f.materials.every(m => m.disposals === 1));
     assert(f.borders.every(b => b.disposals === 1)); assert.equal(f.sourceGeometry.disposals, 0);
     assert(f.reliefs.every(r => r.disposals === 1));
     assert(f.walls.every(r => r.disposals === 1));
+    assert(f.bases.every(r => r.disposals === 1));
 });

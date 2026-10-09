@@ -19,6 +19,136 @@ the scene bypasses it, while deliberate missing-export failures remain visible.
 
 ## Scene and selection
 
+### Sparse base and card hybrid (2026-10-08)
+
+The runtime-baked card path in both labs now shares a **sparser grass-and-litter
+base** under LOD3 and LOD4. LOD5 retains its full population. The base selects a
+deterministic 45% of source shoots from each existing compiled tile variation.
+The initial hash subset contained 1,218 leaves per tile; the coverage-balanced
+revision below selects 1,206. Exact periodic continuations and 8192² bake shadows
+are retained. Leaf transforms remain compiled; subset selection runs once at bake time.
+The two tiles contain 1K albedo/height, normal/leaf mask, roughness/soil, and
+self-shadow maps. Resident allocation with mipmaps is **36,350,626 bytes**
+(36.4 MB / 34.7 MiB), shared by every field and both card levels.
+
+- LOD3: **12 × 30 cm cards/m²**, capturing 30 × 23 cm leaf strips at 25°;
+  35 cm ground span. Previously 20 × 25 cm cards/m².
+- LOD4: **3 × 80 cm cards/m²**, capturing 80 × 50 cm leaf strips at 30°;
+  56 cm ground span. Previously 4 × 75 cm cards/m².
+- Toroidal best-candidate template roots replace regular rows, retaining the
+  existing world-seeded GPU jitter, yaw and shape variation. This also avoids
+  the empty fourth quadrant of a three-card 2 × 2 grid. No additional shader
+  operations, per-frame CPU card placement, atlas resolution changes or sorting.
+- Pure card cells render one opaque base quad instead of the litter quad.
+  At the LOD3/4 handoff, the same base maps and UVs use complementary existing
+  dissolve masks. Geometry/texture handoffs retain litter support where their
+  projections differ. Source LOD2 and the full LOD5 canopy are unchanged.
+- `fields.setCardBaseEnabled(false)` retains the litter-only comparison path.
+  Snapshots expose density, texture bytes and active base-cell counts. The
+  compressed-canopy experiment does not yet include the sparse-base bake.
+
+The coverage regression uses a semantic render mask, including fractional
+baked leaf coverage, rather than classifying litter by green color. Four matched
+poses (bus, overview, along grass, rear) compare forced LOD2/3/4 and Auto. In the
+bus view's 16–32 m band: LOD2 is 81.1%; LOD3 improves 53.6→75.3%; LOD4 improves
+69.6→78.2%. Along the field at 8–16 m, LOD3 improves 55.2→70.5%, versus LOD2
+71.7%. LOD4 at 16–32 m retains about 90% of LOD2's projected coverage in the
+front/rear grass views. The texture removes exposed bare patches, but does not
+reproduce LOD2's full parallax; broad cards remain identifiable in forced close
+views, and LOD5 remains flatter.
+
+RTX 3060, 1360 × 952 canvas at DPR 1, six paired rounds of 20 samples per mode
+and soil, cached shadows, rotating/reversed order. Values below are GPU ms
+**above soil-only fields**; captures, compilation and shadow generation are
+excluded. Before/after use identical material metadata and poses.
+
+| Pose | LOD3 before → hybrid | LOD4 before → hybrid | Auto before → hybrid |
+| --- | --- | --- | --- |
+| Bus | 0.354 → 0.260 | 0.223 → 0.229 | 0.271 → 0.294 |
+| Overview | 0.337 → 0.301 | 0.215 → 0.235 | 0.173 → 0.219 |
+| Along grass | 0.543 → 0.462 | 0.377 → 0.403 | 0.526 → 0.616 |
+| Rear | 0.488 → 0.415 | 0.342 → 0.369 | 0.668 → 0.685 |
+
+LOD3 shows a consistent lower mean; LOD4 and Auto confidence intervals overlap,
+so their small changes are inconclusive. Forced whole-scene LOD3 geometry falls
+72,576→44,928 triangles; LOD4 falls 17,280→13,824, including substrate quads.
+The report stores per-round results and confidence intervals. Validation used
+local backed-up material config modules because 72 shared catalog modules were
+missing; texture images and renderer code were the current workspace versions.
+
+Evidence: `tests/artifacts/screens/grass_debug_v2/card_coverage/index.html`.
+
+#### Coverage balance and card containment (2026-10-08)
+
+`GrassDebugV2SparseBaseLayout.js` rasterizes the source leaf triangles onto two
+periodic 128² occupancy grids. Greedy selection rewards uncovered leaf footprints
+and gently penalizes neighboring overlap. Both variants select the same whole-shoot
+IDs, including boundary leaves; their shared seams and shadows remain compatible.
+The budget stays at 45%. This runs only during base preparation, not selection updates.
+
+Card root jitter is reduced from 0.9 to 0.25 times nominal spacing, preserving
+the best-candidate distribution. Width, count, capture resolution and memory are
+unchanged. Field-edge card batches use Three's four built-in XZ clipping planes;
+interior batches do not enable clipping. This requires `localClippingEnabled` in
+both scenes. Conservative template bounds must fit within 1.5 m of each cell
+center, ensuring only the outer one-metre ring needs clipping. Boundary material
+variants preserve shared shader uniforms and continue through existing dissolve
+and chunk routing. Their materials/batches are owned and disposed by the fields.
+
+Local measurements use 25 × 25 cm regions (at least eight mask samples), with
+less than 50% leaf coverage counted as low coverage. Compared with the previous
+hybrid: overview LOD4 at 16–32 m improves **21.7% → 7.4%** low-coverage regions;
+LOD3 improves **23.0% → 2.2%**. Bus-view LOD4 improves **2.9% → 0%**. Mean bus-view
+coverage is now 84.3% / 86.5% for LOD3 / LOD4, versus LOD2's 81.1%. Natural litter
+gaps remain, and broad cards remain discernible at steep angles.
+
+Eight orthographic corner masks (LOD3/4 × four corners, 512² over 4 × 4 m) find
+**zero** leaf pixels outside field bounds with a 1 cm raster tolerance, versus
+46,484 before. A 31-pose, six-metre movement check keeps 411–479 blend candidate
+cells active without shader errors. Focused coverage, periodicity, cleanup and
+selection unit checks also pass.
+
+Same RTX 3060 benchmark method as above; GPU ms **above soil-only**:
+
+| Pose | LOD3 previous → revised | LOD4 previous → revised | Auto previous → revised |
+| --- | --- | --- | --- |
+| Bus | 0.273 → 0.212 | 0.235 → 0.227 | 0.320 → 0.263 |
+| Overview | 0.241 → 0.298 | 0.109 → 0.210 | 0.144 → 0.209 |
+| Along grass | 0.405 → 0.448 | 0.362 → 0.391 | 0.544 → 0.563 |
+| Rear | 0.441 → 0.439 | 0.376 → 0.378 | 0.661 → 0.713 |
+
+Clipping splits perimeter batches: forced card modes rise from 30 to 54 allocated
+active field batches, with the same triangles. CPU submission increases in these
+captures; the report includes it and GPU confidence intervals. Separate before/after
+runs and uncontrolled GPU clocks prevent interpreting small differences as proven
+speedups. Texture memory remains 36,350,626 bytes for the base; no extra maps.
+
+Evidence: `tests/artifacts/screens/grass_debug_v2/card_coverage/edge_fix/index.html`.
+The `edge-before`, `edge-balanced`, and `edge-final` folders retain the trials.
+Generate with `node tests/headless/visual/grass_card_boundary_report.mjs`.
+Set `GRASS_CARD_BOUNDARIES=1` for corner regression captures, and
+`GRASS_CARD_CODE_BASELINE` to an archived source directory for the previous hybrid.
+Both runs still use the same backed-up material config modules because the shared
+catalog modules remain missing; no shared assets were restored or overwritten.
+
+Run `tests/headless/e2e/grass_debug_v2_card_coverage.pwtest.js`; opt into timings
+with `GRASS_CARD_PERF=1`. Generate the report with
+`node tests/headless/visual/grass_card_hybrid_report.mjs`.
+
+### Shared bus-scene integration (2026-10-05)
+
+`grass_debug_v2.html` now reuses these assets, card profiles, selection bands and
+blend materials for six 8 × 36 m roadside fields: three successive fields per
+side with 2 m longitudinal gaps. `createGrassDebugV2TransitionFields`
+accepts even-metre `fieldDepth` and explicit `[minX, minZ]` origins in addition
+to `fieldSize`; default callers still receive four 32 × 32 m fields. Perimeter
+capacity, cell adjacency and canopy corner profiles use both dimensions.
+
+The asset loader accepts `externalShadows: true` for scenes with bus/tree
+occluders, and reuses an already-loaded environment. The bus adapter caches
+external canopy shadows through instanced receiver meshes; the empty transition
+lab keeps its cheaper baked-shadow-only path. No transition shader was added.
+
 ### Opaque dissolve (2026-10-05)
 
 `?revision=opaque-dissolve-1&lod3=cards` replaces the broad card opacity fade

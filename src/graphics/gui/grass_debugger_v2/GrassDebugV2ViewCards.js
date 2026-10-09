@@ -5,11 +5,10 @@ import { createGrassDebugV2ViewCardsMaterial } from './GrassDebugV2ViewCardsMate
 import { grassPlateSurfaceBakeShader, grassPlateNormalShader } from '../../shaders/materials/grass/GrassPlateShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
-import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
 
 const PROFILES = Object.freeze({
-    near: { width: .25, depth: .17, span: .32, pitch: 30, density: 20 },
-    bridge: { width: .75, depth: .32, span: .62, pitch: GRASS_FIELD_BUS_CAMERA.pitchDegrees, density: 4 }
+    near: { width: .3, depth: .23, span: .35, pitch: 25, density: 12 },
+    bridge: { width: .8, depth: .5, span: .56, pitch: 30, density: 3 }
 });
 const TILE_WIDTH = 512, TILE_HEIGHT = 256, GUTTER = 4, WIDTH = 4096, HEIGHT = 1024;
 
@@ -42,13 +41,28 @@ function cardTemplates(count, centerHeight, frameHeight, footprint) {
     const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     return Array.from({ length: 4 }, () => {
         const positions = [], variants = [], uvs = [], indices = [], normals = [], slots = [];
-        const columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns);
+        // Toroidal best-candidate placement avoids rows and leaves no unused grid
+        // quadrant for counts such as three. Small, world-stable offsets preserve
+        // that separation instead of clustering roots again after placement.
+        const roots = [];
         for (let slot = 0; slot < count; slot++) {
-            const cx = (slot % columns + .5) / columns - .5, cz = (Math.floor(slot / columns) + .5) / rows - .5;
+            let best, clearance = -1;
+            for (let candidate = 0; candidate < 32; candidate++) {
+                const point = [random() - .5, random() - .5];
+                const distance = roots.reduce((nearest, root) => {
+                    const dx = Math.abs(point[0] - root[0]), dz = Math.abs(point[1] - root[1]);
+                    return Math.min(nearest, Math.hypot(Math.min(dx, 1 - dx), Math.min(dz, 1 - dz)));
+                }, 2);
+                if (distance > clearance) { clearance = distance; best = point; }
+            }
+            roots.push(best);
+        }
+        for (let slot = 0; slot < count; slot++) {
+            const [cx, cz] = roots[slot];
             const first = positions.length / 3, variant = Math.floor(random() * 4);
             for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
                 positions.push(cx, centerHeight, cz); normals.push(0, 0, 1); uvs.push(u, v); variants.push(variant);
-                slots.push(cx, cz, .76 / columns, .76 / rows);
+                slots.push(cx, cz, .25 / Math.sqrt(count), .25 / Math.sqrt(count));
             }
             indices.push(first, first + 1, first + 2, first + 2, first + 1, first + 3);
         }
@@ -60,7 +74,7 @@ function cardTemplates(count, centerHeight, frameHeight, footprint) {
         geometry.setAttribute('grassCardSlot', new THREE.Float32BufferAttribute(slots, 4));
         geometry.setIndex(indices);
         // Shader-expanded quads need conservative bounds for all camera bearings.
-        const extent = .56 + footprint * 1.2 / 2;
+        const extent = .56 + .125 / Math.sqrt(count) + footprint * 1.2 / 2;
         geometry.boundingBox = new THREE.Box3(new THREE.Vector3(-extent, centerHeight - frameHeight, -extent), new THREE.Vector3(extent, centerHeight + frameHeight, extent));
         geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
         geometry.userData.grassLeafCount = 0; geometry.userData.grassViewCards = count;
@@ -150,12 +164,12 @@ export async function createGrassDebugV2ViewCards({ renderer, source, profile = 
     }
     const footprint = Math.hypot(CARD_WIDTH, GROUND_SPAN);
     const dense = cardTemplates(shape.density, centerHeight, frameHeight, footprint);
-    const sparse = cardTemplates(profile === 'near' ? 10 : 3, centerHeight, frameHeight, footprint);
+    const sparse = cardTemplates(profile === 'near' ? 10 : 2, centerHeight, frameHeight, footprint);
     const full = cardTemplates(profile === 'near' ? 32 : 6, centerHeight, frameHeight, footprint);
     const snapshot = { profile, cardWidthMeters: CARD_WIDTH, cardsPerSquareMeter: shape.density, captures: 32, directions: 8, variants: 4, tilePixels: [TILE_WIDTH, TILE_HEIGHT],
         atlasPixels: [WIDTH, HEIGHT], textureBytes: WIDTH * HEIGHT * 4 * 3 * 4 / 3, captureMilliseconds: performance.now() - started,
         sourceLeaves: patches.map(patch => patch.leaves.map(leaves => leaves.length)), sourceFootprintMeters: [CARD_WIDTH, SOURCE_DEPTH], pitchDegrees: CAPTURE_PITCH, sourceHeightMeters: height, frameHeightMeters: frameHeight,
-        layout: `world-seeded jittered strata; ${shape.density} cards per square metre`, groundSpanMeters: GROUND_SPAN,
+        layout: `toroidal best-candidate roots with quarter-spacing world jitter; ${shape.density} cards per square metre`, groundSpanMeters: GROUND_SPAN,
         updatePolicy: 'Continuous GPU bearing with fixed incline and stable source image; no runtime recaptures or per-card CPU updates' };
     return Object.freeze({ material: cardMaterial, templates: { cards: dense, 'cards-sparse': sparse, 'cards-full': full }, maps,
         getSnapshot: () => snapshot,

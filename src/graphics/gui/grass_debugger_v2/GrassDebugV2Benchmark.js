@@ -1,16 +1,17 @@
 // Runs the repeatable flight and collects frame, CPU and asynchronous GPU timings.
 // @ts-check
 import * as THREE from 'three';
-import { BENCHMARK_FINAL_HOLD_MS, BENCHMARK_WARMUP_MS, createBenchmarkRoute, createBenchmarkFlightTiming, easeBenchmarkProgress } from './GrassDebugV2BenchmarkRoute.js';
+import { BENCHMARK_FINAL_HOLD_MS, BENCHMARK_WARMUP_MS, createBenchmarkRoute, createBenchmarkFlightTiming, createBenchmarkFlightOrientation, easeBenchmarkProgress } from './GrassDebugV2BenchmarkRoute.js';
 import { summarizeBenchmarkTimings } from './GrassDebugV2BenchmarkStats.js';
 import { createGrassDebugV2OverviewPose } from './GrassDebugV2CameraPresets.js';
 
 export class GrassDebugV2Benchmark {
-    /** @param {{camera: THREE.PerspectiveCamera, controls: object, keyboard: object, gpuTimer: object, busPose: object, getViewport: Function, getGrass?: Function, getLand?: Function, onChange: Function}} options */
-    constructor({ camera, controls, keyboard, gpuTimer, busPose, getViewport, getGrass = () => null, getLand = () => null, onChange }) {
+    /** @param {{camera: THREE.PerspectiveCamera, controls: object, keyboard: object, gpuTimer: object, busPose: object, busBounds:THREE.Box3, grassBounds:object, getViewport: Function, getGrass?: Function, getLand?: Function, onChange: Function}} options */
+    constructor({ camera, controls, keyboard, gpuTimer, busPose, busBounds, grassBounds, getViewport, getGrass = () => null, getLand = () => null, onChange }) {
         Object.assign(this, { camera, controls, keyboard, gpuTimer, busPose, getViewport, getGrass, getLand, onChange });
-        this.route = createBenchmarkRoute(busPose.position);
+        this.route = createBenchmarkRoute(busPose.position, { busFrontZ: busBounds.max.z, grassBounds });
         this.flightTiming = createBenchmarkFlightTiming(this.route);
+        this.flightOrientation = createBenchmarkFlightOrientation(this.route, this.flightTiming, busPose, busBounds.getCenter(new THREE.Vector3()));
         this.phase = 'idle';
         this.progress = 0;
         this.elapsedMs = 0;
@@ -93,9 +94,8 @@ export class GrassDebugV2Benchmark {
         this.progress = Math.min(1, measuredMs / (this.flightTiming.durationMs + BENCHMARK_FINAL_HOLD_MS));
         const distanceFraction = this.flightTiming.distanceAtTime(this.elapsedMs);
         this.route.getPoint(distanceFraction, this._position);
-        this.route.getTangent(distanceFraction, this._direction);
         this.camera.position.copy(this._position);
-        this.camera.lookAt(this._target.copy(this._position).add(this._direction));
+        this.flightOrientation.sample(this.elapsedMs, this._position, this.camera.quaternion);
         this.camera.updateMatrixWorld();
         const percentage = Math.floor(this.progress * 100);
         if (percentage !== this._lastProgress) {
@@ -139,6 +139,7 @@ export class GrassDebugV2Benchmark {
             holdMs: this._durationMs - (this._holdStart - this._flightStart),
             warmupMs: BENCHMARK_WARMUP_MS,
             routeMeters: this.route.getLength(),
+            route: this.getRouteSnapshot(),
             viewport: this._viewport,
             grass: this._grass,
             land: this._land
@@ -166,7 +167,13 @@ export class GrassDebugV2Benchmark {
     }
 
     getSnapshot() {
-        return { active: this.active, phase: this.phase, progress: this.progress, elapsedMs: this.elapsedMs, message: this.message, result: this.result, results: this._results.slice() };
+        return { active: this.active, phase: this.phase, progress: this.progress, elapsedMs: this.elapsedMs, message: this.message, result: this.result, results: this._results.slice(), route: this.getRouteSnapshot() };
+    }
+
+    getRouteSnapshot() {
+        return { ...this.route.flight, flightMs: this.flightTiming.durationMs,
+            lookBackStartMs: this.flightOrientation.lookBackStartMs, lookBackEndMs: this.flightOrientation.lookBackEndMs,
+            busTarget: this.flightOrientation.busTarget.toArray() };
     }
 
     dispose() {

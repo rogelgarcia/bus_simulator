@@ -21,9 +21,9 @@
         <div class="scene-controls">
             <label>View <select id="transition-pose"><option value="front">Bus · front</option><option value="rear">Bus · rear</option><option value="border">Bus · field border</option><option value="overview">Overhead overview</option></select></label>
             <button id="transition-reset">Reset view</button>
-            <label>LOD3 <select id="transition-lod3"><option value="geometry">Original leaves</option><option value="cards-full">25 cm cards · 32/m²</option><option value="cards">25 cm cards · 20/m²</option><option value="cards-sparse">25 cm cards · 10/m²</option></select></label>
+            <label>LOD3 <select id="transition-lod3"><option value="geometry">Original leaves</option><option value="cards-full">30 cm cards + base · 32/m²</option><option value="cards">30 cm cards + base · 12/m²</option><option value="cards-sparse">30 cm cards + base · 10/m²</option></select></label>
             <label><input id="transition-bridge" type="checkbox" checked /> LOD4 bridge</label>
-            <label>LOD4 <select id="transition-lod4"><option value="cards">75 cm cards · 4/m²</option><option value="cards-sparse">75 cm cards · 3/m²</option><option value="cards-full">75 cm cards · 6/m²</option></select></label>
+            <label>LOD4 <select id="transition-lod4"><option value="cards">80 cm cards + base · 3/m²</option><option value="cards-sparse">80 cm cards + base · 2/m²</option><option value="cards-full">80 cm cards + base · 6/m²</option></select></label>
             <label>Configuration <select id="transition-configuration"><option value="distance">Distance LODs</option><option value="lod4-ground">LOD5 only · ground level</option><option value="lod4-flat">LOD5 only · flat, no sides</option><option value="lod4-elevated">LOD5 only · elevation + bevel</option><option value="lod4-elevated-sides">LOD5 only · elevation + side grass</option></select></label>
             <label id="transition-only-sides" hidden>Side grass (m) <input id="transition-only-side-leaves" type="number" min="0" max="200" step="1" value="35" /></label>
             <label>LOD5 version <select id="transition-optimization"><option value="optimized">Optimized surfaces + shadow fix</option><option value="shadow">Shadow fix only</option><option value="original">Original · before both fixes</option></select></label>
@@ -69,6 +69,6 @@
     </aside>
     <output id="scene-performance" aria-label="Rendering and LOD selection performance" title="Submitted triangles and draw calls for the complete rendered frame, including postprocessing and enabled helpers. Culled objects are excluded.">Preparing…</output>
     <div id="scene-loading" role="status">Loading transition lab…</div>
-    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionEntry.js?v=opaque-dissolve-1"></script>
+    <script type="module" src="../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionEntry.js?v=card-coverage-2"></script>
 </body>
 </html>

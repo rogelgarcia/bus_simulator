@@ -9,6 +9,7 @@ import { grassCanopyLayoutIdentity, loadGrassCanopyLayoutPair } from './GrassDeb
 import { validateGrassCanopyPairBoundaries } from './GrassDebugV2CanopyTilePair.js';
 import { createGrassDebugV2CanopyBorderCards } from './GrassDebugV2CanopyBorderCards.js';
 import { createGrassDebugV2CanopyWall } from './GrassDebugV2CanopyWall.js?v=lod4-wall-detail-1';
+import { createGrassDebugV2CardBase } from './GrassDebugV2CardBase.js?v=card-coverage-2';
 
 export const GRASS_FIELD_CANOPY = Object.freeze({ height: .10, variation: .005, edgeWidth: .1, inset: .05, ramp: .05, step: .5, tileMeters: 2, resolution: 4096,
     mapResolutions: Object.freeze({ albedo: 1024, normal: 1024, roughness: 1024 }), filterFootprint: 0, boundaryBandMeters: .08 });
@@ -52,7 +53,7 @@ function canopyGeometry(width, depth) {
 }
 
 /** @param {{renderer:THREE.WebGLRenderer, source:THREE.Mesh, lod2:THREE.Mesh, soil:THREE.Mesh, litter:THREE.Object3D, width:number, depth:number, shadowDirection:THREE.Vector3, lighting:object, onProgress?:(message:string)=>void,onPatternPreview?:(preview:object)=>void,compileLayout?:boolean,mapResolutions?:Partial<Record<'albedo'|'normal'|'roughness'|'visibility',number>>,anisotropy?:number,mapResolutionProfiles?:Record<string,Partial<Record<'albedo'|'normal'|'roughness',number>>>}} options */
-export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,litter,width,depth,shadowDirection,lighting,onProgress,onPatternPreview,compileLayout=false,mapResolutions={},mapResolutionProfiles={},anisotropy=8}) {
+export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,litter,width,depth,shadowDirection,lighting,onProgress,onPatternPreview,compileLayout=false,mapResolutions={},mapResolutionProfiles={},anisotropy=8,cardBaseDensity=0}) {
     if (!(width > 1 && depth > 1) || !source.userData.grassLeafRanges?.length
         || source.userData.grassLeafRanges.length !== lod2.userData.grassLeafRanges?.length)
         throw new Error('Field canopy requires corresponding source/LOD2 leaf ranges.');
@@ -70,7 +71,7 @@ export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,l
     }
     const captures = [], bakes = [], materialProfiles = {}, reliefMaterialProfiles = {};
     let mapProfile = 'default';
-    let materials, geometry, edgeGeometry, borderCards, relief, wall;
+    let materials, geometry, edgeGeometry, borderCards, relief, wall, cardBase;
     try {
     const captureGeometry=selectLeaves(source,tileIds,true), captureMesh=new THREE.Mesh(captureGeometry,source.material);
     captures.push(captureMesh);
@@ -123,6 +124,9 @@ export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,l
         reliefMaterialProfiles[profile] = createGrassDebugV2CanopyMaterials({ ...options, relief: GRASS_CANOPY_RELIEF });
     }
     materials = materialProfiles.default;
+    if (cardBaseDensity) cardBase = await createGrassDebugV2CardBase({ renderer, sources: captures, density: cardBaseDensity,
+        soil, litter, shadowDirection, shadowPadding, shadowUniforms, sourceHeight: source.geometry.boundingBox.max.y,
+        tileMeters: GRASS_FIELD_CANOPY.tileMeters, anisotropy, onProgress });
     wall=await createGrassDebugV2CanopyWall({renderer,sources:captures,bake:bake.profiles.default,litter,width,depth,config:GRASS_FIELD_CANOPY,
         sourceHeight:source.geometry.boundingBox.max.y,shadowDirection,shadowUniforms,onProgress});
     geometry=canopyGeometry(width,depth); edgeGeometry=selectLeaves(lod2,edgeIds);
@@ -139,7 +143,7 @@ export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,l
     const group=new THREE.Group();group.name='GrassField-LOD4';group.add(top,edges,borderCards.group,wall.group);
     const footprint=Object.freeze({minX:-width/2+GRASS_FIELD_CANOPY.inset,maxX:width/2-GRASS_FIELD_CANOPY.inset,minZ:-depth/2+GRASS_FIELD_CANOPY.inset,maxZ:depth/2-GRASS_FIELD_CANOPY.inset});
     let edgeStrategy = 'leaves';
-    return Object.freeze({group,footprint,relief,wall,get materials(){return materials;},get reliefMaterials(){return reliefMaterialProfiles[mapProfile];},shadowUniforms,edgeIds:Object.freeze(edgeIds),
+    return Object.freeze({group,footprint,relief,wall,cardBase,get materials(){return materials;},get reliefMaterials(){return reliefMaterialProfiles[mapProfile];},shadowUniforms,edgeIds:Object.freeze(edgeIds),
         readPixels: (layer, channel, variant = 0) => bakes[variant].profiles[mapProfile].readPixels(layer, channel),
         setMapProfile(profile, root = group) {
             if (!Object.hasOwn(materialProfiles, profile)) throw new Error('Unknown LOD4 map profile: ' + profile);
@@ -174,10 +178,10 @@ export async function createGrassDebugV2FieldCanopy({renderer,source,lod2,soil,l
                 residentTextureBytes:bakes.reduce((sum,bake)=>sum+bake.getSnapshot().residentTextureBytes,0),
                 variants:bakes.map(b=>b.profiles[mapProfile].getSnapshot()),
                 placement,optimization,renderedOptimization,periodic:periodicSnapshots[0],shadowPeriodic:shadowPeriodicSnapshots[0]},shadowSource:'LOD2'}),
-        dispose(){geometry.dispose();edgeGeometry.dispose();borderCards.dispose();relief.dispose();wall.dispose();[...Object.values(materialProfiles),...Object.values(reliefMaterialProfiles)].forEach(set=>Object.values(set).forEach(material=>material.dispose()));bakes.forEach(b=>b.dispose());}
+        dispose(){geometry.dispose();edgeGeometry.dispose();borderCards.dispose();relief.dispose();wall.dispose();cardBase?.dispose();[...Object.values(materialProfiles),...Object.values(reliefMaterialProfiles)].forEach(set=>Object.values(set).forEach(material=>material.dispose()));bakes.forEach(b=>b.dispose());}
     });
     } catch (error) {
-        borderCards?.dispose(); relief?.dispose(); wall?.dispose(); geometry?.dispose(); edgeGeometry?.dispose();
+        borderCards?.dispose(); relief?.dispose(); wall?.dispose(); cardBase?.dispose(); geometry?.dispose(); edgeGeometry?.dispose();
         [...Object.values(materialProfiles), ...Object.values(reliefMaterialProfiles)].forEach(set=>Object.values(set).forEach(material=>material.dispose()));
         bakes.forEach(bake=>bake.dispose());
         throw error;

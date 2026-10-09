@@ -21,7 +21,7 @@ function groundMapping(mesh) {
     return new THREE.Matrix3().set(u.x, u.y, u.z, v.x, v.y, v.z, 0, 0, 1);
 }
 
-export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress, offline = false }) {
+export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress, offline = false, externalShadows = false }) {
     const response = await fetch(ROOT + 'scene.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Grass source manifest unavailable: ' + response.status);
     const manifest = await response.json();
@@ -32,7 +32,7 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     const [loaded, , orm] = await Promise.all([
         new GLTFLoader().loadAsync(ROOT + '96000_leaves.glb?v=' + manifest.sourceHashes['src/graphics/gui/grass_debugger_v2/GrassDebugV2LitterSubstrate.js'],
             event => onProgress('Loading grass source · ' + Math.round(event.loaded / (event.total || manifest.exportBytes) * 100) + '%')),
-        lighting.loadEnvironment(), new THREE.TextureLoader().loadAsync(ormUrl.href)
+        lighting.environment ? Promise.resolve() : lighting.loadEnvironment(), new THREE.TextureLoader().loadAsync(ormUrl.href)
     ]);
     const repaired = new Set(), oldMaps = new Set();
     loaded.scene.updateMatrixWorld(true);
@@ -64,21 +64,22 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     const detail = createGrassDebugV2FieldDetail({ source: generated[2].mesh, width: manifest.widthMeters, depth: manifest.depthMeters });
     const canopy = offline
         ? await (await import('./GrassDebugV2CanopyTextureAsset.js')).loadGrassCanopyTextureAsset({ renderer, shadowDirection: lighting.sunRef.direction, anisotropy: 4 })
-        : await (await import('./GrassDebugV2FieldCanopy.js?v=lod4-shadow-fast-1')).createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
+        : await (await import('./GrassDebugV2FieldCanopy.js?v=card-coverage-2')).createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
         soil, litter, width: manifest.widthMeters, depth: manifest.depthMeters, shadowDirection: lighting.sunRef.direction,
-        lighting, onProgress, anisotropy: 4 });
-    // The tile already contains grass self-shadows; this lab has no external occluders.
+        lighting, onProgress, anisotropy: 4, cardBaseDensity: .45 });
+    // Self-shadows are already baked. Scenes with external occluders replace this white visibility map.
     const externalVisibility = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
     externalVisibility.name = 'GrassTransitionExternalVisibility'; externalVisibility.generateMipmaps = false;
     externalVisibility.needsUpdate = true;
     canopy.shadowUniforms.grassCanopyShadowVisibility.value = externalVisibility;
     canopy.shadowUniforms.grassCanopyShadowBounds.value.set(0, 0, 1, 1);
     canopy.shadowUniforms.grassCanopyShadowPass.value = 2;
-    // Opt in only after baking. The general material still supports external occluders in the field lab.
-    for (const material of Object.values(canopy.materials)) {
+    // The empty transition lab can skip external shadow sampling; the bus scene retains it.
+    for (const material of [...Object.values(canopy.materials), ...Object.values(canopy.cardBase?.materials ?? {})]) {
         // Linear leaf-only probe, normalized by coverage; litter retains its own base color.
         material.userData.grassFloorLeafColorScale.value.set(1.03, 1.0, 1.4);
-        material.defines = { ...material.defines, GRASS_CANOPY_BAKED_SHADOW_ONLY: 1, GRASS_TRANSITION_CANOPY_COVERAGE: 1 };
+        material.defines = { ...material.defines, GRASS_TRANSITION_CANOPY_COVERAGE: 1 };
+        if (!externalShadows) material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY = 1;
         material.needsUpdate = true;
     }
     const liveMaterial = cloneMaterialShaderContract(sourceMaterial);

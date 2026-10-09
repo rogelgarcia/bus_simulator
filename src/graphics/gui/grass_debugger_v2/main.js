@@ -19,8 +19,9 @@ const benchmarkResults = document.getElementById('benchmark-results');
 const grassButtons = [...document.querySelectorAll('[data-grass-mode]')];
 const landButtons = [...document.querySelectorAll('[data-land-surface]')];
 const grassCounts = document.getElementById('grass-counts');
-const cardBoundsToggle = document.getElementById('mixed-card-bounds');
-const view = new GrassDebugV2View({ canvas, perfBar, onBenchmarkChange: updateBenchmarkPanel });
+const fadeSelect = document.getElementById('grass-fade');
+const view = new GrassDebugV2View({ canvas, perfBar, onBenchmarkChange: updateBenchmarkPanel,
+    onGrassChange: updateGrassPanel, onProgress: message => { loading.textContent = message; } });
 let copyFeedbackTimer;
 busButton.disabled = overviewButton.disabled = grassCameraButton.disabled = copyButton.disabled = true;
 
@@ -28,11 +29,11 @@ function updateBenchmarkPanel(state) {
     busButton.disabled = overviewButton.disabled = grassCameraButton.disabled = state.active;
     for (const button of grassButtons) button.disabled = state.active;
     for (const button of landButtons) button.disabled = state.active;
-    cardBoundsToggle.disabled = state.active || view.grass.mode !== 'MIXED';
+    fadeSelect.disabled = state.active;
     benchmarkButton.textContent = state.active ? (['running', 'holding'].includes(state.phase) ? `Stop · ${Math.floor(state.progress * 100)}%` : 'Stop') : 'Run';
     benchmarkStatus.hidden = !state.active && state.phase !== 'cancelled';
     benchmarkStatus.textContent = { warmup: 'Preparing…', running: 'Measuring…', holding: 'Measuring final stop…', settling: 'Collecting GPU results…', cancelled: `Cancelled · ${state.message}` }[state.phase] ?? '';
-    benchmarkStatus.title = state.active ? '2 s warmup at Overview, fly through the bus camera, half-speed sidewalk pass, then 1 s measured at the final position. Camera controls resume when the run finishes or stops.' : state.message;
+    benchmarkStatus.title = state.active ? '2 s warmup at Overview, bus camera, straight ahead to 10 m past the bus front, half-speed grass pass, then a smooth 4 s left turn toward the bus during the final pullback. Camera controls resume when the run finishes or stops.' : state.message;
     for (const result of state.results.slice(benchmarkResults.childElementCount)) {
         const row = document.createElement('output');
         row.className = 'grass-v2-benchmark-result';
@@ -43,12 +44,11 @@ function updateBenchmarkPanel(state) {
         row.textContent = `${result.grass.mode} · ${metric} ${primary.averageMs.toFixed(1)} avg · ${primary.p99Ms.toFixed(1)} p99 ms`;
         const timing = (name, stats) => stats ? `${name}: avg ${stats.averageMs.toFixed(2)} ms · P99 ${stats.p99Ms.toFixed(2)} ms (${stats.count} samples)` : `${name}: unavailable`;
         row.title = [
-            result.grass ? `Grass ${result.grass.mode}: ${result.grass.leaves.toLocaleString('en-US')} leaves · ${result.grass.triangles.toLocaleString('en-US')} triangles` : '',
+            result.grass ? `Grass ${result.grass.mode}: ${result.grass.triangles.toLocaleString('en-US')} triangles at the starting camera` : '',
             result.land ? `Land: ${result.land.label}` : '',
-            ...(result.grass.mode === 'MIXED' ? [`Alpha card bounds: ${result.grass.cardBoundsVisible ? 'on' : 'off'}`] : []),
             timing('GPU', result.gpu), timing('Frame interval (includes VSync)', result.frame), timing('CPU frame work', result.cpu),
             `${(result.durationMs / 1000).toFixed(2)} s measured · ${(result.flightMs / 1000).toFixed(2)} s flight + ${(result.holdMs / 1000).toFixed(2)} s final stop`,
-            `${result.routeMeters.toFixed(1)} m · ${result.renderedFrames} frames · sidewalk at half speed`,
+            `${result.routeMeters.toFixed(1)} m · ${result.renderedFrames} frames · grass at half speed · 4 s turn toward bus`,
             `${result.viewport.width} × ${result.viewport.height} · DPR ${result.viewport.pixelRatio} · ${result.warmupMs / 1000} s warmup`,
             'P99: nearest rank, no hitch trimming. Timings cover the whole scene.', result.gpuNote
         ].filter(Boolean).join('\n');
@@ -60,16 +60,15 @@ function updateBenchmarkPanel(state) {
 function updateGrassPanel() {
     const grass = view.grass.getSnapshot();
     for (const button of grassButtons) button.setAttribute('aria-pressed', String(button.dataset.grassMode === grass.mode));
-    const counts = lod => `${lod.leaves.toLocaleString('en-US')} leaves · ${lod.triangles.toLocaleString('en-US')} tris`;
-    grassCounts.textContent = grass.mode === 'MIXED' ? Object.entries(grass.lods).map(([mode, lod]) => `${mode} · ${counts(lod)}`).join('\n') : counts(grass);
-    cardBoundsToggle.checked = view.grass.mixed.cardBounds.visible;
-    cardBoundsToggle.disabled = !view.ready || view.benchmark.active || grass.mode !== 'MIXED';
+    grassCounts.textContent = `${grass.triangles.toLocaleString('en-US')} triangles\n`
+        + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
+    fadeSelect.value = grass.field.fadeStyle;
+    fadeSelect.disabled = !view.ready || view.benchmark.active;
     grassCounts.title = [
-        `${grass.patches} × 1 m² patches · ${grass.placement.rows} rows × ${grass.placement.columns} · ${grass.leavesPerPatch} source leaves/m²`,
-        ...(grass.mode === 'MIXED' ? ['One line of 16 identical blades per block · 0.5 m gaps.', 'LOD0 row nearest road; LOD3 row farther out. Borders mark 1 m²; no dense-canopy shading.'] : []),
-        `LOD0: four curved sections, ${grass.trianglesPerLeaf} triangles/leaf.`,
-        `LOD3: each source leaf baked into one of ${grass.cardsPerPatch} cards/m².`,
-        'Leaves counts source leaves represented; triangles counts only the selected grass meshes. OFF draws neither.'
+        `${grass.fieldCount} fields · ${grass.placement.columns} × ${grass.placement.rows} m each · ${grass.gapMeters} m gaps · ${grass.patches} × 1 m² cells`,
+        'LOD0–2: leaves · LOD3: near cards · LOD4: wide cards · LOD5: 1K canopy.',
+        'Counts show dominant LOD per cell; triangles include both levels within a transition band and the grass substrate.',
+        'Selection cached at 50 ms / 0.2 m. Side leaves stop at 35 m.'
     ].join('\n');
 }
 
@@ -95,7 +94,6 @@ const readiness = (async () => {
     }
     await assetsLoaded;
     if (assetErrors.length) throw new Error(`Could not load ${assetErrors.join(', ')}`);
-    view.renderer.shadowMap.needsUpdate = true;
     view.ready = true;
     busButton.disabled = overviewButton.disabled = grassCameraButton.disabled = copyButton.disabled = false;
     benchmarkButton.disabled = false;
@@ -130,8 +128,8 @@ window.__grassDebugV2 = Object.freeze({
         if (changed) updateLandPanel();
         return changed;
     },
-    setMixedCardBounds: visible => {
-        const changed = view.setMixedCardBounds(visible);
+    setFadeStyle: value => {
+        const changed = view.setFadeStyle(value);
         if (changed) updateGrassPanel();
         return changed;
     },
@@ -145,8 +143,8 @@ grassCameraButton.addEventListener('click', () => view.setCamera('grass'));
 for (const button of grassButtons) button.addEventListener('click', () => {
     if (view.setGrassMode(button.dataset.grassMode)) updateGrassPanel();
 });
-cardBoundsToggle.addEventListener('change', () => {
-    view.setMixedCardBounds(cardBoundsToggle.checked);
+fadeSelect.addEventListener('change', () => {
+    view.setFadeStyle(fadeSelect.value);
     updateGrassPanel();
 });
 for (const button of landButtons) button.addEventListener('click', () => {
