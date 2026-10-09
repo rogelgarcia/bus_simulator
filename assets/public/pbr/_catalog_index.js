@@ -7,8 +7,11 @@ import asphalt02 from './asphalt_02/pbr.material.config.js';
 import asphaltPitLane from './asphalt_pit_lane/pbr.material.config.js';
 import asphaltTrack from './asphalt_track/pbr.material.config.js';
 import beigeWall001 from './beige_wall_001/pbr.material.config.js';
+import bradburyCorniceWeatheredTerracotta from './bradbury_cornice_weathered_terracotta/pbr.material.config.js';
+import bradburyEntranceTerracotta from './bradbury_entrance_terracotta/pbr.material.config.js';
 import bradburyFlowerTiles from './bradbury_flower_tiles/pbr.material.config.js';
 import bradburyFriezeFlowers from './bradbury_frieze_flowers/pbr.material.config.js';
+import bradburyStorefrontPillarsTaupe from './bradbury_storefront_pillars_taupe/pbr.material.config.js';
 import bradburyTopBandTerracottaOrnament from './bradbury_top_band_terracotta_ornament/pbr.material.config.js';
 import bradburyWallTerracottaBrickTileable from './bradbury_wall_terracotta_brick_tileable/pbr.material.config.js';
 import brickCrosswalk from './brick_crosswalk/pbr.material.config.js';
@@ -81,8 +84,11 @@ export const PBR_MATERIAL_CATALOG = Object.freeze([
     asphaltPitLane,
     asphaltTrack,
     beigeWall001,
+    bradburyCorniceWeatheredTerracotta,
+    bradburyEntranceTerracotta,
     bradburyFlowerTiles,
     bradburyFriezeFlowers,
+    bradburyStorefrontPillarsTaupe,
     bradburyTopBandTerracottaOrnament,
     bradburyWallTerracottaBrickTileable,
     brickCrosswalk,
