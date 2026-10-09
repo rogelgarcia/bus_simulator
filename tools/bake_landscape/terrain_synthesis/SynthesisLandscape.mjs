@@ -13,6 +13,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import { createLandscapeChunkId, createLandscapeManifest, encodeLandscapeChannel, validateLandscapeManifest, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest } from '../../../src/app/landscape/index.js';
 import { LANDSCAPE_PLANNING_ROLES } from '../../../src/app/landscape/LandscapePlanningReferences.js';
 import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../../src/app/landscape/LandscapeCache.js';
+import { LANDSCAPE_LAND_COVER_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from '../../landscape_authoring/AuthoringFiles.mjs';
 import { readLandscapeFileChunk, readLandscapeFileManifest } from '../../landscape_authoring/LandscapeFileIO.mjs';
 import { prepareLandscapeHierarchy } from '../HierarchyPreparation.mjs';
@@ -30,9 +31,11 @@ const seconds = started => (performance.now() - started) / 1000;
 
 function assertOptions(options) {
     const { sourceDirectory, outputDirectory, grid, heights, cover, id, name, revisionLabel, provenance, references = 'copy-planning', appearance = 'copy', fields = 'bake' } = options;
-    if (typeof sourceDirectory !== 'string' || !sourceDirectory || typeof outputDirectory !== 'string' || !outputDirectory) throw new Error('[SynthesisLandscape] sourceDirectory and outputDirectory are required');
+    if ((sourceDirectory !== null && (typeof sourceDirectory !== 'string' || !sourceDirectory)) || typeof outputDirectory !== 'string' || !outputDirectory) throw new Error('[SynthesisLandscape] sourceDirectory (or null for a standalone synthetic landscape) and outputDirectory are required');
     const output = path.resolve(outputDirectory);
-    if (output === path.resolve(sourceDirectory)) throw new Error('[SynthesisLandscape] The output directory must differ from the source directory');
+    if (sourceDirectory !== null && output === path.resolve(sourceDirectory)) throw new Error('[SynthesisLandscape] The output directory must differ from the source directory');
+    // a standalone landscape has nothing to copy or inherit: its layout and sea level must be explicit
+    if (sourceDirectory === null && (references !== 'none' || appearance !== 'none' || !Number.isInteger(options.chunkIntervals) || !Number.isInteger(options.maxLevel) || !Number.isFinite(options.seaLevel))) throw new Error('[SynthesisLandscape] A standalone landscape (sourceDirectory null) needs references none, appearance none and explicit chunkIntervals, maxLevel and seaLevel');
     if (output === path.resolve(REPOSITORY_ROOT, LANDSCAPE_DEFAULT_DIRECTORY)) throw new Error(`[SynthesisLandscape] Refusing to write into the canonical landscape cache ${LANDSCAPE_DEFAULT_DIRECTORY}`);
     if (!grid || !Number.isInteger(grid.columns) || !Number.isInteger(grid.rows) || grid.columns !== grid.rows) throw new Error('[SynthesisLandscape] The grid must be square (columns === rows)');
     if (!(grid.spacingX > 0) || grid.spacingX !== grid.spacingZ || !Number.isFinite(grid.minX) || !Number.isFinite(grid.maxZ)) throw new Error('[SynthesisLandscape] The grid needs equal positive spacing and finite minX/maxZ');
@@ -87,12 +90,12 @@ async function listFilesRecursive(directory, relative = '') {
  */
 export async function writeSynthesizedLandscape(options) {
     const settings = assertOptions(options), { sourceDirectory, outputDirectory, grid, heights, cover, id, name, revisionLabel, signal, log = () => {} } = settings, started = performance.now(), timing = {};
-    const source = await readLandscapeFileManifest(sourceDirectory, 'manifest.json', { signal });
+    const source = sourceDirectory === null ? null : await readLandscapeFileManifest(sourceDirectory, 'manifest.json', { signal });
     const chunkIntervals = settings.chunkIntervals ?? source.manifest.grid.chunkIntervals, maxLevel = settings.maxLevel ?? source.manifest.grid.maxLevel, seaLevel = settings.seaLevel ?? source.manifest.coordinates.seaLevel;
     if (!Number.isInteger(chunkIntervals) || !Number.isInteger(maxLevel) || grid.columns !== chunkIntervals * 2 ** maxLevel + 1) throw new Error(`[SynthesisLandscape] Grid ${grid.columns} does not match chunkIntervals ${chunkIntervals} x 2^${maxLevel} + 1`);
     if (!Number.isFinite(seaLevel)) throw new Error('[SynthesisLandscape] seaLevel must be finite');
     const spacing = grid.spacingX, samples = chunkIntervals + 1, bounds = { minX: grid.minX, maxX: grid.minX + (grid.columns - 1) * spacing, minZ: grid.maxZ - (grid.rows - 1) * spacing, maxZ: grid.maxZ };
-    const catalogIds = new Set(source.manifest.landCover.catalog.map(entry => entry.id));
+    const catalogIds = new Set((source ? source.manifest.landCover.catalog : LANDSCAPE_LAND_COVER_CATALOG).map(entry => entry.id));
     for (let i = 0; i < heights.length; i++) {
         if (!Number.isFinite(heights[i])) throw new Error(`[SynthesisLandscape] Height sample ${i} is not finite`);
         if (!catalogIds.has(cover[i])) throw new Error(`[SynthesisLandscape] Cover sample ${i} has class ${cover[i]} outside the land-cover catalog`);

@@ -1,0 +1,45 @@
+{
+ "coordinate_order": "X east, Y elevation, Z north; metres",
+ "points": [
+  {
+   "name": "Bus stop reservation",
+   "xyz_m": [
+    300,
+    2.6,
+    520
+   ],
+   "footprint_m": [
+    30,
+    6
+   ],
+   "note": "fixture reservation beside the coast road"
+  },
+  {
+   "name": "Level beach arrival",
+   "xyz_m": [
+    262,
+    2.6,
+    500
+   ],
+   "note": "fixture arrival flush with the sand"
+  }
+ ],
+ "open_view_corridor_xz_m": [
+  [
+   250,
+   640
+  ],
+  [
+   340,
+   640
+  ],
+  [
+   350,
+   580
+  ],
+  [
+   255,
+   575
+  ]
+ ]
+}

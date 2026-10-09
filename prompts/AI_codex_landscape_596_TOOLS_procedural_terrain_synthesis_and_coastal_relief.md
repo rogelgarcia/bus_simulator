@@ -135,11 +135,11 @@ These hold in every variant. Report any deliberate exception for user approval.
 
 ### D2. Terrain synthesis engine
 
-- [ ] **Recipe model.** Provide a versioned, renderer-independent recipe and graph model: ordered
+- [x] **Recipe model.** Provide a versioned, renderer-independent recipe and graph model: ordered
   operators with typed parameters, units, seeds and masks. Its identity covers the recipe and the
   input revisions. Outputs are bit-identical on repeat runs, consistent across tile halos, and kept
   within documented working-set limits, with progress and cancellation.
-- [ ] **Operators.** Support these capabilities:
+- [x] **Operators.** Support these capabilities:
   - plan-constraint inputs;
   - landform primitives (plateau or mesa with escarpment, hills and ridges, valleys, headlands and
     coves);
@@ -152,15 +152,15 @@ These hold in every variant. Report any deliberate exception for user approval.
     berm and swash zone, foredunes, nearshore bars, and rocky reefs off headlands;
   - constraint re-imposition with designed edge profiles;
   - selectors by slope, curvature, height, flow and distance.
-- [ ] **Geology channels.** Output the geology and erosion channels of roadmap layer L0, with exact
+- [x] **Geology channels.** Output the geology and erosion channels of roadmap layer L0, with exact
   renderer-independent samplers: bedrock surface, regolith depth, deposit type and thickness,
   lithology/strata index, wear, deposition, flow and drainage, face mask, coastal zone class, and wave
   exposure.
-- [ ] **Interchange.** Import and export heightmaps and masks (16/32-bit PNG, EXR, RAW) with coordinate
+- [x] **Interchange.** Import and export heightmaps and masks (16/32-bit PNG, EXR, RAW) with coordinate
   metadata and provenance. An imported map can replace a stage's output.
-- [ ] **Tests.** Cover erosion mass balance, talus-angle convergence, determinism, constraint
+- [x] **Tests.** Cover erosion mass balance, talus-angle convergence, determinism, constraint
   preservation, tile-seam equality and interchange round trips. Add review images per operator.
-- [ ] **Gate.** A synthetic 1 × 1 km fixture with a plateau, a road and a shoreline erodes into
+- [x] **Gate.** A synthetic 1 × 1 km fixture with a plateau, a road and a shoreline erodes into
   convincing relief. It must meet its declared constraints, be deterministic and be seam-free.
 
 ### D3. Finer authoritative resolution
@@ -380,6 +380,75 @@ The decision request as it was put (kept for the record):
 
 D2 (the engine's erosion, geology, coastal and interchange operators on synthetic fixtures) and D3 (the
 resolution study on fixtures) do not depend on this choice and proceed; D4 waits for it.
+
+### D2 terrain synthesis engine — delivered 2026-10-09
+
+- **Recipe model.** `landscape-synthesis-recipe` v1 (`src/app/landscape/LandscapeSynthesisRecipe.js`,
+  `LandscapeSynthesisOperators.js`): 31 operators in 8 families with typed parameters (units, ranges,
+  defaults, nullable objects), masks from selectors (slope, curvature, height, flow, distance, cover,
+  polygon, district), per-operator seeds, the identity `synthesis-<24 hex>` over the canonical recipe and
+  the input hashes, overrides (import, region, operator re-run, exclude), progress, cancellation and the
+  tracked working-set ledger. Repeat runs are bit identical (gate check `determinism`).
+- **Operators.** inputs `import-heights`, `plan-inputs`, `import-map`; landforms `landform-plateau`,
+  `landform-hills`, `landform-valley`, `landform-headland`, `landform-cove`; warps `warp`, `noise`; erosion
+  `fluvial-erosion` (Braun & Willett 2013 implicit stream power over Priority-Flood routing with Quinn
+  contributing areas, hillslope diffusion, retain-target uplift, hardness-scaled erodibility),
+  `hydraulic-erosion` (Beyer 2015 droplets, reported mass balance), `thermal-weathering` (Musgrave 1989,
+  repose settling into talus and colluvium), `sediment-deposit` (transport-limited routing with ponds,
+  fans and valley floors); geology `strata` (dipping layered stack → lithology and hardness), `terraces`;
+  coastal `coastal-exposure`, `coastal-bluff` (retreat, face, wave-cut platform, talus wedge),
+  `coastal-beach` (Dean 1991 equilibrium profile, 1:N foreshore, berm, backshore), `coastal-foredune`,
+  `coastal-nearshore`, `coastal-reef`; constraints `constrain-districts`, `constrain-roads`,
+  `constrain-shoreline`, `constrain-points`, `constrain-runway`, `height-cap`; output `geology-channels`,
+  `export-map`, `resample`. Every erosion and coastal operator moves the surface through the geology
+  ledger `height = bedrock + regolith + depositThickness` (gate residual 1.9e-6 m).
+- **Geology channels.** `landscape-geology` v1 (`src/app/landscape/LandscapeGeology.js`,
+  `LandscapeGeologyPayload.js`, GLSL mirror `src/graphics/shaders/chunks/landscape/geology.glsl`): two
+  RGBA8 field layers (bedrock offset, regolith, deposit thickness, wear; deposition, flow, wave exposure,
+  face mask) and one categorical uint8 page per chunk (deposit type, lithology, drainage, coastal zone),
+  content-addressed pages, candidate preparation and validation (page borders and halos) and
+  manifest-last publication (`tools/bake_landscape/terrain_synthesis/geology/`).
+- **Interchange.** RAW float32, PNG 8/16-bit and OpenEXR float32 maps with `<file>.meta.json` sidecars
+  (frame, row order, sha256, provenance = recipe identity); `import-map` replaces a stage's output under a
+  mask; the gate re-imports its own EXR export with 0 differences.
+- **Tests.** 84 tests in 12 suites pass in 7.8 s (`node --test tests/node/unit/landscape_synthesis_*.test.js
+  tests/node/unit/landscape_review_poses.test.js`): erosion mass balance and invariant, talus-angle
+  convergence, determinism, constraint preservation, tile-seam equality, interchange round trips, geology
+  page validation, recipe validation, leaf registration. Review images per operator:
+  `tests/artifacts/screens/landscape/ai596/d2/fixture/operators/NN-<id>.png` and the sheet `operators.png`.
+- **Gate.** `node tools/bake.mjs --target landscape/synthesis/fixture` (leaf `landscape/synthesis/fixture`,
+  recipe `tools/bake_landscape/terrain_synthesis/fixture/recipes/plateau-road-shoreline.json` on the
+  analytic 1 × 1 km base, 513² at 1.953125 m) passes 18/18 checks; receipt
+  `tests/artifacts/screens/landscape/ai596/d2/fixture/fixture-gate.{json,md}`, maps beside it.
+
+| Check | Measured | Target |
+| --- | --- | --- |
+| determinism | identical hashes of the heights and all 26 layers on two runs | bit identical |
+| plateau band (district 1) | p05 36.0 / p95 36.0 m, 99.98% flat | 35–37 m, ≥ 95% flat |
+| plaza band (district 2) | p05 2.56 / p95 2.65 m | 2.3–3.3 m |
+| roads | sustained 5.82%, short 5.86% | ≤ 6% sustained, ≤ 8% short |
+| shoreline | 39.1 m at the 16 headland vertices (reported by the headland operator), the rest within tolerance | 10 m |
+| beach arrival, bus stop, view corridor, swim zone, sea level, cover | pass | plan rules |
+| relief | 14.0% of land above 10°, 4.1% above 20°, max 81.5°; incision p90 12.5 m; relief p90 18.2 m over 100 m | ≥ 12%, ≥ 3%, ≥ 60°, ≥ 1 m, ≥ 8 m |
+| geology invariant | max residual 1.9e-6 m | ≤ 1e-3 m |
+| coastal zones | reef, bar, swash, berm, foredune, platform, bluff face present | required classes |
+| interchange | EXR export re-imported with 0 differences | 0 |
+| seams | standalone saved landscape (5 chunks, level 1) and validated geology candidate | seam free |
+
+Timings on the native 513² grid in one Node process: the whole recipe 9.6 s (fluvial 150 iterations 5.4 s,
+hydraulic 30,000 droplets 0.44 s, thermal 30 iterations 0.21 s, sediment 0.17 s, every other operator
+≤ 0.7 s); on the 1025² unit fixtures fluvial takes 5–16 s, hydraulic 2.2 s per 200,000 droplets, thermal
+1.7 s and sediment 0.9 s. Peak tracked working set 32 MB.
+
+Recipe lessons (also in the spec): the corridor descent runs before the plaza re-imposition and the road
+fit; `sediment-deposit` takes 10% of the accumulated wear as supply; the bluff talus is 10% of the cut
+volume; broad ridged hills (500–60 m octaves, ±24 m) with fluvial incision at retainRate 0.003 read as
+eroded ground, fine octaves plus heavy diffusion read as a blurred plain.
+
+Limitations carried forward: `inputs.plan.landCover` PNG decoding in `plan-inputs` is not implemented
+(cover comes from the imported landscape or the base); the fixture landscape carries no planning
+references or appearance, so it is reviewed through its maps (hillshade, slope, zones, deposits,
+drainage, profiles), not in the game viewer; D4 adds the city-scale recipe and the viewer captures.
 
 ## On completion
 

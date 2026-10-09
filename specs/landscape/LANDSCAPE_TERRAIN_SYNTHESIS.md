@@ -67,22 +67,81 @@ studies); the result is resampled to the output grid with the declared filter an
 - Overrides evaluate after the procedural operators in document order: region masks with parameter overrides,
   include/exclude zones and imported maps that replace a stage output. They survive regeneration.
 
+### Interchange
+
+Maps enter and leave the engine as files with an authenticated metadata sidecar
+(`tools/bake_landscape/terrain_synthesis/interchange/`: Node only, `node:zlib` the sole dependency):
+
+| Encoding | File | Values |
+| --- | --- | --- |
+| `raw-float32` | `.raw`/`.r32`: float32 little-endian, row-major, row 0 north, no header | exact meters (heights) or 0..1 (masks) |
+| `exr-float32` | OpenEXR 2.0 single-part scanline image, one FLOAT channel `Y`, `NO_COMPRESSION`, the sidecar embedded as the string attribute `landscapeMeta` (without its hash fields); the reader also takes `ZIPS`/`ZIP` blocks, HALF channels (converted exactly), any line order and the channel `Y`, `height`, `Z` or `R` of a multi-channel file; tiled, deep, multi-part and PIZ/PXR24/B44/DWA files are rejected | exact |
+| `png-gray16`, `png-gray8` | non-interlaced gray PNG | quantized over the declared `range` (heights; values outside are rejected, never clamped) or over 0..1 (masks); exact to half a quantization step |
+
+Every map `<file>` has `<file>.meta.json` (`landscape-interchange-map` schema 1): `kind` (`heights`|`mask`),
+`encoding`, `columns`, `rows`, `spacing:{x,z}`, `bounds:{minX,maxX,minZ,maxZ}`, `rowOrder:'north-first'`,
+`axes:'X east, Z north, Y up'`, `units` (`meters`|`dimensionless`), `range:{min,max}` (the PNG quantization
+range, the measured extent for the float encodings, 0..1 for masks), `seaLevel`, `sha256` and `byteLength` of
+the map, `provenance` (an object with at least `tool`; engine exports write `{tool:'landscape-synthesis',
+recipeId, recipeIdentity, seed, operatorId, layer, workingSpacing}`) and `created`, which carries the recipe
+identity and never a timestamp, so repeated bakes write identical sidecars. An import authenticates the hash
+before decoding, compares the frame exactly with the expected grid and never resamples; an EXR whose embedded
+`landscapeMeta` disagrees with its sidecar is rejected. External tools (Gaea, World Machine, Houdini) stay
+optional inputs: their maps are adopted by writing the sidecar from declared parameters (`adoptLandscapeMap`),
+the recipe declares them under `inputs.imports[{id, file, kind, encoding}]` and their hashes enter the recipe
+identity as `import/<id>`; no external tool is ever a runtime or build dependency. Gaea Community exports are
+capped at 1024² and are non-commercial, so a 2049² production terrain cannot come from it whole.
+
+Operators: `import-map` `{importId, target, mode:'replace'|'add'|'multiply'|'max'|'min', scale, offset}` combines
+the map into a float layer under the operator mask (`v = scale · map + offset`; `replace` without a mask
+creates a missing layer; categorical targets are rejected at the recipe boundary; the map frame must equal the
+working grid, or the output grid when the recipe works coarse, in which case it is decimated with the aligned
+tent average like `import-heights` and reported as `decimated`). `export-map` `{layer, kind, file, encoding,
+range}` writes the current working-grid layer under the runtime input `inputs.exportRoot` (a leaf sets it to
+its stage directory; a missing root is an error) with the recipe identity as provenance; the validator places
+every `export-map` after the last input operator and the executor reads the maps of `import` overrides before
+the first operator, so that identity is the final one. Leaves export final (post-override, resampled) maps
+through `exportLandscapeMap` directly.
+
+### Overrides
+
+`recipe.overrides[]` is data the user keeps while the procedural recipe regenerates. The executor evaluates it
+after the last operator and before the resample, in document order, each entry with its own mask (the same
+selectors as operators; `null` selects the whole grid where allowed):
+
+| Type | Fields | Effect |
+| --- | --- | --- |
+| `import` | `{id, type, importId, target, mode, scale, offset, mask}` | the `import-map` combination as an override: an imported map replaces or combines a stage output in the masked region |
+| `region` | `{id, type, mask (required), height:{mode:'set'|'raise'|'lower', meters}}` | a data-only local height edit; the selector edges give the smoothstep transition |
+| `operator` | `{id, type, operatorId, params:{partial}, mask}` | re-runs the named enabled recipe operator (landform, warp, erosion, geology, coastal or constraint family, never inputs/output) on the current state with `params` merged over its own, inside the mask (multiplied with the operator's mask when both exist), with the operator's seed; additive operators add again |
+| `exclude` | `{id, type, mask (required)}` | protects the zone: every layer the other overrides may write is snapshotted before the first override and restored under the mask after the last one (float layers blend by the mask, categorical layers restore where the mask exceeds 0.5), wherever the exclude sits in the list |
+
+Validation: ids unique; `importId` declared; `target` a declared float32 layer written by an earlier operator
+unless `replace` without a mask creates it; `operatorId` an enabled recipe operator whose merged parameters pass
+the catalog and its cross-parameter rules; masks validated like operator masks against the layers the enabled
+operators write. The engine report lists every override (`report.overrides[{id, type, seconds,
+statistics:{changedSamples, maxChangeMeters, details}}]`; height changes are measured against a snapshot taken
+before each override, and `exclude` entries report the protected samples and what each layer restored).
+Overrides are part of the canonical recipe JSON, so they renew the identity, and the maps of `import` overrides
+are recorded inputs.
+
 ## Operators
 
 | Family | Operators (D1 subset in bold) |
 | --- | --- |
-| Inputs | **`import-heights`** (landscape directory or interchange file), **`plan-inputs`** (districts, roads, shoreline, beach points, land cover → masks and distance fields) |
+| Inputs | **`import-heights`** (landscape directory or interchange file), **`plan-inputs`** (districts, roads, shoreline, beach points, land cover → masks and distance fields), `import-map` (declared interchange map combined into a float layer under the mask) |
 | Landforms | **`landform-plateau`** (district/polygon target with an edge profile: escarpment, embankment, retaining slope, ramp), **`landform-hills`** (bounded ridged multi-scale relief), **`landform-valley`**, `landform-headland`, `landform-cove` |
 | Warps and noise | **`warp`**, **`noise`** (world-anchored, bit-exact `LandscapeSurfaceNoise` octaves) |
 | Erosion | `fluvial-erosion` (stream power over a Priority-Flood/D8 drainage network, implicit), `hydraulic-erosion` (seeded droplet detail erosion), `thermal-weathering` (angle of repose per lithology, talus deposits), `sediment-deposit` |
 | Geology | `strata` (dipping layer stack with hardness), `terraces` |
 | Coastal | `coastal-bluff` (bluff retreat with a wave-cut platform), `coastal-beach` (equilibrium profile, berm, swash zone, foreshore slope), `coastal-foredune`, `coastal-nearshore` (bars), `coastal-reef` |
 | Constraints | **`constrain-districts`**, **`constrain-roads`** (grade-limited centerline profile, designed cut/fill shoulders), **`constrain-shoreline`**, **`constrain-points`** (beach arrival, bus stop, view corridor, swim zone), **`constrain-runway`**, **`height-cap`** |
-| Output | **`resample`**, `geology-channels`, `export` |
+| Output | **`resample`**, `geology-channels`, `export-map` (working-grid layer → interchange map with the recipe identity as provenance) |
 
 Each operator reads and writes named layers: `height`, `cover`, the plan layers (`districtId`, `landMask`,
 `roadDistance`, `roadHeight`, `roadWidth`, `roadIndex`, `shoreSigned`, `corridorMask`, `runwayMask`,
-`apronMask`) and, from D2, `bedrock`, `regolith`, `depositType`, `depositThickness`, `lithology`, `wear`,
+`apronMask`) and, from D2, `bedrock`, `regolith`, `depositType`, `depositThickness`, `lithology`, `hardness`
+(the strata erodibility reduction, engine-internal), `wear`,
 `deposition`, `flow`, `drainage`, `faceMask`, `coastalZone`, `waveExposure`. Operators report progress and honor
 an `AbortSignal`; every full-grid array goes through the tracked `TerrainFieldMemory` ledger with the recipe's
 declared working limit, and the recipe validator checks the data flow (an operator reads only layers an
@@ -136,13 +195,20 @@ The engine keeps these layers (working grid, float32 unless noted) and the geolo
 | `coastalZone` | uint8 enum: 0 inland, 1 offshore, 2 reef, 3 bar, 4 surf, 5 swash, 6 berm, 7 backshore, 8 foredune, 9 platform, 10 bluff toe, 11 bluff face, 12 bluff crown | Coastal zone class |
 | `waveExposure` | 0..1 | Exposure of the shore to the open-sea fetch (headlands 1, sheltered coves 0), carried inland over the surf and swash |
 
-The sidecar (`geology/manifest.json`, format `landscape-geology`, schema 1) mirrors the terrain-fields layout:
-mask-aligned pages with the two-sample halo, three RGBA8 layers (`bedrockOffset` as `height − bedrock` in
-signed-square 0..32 m, `regolith` linear 8, `depositThickness` linear 30, `wear`, `deposition`, `flow`,
-`waveExposure`, `faceMask` linear; `depositType`, `lithology`, `drainage`, `coastalZone` as exact uint8 pages
-without halo like natural-soil pages), content-addressed pages, a `terrain` binding to the exact revision and
-chunk hashes, strict validation, exact JavaScript samplers (`sampleLandscapeGeologyPage`) and a GLSL decode
-mirror (`chunks/landscape/geology.glsl`).
+The sidecar (`geology/manifest.json`, format `landscape-geology`, schema 1, `src/app/landscape/LandscapeGeology.js`)
+mirrors the terrain-fields layout: mask-aligned pages with the two-sample halo holding two RGBA8 layers
+(0.r `bedrockOffset` = `height − bedrock`, linear 0..32 m; 0.g `regolith` linear 8 m; 0.b `depositThickness`
+linear 30 m; 0.a `wear`; 1.r `deposition`; 1.g `flow`; 1.b `waveExposure`; 1.a `faceMask`, all linear 0..1) and one
+categorical uint8 page per chunk without halo holding four aligned label layers (`depositType`, `lithology`,
+`drainage`, `coastalZone`, layer k at k × samples²), content-addressed pages, a `terrain` binding to the exact
+revision and native chunk hashes (staleness shares the terrain-fields semantics), content keys that include the
+recipe identity, strict validation, exact JavaScript samplers (`sampleLandscapeGeologyPage`, bilinear on the
+encoded bytes then decoded; `sampleLandscapeGeologyCategory`, nearest aligned label) and the GLSL decode mirror
+`chunks/landscape/geology.glsl` (constants, `landscapeGeologyDecode`; not included by any program until a
+consumer renders geology). The `geology-channels` operator runs once, last: it derives `faceMask`, recomputes
+`flow` and `drainage` on the final surface, normalizes `wear`/`deposition` from meters to 0..1 and fills missing
+layers with their neutral values (recorded as defaulted). Publication (`geology/GeologyPreparation.mjs`) follows
+the fields pattern: candidate pages, byte-level validation, manifest-last switch under the authoring lock.
 
 ## Review poses (`landscape-review-poses` v1)
 
@@ -193,9 +259,51 @@ with the last 150 m shared with the rim roads), so the recipe allows 7.8% and re
 switchbacks inside the plan corridor (a D4 realignment). The decision gate (variant and targets) is recorded
 in the AI 596 prompt file.
 
+## D2 terrain synthesis engine (2026-10-09)
+
+The engine is complete for the roadmap's L0 scope: 31 operators in 8 families (see Operators), overrides,
+interchange, the geology sidecar and the fixture gate leaf `landscape/synthesis/fixture`. The gate recipe
+`tools/bake_landscape/terrain_synthesis/fixture/recipes/plateau-road-shoreline.json` erodes the analytic
+1 × 1 km base (513² at 1.953125 m) into hill country with valleys draining to the sea, a 36 m plateau town
+behind an 18 m escarpment, a bluff coast with a wave-cut platform and talus, a berm beach, foredunes, a
+nearshore bar and a reef off the headland, and passes 18/18 checks:
+
+| Check | Measured | Target |
+| --- | --- | --- |
+| determinism | identical hashes of the heights and all 26 layers on two runs | bit identical |
+| plateau band (district 1) | p05 36.0 / p95 36.0 m, 99.98% flat | 35–37 m, ≥ 95% flat |
+| plaza band (district 2) | p05 2.56 / p95 2.65 m | 2.3–3.3 m |
+| roads | sustained 5.82%, short 5.86% | ≤ 6% sustained, ≤ 8% short |
+| shoreline | 39.1 m at the 16 headland vertices (reported by the headland operator), the rest within tolerance | 10 m |
+| beach arrival, bus stop, view corridor, swim zone, sea level, cover | pass | plan rules |
+| relief | 14.0% of land above 10°, 4.1% above 20°, max 81.5°; incision p90 12.5 m; relief p90 18.2 m over 100 m | ≥ 12%, ≥ 3%, ≥ 60°, ≥ 1 m, ≥ 8 m |
+| geology invariant | max residual 1.9e-6 m | ≤ 1e-3 m |
+| coastal zones | reef, bar, swash, berm, foredune, platform, bluff face present | required classes |
+| interchange | EXR export re-imported with 0 differences | 0 |
+| seams | standalone saved landscape (5 chunks, level 1) and validated geology candidate | seam free |
+
+Timings on the native 513² grid in one Node process: the whole recipe 9.6 s (fluvial 150 iterations 5.4 s,
+hydraulic 30,000 droplets 0.44 s, thermal 30 iterations 0.21 s, sediment 0.17 s, every other operator
+≤ 0.7 s); on the 1025² unit fixtures fluvial takes 5–16 s, hydraulic 2.2 s per 200,000 droplets, thermal
+1.7 s and sediment 0.9 s. Peak tracked working set 32 MB.
+
+Recipe lessons: the corridor descent (`constrain-points`) runs before the plaza re-imposition and the road
+fit (a corridor blend after the roads broke the coast road at 9.6%; before the plaza it raised the plaza
+p95 to 3.8 m); `sediment-deposit` takes 10% of the accumulated wear as supply (100% buried the channels in
+lumps); the bluff talus is 10% of the cut volume (30% buried the 6–13 m face, leaving no face class);
+broad ridged hills (500–60 m octaves, ±24 m) with fluvial incision at retainRate 0.003 read as eroded
+ground, while fine octaves plus heavy diffusion read as a blurred plain.
+
+Limitations carried forward: `inputs.plan.landCover` PNG decoding in `plan-inputs` is not implemented
+(cover comes from the imported landscape or the base); the fixture landscape carries no planning
+references or appearance, so it is reviewed through its maps, not in the game viewer; D4 adds the
+city-scale recipe and the viewer captures.
+
 ## Status
 
 - D1 relief study: delivered (engine D1 subset, analysis, review poses and captures, three variants).
   Gate decided 2026-10-09: variant B `relief-b-raised-80` (80 m high city, plan roads at ≤ 6%) with its
   declared targets (AI 596 prompt file, "Declared targets", column B).
-- D2 terrain synthesis engine: in progress.
+- D2 terrain synthesis engine: delivered 2026-10-09 (31 operators, geology sidecar, interchange, overrides,
+  84 unit tests, fixture gate 18/18).
+- D3 finer authoritative resolution: next.

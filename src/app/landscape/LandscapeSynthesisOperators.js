@@ -16,7 +16,7 @@ const polygon = (description, options = {}) => Object.freeze({ type: 'polygon', 
 const numbers = (unit, description, { items = {}, ...options } = {}) => Object.freeze({ type: 'array', unit, description, items: Object.freeze({ type: 'number', ...items }), ...options });
 const freezePoints = points => Object.freeze(points.map(entry => Object.freeze(entry)));
 
-export const LANDSCAPE_SYNTHESIS_FAMILIES = Object.freeze(['inputs', 'landforms', 'warps', 'constraints', 'output']);
+export const LANDSCAPE_SYNTHESIS_FAMILIES = Object.freeze(['inputs', 'landforms', 'warps', 'erosion', 'geology', 'coastal', 'constraints', 'output']);
 
 /** Layers an operator may read or write; transient masks are created and released inside operators. */
 export const LANDSCAPE_SYNTHESIS_LAYERS = Object.freeze({
@@ -31,6 +31,19 @@ export const LANDSCAPE_SYNTHESIS_LAYERS = Object.freeze({
     shoreSigned: Object.freeze({ type: 'float32', unit: 'meters', description: 'Signed distance to the design shoreline, land positive' }),
     corridorMask: Object.freeze({ type: 'float32', unit: 'dimensionless', description: '1 inside the open-view corridor polygon' }),
     runwayMask: Object.freeze({ type: 'float32', unit: 'dimensionless', description: '1 inside the runway polygon' }),
+    bedrock: Object.freeze({ type: 'float32', unit: 'meters', description: 'Bedrock surface (absolute world Y): height - regolith - depositThickness, never above the height' }),
+    regolith: Object.freeze({ type: 'float32', unit: 'meters', description: 'Weathered in-place mantle thickness, 0..8' }),
+    depositType: Object.freeze({ type: 'uint8', unit: 'id', description: 'Dominant loose deposit at the surface: 0 none, 1 talus, 2 colluvium, 3 alluvium, 4 beach sand, 5 dune sand, 6 reef rock' }),
+    depositThickness: Object.freeze({ type: 'float32', unit: 'meters', description: 'Thickness of the dominant loose deposit, 0..30' }),
+    lithology: Object.freeze({ type: 'uint8', unit: 'id', description: 'Index of the stratum the bedrock surface lies in (0 unstratified)' }),
+    wear: Object.freeze({ type: 'float32', unit: 'meters', description: 'Cumulative fluvial and hydraulic erosion depth in meters until geology-channels normalizes it to 0..1' }),
+    deposition: Object.freeze({ type: 'float32', unit: 'meters', description: 'Cumulative sediment deposition depth in meters until geology-channels normalizes it to 0..1' }),
+    flow: Object.freeze({ type: 'float32', unit: 'dimensionless', description: 'Normalized ln(A / spacing) of the surface (terrain-fields convention), 0..1' }),
+    drainage: Object.freeze({ type: 'uint8', unit: 'id', description: 'Drainage class: 0 hillslope, 1 rill, 2 gully, 3 channel, 4 flat/pond, 5 sea' }),
+    faceMask: Object.freeze({ type: 'float32', unit: 'dimensionless', description: 'Slope beyond what the heightfield represents faithfully (smoothstep between the face start and full slopes), 0..1' }),
+    coastalZone: Object.freeze({ type: 'uint8', unit: 'id', description: 'Coastal zone class: 0 inland, 1 offshore, 2 reef, 3 bar, 4 surf, 5 swash, 6 berm, 7 backshore, 8 foredune, 9 platform, 10 bluff toe, 11 bluff face, 12 bluff crown' }),
+    waveExposure: Object.freeze({ type: 'float32', unit: 'dimensionless', description: 'Exposure of the shore to the open-sea fetch (headlands 1, sheltered coves 0), 0..1' }),
+    hardness: Object.freeze({ type: 'float32', unit: 'dimensionless', description: 'Hardness of the stratum at the rock surface, 0..1 (1 hardest; 0.5 where nothing stratified the rock), written by strata and read by erosion' }),
     apronMask: Object.freeze({ type: 'float32', unit: 'dimensionless', description: '1 inside the airport apron polygon' })
 });
 
@@ -59,6 +72,26 @@ export const LANDSCAPE_SYNTHESIS_SELECTORS = Object.freeze({
     multiply: Object.freeze({ description: 'Product of the nested selectors', requires: Object.freeze([]), parameters: Object.freeze({}), combinator: true })
 });
 
+const IMPORT_COMBINATION = Object.freeze({
+    importId: string('Id of the entry in recipe.inputs.imports that names the file, kind and encoding', { required: true, format: 'id' }),
+    target: string('Float layer the map combines into: height, or a geology layer (bedrock, regolith, depositThickness, hardness, wear, deposition, flow, faceMask, waveExposure); categorical layers are rejected; replace without a mask creates a missing layer', { default: 'height', format: 'id' }),
+    mode: enumeration('replace sets the map value; add sums it; multiply scales the layer by it; max and min keep the higher or lower of layer and map', ['replace', 'add', 'multiply', 'max', 'min'], { default: 'replace' }),
+    scale: number('dimensionless', 'Factor applied to the decoded map values (meters for heights, 0..1 for masks) before combining', { default: 1, min: -1e6, max: 1e6 }),
+    offset: number('meters', 'Added to the scaled map values before combining (meters for height layers, dimensionless for 0..1 layers)', { default: 0, min: -1e6, max: 1e6 })
+});
+
+/** Override types evaluated after the operator loop in document order; every override carries an id, a type and a mask (null = whole grid where allowed). */
+export const LANDSCAPE_SYNTHESIS_OVERRIDES = Object.freeze({
+    import: Object.freeze({ description: 'Combines a declared interchange map into a float layer under the mask (the import-map operator as data: an imported map replaces or combines a stage output)', maskRequired: false, parameters: IMPORT_COMBINATION }),
+    region: Object.freeze({ description: 'Sets, raises or lowers the height inside the mask (the selector edges give the smoothstep transition)', maskRequired: true,
+        parameters: Object.freeze({ height: Object.freeze({ type: 'object', unit: 'meters', description: 'set replaces the height with meters, raise adds meters, lower subtracts meters', required: true,
+            fields: Object.freeze({ mode: enumeration('Height change mode', ['set', 'raise', 'lower'], { required: true }), meters: number('meters', 'Target height (set) or change (raise, lower)', { required: true, min: -10000, max: 10000 }) }) }) }) }),
+    operator: Object.freeze({ description: 'Re-runs an enabled recipe operator (landform, warp, erosion, geology, coastal or constraint family) on the current state with these parameters replacing its own, inside the mask (multiplied with the operator mask when both exist)', maskRequired: false,
+        parameters: Object.freeze({ operatorId: string('Id of the enabled recipe operator re-run', { required: true, format: 'id' }),
+            params: Object.freeze({ type: 'object', unit: 'none', description: 'Partial parameter set, validated against the operator catalog after merging over the operator parameters', required: true, fields: null }) }) }),
+    exclude: Object.freeze({ description: 'Protects the mask: every layer another override changes is restored to its pre-override state there (float layers blend by the mask, categorical layers restore where the mask exceeds 0.5)', maskRequired: true, parameters: Object.freeze({}) })
+});
+
 // shared by every operator that builds a designed edge outward from a polygon boundary
 const EDGE_PROFILE_PARAMETERS = Object.freeze({
     profile: enumeration('Designed edge outward from the boundary: escarpment (rim, rock face, talus apron), embankment (one engineered slope), retaining (near-vertical, limited by maxHeightfieldSlopeDegrees), ramp (linear over rampLengthMeters), feather (v2 smoothstep over featherMeters)',
@@ -84,6 +117,29 @@ const EDGE_PROFILE_PARAMETERS = Object.freeze({
 const NOISE_OCTAVES = Object.freeze({
     wavelengthsMeters: numbers('meters', 'Octave wavelengths, strictly decreasing', { minItems: 1, maxItems: 16, items: Object.freeze({ min: .5, max: 100000 }), default: Object.freeze([900, 450, 225, 112, 56]) }),
     amplitudes: numbers('dimensionless', 'Relative octave amplitudes matching wavelengthsMeters', { minItems: 1, maxItems: 16, items: Object.freeze({ min: 0, max: 1 }), default: Object.freeze([1, .5, .25, .125, .0625]) })
+});
+
+// world-anchored stratification geometry: declared by strata and repeated by terraces so the benches follow the same stack
+const STRATA_GEOMETRY_PARAMETERS = Object.freeze({
+    origin: point('World XZ origin of the dip planes; the base of stratum 0 lies at offsetMeters there', { default: freezePoints([[0, 0]])[0] }),
+    dipEastMetersPerKm: number('meters-per-kilometer', 'Height change of the strata per kilometer toward east (positive: the beds rise toward east)', { default: 0, min: -500, max: 500 }),
+    dipNorthMetersPerKm: number('meters-per-kilometer', 'Height change of the strata per kilometer toward north (positive: the beds rise toward north)', { default: 0, min: -500, max: 500 }),
+    offsetMeters: number('meters', 'Height of the base of stratum 0 at the origin', { default: 0, min: -5000, max: 5000 }),
+    thicknessMeters: number('meters', 'Stratum thickness before the thickness pattern factors', { default: 6, min: .25, max: 500 }),
+    thicknessPattern: numbers('dimensionless', 'Thickness factors cycling through the stack: stratum k is thicknessMeters times pattern[k mod length]', { minItems: 1, maxItems: 32, items: Object.freeze({ min: .05, max: 20 }), default: Object.freeze([1]) }),
+    warpMeters: number('meters', 'Bound of the world-anchored warp bending the strata (two octaves at warpWavelengthMeters)', { default: 2, min: 0, max: 500 }),
+    warpWavelengthMeters: number('meters', 'Wavelength of the strata warp', { default: 400, min: 1, max: 100000 }),
+    hardnessPattern: numbers('dimensionless', 'Hardness 0..1 cycling through the stack (1 hardest): stratum k takes pattern[k mod length]', { minItems: 1, maxItems: 32, items: Object.freeze({ min: 0, max: 1 }), default: Object.freeze([.9, .3]) })
+});
+
+// shared by the coastal operators that must leave the plan's beach features untouched
+const PLAN_PROTECTION_PARAMETERS = Object.freeze({
+    protectPlan: boolean('Leave the plan districts, the plan beach points within protectRadiusMeters and, where the operator says so, the open-view corridor and the southwest swim zone untouched (needs plan-inputs)', { default: true }),
+    protectRadiusMeters: number('meters', 'Radius around every plan beach point (arrival pad, bus stop) left untouched, blended over the next 10 m', { default: 60, min: 0, max: 1000 }),
+    swimZone: Object.freeze({ type: 'object', unit: 'meters', description: 'The plan swim zone kept untouched where the operator protects it: the design-shoreline band between zMin and zMax, seawardMeters offshore and landwardMeters inland (the v2 plan southwest swim beach by default); null when the plan has no swim zone',
+        nullable: true, default: Object.freeze({ zMin: 184, zMax: 936, seawardMeters: 150, landwardMeters: 60 }),
+        fields: Object.freeze({ zMin: number('meters', 'Southern Z of the zone', { required: true, min: -1e6, max: 1e6 }), zMax: number('meters', 'Northern Z of the zone', { required: true, min: -1e6, max: 1e6 }),
+            seawardMeters: number('meters', 'Reach offshore from the design shoreline', { required: true, min: 0, max: 5000 }), landwardMeters: number('meters', 'Reach inland from the design shoreline', { required: true, min: 0, max: 5000 }) }) })
 });
 
 const operator = (op, family, description, parameters, reads, writes) => Object.freeze({ op, family, description, parameters: Object.freeze(parameters), layers: Object.freeze({ reads: Object.freeze(reads), writes: Object.freeze(writes) }) });
@@ -205,6 +261,201 @@ export const LANDSCAPE_SYNTHESIS_OPERATORS = Object.freeze({
         capMeters: number('meters', 'Maximum height', { default: 50, min: -1000, max: 10000 }),
         shoulderMeters: number('meters', 'Soft shoulder height below the cap (0 hard clip)', { default: 0, min: 0, max: 1000 })
     }, ['height'], ['height']),
+    'geology-channels': operator('geology-channels', 'output', 'Finalizes the geology channel layers at the end of a recipe: the face mask from the slope of the final height, flow and drainage recomputed over the final surface (conditioned Priority-Flood, flat resolution, Quinn MFD, ln(A / spacing) over land percentiles as the terrain fields), wear and deposition normalized from meters to 0..1, regolith and deposit thickness clamped into their published ranges with the bedrock re-derived from height = bedrock + regolith + depositThickness, sea samples without a coastal class marked offshore; layers no earlier operator produced are created with their neutral values and reported; refuses a mask', {
+        faceStartDegrees: number('degrees', 'Slope where the face mask starts rising', { default: 55, min: 0, max: 89 }),
+        faceFullDegrees: number('degrees', 'Slope where the face mask reaches 1', { default: 75, min: 1, max: 90 }),
+        recomputeFlow: boolean('Recompute flow and drainage over the final surface; false keeps the layers of earlier operators (neutral when absent) and only clamps them', { default: true }),
+        flowConditioningSamples: number('samples', 'Gaussian sigma of the routing surface before the depression fill (terrain fields: 3)', { default: 3, min: 0, max: 64 }),
+        flowExponent: number('dimensionless', 'Quinn multiple-flow-direction exponent (terrain fields: 1.1)', { default: 1.1, min: .5, max: 10 }),
+        flowFlatSuppressionSamples: number('samples', 'Gaussian sigma of the flat share that fades the flow channel over flats (terrain fields: 2)', { default: 2, min: 0, max: 64 }),
+        flowPercentiles: numbers('percent', 'Land percentiles of ln(A / spacing) mapped to 0 and 1 (terrain fields: 60 and 99.7)', { minItems: 2, maxItems: 2, items: Object.freeze({ min: 0, max: 100 }), default: Object.freeze([60, 99.7]) }),
+        rillAreaSquareMeters: number('square-meters', 'Contributing area where a hillslope becomes a rill', { default: 2000, min: 1, max: 1e9 }),
+        gullyAreaSquareMeters: number('square-meters', 'Contributing area where a rill becomes a gully', { default: 20000, min: 1, max: 1e9 }),
+        channelAreaSquareMeters: number('square-meters', 'Contributing area where a gully becomes a channel', { default: 200000, min: 1, max: 1e9 }),
+        pondFillMeters: number('meters', 'Depression fill depth above which a sample is a pond (flat samples of the filled surface are flat/pond regardless)', { default: .05, min: 0, max: 100 }),
+        wearNormalizationMeters: number('meters', 'Wear depth mapped to 1; null uses the land p99 of the wear layer (then its land maximum when p99 is 0)', { default: null, min: 1e-6, max: 1000 }),
+        depositionNormalizationMeters: number('meters', 'Deposition depth mapped to 1; null uses the land p99 of the deposition layer (then its land maximum when p99 is 0)', { default: null, min: 1e-6, max: 1000 })
+    }, ['height'], ['bedrock', 'regolith', 'depositType', 'depositThickness', 'lithology', 'wear', 'deposition', 'flow', 'drainage', 'faceMask', 'coastalZone', 'waveExposure']),
+    'import-map': operator('import-map', 'inputs', 'Combines a declared interchange map (recipe.inputs.imports, authenticated by its metadata sidecar) into a float layer under the operator mask: the scaled and offset map values replace, add to, multiply, or bound (max, min) the layer; the map frame must equal the working grid, or the output grid when the recipe works coarse (then the aligned tent average decimates it); the file hash enters the recipe identity',
+        IMPORT_COMBINATION, [], []),
+    'export-map': operator('export-map', 'output', 'Writes a float layer of the working grid as an interchange map (RAW float32, PNG 8/16-bit gray or EXR float32) with its metadata sidecar under the runtime export root, carrying the recipe identity and this operator id as provenance; placed after every input operator so the identity is complete', {
+        layer: string('Float layer exported', { default: 'height', format: 'id' }),
+        kind: enumeration('heights writes meters; mask writes 0..1 values (rejected outside that range)', ['heights', 'mask'], { default: 'heights' }),
+        file: string('Relative path of the map under the export root; the sidecar is <file>.meta.json', { required: true, format: 'relative-path' }),
+        encoding: enumeration('Map encoding', ['raw-float32', 'png-gray16', 'png-gray8', 'exr-float32'], { default: 'exr-float32' }),
+        range: numbers('meters', 'PNG heights: [min, max] quantization range in meters (values outside are rejected); null for the float encodings and for masks', { minItems: 2, maxItems: 2, items: Object.freeze({ min: -100000, max: 100000 }), default: null })
+    }, [], []),
+    'fluvial-erosion': operator('fluvial-erosion', 'erosion', 'Landscape-scale stream-power incision (Braun & Willett 2013 implicit scheme, n = 1) over a Priority-Flood drainage network of the current surface (steepest-descent receivers, Quinn multiple-flow-direction contributing areas, routing refreshed every routingEveryIterations) with explicit linear hillslope diffusion and uplift; outlets (landscape edge, below sea level) are fixed base levels, loose deposits and regolith erode before bedrock, creep moves regolith, wear accumulates the incision in meters and the flow and drainage channels are classified on the final surface', {
+        iterations: integer('iterations', 'Implicit incision steps (retain-target equilibrates in about 1 / retainRate iterations)', { default: 50, min: 1, max: 5000 }),
+        dt: number('dimensionless', 'Time step multiplier of one iteration (scales the erodibility and the diffusion)', { default: 1, min: 1e-6, max: 1e6 }),
+        erodibility: number('meters^(1-2m)-per-iteration', 'Stream-power erodibility K: incision per iteration = K * A^m * S for n = 1 (A in square meters); with retain-target a channel equilibrates S * K * A^m / retainRate below the design surface', { default: 5e-3, min: 0, max: 10 }),
+        m: number('dimensionless', 'Contributing-area exponent m of the stream-power law', { default: .5, min: .1, max: 1.5 }),
+        routingEveryIterations: integer('iterations', 'Recompute the Priority-Flood routing, receivers and contributing areas every this many iterations', { default: 1, min: 1, max: 5000 }),
+        uplift: enumeration('none lets the surface incise freely; retain-target pulls every sample toward its pre-operator height by retainRate per iteration (keeps the designed landform while channels incise); constant raises the bedrock by upliftMetersPerIteration', ['none', 'retain-target', 'constant'], { default: 'retain-target' }),
+        retainRate: number('per-iteration', 'retain-target: share of the gap to the pre-operator height closed per iteration', { default: .02, min: 0, max: 1 }),
+        upliftMetersPerIteration: number('meters-per-iteration', 'constant: bedrock uplift per iteration', { default: .01, min: 0, max: 100 }),
+        diffusivity: number('square-meters-per-iteration', 'Linear hillslope diffusivity D of the explicit 5-point creep scheme (stability-limited sub-steps; lowering erodes the column, raising thickens the regolith)', { default: .2, min: 0, max: 1e4 }),
+        useHardness: boolean('Scale the erodibility by (1 - hardnessWeight * hardness) when a hardness layer exists (written by strata); without that layer the erodibility stays uniform and the statistics report hardnessApplied false', { default: true }),
+        hardnessWeight: number('dimensionless', 'Erodibility reduction at hardness 1', { default: .8, min: 0, max: 1 }),
+        rillAreaM2: number('square-meters', 'Contributing area from which a sample is a rill (drainage class 1)', { default: 2000, min: 1, max: 1e9 }),
+        gullyAreaM2: number('square-meters', 'Contributing area from which a sample is a gully (class 2)', { default: 10000, min: 1, max: 1e9 }),
+        channelAreaM2: number('square-meters', 'Contributing area from which a sample is a channel (class 3)', { default: 50000, min: 1, max: 1e9 }),
+        pondDepthMeters: number('meters', 'Filled depressions deeper than this are class 4 (flat/pond)', { default: .1, min: 0, max: 100 })
+    }, ['height'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'wear', 'flow', 'drainage']),
+    'hydraulic-erosion': operator('hydraulic-erosion', 'erosion', 'Detail-scale particle erosion (Beyer 2015): seeded droplets start at deterministic positions above sea level inside the mask, follow the bilinear gradient with inertia, erode over a radius brush (weighted by the mask) or deposit on the four cell corners according to their sediment capacity, and end when they leave the grid (exported load), stop, enter the sea or run out of steps; deposits settle as colluvium on slopes above colluviumSlopeDegrees, else as alluvium; wear and deposition accumulate in meters and the mass balance eroded = deposited + exported is reported', {
+        droplets: integer('droplets', 'Number of droplets; null derives it from dropletsPerSquareKilometer and the grid area', { default: 200000, min: 1, max: 100000000, nullable: true }),
+        dropletsPerSquareKilometer: number('droplets-per-square-kilometer', 'Droplet density used when droplets is null', { default: 12500, min: 0, max: 1e8 }),
+        maxSteps: integer('steps', 'Lifetime of a droplet in samples travelled', { default: 64, min: 1, max: 4096 }),
+        inertia: number('dimensionless', 'Share of the previous direction kept per step (0 follows the gradient exactly)', { default: .05, min: 0, max: 1 }),
+        capacity: number('dimensionless', 'Sediment capacity factor: capacity = max(drop, minSlope) * speed * water * capacity', { default: 4, min: 0, max: 1000 }),
+        minSlope: number('meters-per-sample', 'Lower bound of the height drop per step inside the capacity', { default: .01, min: 0, max: 100 }),
+        erosionRate: number('dimensionless', 'Share of the free capacity eroded per step', { default: .3, min: 0, max: 1 }),
+        depositionRate: number('dimensionless', 'Share of the excess sediment deposited per step', { default: .3, min: 0, max: 1 }),
+        evaporation: number('dimensionless', 'Water lost per step', { default: .01, min: 0, max: 1 }),
+        gravity: number('dimensionless', 'Speed gain per meter of descent: speed^2 += drop * gravity', { default: 4, min: 0, max: 1000 }),
+        radius: integer('samples', 'Erosion brush radius (weights fall linearly to zero at the radius)', { default: 3, min: 1, max: 16 }),
+        initialWater: number('dimensionless', 'Water volume of a new droplet', { default: 1, min: 0, max: 1000 }),
+        initialSpeed: number('dimensionless', 'Speed of a new droplet', { default: 1, min: 0, max: 1000 }),
+        maxErosionPerStepMeters: number('meters', 'Upper bound of the material one droplet erodes in one step before the brush spreads it (the model runs in meters: drops, capacities and the sediment load are heights in meters per step)', { default: .05, min: 1e-6, max: 100 }),
+        colluviumSlopeDegrees: number('degrees', 'Deposits on slopes steeper than this are colluvium, gentler ones alluvium', { default: 12, min: 0, max: 89 }),
+        endOfLife: enumeration('What a droplet that stops, enters the sea or runs out of steps on the grid does with its load: deposit settles it at its position (what the mask refuses is exported), export counts it as exported', ['deposit', 'export'], { default: 'deposit' })
+    }, ['height'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'wear', 'deposition']),
+    'thermal-weathering': operator('thermal-weathering', 'erosion', 'Thermal weathering and talus (Musgrave, Kolb & Mace 1989): each iteration converts bedrock above sea level into regolith at weatheringRateMetersPerIteration * f(slope), then moves loose material (regolith and deposits; reef rock stays) from every sample to its lower 8-neighbours wherever the slope exceeds the repose angle of its surface material, order independent through two buffers; material arriving along a source slope above talusSourceSlopeDegrees is talus, otherwise colluvium; beyond the landscape edge a virtual neighbour continues the local slope and what moves there is exported', {
+        iterations: integer('iterations', 'Weathering and settling iterations', { default: 50, min: 1, max: 5000 }),
+        weatheringRateMetersPerIteration: number('meters-per-iteration', 'Bedrock converted to regolith per iteration where f(slope) = 1', { default: .01, min: 0, max: 100 }),
+        weatheringSlopeDegrees: number('degrees', 'f(slope) rises linearly from 0 at this slope to 1 at 90 degrees; 0 weathers every slope at the full rate', { default: 25, min: 0, max: 89 }),
+        maxRegolithMeters: number('meters', 'Regolith thickness at which weathering stops', { default: 8, min: 0, max: 100 }),
+        talusReposeDegrees: number('degrees', 'Repose angle of talus and colluvium', { default: 34, min: 1, max: 80 }),
+        sandReposeDegrees: number('degrees', 'Repose angle of alluvium, beach sand and dune sand', { default: 32, min: 1, max: 80 }),
+        regolithReposeDegrees: number('degrees', 'Repose angle of regolith without a deposit on top', { default: 30, min: 1, max: 80 }),
+        talusSourceSlopeDegrees: number('degrees', 'Material leaving a sample along a slope steeper than this arrives as talus, otherwise as colluvium', { default: 45, min: 1, max: 89 }),
+        settleRate: number('dimensionless', 'Share of the largest repose excess a sample sheds per iteration (0.5 settles a two-sample step in one iteration)', { default: .5, min: 0, max: 1 })
+    }, ['height'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness']),
+    'sediment-deposit': operator('sediment-deposit', 'erosion', 'Transport-limited sediment routing: the flux (inflow plus the wear supply) travels donors-first over the Quinn multiple-flow-direction network of the filled current surface; filled depressions trap it up to their spill level (ponds), where it exceeds the capacity c = capacityCoefficient * A^capacityAreaExponent * max(S, minSlope)^capacitySlopeExponent * spacing the excess deposits as alluvium (depositionFraction per sample, the rest continues: fans and valley floors), where the capacity exceeds it the mobile share of the loose material is entrained (never bedrock); outlets export', {
+        iterations: integer('iterations', 'Routing passes (the network is recomputed before each pass)', { default: 1, min: 1, max: 100 }),
+        mobileFraction: number('dimensionless', 'Share of the loose thickness (regolith and deposits) one pass may entrain where the capacity exceeds the flux', { default: .5, min: 0, max: 1 }),
+        supplyLayer: enumeration('Fresh sediment added to the flux at every sample: wear adds supplyFraction of the wear layer when it exists (otherwise the statistics report supplyApplied false), none adds nothing', ['none', 'wear'], { default: 'wear' }),
+        supplyFraction: number('dimensionless', 'Share of the supply layer depth entering the flux', { default: 1, min: 0, max: 1 }),
+        capacityCoefficient: number('cubic-meters-per-meter-width', 'Transport capacity coefficient per unit width (capacity in cubic meters per pass = coefficient * A^a * S^b * spacing, A in square meters)', { default: .01, min: 0, max: 1e3 }),
+        capacityAreaExponent: number('dimensionless', 'Exponent a of the contributing area (square meters) in the capacity', { default: 1, min: 0, max: 3 }),
+        capacitySlopeExponent: number('dimensionless', 'Exponent b of the slope in the capacity', { default: 1, min: 0, max: 3 }),
+        minSlope: number('dimensionless', 'Lower bound of the slope inside the capacity, so flats keep a trickle of transport instead of a mound at their entrance', { default: .001, min: 1e-6, max: 1 }),
+        depositionFraction: number('dimensionless', 'Share of the excess flux deposited at each sample; the rest continues downstream', { default: .3, min: 0, max: 1 })
+    }, ['height'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'deposition']),
+    strata: operator('strata', 'geology', 'Stratifies the rock into a dipping layered stack: the stratum index of a sample is its stack level (rock height minus the datum of the dip planes, the offset and the world-anchored warp) located in the cycling thickness pattern; writes the lithology index (1..255 cycling, 0 unstratified) where the mask is at least 0.5 and blends the hardness of the cycling pattern plus grain noise by the mask; the rock surface is bedrock when an earlier operator created that layer and source is bedrock, otherwise the height (the statistics report sourceLayer)', {
+        source: enumeration('Rock surface stratified: bedrock (when an earlier erosion, geology or coastal operator created the layer, otherwise the height) or always the height', ['bedrock', 'height'], { default: 'bedrock' }),
+        ...STRATA_GEOMETRY_PARAMETERS,
+        hardnessNoise: number('dimensionless', 'Bound of the world-anchored grain noise added to the pattern hardness (clamped to 0..1)', { default: .1, min: 0, max: 1 }),
+        hardnessNoiseWavelengthMeters: number('meters', 'Largest wavelength of the grain noise (two octaves)', { default: 50, min: 1, max: 10000 })
+    }, ['height'], ['lithology', 'hardness']),
+    terraces: operator('terraces', 'geology', 'Cuts benches along hard strata: where stratified rock (lithology above 0) in a soft stratum rests on a hard one (pattern hardness at or above hardThreshold) on a slope steeper than minSlopeDegrees, the soft rock above the hard top within benchWidthMeters horizontally is cut down to that top (the riser steepens over the last 30 percent of the bench), scaled by strength and the mask; the cut rock is routed down the steepest descent of the pre-operator surface past the cut and spread over talusSpreadMeters as talus (depositType 1), so the mass is conserved and the height invariant holds; repeats the strata geometry of the strata operator that stratified the rock', {
+        ...STRATA_GEOMETRY_PARAMETERS,
+        hardThreshold: number('dimensionless', 'Pattern hardness from which a stratum resists and carries a bench on its top', { default: .6, min: 0, max: 1 }),
+        minSlopeDegrees: number('degrees', 'Slope of the pre-operator surface from which benches are cut', { default: 15, min: 0, max: 89 }),
+        benchWidthMeters: number('meters', 'Horizontal reach of the bench above the hard top', { default: 12, min: .5, max: 500 }),
+        strength: number('dimensionless', 'Share of the cut applied (1 flattens fully onto the hard top)', { default: 1, min: 0, max: 1 }),
+        depositTalus: boolean('Drop the cut rock as talus below the bench; false removes it (reported as the mass balance)', { default: true }),
+        talusSpreadMeters: number('meters', 'Length of the descent over which each cut sample\'s talus is spread with decreasing shares', { default: 16, min: .5, max: 500 })
+    }, ['height', 'lithology'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness']),
+    'landform-headland': operator('landform-headland', 'landforms', 'Raises a promontory at a shoreline point: an elliptical dome footprint from a quarter of lengthMeters landward of center to lengthMeters seaward along bearingDegrees, heightMeters above sea level at the dome center (mid footprint) falling to sea level at the footprint edge with ridged noise texture, max-composited over the terrain and scaled by the mask (when the geology ledger exists the rise lifts the bedrock and a cut goes through the ledger); it moves the sea-level crossing deliberately and reports the displacement and the affected design-shoreline vertices; protectPlan leaves districts, the plan beach points and the southwest swim zone untouched', {
+        center: point('Shoreline point at the root of the promontory', { required: true }),
+        bearingDegrees: number('degrees', 'Compass bearing of the seaward axis (0 north, 90 east; the coastal city sea lies west at 270)', { default: 270, min: 0, max: 360 }),
+        lengthMeters: number('meters', 'Seaward reach of the footprint from center', { default: 150, min: 1, max: 5000 }),
+        widthMeters: number('meters', 'Full width of the footprint across the axis', { default: 120, min: 1, max: 5000 }),
+        heightMeters: number('meters', 'Crest height above sea level at center', { default: 8, min: 0, max: 500 }),
+        noiseMeters: number('meters', 'Bound of the ridged noise texture (three octaves, scaled by the dome)', { default: 1, min: 0, max: 100 }),
+        noiseWavelengthMeters: number('meters', 'Largest wavelength of the texture octaves', { default: 60, min: 1, max: 10000 }),
+        ...PLAN_PROTECTION_PARAMETERS
+    }, ['height', 'shoreSigned', 'districtId'], ['height']),
+    'landform-cove': operator('landform-cove', 'landforms', 'Scoops an embayment at a shoreline point: an elliptical footprint from lengthMeters landward of center to a quarter of lengthMeters seaward along bearingDegrees, depthMeters below sea level at the scoop center (mid footprint) rising to sea level at the footprint edge with ridged noise texture, min-composited under the terrain and scaled by the mask (through the geology ledger when it exists); it moves the sea-level crossing deliberately and reports the displacement and the affected design-shoreline vertices; protectPlan leaves districts, the plan beach points and the southwest swim zone untouched', {
+        center: point('Shoreline point at the mouth of the cove', { required: true }),
+        bearingDegrees: number('degrees', 'Compass bearing of the seaward direction (0 north, 90 east); the cove extends landward against it', { default: 270, min: 0, max: 360 }),
+        lengthMeters: number('meters', 'Landward reach of the footprint from center', { default: 150, min: 1, max: 5000 }),
+        widthMeters: number('meters', 'Full width of the footprint across the axis', { default: 120, min: 1, max: 5000 }),
+        depthMeters: number('meters', 'Depth of the scoop below sea level at center', { default: 4, min: 0, max: 100 }),
+        noiseMeters: number('meters', 'Bound of the ridged noise texture (three octaves, scaled by the scoop)', { default: 1, min: 0, max: 100 }),
+        noiseWavelengthMeters: number('meters', 'Largest wavelength of the texture octaves', { default: 60, min: 1, max: 10000 }),
+        ...PLAN_PROTECTION_PARAMETERS
+    }, ['height', 'shoreSigned', 'districtId'], ['height']),
+    'coastal-exposure': operator('coastal-exposure', 'coastal', 'Wave exposure of the shore: from every waterline sample (land with a sea 4-neighbour) rays over the current surface across the seaward half plane around the design-shoreline normal count as open fetch when they stay below sea level plus surfaceClearanceMeters for fetchMeters or leave the landscape; the open fraction, scaled by the mask, is carried to every sample from its nearest waterline sample and faded by a smoothstep over inlandReachMeters on land and offshoreReachMeters at sea (waveExposure); coastalZone receives 1 (offshore) on sea samples still unclassified and 0 (inland) on land samples beyond the inland reach still marked offshore, leaving the classes of other coastal operators untouched', {
+        fetchDirections: integer('directions', 'Rays per waterline sample, evenly spread over the open 180 degree seaward fan', { default: 24, min: 2, max: 360 }),
+        fetchMeters: number('meters', 'Length of every ray', { default: 1500, min: 1, max: 100000 }),
+        rayStepMeters: number('meters', 'Sampling step along a ray (bilinear height)', { default: 4, min: .1, max: 1000 }),
+        surfaceClearanceMeters: number('meters', 'A ray is blocked where the surface rises to sea level plus this clearance', { default: 0, min: -10, max: 100 }),
+        inlandReachMeters: number('meters', 'Landward smoothstep fade of the exposure from the waterline', { default: 60, min: 0, max: 5000 }),
+        offshoreReachMeters: number('meters', 'Seaward smoothstep fade of the exposure from the waterline; sea samples farther out count as offshore', { default: 200, min: 0, max: 50000 })
+    }, ['height', 'shoreSigned'], ['waveExposure', 'coastalZone']),
+    'coastal-bluff': operator('coastal-bluff', 'coastal', 'Bluff retreat with a wave-cut platform, cut only: the crest line is the polygon boundary (source polygon, like the D1 bluff) or, per sample along the design-shoreline normal, the first point within maxDistanceFromShoreMeters where the pre-operator ground reaches minCliffHeightMeters (source detect); the crest moves landward by retreatMeters and takes the pre-operator ground height there, the face descends at faceSlopeDegrees to the platform at platformHeightMeters above sea level, the platform slopes seaward at platformSlopeDegrees over platformWidthMeters beyond the toe and blends into the former surface over blendMeters, an optional notch grooves the toe, and talusVolumeFraction of the cut rock settles as a talus wedge (depositType 1) against the face at talusSlopeDegrees; writes coastalZone 12 crown (crownWidthMeters behind the crest), 11 face, 10 toe (toeBandMeters beyond the toe and the talus), 9 platform and faceMask 1 on the face; the geology ledger keeps the height invariant; protectPlan leaves districts, the plan beach points and the open-view corridor untouched; reports the sea-level crossing displacement', {
+        source: enumeration('Crest line source: an explicit polygon (its boundary) or detection along the design-shoreline normal', ['detect', 'polygon'], { default: 'detect' }),
+        polygon: polygon('Crest polygon (the landward side is inside), required with source polygon', { default: null }),
+        maxDistanceFromShoreMeters: number('meters', 'detect: distance from the design shoreline within which the ground must reach minCliffHeightMeters', { default: 160, min: 1, max: 5000 }),
+        minCliffHeightMeters: number('meters', 'detect: ground height above sea level that marks the crest', { default: 6, min: 0, max: 500 }),
+        retreatMeters: number('meters', 'Landward displacement of the crest', { default: 10, min: 0, max: 500 }),
+        faceSlopeDegrees: number('degrees', 'Slope of the bluff face', { default: 65, min: 10, max: 89 }),
+        platformHeightMeters: number('meters', 'Platform height above sea level at the toe', { default: .8, min: -10, max: 20 }),
+        platformSlopeDegrees: number('degrees', 'Seaward slope of the platform', { default: 1, min: 0, max: 30 }),
+        platformWidthMeters: number('meters', 'Platform width beyond the toe before the former surface resumes', { default: 30, min: 0, max: 1000 }),
+        notchDepthMeters: number('meters', 'Depth of the groove at the toe (its half width is twice the depth); 0 for none', { default: 0, min: 0, max: 5 }),
+        talusVolumeFraction: number('dimensionless', 'Share of the cut volume dropped as a talus wedge at the toe', { default: .3, min: 0, max: 1 }),
+        talusSlopeDegrees: number('degrees', 'Slope of the talus wedge (below faceSlopeDegrees)', { default: 33, min: 1, max: 80 }),
+        crownWidthMeters: number('meters', 'Band behind the crest classified as bluff crown', { default: 10, min: 0, max: 500 }),
+        toeBandMeters: number('meters', 'Platform band beyond the toe classified as bluff toe', { default: 3, min: 0, max: 100 }),
+        blendMeters: number('meters', 'Smoothstep from the platform end into the former surface', { default: 6, min: 0, max: 500 }),
+        ...PLAN_PROTECTION_PARAMETERS
+    }, ['height', 'shoreSigned', 'districtId', 'corridorMask'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'coastalZone', 'faceMask']),
+    'coastal-beach': operator('coastal-beach', 'coastal', 'Equilibrium beach profile in distance from the design shoreline: seaward of the foreshore the Dean 1991 curve h = -deanA x^(2/3) (x from a virtual origin, reported as deanOriginMeters, chosen so the curve meets the foreshore at swashDepthMeters) cuts the seabed where it is shallower, faded over offshoreReachMeters; from -swashDepthMeters through the waterline the straight 1:foreshoreSlopeRatio foreshore, the berm face over bermFaceRunMeters up to the crest at bermHeightMeters and bermDistanceMeters, the flat berm over bermWidthMeters and the backshore descending at backshoreSlopeDegrees replace the ground (raising sand, lowering a too-high ramp) inside beachBandMeters with a smoothstep into the existing ground over blendMeters, all scaled by the mask; where the profile dominates (weight at least 0.5) the surface carries at least minSandMeters of beach sand (depositType 4) and coastalZone 4 surf (profile above -surfDepthMeters), 5 swash, 6 berm or 7 backshore; measures the foreshore slope, berm height and distance and where the backshore meets the ground on transectCount transects; protectPlan leaves districts and the plan beach points untouched; reports the sea-level crossing displacement', {
+        deanA: number('meters^(1/3)', 'Dean profile scale A (fine sand 0.1..0.14)', { default: .1, min: .01, max: 1 }),
+        foreshoreSlopeRatio: number('dimensionless', 'Foreshore slope as 1:N (horizontal meters per meter of rise; 20 is 1:20, about 2.9 degrees)', { default: 20, min: 2, max: 200 }),
+        swashDepthMeters: number('meters', 'Depth below sea level where the straight foreshore starts (seaward end at swashDepthMeters times the ratio)', { default: 1, min: .1, max: 20 }),
+        bermHeightMeters: number('meters', 'Berm crest height above sea level', { default: 1.8, min: 0, max: 20 }),
+        bermDistanceMeters: number('meters', 'Distance of the berm crest from the waterline', { default: 30, min: 1, max: 500 }),
+        bermFaceRunMeters: number('meters', 'Horizontal run of the steeper berm face between the foreshore top and the crest', { default: 6, min: .5, max: 100 }),
+        bermWidthMeters: number('meters', 'Width of the flat berm', { default: 12, min: 0, max: 500 }),
+        backshoreSlopeDegrees: number('degrees', 'Landward descent of the backshore behind the berm', { default: 1, min: 0, max: 30 }),
+        beachBandMeters: number('meters', 'Landward reach of the profile from the waterline', { default: 120, min: 1, max: 5000 }),
+        blendMeters: number('meters', 'Smoothstep width at the landward and seaward ends of the applied profile', { default: 20, min: 0, max: 1000 }),
+        offshoreReachMeters: number('meters', 'Seaward reach of the Dean profile from the waterline', { default: 400, min: 1, max: 20000 }),
+        surfDepthMeters: number('meters', 'Depth to which the profile seaward of the foreshore is classified surf', { default: 3, min: .2, max: 50 }),
+        minSandMeters: number('meters', 'Minimum beach sand thickness kept on the applied profile', { default: .5, min: 0, max: 30 }),
+        transectCount: integer('transects', 'Design-shoreline vertices, evenly spread, where the profile is measured', { default: 5, min: 1, max: 64 }),
+        ...PLAN_PROTECTION_PARAMETERS
+    }, ['height', 'shoreSigned', 'districtId'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'coastalZone']),
+    'coastal-foredune': operator('coastal-foredune', 'coastal', 'Foredune ridge where the backshore has room: per design-shoreline station the free space landward of baseDistanceMeters (the berm\'s landward edge) up to the first district, road (half width plus roadMarginMeters), open-view corridor or bluff zone sample is measured along the shoreline normal; where it is at least minSpaceMeters a ridge with its crest crestDistanceMeters behind the base, heightMeters varied by world-anchored noise (heightVariationMeters at wavelengthMeters), a seaward face at seawardSlopeDegrees (its run clipped to the crest distance so the dune never starts on the berm: the effective slope is reported) and a lee face at leeSlopeDegrees inside widthMeters (the height is limited to fit and reported) is added as dune sand (depositType 5, coastalZone 8 where at least 0.2 m), fading out over blendMeters before the obstacle; protectPlan leaves districts, the plan beach points and the open-view corridor untouched; reports the sea-level crossing displacement', {
+        baseDistanceMeters: number('meters', 'Distance from the design shoreline where the backshore starts (berm distance plus berm width)', { default: 42, min: 0, max: 1000 }),
+        minSpaceMeters: number('meters', 'Free backshore width required before a dune is placed', { default: 40, min: 0, max: 1000 }),
+        heightMeters: number('meters', 'Nominal crest height above the backshore', { default: 4, min: 0, max: 50 }),
+        crestDistanceMeters: number('meters', 'Crest distance behind the base', { default: 20, min: 0, max: 500 }),
+        widthMeters: number('meters', 'Footprint width; the faces at the declared slopes limit the height when they need more', { default: 40, min: 1, max: 1000 }),
+        heightVariationMeters: number('meters', 'Bound of the crest height variation (two world-anchored octaves)', { default: 1.5, min: 0, max: 50 }),
+        wavelengthMeters: number('meters', 'Largest wavelength of the crest variation', { default: 120, min: 1, max: 10000 }),
+        seawardSlopeDegrees: number('degrees', 'Slope of the seaward face', { default: 8, min: 1, max: 60 }),
+        leeSlopeDegrees: number('degrees', 'Slope of the lee face', { default: 20, min: 1, max: 60 }),
+        roadMarginMeters: number('meters', 'Clearance beyond the half carriageway width that counts a road as an obstacle', { default: 5, min: 0, max: 100 }),
+        blendMeters: number('meters', 'Fade of the dune before the obstacle that ends the free space', { default: 15, min: 0, max: 500 }),
+        ...PLAN_PROTECTION_PARAMETERS
+    }, ['height', 'shoreSigned', 'districtId', 'roadDistance', 'roadWidth', 'corridorMask', 'coastalZone'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'coastalZone']),
+    'coastal-nearshore': operator('coastal-nearshore', 'coastal', 'Longshore bar: a raised-cosine bar of barWidthMeters and barHeightMeters above the surrounding seabed with its crest barDistanceMeters seaward of the design shoreline (null places it where the pre-operator seabed first reaches barDepthMeters along the shoreline normal of each station), a trough troughDepthMeters deep and troughWidthMeters wide on its landward side, the crest position wandering with world-anchored noise (wanderMeters at wavelengthMeters) and never raised above maxCrestDepthMeters below sea level; sand (depositType 4), coastalZone 3 over the bar core, scaled by the mask; reports the measured crest depth and distance', {
+        barDepthMeters: number('meters', 'Seabed depth (negative, below sea level) on which the crest is centered when barDistanceMeters is null', { default: -2.5, min: -100, max: 0 }),
+        barDistanceMeters: number('meters', 'Crest distance seaward of the design shoreline; null derives it from barDepthMeters', { default: null, min: 1, max: 5000 }),
+        barHeightMeters: number('meters', 'Crest height above the surrounding seabed', { default: 1.2, min: 0, max: 20 }),
+        barWidthMeters: number('meters', 'Full width of the bar', { default: 40, min: 1, max: 1000 }),
+        troughDepthMeters: number('meters', 'Depth of the trough landward of the bar below the surrounding seabed', { default: .5, min: 0, max: 20 }),
+        troughWidthMeters: number('meters', 'Full width of the trough', { default: 30, min: 1, max: 1000 }),
+        wanderMeters: number('meters', 'Bound of the crest position wander', { default: 15, min: 0, max: 500 }),
+        wavelengthMeters: number('meters', 'Largest wavelength of the wander (two octaves)', { default: 250, min: 1, max: 10000 }),
+        maxCrestDepthMeters: number('meters', 'Shallowest crest allowed (negative, below sea level)', { default: -1.5, min: -100, max: 0 }),
+        searchMeters: number('meters', 'How far seaward the barDepthMeters contour is sought when barDistanceMeters is null', { default: 600, min: 1, max: 20000 })
+    }, ['height', 'shoreSigned'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'coastalZone']),
+    'coastal-reef': operator('coastal-reef', 'coastal', 'Rocky reef where the mask selects: over the sea samples below maxDepthMeters the ridged world-anchored noise is thresholded at its exact quantile so coverageFraction of the masked area becomes reef, raised toward a top between minDepthMeters and maxDepthMeters (never above the latter) as reef rock (depositType 6, thickness equal to the raise, coastalZone 2 where at least 0.1 m); protectPlan keeps the southwest swim zone of the plan (derived from the design shoreline between Z 184 and 936) clean; reports the sea-level crossing displacement (zero by construction)', {
+        minDepthMeters: number('meters', 'Reef top depth at the coverage threshold (negative, below sea level)', { default: -4, min: -100, max: 0 }),
+        maxDepthMeters: number('meters', 'Shallowest reef top (negative, below sea level); samples already shallower are not eligible', { default: -1, min: -100, max: 0 }),
+        coverageFraction: number('dimensionless', 'Share of the eligible masked samples that becomes reef', { default: .5, min: 0, max: 1 }),
+        wavelengthsMeters: numbers('meters', 'Reef noise octave wavelengths, strictly decreasing', { minItems: 1, maxItems: 8, items: Object.freeze({ min: .5, max: 100000 }), default: Object.freeze([60, 30, 15]) }),
+        amplitudes: numbers('dimensionless', 'Relative reef noise octave amplitudes', { minItems: 1, maxItems: 8, items: Object.freeze({ min: 0, max: 1 }), default: Object.freeze([1, .5, .25]) }),
+        ridgedMix: number('dimensionless', 'Ridged-mix shaping weight of the reef noise', { default: .8, min: 0, max: 1 }),
+        protectPlan: boolean('Keep the southwest swim zone of the plan free of reef (needs plan-inputs)', { default: true }),
+        swimZone: PLAN_PROTECTION_PARAMETERS.swimZone
+    }, ['height', 'shoreSigned'], ['height', 'bedrock', 'regolith', 'depositType', 'depositThickness', 'coastalZone']),
     resample: operator('resample', 'output', 'Resamples the working grid to the output grid (bounds unchanged, corners exact) with the declared filter; a no-op when the working grid is the output grid', {
         filter: enumeration('Interpolation filter: bilinear or bicubic (Catmull-Rom)', ['bilinear', 'bicubic'], { default: 'bicubic' })
     }, ['height'], ['height'])

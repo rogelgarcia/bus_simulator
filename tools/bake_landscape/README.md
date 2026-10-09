@@ -75,7 +75,11 @@ explicit `landscape/synthesis` parent: `node tools/bake.mjs --target landscape/s
 diagnoses the current coastal terrain, synthesizes the D1 relief variants from their committed recipes,
 measures the plan constraints and renders review maps; `--publish` also writes each variant as a saved
 landscape beside the cache (`assets/public/landscape/coastal-city-ai596-<variant>/`, gitignored) for the
-`tools/landscape_review` captures. Node only, excluded from `all` and the `landscape` import parent.
+`tools/landscape_review` captures; `node tools/bake.mjs --target landscape/synthesis/fixture` runs the D2
+engine gate (the synthetic 1 × 1 km plateau/road/shoreline fixture through every operator family with
+determinism, constraint, relief, geology, seam and interchange checks; receipt and review maps under
+`tests/artifacts/screens/landscape/ai596/d2/fixture/`). Both are Node only, excluded from `all` and the
+`landscape` import parent.
 
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
 `node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current

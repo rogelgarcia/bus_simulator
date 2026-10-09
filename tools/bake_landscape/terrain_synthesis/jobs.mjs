@@ -1,9 +1,10 @@
 // Registers the terrain synthesis leaves under the explicit landscape/synthesis parent (never part of production defaults).
 // @ts-check
 import { reliefStudyJob } from './relief_study/ReliefStudyJob.mjs';
+import { fixtureJob } from './fixture/FixtureJob.mjs';
 
-export const synthesisJobs = Object.freeze([reliefStudyJob, {
+export const synthesisJobs = Object.freeze([reliefStudyJob, fixtureJob, {
     id: 'landscape/synthesis', configurationPaths: [], codePaths: ['tools/bake_landscape'],
-    description: 'Explicit terrain synthesis studies and publications (AI 596); Node only, excluded from all and from the landscape import parent',
-    children: ['landscape/synthesis/relief-study']
+    description: 'Explicit terrain synthesis studies, gates and publications (AI 596); Node only, excluded from all and from the landscape import parent',
+    children: ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture']
 }]);

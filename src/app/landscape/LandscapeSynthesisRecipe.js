@@ -7,14 +7,15 @@
 // resolves defaults from the catalog through resolveLandscapeSynthesisParameters. The identity also covers the sorted input hashes,
 // so two runs with one identity are bit-identical. Operator seeds derive from the recipe seed and the operator id with integer hashing
 // only, so re-seeding one operator never reshuffles the others.
-import { LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_SELECTORS } from './LandscapeSynthesisOperators.js';
+import { LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS } from './LandscapeSynthesisOperators.js';
 import { validateLandscapeRegion } from './LandscapeRegions.js';
 import { clonePlainData, freezeData, nearlyEqual, requireCondition, requireFinite, requireId, requireInteger, requireRelativeUrl, requireSha256 } from './internal/LandscapeValidation.js';
 
-export { LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_SELECTORS };
+export { LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS };
 export const LANDSCAPE_SYNTHESIS_RECIPE_FORMAT = 'landscape-synthesis-recipe';
 export const LANDSCAPE_SYNTHESIS_SCHEMA_VERSION = 1;
-export const LANDSCAPE_SYNTHESIS_LIMITS = Object.freeze({ operators: 256, maskDepth: 8, maskBranches: 16, imports: 32, inputHashes: 4096 });
+export const LANDSCAPE_SYNTHESIS_LIMITS = Object.freeze({ operators: 256, maskDepth: 8, maskBranches: 16, imports: 32, inputHashes: 4096, overrides: 128 });
+const RESERVED_IMPORT_IDS = Object.freeze(['heights', 'cover']);
 export const LANDSCAPE_SYNTHESIS_COVER_POLICIES = Object.freeze(['keep-source', 'derive']);
 export const LANDSCAPE_SYNTHESIS_OUTPUT_CHANNELS = Object.freeze(['height']);
 const IMPORT_KINDS = Object.freeze(['heights', 'mask']);
@@ -83,6 +84,9 @@ function validateItem(value, definition, label) {
         requireKeys(value, KEYS.edge, label);
         requireFinite(value.from, `${label}.from`); requireFinite(value.to, `${label}.to`);
         requireCondition(value.from !== value.to, `${label} needs two different edge values`);
+    } else if (definition.type === 'object') {
+        requireCondition(!!value && typeof value === 'object' && !Array.isArray(value), `${label} must be an object`);
+        if (definition.fields) validateParameters(value, definition.fields, label);
     } else throw new Error(`[Landscape] ${label} has an unsupported catalog type ${definition.type}`);
 }
 
@@ -108,6 +112,15 @@ const OPERATOR_RULES = Object.freeze({
             for (const key of ['file', 'columns', 'rows']) requireCondition(params[key] !== undefined && params[key] !== null, `${label}.${key} is required for a raw-float32 import`);
         } else for (const key of ['file', 'columns', 'rows', 'coverFile']) requireCondition(params[key] === undefined || params[key] === null, `${label}.${key} applies only to raw-float32 imports`);
     },
+    'import-map': (params, label) => importTargetRule(params.target ?? 'height', `${label}.target`),
+    'export-map': (params, label) => {
+        const layer = LANDSCAPE_SYNTHESIS_LAYERS[params.layer ?? 'height'];
+        requireCondition(!!layer && layer.type === 'float32', `${label}.layer ${JSON.stringify(params.layer)} must be a declared float32 layer`);
+        if ((params.encoding ?? 'exr-float32').startsWith('png-') && (params.kind ?? 'heights') === 'heights') {
+            requireCondition(Array.isArray(params.range), `${label}.range [min, max] is required for PNG heights`);
+            requireCondition(params.range[1] > params.range[0], `${label}.range must be [min, max] with max > min`);
+        } else requireCondition(params.range === undefined || params.range === null, `${label}.range applies only to PNG heights`);
+    },
     'landform-plateau': (params, label) => {
         const district = params.districtId !== undefined && params.districtId !== null, polygon = params.polygon !== undefined && params.polygon !== null;
         requireCondition(district !== polygon, `${label} needs exactly one of districtId or polygon`);
@@ -122,8 +135,39 @@ const OPERATOR_RULES = Object.freeze({
         if ((params.shaping ?? 'none') === 'none') requireCondition(!params.ridgedMix, `${label}.ridgedMix requires shaping ridged-mix`);
     },
     warp: octaveRule,
+    'geology-channels': (params, label, definition) => {
+        const value = name => params[name] === undefined ? definition.parameters[name].default : params[name];
+        requireCondition(value('faceFullDegrees') > value('faceStartDegrees'), `${label}.faceFullDegrees must exceed faceStartDegrees`);
+        requireCondition(value('rillAreaSquareMeters') < value('gullyAreaSquareMeters') && value('gullyAreaSquareMeters') < value('channelAreaSquareMeters'), `${label} drainage areas must increase from rill to gully to channel`);
+        requireCondition(value('flowPercentiles')[0] < value('flowPercentiles')[1], `${label}.flowPercentiles must increase`);
+    },
     'landform-valley': (params, label) => {
         params.polyline.forEach((entry, i) => requireCondition(i === 0 || entry[0] !== params.polyline[i - 1][0] || entry[1] !== params.polyline[i - 1][1], `${label}.polyline repeats vertex ${i}`));
+    },
+    'fluvial-erosion': (params, label, definition) => {
+        const resolved = key => params[key] ?? definition.parameters[key].default;
+        requireCondition(resolved('rillAreaM2') <= resolved('gullyAreaM2') && resolved('gullyAreaM2') <= resolved('channelAreaM2'), `${label} needs rillAreaM2 <= gullyAreaM2 <= channelAreaM2`);
+    },
+    'hydraulic-erosion': (params, label, definition) => {
+        if (params.droplets === null) requireCondition((params.dropletsPerSquareKilometer ?? definition.parameters.dropletsPerSquareKilometer.default) > 0, `${label}.dropletsPerSquareKilometer must be positive when droplets is null`);
+    },
+    'coastal-bluff': (params, label, definition) => {
+        const value = key => params[key] === undefined ? definition.parameters[key].default : params[key], polygon = params.polygon !== undefined && params.polygon !== null;
+        if (value('source') === 'polygon') requireCondition(polygon, `${label}.polygon is required with source polygon`);
+        else requireCondition(!polygon, `${label}.polygon applies only to source polygon`);
+        requireCondition(value('talusSlopeDegrees') < value('faceSlopeDegrees'), `${label}.talusSlopeDegrees must be below faceSlopeDegrees`);
+    },
+    'coastal-beach': (params, label, definition) => {
+        const value = key => params[key] === undefined ? definition.parameters[key].default : params[key], foreshoreTop = (value('bermDistanceMeters') - value('bermFaceRunMeters')) / value('foreshoreSlopeRatio');
+        requireCondition(value('bermFaceRunMeters') < value('bermDistanceMeters'), `${label}.bermFaceRunMeters must be shorter than bermDistanceMeters`);
+        requireCondition(foreshoreTop <= value('bermHeightMeters'), `${label}: the 1:${value('foreshoreSlopeRatio')} foreshore reaches ${foreshoreTop} m before the berm face, above bermHeightMeters ${value('bermHeightMeters')}`);
+        requireCondition(value('surfDepthMeters') > value('swashDepthMeters'), `${label}.surfDepthMeters must exceed swashDepthMeters`);
+        requireCondition(value('blendMeters') <= value('beachBandMeters') && value('blendMeters') <= value('offshoreReachMeters'), `${label}.blendMeters must not exceed beachBandMeters or offshoreReachMeters`);
+    },
+    'coastal-reef': (params, label, definition) => {
+        const value = key => params[key] === undefined ? definition.parameters[key].default : params[key];
+        requireCondition(value('minDepthMeters') < value('maxDepthMeters'), `${label}.minDepthMeters must be below maxDepthMeters`);
+        octaveRule(params, label, definition);
     }
 });
 
@@ -136,6 +180,18 @@ function octaveRule(params, label, definition) {
     strictlyDecreasing(wavelengths, `${label}.wavelengthsMeters`);
     requireCondition(wavelengths.length === amplitudes.length, `${label}.amplitudes must match wavelengthsMeters (${wavelengths.length} octaves)`);
 }
+
+function importTargetRule(target, label) {
+    const layer = LANDSCAPE_SYNTHESIS_LAYERS[target];
+    requireCondition(!!layer, `${label} ${JSON.stringify(target)} is not a declared layer (declared: ${Object.keys(LANDSCAPE_SYNTHESIS_LAYERS).join(', ')})`);
+    requireCondition(layer.type === 'float32', `${label} ${target} is a categorical ${layer.type} layer; only float32 layers can be imported`);
+}
+
+// operators whose layer flow follows their parameters (their catalog entries list no static layers)
+const OPERATOR_LAYER_FLOW = Object.freeze({
+    'import-map': entry => { const target = entry.params.target ?? 'height'; return { reads: (entry.params.mode ?? 'replace') === 'replace' && entry.mask === null ? [] : [target], writes: [target] }; },
+    'export-map': entry => ({ reads: [entry.params.layer ?? 'height'], writes: [] })
+});
 
 function validateSelector(value, label, depth, requires) {
     requireCondition(depth <= LANDSCAPE_SYNTHESIS_LIMITS.maskDepth, `${label} nests deeper than ${LANDSCAPE_SYNTHESIS_LIMITS.maskDepth} levels`);
@@ -196,6 +252,7 @@ function validateInputs(inputs) {
     inputs.imports.forEach((entry, i) => {
         requireKeys(entry, KEYS.importEntry, `recipe.inputs.imports[${i}]`);
         requireId(entry.id, `recipe.inputs.imports[${i}].id`); requireCondition(!ids.has(entry.id), `recipe.inputs.imports repeats id ${entry.id}`); ids.add(entry.id);
+        requireCondition(!RESERVED_IMPORT_IDS.includes(entry.id), `recipe.inputs.imports[${i}].id ${entry.id} is reserved for the raw import-heights source hashes`);
         requireRelativeUrl(entry.file, `recipe.inputs.imports[${i}].file`);
         requireCondition(IMPORT_KINDS.includes(entry.kind), `recipe.inputs.imports[${i}].kind must be one of ${IMPORT_KINDS.join(', ')}`);
         requireCondition(IMPORT_ENCODINGS.includes(entry.encoding), `recipe.inputs.imports[${i}].encoding must be one of ${IMPORT_ENCODINGS.join(', ')}`);
@@ -205,6 +262,7 @@ function validateInputs(inputs) {
 function validateOperators(operators, recipe) {
     requireCondition(Array.isArray(operators) && operators.length >= 1 && operators.length <= LANDSCAPE_SYNTHESIS_LIMITS.operators, `recipe.operators must hold 1..${LANDSCAPE_SYNTHESIS_LIMITS.operators} operators`);
     const ids = new Set(), written = new Set();
+    let exported = null;
     operators.forEach((entry, i) => {
         const label = `recipe.operators[${i}]`;
         requireKeys(entry, KEYS.operator, label);
@@ -215,18 +273,69 @@ function validateOperators(operators, recipe) {
         if (entry.seed !== null) requireUint32(entry.seed, `${label}.seed`);
         validateParameters(entry.params, definition.parameters, `${label}.params`);
         OPERATOR_RULES[entry.op]?.(entry.params, `${label} (${entry.op})`, definition);
-        const requires = new Set(definition.layers.reads);
+        const flow = OPERATOR_LAYER_FLOW[entry.op]?.(entry) ?? definition.layers, requires = new Set(flow.reads);
         if (entry.mask !== null) validateSelector(entry.mask, `${label}.mask`, 1, requires);
         if (!entry.enabled) return;
         if (entry.op === 'plan-inputs') requireCondition(recipe.inputs.plan !== null, `${label} (plan-inputs) requires recipe.inputs.plan`);
         if (entry.op === 'import-heights' && (entry.params.source ?? 'landscape') === 'landscape') requireCondition(recipe.inputs.landscape !== null, `${label} (import-heights) requires recipe.inputs.landscape for a landscape source`);
+        if (entry.op === 'import-map') requireCondition(recipe.inputs.imports.some(item => item.id === entry.params.importId), `${label} (import-map) importId ${JSON.stringify(entry.params.importId)} is not declared in recipe.inputs.imports`);
+        if (entry.op === 'export-map') exported = exported ?? entry.id;
+        else if (definition.family === 'inputs') requireCondition(exported === null, `${label} (${entry.op}) comes after export-map ${exported}; exports carry the recipe identity, so every enabled input operator must precede them`);
         for (const layer of requires) requireCondition(written.has(layer), `${label} (${entry.op}) reads layer ${layer} before any enabled operator writes it`);
-        for (const layer of definition.layers.writes) written.add(layer);
+        for (const layer of flow.writes) written.add(layer);
     });
     const enabled = operators.filter(entry => entry.enabled), resamples = enabled.filter(entry => entry.op === 'resample');
     requireCondition(resamples.length <= 1, 'recipe.operators may enable at most one resample operator');
     if (resamples.length === 1) requireCondition(enabled[enabled.length - 1].op === 'resample', 'the resample operator must be the last enabled operator');
     if (recipe.working !== null && recipe.working.spacing > Math.max(recipe.grid.spacingX, recipe.grid.spacingZ)) requireCondition(resamples.length === 1, 'a coarser working grid requires an enabled resample operator at the end of recipe.operators');
+    return written;
+}
+
+// cross-recipe rules of each override type; `requires` collects the layers the override reads (the selector layers are added by the caller)
+const OVERRIDE_RULES = Object.freeze({
+    import: (entry, label, recipe, requires) => {
+        requireCondition(recipe.inputs.imports.some(item => item.id === entry.importId), `${label}.importId ${JSON.stringify(entry.importId)} is not declared in recipe.inputs.imports`);
+        const target = entry.target ?? 'height';
+        importTargetRule(target, `${label}.target`);
+        if ((entry.mode ?? 'replace') !== 'replace' || entry.mask !== null) requires.add(target);
+    },
+    region: (entry, label, recipe, requires) => {
+        if (entry.height.mode !== 'set') requireCondition(entry.height.meters >= 0, `${label}.height.meters must not be negative for ${entry.height.mode}`);
+        requires.add('height');
+    },
+    operator: (entry, label, recipe, requires) => {
+        const operator = recipe.operators.find(item => item.id === entry.operatorId);
+        requireCondition(!!operator, `${label}.operatorId ${JSON.stringify(entry.operatorId)} is not a recipe operator`);
+        requireCondition(operator.enabled, `${label}.operatorId ${entry.operatorId} is disabled`);
+        const definition = LANDSCAPE_SYNTHESIS_OPERATORS[operator.op];
+        requireCondition(!['inputs', 'output'].includes(definition.family), `${label} cannot re-run ${operator.op} (${definition.family} family); operator overrides re-run landform, warp, erosion, geology, coastal and constraint operators`);
+        for (const name of Object.keys(entry.params)) requireCondition(Object.hasOwn(definition.parameters, name), `${label}.params.${name} is not a parameter of ${operator.op} (declared: ${Object.keys(definition.parameters).join(', ')})`);
+        const merged = { ...operator.params, ...entry.params };
+        validateParameters(merged, definition.parameters, `${label}.params merged over ${operator.id}`);
+        OPERATOR_RULES[operator.op]?.(merged, `${label} (${operator.op})`, definition);
+        for (const layer of definition.layers.reads) requires.add(layer);
+    },
+    exclude: () => {}
+});
+
+function validateOverrides(overrides, recipe, written) {
+    requireCondition(Array.isArray(overrides) && overrides.length <= LANDSCAPE_SYNTHESIS_LIMITS.overrides, `recipe.overrides must be an array of at most ${LANDSCAPE_SYNTHESIS_LIMITS.overrides} overrides`);
+    const ids = new Set();
+    overrides.forEach((entry, i) => {
+        const label = `recipe.overrides[${i}]`;
+        requireCondition(!!entry && typeof entry === 'object' && !Array.isArray(entry), `${label} must be an object`);
+        const { id, type, mask, ...params } = entry;
+        requireId(id, `${label}.id`); requireCondition(!ids.has(id), `recipe.overrides repeats id ${id}`); ids.add(id);
+        const definition = LANDSCAPE_SYNTHESIS_OVERRIDES[type];
+        requireCondition(!!definition, `${label}.type must be one of ${Object.keys(LANDSCAPE_SYNTHESIS_OVERRIDES).join(', ')} (got ${JSON.stringify(type)})`);
+        requireCondition(Object.hasOwn(entry, 'mask'), `${label}.mask is required (${definition.maskRequired ? 'a selector' : 'a selector or null for the whole grid'})`);
+        if (definition.maskRequired) requireCondition(mask !== null, `${label} (${type}) needs a mask selector`);
+        validateParameters(params, definition.parameters, label);
+        const requires = new Set();
+        if (mask !== null) validateSelector(mask, `${label}.mask`, 1, requires);
+        OVERRIDE_RULES[type](entry, label, recipe, requires);
+        for (const layer of requires) requireCondition(written.has(layer), `${label} (${type}) reads layer ${layer} that no enabled operator writes`);
+    });
 }
 
 function validateOutputs(outputs) {
@@ -252,8 +361,7 @@ export function validateLandscapeSynthesisRecipe(input) {
     validateWorking(recipe.working, recipe.grid);
     validateInputs(recipe.inputs);
     validateOutputs(recipe.outputs);
-    requireCondition(Array.isArray(recipe.overrides) && recipe.overrides.length === 0, 'recipe.overrides must be an empty array (override evaluation arrives with D2)');
-    validateOperators(recipe.operators, recipe);
+    validateOverrides(recipe.overrides, recipe, validateOperators(recipe.operators, recipe));
     return freezeData(recipe);
 }
 

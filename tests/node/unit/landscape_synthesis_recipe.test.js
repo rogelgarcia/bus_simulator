@@ -62,7 +62,7 @@ test('Synthesis recipe: every invalid recipe is rejected with an actionable [Lan
         'octaves not decreasing': [r => { r.operators[3].params.wavelengthsMeters = [50, 100]; r.operators[3].params.amplitudes = [1, 1]; }, /strictly decreasing/],
         'plan operator without plan inputs': [r => { r.inputs.plan = null; }, /requires recipe.inputs.plan/],
         'unknown top-level field': [r => { r.extra = 1; }, /exactly the fields/],
-        'overrides not empty': [r => { r.overrides = [{ id: 'x' }]; }, /overrides must be an empty array/],
+        'override without type': [r => { r.overrides = [{ id: 'x' }]; }, /overrides\[0\]\.type must be one of import, region, operator, exclude/],
         'bad cover policy': [r => { r.outputs.coverPolicy = 'paint'; }, /coverPolicy must be one of/],
         'raw import without file': [r => { r.operators[0].params = { source: 'raw-float32' }; }, /file is required for a raw-float32 import/]
     };
@@ -106,7 +106,7 @@ test('Synthesis recipe: the operator catalog is frozen, typed, documented and it
     assert.ok(Object.isFrozen(LANDSCAPE_SYNTHESIS_OPERATORS) && Object.isFrozen(LANDSCAPE_SYNTHESIS_SELECTORS) && Object.isFrozen(LANDSCAPE_SYNTHESIS_LAYERS));
     const required = ['import-heights', 'plan-inputs', 'landform-plateau', 'landform-hills', 'landform-valley', 'warp', 'noise', 'constrain-districts', 'constrain-roads', 'constrain-shoreline', 'constrain-points', 'constrain-runway', 'height-cap', 'resample'];
     for (const name of required) assert.ok(LANDSCAPE_SYNTHESIS_OPERATORS[name], `${name} is declared`);
-    const types = ['number', 'integer', 'string', 'boolean', 'enum', 'point', 'polygon', 'array'];
+    const types = ['number', 'integer', 'string', 'boolean', 'enum', 'point', 'polygon', 'array', 'object'];
     for (const [name, definition] of Object.entries(LANDSCAPE_SYNTHESIS_OPERATORS)) {
         assert.equal(definition.op, name);
         assert.ok(LANDSCAPE_SYNTHESIS_FAMILIES.includes(definition.family), `${name} family`);

@@ -62,7 +62,8 @@ export function coastalDiagnosisSets(plan, overrides = {}, { highCityDistrictId 
  * @param {{label?:string,landscape?:object,constraints?:object,incision?:object,curvature?:object,relief?:object,slope?:object,sets?:object,workingLimitBytes?:number,log?:(message:string)=>void}} [options]
  */
 export function diagnoseRelief(grid, heights, cover, seaLevel, plan, options = {}) {
-    const { label = 'terrain', landscape = null, log = () => {} } = options, sets = coastalDiagnosisSets(plan, options.sets ?? {}), timing = {}, started = performance.now();
+    const { label = 'terrain', landscape = null, log = () => {} } = options, timing = {}, started = performance.now();
+    const sets = coastalDiagnosisSets(plan, options.sets ?? {}, { highCityDistrictId: options.constraints?.highCityDistrictId ?? COASTAL_HIGH_CITY_DISTRICT_ID });
     const limit = options.workingLimitBytes ? { workingLimitBytes: options.workingLimitBytes } : {};
     const time = (key, run) => { const mark = performance.now(); log(`[SynthesisAnalysis] ${label}: ${key}`); const value = run(); timing[key] = seconds(mark); return value; };
     let min = Infinity, max = -Infinity, landSamples = 0;

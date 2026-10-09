@@ -26,8 +26,13 @@ test('Terrain synthesis: the relief-study leaf runs alone under landscape/synthe
     assert.equal(scoped.get('landscape/synthesis/relief-study').fields, 'none');
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/synthesis/relief-study:fields=maybe'])), /bake or none/);
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/synthesis/relief-study:source=original.zip'])), /No selected job consumes/);
+    const fixture = planBakes(bakeJobs, 'landscape/synthesis/fixture');
+    assert.deepEqual(fixture.map(job => job.id), ['landscape/synthesis/fixture']);
+    assert.deepEqual(fixture[0].outputs, ['tests/artifacts/screens/landscape/ai596/d2/fixture/fixture-gate.json']);
+    assert.equal(fixture[0].always, true);
+    assert.equal(resolveBakeOptions(fixture, parseBakeOptions([])).get('landscape/synthesis/fixture').recipe, 'tools/bake_landscape/terrain_synthesis/fixture/recipes/plateau-road-shoreline.json');
     const parent = planBakes(bakeJobs, 'landscape/synthesis');
-    assert.deepEqual(parent.map(job => job.id), ['landscape/synthesis/relief-study', 'landscape/synthesis']);
+    assert.deepEqual(parent.map(job => job.id), ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture', 'landscape/synthesis']);
     assert.ok(planBakes(bakeJobs, 'all').every(job => !job.id.startsWith('landscape')));
     assert.ok(planBakes(bakeJobs, 'landscape').every(job => !job.id.startsWith('landscape/synthesis')));
 });

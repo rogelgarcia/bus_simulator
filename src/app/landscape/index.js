@@ -33,10 +33,15 @@ export { LANDSCAPE_TERRAIN_FIELDS_FORMAT, LANDSCAPE_TERRAIN_FIELDS_ALGORITHM, LA
     landscapeTerrainFieldContentKey, validateLandscapeTerrainFields, landscapeTerrainFieldsStaleness, landscapeTerrainFieldStaleAt, sampleLandscapeTerrainFieldPage,
     sampleLandscapeTerrainFieldSlots, landscapeTerrainHorizonSine, landscapeSolarDiscVisibility, landscapeTerrainSunVisibility, landscapeTerrainSkyVisibility, sampleLandscapeTerrainNaturalSoil } from './LandscapeTerrainFields.js';
 export { loadLandscapeTerrainFields, loadLandscapeTerrainFieldPage } from './LandscapeTerrainFieldsPayload.js';
+export { LANDSCAPE_GEOLOGY_FORMAT, LANDSCAPE_GEOLOGY_ALGORITHM, LANDSCAPE_GEOLOGY_LIMIT, LANDSCAPE_GEOLOGY_PAGE_LIMIT, LANDSCAPE_GEOLOGY_LAYOUT, LANDSCAPE_GEOLOGY_CATEGORICAL_LAYOUT,
+    LANDSCAPE_GEOLOGY_CHANNELS, LANDSCAPE_GEOLOGY_CATEGORIES, LANDSCAPE_GEOLOGY_LAYERS, LandscapeGeologyBindingError, encodeLandscapeGeologyChannel, decodeLandscapeGeologyChannel,
+    decodeLandscapeGeologyCategory, decodeLandscapeGeology, landscapeGeologyLayout, landscapeGeologyContentInput, landscapeGeologyContentKey, validateLandscapeGeology, landscapeGeologyStaleness,
+    sampleLandscapeGeologyPageUnits, sampleLandscapeGeologyPage, sampleLandscapeGeologyCategory } from './LandscapeGeology.js';
+export { loadLandscapeGeology, loadLandscapeGeologyPage } from './LandscapeGeologyPayload.js';
 export { LANDSCAPE_DRESSING_INPUTS, sampleLandscapeDressingInputs } from './LandscapeDressingInputs.js';
 export { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilIndices, landscapeNaturalSoilPageBytes, landscapeNaturalSoilTransientBytes, validateLandscapeNaturalSoilPage,
     createLandscapeNaturalSoilResolver, landscapeNaturalSoilIdentity } from './LandscapeNaturalSoil.js';
 export { landscapeSurfaceDetailUsesNaturalSoil } from './LandscapeSurfaceDetail.js';
 export { LANDSCAPE_SYNTHESIS_RECIPE_FORMAT, LANDSCAPE_SYNTHESIS_SCHEMA_VERSION, LANDSCAPE_SYNTHESIS_LIMITS, LANDSCAPE_SYNTHESIS_COVER_POLICIES, LANDSCAPE_SYNTHESIS_OUTPUT_CHANNELS,
-    LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
+    LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
     canonicalLandscapeSynthesisJson, landscapeSynthesisRecipeIdentity, landscapeSynthesisOperatorSeed, landscapeSynthesisEffectiveSeed } from './LandscapeSynthesisRecipe.js';
