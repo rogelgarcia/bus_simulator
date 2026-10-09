@@ -12,6 +12,7 @@ import { hierarchyJob } from './HierarchyJob.mjs';
 import { appearanceJob } from './AppearanceJob.mjs';
 import { terrainFieldsJob } from './terrain_fields/TerrainFieldsJob.mjs';
 import { cacheInstallJob } from './CacheInstallJob.mjs';
+import { synthesisJobs } from './terrain_synthesis/jobs.mjs';
 import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/LandscapeCache.js';
 
 const DESTINATION = LANDSCAPE_DEFAULT_DIRECTORY;
@@ -54,7 +55,7 @@ export const coastalImportJob = {
     }
 };
 
-export const landscapeJobs = Object.freeze([coastalImportJob, hierarchyJob, appearanceJob, terrainFieldsJob, cacheInstallJob, {
+export const landscapeJobs = Object.freeze([coastalImportJob, hierarchyJob, appearanceJob, terrainFieldsJob, cacheInstallJob, ...synthesisJobs, {
     id: 'landscape', configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Explicit authored landscape preparation; no Blender, browser, or unrelated production bakes',
     children: ['landscape/coastal-import']

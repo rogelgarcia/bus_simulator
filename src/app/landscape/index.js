@@ -37,3 +37,6 @@ export { LANDSCAPE_DRESSING_INPUTS, sampleLandscapeDressingInputs } from './Land
 export { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilIndices, landscapeNaturalSoilPageBytes, landscapeNaturalSoilTransientBytes, validateLandscapeNaturalSoilPage,
     createLandscapeNaturalSoilResolver, landscapeNaturalSoilIdentity } from './LandscapeNaturalSoil.js';
 export { landscapeSurfaceDetailUsesNaturalSoil } from './LandscapeSurfaceDetail.js';
+export { LANDSCAPE_SYNTHESIS_RECIPE_FORMAT, LANDSCAPE_SYNTHESIS_SCHEMA_VERSION, LANDSCAPE_SYNTHESIS_LIMITS, LANDSCAPE_SYNTHESIS_COVER_POLICIES, LANDSCAPE_SYNTHESIS_OUTPUT_CHANNELS,
+    LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
+    canonicalLandscapeSynthesisJson, landscapeSynthesisRecipeIdentity, landscapeSynthesisOperatorSeed, landscapeSynthesisEffectiveSeed } from './LandscapeSynthesisRecipe.js';

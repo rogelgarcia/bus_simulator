@@ -70,6 +70,13 @@ or by running `landscape/cache-install` without `--publish` against it.
 
 ## Preparation leaves
 
+AI 596 adds the [terrain synthesis](terrain_synthesis/README.md) leaves under the
+explicit `landscape/synthesis` parent: `node tools/bake.mjs --target landscape/synthesis/relief-study`
+diagnoses the current coastal terrain, synthesizes the D1 relief variants from their committed recipes,
+measures the plan constraints and renders review maps; `--publish` also writes each variant as a saved
+landscape beside the cache (`assets/public/landscape/coastal-city-ai596-<variant>/`, gitignored) for the
+`tools/landscape_review` captures. Node only, excluded from `all` and the `landscape` import parent.
+
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
 `node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current
 native grid as a whole (depressions, flow, wetness, deposition, rock exposure,
