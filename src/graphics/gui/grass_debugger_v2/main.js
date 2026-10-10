@@ -53,7 +53,7 @@ function updateBenchmarkPanel(state) {
             'P99: nearest rank, no hitch trimming. Timings cover the whole scene.', result.gpuNote
         ].filter(Boolean).join('\n');
         row.setAttribute('aria-label', row.title);
-        benchmarkResults.append(row);
+        benchmarkResults.prepend(row);
     }
 }
 
@@ -64,9 +64,11 @@ function updateGrassPanel() {
         + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
     fadeSelect.value = grass.field.fadeStyle;
     fadeSelect.disabled = !view.ready || view.benchmark.active;
+    document.getElementById('grass-ranges').textContent = `${grass.strategy === 'baked' ? 'Baked grass' : 'Original lit grass'} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
     grassCounts.title = [
         `${grass.fieldCount} fields · ${grass.placement.columns} × ${grass.placement.rows} m each · ${grass.gapMeters} m gaps · ${grass.patches} × 1 m² cells`,
-        'LOD0–2: leaves · LOD3: near cards · LOD4: wide cards · LOD5: 1K canopy.',
+        grass.strategy === 'baked' ? 'LOD0–4: individual blades with baked shading · LOD5: detailed 1K canopy with shaded roots.'
+            : 'LOD0–2: leaves · LOD3: near cards · LOD4: wide cards · LOD5: 1K canopy.',
         'Counts show dominant LOD per cell; triangles include both levels within a transition band and the grass substrate.',
         'Selection cached at 50 ms / 0.2 m. Side leaves stop at 35 m.'
     ].join('\n');

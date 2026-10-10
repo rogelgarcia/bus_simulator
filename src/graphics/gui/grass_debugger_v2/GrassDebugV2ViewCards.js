@@ -1,14 +1,14 @@
 // Near and wide inclined cards: four source strips captured once, never during motion.
 import * as THREE from 'three';
 import { padGrassPlateTiles } from './GrassDebugV2DynamicPlates.js';
-import { createGrassDebugV2ViewCardsMaterial } from './GrassDebugV2ViewCardsMaterial.js?v=card-continuity-1';
+import { createGrassDebugV2ViewCardsMaterial } from './GrassDebugV2ViewCardsMaterial.js?v=card-distribution-1';
 import { grassPlateSurfaceBakeShader, grassPlateNormalShader } from '../../shaders/materials/grass/GrassPlateShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 
 const PROFILES = Object.freeze({
     near: { width: .3, depth: .23, span: .35, pitch: 25, density: 12 },
-    bridge: { width: .8, depth: .5, span: .56, pitch: 30, density: 3 }
+    bridge: { width: .45, depth: .27, span: .35, pitch: 25, density: 6 }
 });
 const TILE_WIDTH = 512, TILE_HEIGHT = 256, GUTTER = 4, WIDTH = 4096, HEIGHT = 1024;
 
@@ -82,9 +82,20 @@ function cardTemplates(count, centerHeight, frameHeight, footprint) {
     });
 }
 
-export async function createGrassDebugV2ViewCards({ renderer, source, profile = 'near', onProgress = () => {} }) {
+/** Optional footprint, pitch and density overrides serve the isolated appearance lab; original defaults remain unchanged. */
+export async function createGrassDebugV2ViewCards({ renderer, source, profile = 'near', footprint = null, capturePitchDegrees = null, cardsPerSquareMeter = null, onProgress = () => {} }) {
     if (!Object.hasOwn(PROFILES, profile)) throw new Error('Unknown grass card capture profile: ' + profile);
-    const shape = PROFILES[profile];
+    if (footprint !== null && (!['width', 'depth', 'span'].every(key => Number.isFinite(footprint[key]) && footprint[key] > 0 && footprint[key] <= 1)
+        || Object.keys(footprint).some(key => !['width', 'depth', 'span'].includes(key)))) throw new Error('Card footprint requires width, depth and span in (0, 1] metres.');
+    const shape = { ...PROFILES[profile], ...footprint };
+    if (capturePitchDegrees !== null) {
+        if (!(Number.isFinite(capturePitchDegrees) && capturePitchDegrees >= 5 && capturePitchDegrees <= 45)) throw new Error('Card capture pitch must be in [5, 45] degrees.');
+        shape.pitch = capturePitchDegrees;
+    }
+    if (cardsPerSquareMeter !== null) {
+        if (!(Number.isInteger(cardsPerSquareMeter) && cardsPerSquareMeter >= 1 && cardsPerSquareMeter <= 64)) throw new Error('Card density must be an integer in [1, 64].');
+        shape.density = cardsPerSquareMeter;
+    }
     const { width: CARD_WIDTH, depth: SOURCE_DEPTH, span: GROUND_SPAN, pitch: CAPTURE_PITCH } = shape;
     if (!source?.geometry?.index || !source.userData.grassLeafRanges?.length || Array.isArray(source.material)
         || !source.material?.normalMap || !source.material?.roughnessMap || !source.material?.userData.grassFieldDistance
@@ -157,15 +168,14 @@ export async function createGrassDebugV2ViewCards({ renderer, source, profile = 
     }
     const cardMaterial = createGrassDebugV2ViewCardsMaterial(maps, material, new THREE.Vector4(CARD_WIDTH, frameHeight, sine, cosine), new THREE.Vector2(GROUND_SPAN, height + .02 / cosine));
     if (profile === 'bridge') {
-        // Wider captures overlap more source leaves. Match leaf-only RGB to the
-        // near cards; the litter and its lighting remain independent.
-        cardMaterial.color.copy(material.color).multiply(new THREE.Color(.9, .94, .57));
+        // The shallower source strips now share the near cards' leaf calibration.
+        cardMaterial.defines.GRASS_CARD_RANDOM_LAYOUT = 1;
         cardMaterial.name = 'GrassLOD4WideCards';
     }
-    const footprint = Math.hypot(CARD_WIDTH, GROUND_SPAN);
-    const dense = cardTemplates(shape.density, centerHeight, frameHeight, footprint);
-    const sparse = cardTemplates(profile === 'near' ? 10 : 2, centerHeight, frameHeight, footprint);
-    const full = cardTemplates(profile === 'near' ? 32 : 6, centerHeight, frameHeight, footprint);
+    const extent = Math.hypot(CARD_WIDTH, GROUND_SPAN);
+    const dense = cardTemplates(shape.density, centerHeight, frameHeight, extent);
+    const sparse = cardTemplates(profile === 'near' ? 10 : 4, centerHeight, frameHeight, extent);
+    const full = cardTemplates(profile === 'near' ? 32 : 12, centerHeight, frameHeight, extent);
     const snapshot = { profile, cardWidthMeters: CARD_WIDTH, cardsPerSquareMeter: shape.density, captures: 32, directions: 8, variants: 4, tilePixels: [TILE_WIDTH, TILE_HEIGHT],
         atlasPixels: [WIDTH, HEIGHT], textureBytes: WIDTH * HEIGHT * 4 * 3 * 4 / 3, captureMilliseconds: performance.now() - started,
         sourceLeaves: patches.map(patch => patch.leaves.map(leaves => leaves.length)), sourceFootprintMeters: [CARD_WIDTH, SOURCE_DEPTH], pitchDegrees: CAPTURE_PITCH, sourceHeightMeters: height, frameHeightMeters: frameHeight,

@@ -3,13 +3,13 @@ import * as THREE from 'three';
 import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { createGrassDebugV2FreeCamera } from './GrassDebugV2FreeCamera.js?v=transition-navigation-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
-import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=card-coverage-2';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=card-coverage-2';
+import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=card-distribution-1';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=card-distribution-1';
 import { createGrassDebugV2TransitionHelpers } from './GrassDebugV2TransitionHelpers.js?v=opaque-dissolve-1';
 import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=opaque-dissolve-1';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { createGrassDebugV2TransitionExperiments, GRASS_TRANSITION_EXPERIMENTS } from './GrassDebugV2TransitionExperiments.js';
-import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=card-coverage-2';
+import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=card-distribution-1';
 import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 
 const loading = document.querySelector('#scene-loading');

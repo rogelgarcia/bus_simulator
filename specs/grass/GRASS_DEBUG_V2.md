@@ -9,27 +9,61 @@ It does not instantiate the v1 grass system or integrate grass into gameplay.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
 
-## Bus scene distance grass (2026-10-05)
+## Latest baked bus grass (2026-10-10)
 
-The bus scene now defaults to **Auto**, using the same source leaves, view cards,
+The bus scene defaults to **Auto** with the `detailed` appearance shared with
+the [baked lighting lab](GRASS_BAKED_LIGHTING_LAB.md). The 30 roadside fields,
+camera controls, terrain cutouts and benchmark route are retained.
+
+- Horizontal switches are **0.6 / 0.8 / 20 / 30 / 40 m**, with the lab's 10%
+  transition bands and 50 ms / 0.2 m selection cache.
+- LOD0–2 use prepared blade colors; LOD3/4 use the same reduced individual
+  blades as the lab. Their floor uses the denser, shaded grass-and-litter bake.
+- LOD5 uses the detailed paired 1K maps, corrected mip brightness and contrast,
+  shaded perimeter roots, and the shared projected dissolve at the final seam.
+- Baked grass does not cast a second live self-shadow. The bus and trees still
+  cast into the scene map and the external visibility cache. Temporary standard
+  `ShadowMaterial` receivers capture visibility over the actual canopy geometry;
+  the live baked materials cannot serve as PCF visibility encoders.
+- Snapshot `strategy` identifies `baked` or `current`; `appearance` records the
+  shared palette, blade recipes, mip filtering and wall shading for baked mode.
+  Card diagnostics are null for baked mode. Benchmark rows retain that strategy
+  and selection metadata so results from different renderers remain identifiable.
+- Page links select `?grass=baked` or `?grass=current` with a fresh load. The latter
+  preserves the previous lit cards, materials and distances documented below.
+  The ranges text follows the active strategy.
+
+Validation: `tests/headless/e2e/grass_debug_v2_grass.pwtest.js` checks the shared
+appearance and ranges, all 30 footprints, camera anchors, every LOD, OFF terrain,
+shaded wall vertices and rendered external shadows. It also loads the original
+strategy explicitly. Captures go under `tests/artifacts/screens/grass_debug_v2/roadside_baked/`.
+
+## Preserved lit bus strategy (2026-10-05)
+
+With `?grass=current`, the bus scene uses the same source leaves, view cards,
 1K canopy and opaque dissolve as the [transition lab](GRASS_TRANSITION_LAB.md).
 `GrassDebugV2DistanceGrass.js` adapts those shared components to the existing
-roadside fields; the bus, road, trees and camera controls remain. There are three
-8 × 36 m fields in a row on each side of the road, separated by 2 m longitudinal
-gaps. Their Z intervals are -4–32, 34–70 and 72–108 m, relative to the bus.
-The six fields contain 1,728 one-metre selection cells and share the same assets.
+roadside fields; the bus, road, trees and camera controls remain. Each side now
+has three columns extending outward from the road and five rows along it:
+**30 fields**, each 8 × 36 m, with **1 m gaps** in both directions. The Z intervals
+are -41–-5, -4–32, 33–69, 70–106 and 107–143 m relative to the bus. Columns start
+9 m apart. The 30 fields contain 8,640 one-metre selection cells and share assets.
+The added end rows retain the original near-road row at Z=-4 as the grass-camera
+anchor. Bus/Overview presets remain fixed; the benchmark follows that same column
+to the new far edge at Z=143 before its existing left turn and final view.
 
 - Switches: **0.6 / 0.8 / 1 / 16 / 32 m**, measured horizontally. LOD0–2 are
-  source leaf geometry, LOD3 uses 30 cm cards at 12/m², LOD4 uses 80 cm cards
-  at 3/m², and LOD5 uses the paired 1K canopy. Side leaves stop beyond 35 m.
+  source leaf geometry, LOD3 uses 30 cm cards at 12/m², LOD4 uses 45 cm cards
+  at 6/m², and LOD5 uses the paired 1K canopy. Side leaves stop beyond 35 m.
 - LOD3/4 share a separate paired 1K grass-and-litter base, baked from a stable
   45% shoot subset of the compiled LOD5 source tiles. This replaces their
   litter-only floor; cards provide volume over its sparse coverage. See the
   [hybrid measurements](GRASS_TRANSITION_LAB.md#sparse-base-and-card-hybrid-2026-10-08).
   The subset now prioritizes unfilled leaf footprints in both periodic tiles.
   Reduced card jitter preserves spacing, and only perimeter card batches clip
-  to the exact field rectangle. Both LOD3 and LOD4 retain their card counts and
-  texture allocations; clipping adds perimeter draw calls.
+  to the exact field rectangle. LOD4 uses shallower source strips, the same leaf
+  color calibration as LOD3, and stable per-cell root rotations/reflections.
+  Texture allocations are unchanged; clipping adds perimeter draw calls.
 - Selection uses the same 50% bands, 50 ms / 0.2 m scan gates, geometry support
   and movement guard. The card atlases are prepared once during loading;
   movement changes neither their source images nor their world placement.
@@ -40,22 +74,28 @@ The six fields contain 1,728 one-metre selection cells and share the same assets
 - **Along the grass** uses the gameplay bus height and tilt alongside the first field.
   Bus and Overview presets retain their existing poses. The terrain selector
   controls surrounding land; the fields use the new system's litter substrate.
-- The surrounding ground has six matching rectangular cutouts while grass is on,
-  preserving the road and the 2 m gaps without drawing ground underneath the
+- The surrounding ground has 30 matching rectangular cutouts while grass is on,
+  preserving the road and the 1 m gaps without drawing ground underneath the
   fields. OFF restores the complete ground.
 - The game sun direction, environment and tone mapping are retained. Leaf
   cutouts use 4× MSAA. A complete LOD2 shadow is cached independently of selection
   using an 8192² scene shadow map; OFF/on refreshes it. LOD5 retains the separate
   2048² external-shadow cache for bus/tree occluders in addition to baked tile
-  self-shadowing. Static camera movement does not regenerate either cache.
+  self-shadowing. The live canopy and sparse base compile only cached visibility;
+  temporary receiver materials retain live PCF for the external-shadow capture.
+  Static camera movement does not regenerate either cache. The fixed shadow
+  frustum expands to contain the larger field bounds while retaining the game's
+  sun direction, color and intensity and the existing shadow-map resolution.
 - `window.__grassDebugV2` retains camera, terrain and benchmark APIs, replaces
   `setMixedCardBounds` with `setFadeStyle`, and accepts `AUTO`, `OFF`, `LOD0`–`LOD5`
   in `setGrassMode`. Snapshots include selection, field, card and shadow diagnostics,
-  the six placements and the gap distance.
+  the 30 placements, row/column indices, grid dimensions and gap distance.
   Benchmarks still measure the entire scene; matched OFF runs are the baseline.
+  Completed runs stack newest first, retaining previous results below. The internal
+  result history remains chronological for API consumers.
 
-Validation and bus/overview/along-strip/near-ground renders are generated by
-`tests/headless/e2e/grass_debug_v2_grass.pwtest.js` under
+Preserved lit bus/overview/along-strip/near-ground renders remain under
+`tests/artifacts/screens/grass_debug_v2/roadside_grid/`. Previous six-field captures remain under
 `tests/artifacts/screens/grass_debug_v2/roadside_fields/`. The fixed grass and
 mixed line descriptions below are historical and no longer describe this page's
 active grass controls. Their asset helpers remain available to older studies.

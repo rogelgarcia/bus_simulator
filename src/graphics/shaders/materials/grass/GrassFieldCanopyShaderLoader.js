@@ -20,7 +20,7 @@ async function shadowPayload(name, revision = 'lod4-paired-2m-1') {
             fragmentPath: 'materials/grass/grass_field_canopy_' + name + '.frag.glsl?v=' + revision
         }) });
 }
-export const grassFieldCanopyShadowParsShader = await shadowPayload('shadow_pars', 'lod4-shadow-fast-1');
+export const grassFieldCanopyShadowParsShader = await shadowPayload('shadow_pars', 'canopy-cached-1');
 export const grassFieldCanopyShadowShader = await shadowPayload('shadow');
 
 export const grassFieldCanopyCoverageShader = await payload('coverage', 'coverage');

@@ -13,16 +13,17 @@ export function grassTransitionCanopyProfile(cell, levels, size, depth = size) {
     return edges | (corners << 4) | (cell.edge << 8);
 }
 
-/** @param {number} profile @param {{height:number,ramp:number}} shape */
-export function createGrassTransitionCanopyGeometry(profile, { height, ramp }) {
-    if (!Number.isInteger(profile) || profile < 0 || profile > 4095 || !(height > 0 && ramp > 0 && ramp < .5))
+/** @param {number} profile @param {{height:number,ramp:number,rootShade?:number}} shape */
+export function createGrassTransitionCanopyGeometry(profile, { height, ramp, rootShade = 1 }) {
+    if (!Number.isInteger(profile) || profile < 0 || profile > 4095 || !(height > 0 && ramp > 0 && ramp < .5)
+        || !Number.isFinite(rootShade) || rootShade < 0 || rootShade > 1)
         throw new Error('Canopy geometry requires an edge/corner profile and a positive sub-cell ramp.');
     const edges = profile & 15, corners = (profile >> 4) & 15, boundary = profile >> 8;
     let divisions = edges;
     CORNERS.forEach(([xSide, zSide], i) => { if (corners & (1 << i)) divisions |= xSide | zSide; });
     const xs = [-.5, ...(divisions & 1 ? [-.5 + ramp] : []), ...(divisions & 2 ? [.5 - ramp] : []), .5];
     const zs = [-.5, ...(divisions & 4 ? [-.5 + ramp] : []), ...(divisions & 8 ? [.5 - ramp] : []), .5];
-    const positions = [], normals = [], uvs = [], indices = [];
+    const positions = [], normals = [], uvs = [], indices = [], colors = [];
     for (const z of zs) for (const x of xs) {
         const insets = [x + .5, .5 - x, z + .5, .5 - z];
         let y = height;
@@ -35,6 +36,9 @@ export function createGrassTransitionCanopyGeometry(profile, { height, ramp }) {
             if (corners & (1 << i)) lower(Math.hypot(dx < 0 ? x + .5 : .5 - x, dz < 0 ? z + .5 : .5 - z), .005);
         });
         positions.push(x, y, z); normals.push(0, 1, 0); uvs.push(x + .5, .5 - z);
+        // Bake root occlusion into the existing ramp vertices, preserving the top palette.
+        const shade = rootShade + (1 - rootShade) * y / height;
+        colors.push(shade, shade, shade);
     }
     for (let z = 0; z < zs.length - 1; z++) for (let x = 0; x < xs.length - 1; x++) {
         const a = z * xs.length + x, b = a + xs.length;
@@ -44,6 +48,7 @@ export function createGrassTransitionCanopyGeometry(profile, { height, ramp }) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (rootShade < 1) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.setIndex(indices); geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     return geometry;
 }

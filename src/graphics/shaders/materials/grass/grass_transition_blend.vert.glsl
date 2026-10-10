@@ -2,6 +2,9 @@
 // This also works on cards that overlap a neighbouring selection cell.
 vec4 grassTransitionCenter = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
 float grassTransitionRange = length(grassTransitionCenter.xz - cameraPosition.xz);
+#ifdef GRASS_PROJECTED_CANOPY_BLEND
+vGrassTransitionCanopyRay = grassTransitionCenter.xyz - cameraPosition;
+#endif
 vGrassTransitionCoverage = vec2(1.0, 0.0);
 #if GRASS_TRANSITION_BLEND_LEVEL > 0
 vGrassTransitionCoverage.x = smoothstep(grassTransitionBlendStarts[GRASS_TRANSITION_BLEND_LEVEL - 1],

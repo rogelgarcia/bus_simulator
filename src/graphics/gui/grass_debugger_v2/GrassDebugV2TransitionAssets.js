@@ -21,7 +21,7 @@ function groundMapping(mesh) {
     return new THREE.Matrix3().set(u.x, u.y, u.z, v.x, v.y, v.z, 0, 0, 1);
 }
 
-export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress, offline = false, externalShadows = false }) {
+export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onProgress, offline = false, externalShadows = false, extraCardBaseDensity = 0 }) {
     const response = await fetch(ROOT + 'scene.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Grass source manifest unavailable: ' + response.status);
     const manifest = await response.json();
@@ -64,9 +64,9 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
     const detail = createGrassDebugV2FieldDetail({ source: generated[2].mesh, width: manifest.widthMeters, depth: manifest.depthMeters });
     const canopy = offline
         ? await (await import('./GrassDebugV2CanopyTextureAsset.js')).loadGrassCanopyTextureAsset({ renderer, shadowDirection: lighting.sunRef.direction, anisotropy: 4 })
-        : await (await import('./GrassDebugV2FieldCanopy.js?v=card-coverage-2')).createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
+        : await (await import('./GrassDebugV2FieldCanopy.js?v=card-distribution-1')).createGrassDebugV2FieldCanopy({ renderer, source: generated[2].mesh, lod2: generated[2].mesh,
         soil, litter, width: manifest.widthMeters, depth: manifest.depthMeters, shadowDirection: lighting.sunRef.direction,
-        lighting, onProgress, anisotropy: 4, cardBaseDensity: .45 });
+        lighting, onProgress, anisotropy: 4, cardBaseDensity: .45, extraCardBaseDensity });
     // Self-shadows are already baked. Scenes with external occluders replace this white visibility map.
     const externalVisibility = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
     externalVisibility.name = 'GrassTransitionExternalVisibility'; externalVisibility.generateMipmaps = false;
@@ -79,7 +79,8 @@ export async function loadGrassDebugV2TransitionAssets({ renderer, lighting, onP
         // Linear leaf-only probe, normalized by coverage; litter retains its own base color.
         material.userData.grassFloorLeafColorScale.value.set(1.03, 1.0, 1.4);
         material.defines = { ...material.defines, GRASS_TRANSITION_CANOPY_COVERAGE: 1 };
-        if (!externalShadows) material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY = 1;
+        if (externalShadows) material.defines.GRASS_CANOPY_CACHED_SHADOWS = 1;
+        else material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY = 1;
         material.needsUpdate = true;
     }
     const liveMaterial = cloneMaterialShaderContract(sourceMaterial);

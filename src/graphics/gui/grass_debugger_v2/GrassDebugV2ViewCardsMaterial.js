@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { createGrassDebugV2Material } from './GrassDebugV2Material.js';
 import { applyGrassDebugV2DistanceAppearance } from './GrassDebugV2DistanceAppearance.js';
-import { grassViewCardsShader } from '../../shaders/materials/grass/GrassViewCardsShaderLoader.js?v=card-continuity-1';
+import { grassViewCardsShader } from '../../shaders/materials/grass/GrassViewCardsShaderLoader.js?v=card-distribution-1';
 import { grassPlateCoverageShader } from '../../shaders/materials/grass/GrassPlateShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';

@@ -79,6 +79,8 @@ body.grass-debug-v2 #game-canvas {
 .grass-v2-lods { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .grass-v2-lods button { padding-inline: 4px; }
 .grass-v2-panel .grass-v2-ranges { margin: 10px 0; font-size: 11px; line-height: 1.5; }
+.grass-v2-version-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 10px 0; }
+.grass-v2-version-links a { justify-content: center; padding: 7px 5px; font-size: 11px; }
 .grass-v2-fade { display: grid; gap: 6px; }
 .grass-v2-fade select { width: 100%; padding: 6px; background: #10171e; color: inherit; border: 1px solid #596b6e; border-radius: 4px; }
 .grass-v2-modes button[aria-pressed="true"] { border-color: #bbdcae; background: #304639; color: #dcf5d2; }

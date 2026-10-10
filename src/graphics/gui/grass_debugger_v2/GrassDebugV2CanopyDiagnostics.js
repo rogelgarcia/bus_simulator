@@ -14,6 +14,8 @@ export const GRASS_CANOPY_DIAGNOSTICS = Object.freeze({
     single_scale: 'One fixed texture scale; paired tiles retained',
     no_visibility: 'No baked/external shadow-visibility sampling',
     baked_only: 'Baked self-shadows only; no white external lookup or live-shadow branch',
+    cached_visibility: 'Same cached scene and self-shadows; compile out the capture-only live-shadow branch',
+    runtime_visibility: 'Previous uniform-selected cached/live shadow branch',
     flat_normals: 'Flat normal RGB; coverage alpha still sampled',
     no_color_fit: 'No angular grass/litter color correction',
     no_coverage: 'No view-dependent coverage reconstruction',
@@ -30,6 +32,8 @@ export function createGrassDebugV2CanopyDiagnostic(source, id, { renderer = null
     const material = cloneMaterialShaderContract(source), textures = textureCache ?? new Map(), uniforms = {}, targets = [];
     material.name = 'CanopyDiagnostic-' + id;
     material.userData = { ...source.userData };
+    if (id === 'cached_visibility') material.defines = { ...material.defines, GRASS_CANOPY_CACHED_SHADOWS: 1 };
+    if (id === 'runtime_visibility') { material.defines = { ...material.defines }; delete material.defines.GRASS_CANOPY_CACHED_SHADOWS; }
     const requestedAnisotropy = { aniso1: 1, aniso4: 4, aniso8: 8 }[id];
     const anisotropy = requestedAnisotropy === undefined ? null
         : Math.min(requestedAnisotropy, renderer?.capabilities.getMaxAnisotropy() ?? requestedAnisotropy);

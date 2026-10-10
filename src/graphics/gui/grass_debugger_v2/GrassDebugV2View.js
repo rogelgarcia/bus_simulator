@@ -68,7 +68,8 @@ export class GrassDebugV2View {
         }
         content.land.setSurface('gravelly_sand');
         this.grass = await createGrassDebugV2DistanceGrass({ renderer: this.renderer, scene: this.scene, camera: this.camera,
-            lighting: this.lighting, road: content.road, bus: content.bus, land: content.land, onProgress: this._onProgress });
+            lighting: this.lighting, road: content.road, bus: content.bus, land: content.land,
+            strategy: new URLSearchParams(location.search).get('grass') || 'baked', onProgress: this._onProgress });
         await this.renderer.compileAsync(this.scene, this.camera);
         this.keyboard = new GrassDebugV2CameraInput(this.controls);
         const grassLayout = this.grass.getSnapshot();

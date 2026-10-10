@@ -1,9 +1,10 @@
 // Cache external scene shadows independently from the repeating tile's baked self-shadows.
 // @ts-check
 import * as THREE from 'three';
+import { createSharedUniformMaterialVariant } from '../../shaders/core/MaterialShaderHookRegistry.js';
 
-/** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,sun:THREE.DirectionalLight,fields:object,canopy:object}} options */
-export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, canopy }) {
+/** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,sun:THREE.DirectionalLight,fields:object,canopy:object,receiverMaterial?:THREE.Material|null}} options */
+export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, canopy, receiverMaterial = null }) {
     const resolution = 2048;
     const target = new THREE.WebGLRenderTarget(resolution, resolution, { depthBuffer: false, format: THREE.RedFormat, colorSpace: THREE.NoColorSpace });
     target.texture.name = 'GrassFieldCanopy-ShadowVisibility';
@@ -27,7 +28,7 @@ export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, 
         light.copy(sun); light.shadow.mapSize.set(resolution, resolution);
         light.shadow.autoUpdate = false; light.shadow.needsUpdate = true;
         light.target.position.copy(sun.target.position); light.updateMatrixWorld(); light.target.updateMatrixWorld();
-        const meshes = [], casterMaterials = [];
+        const meshes = [], casterMaterials = [], receiverMaterials = new Map();
         scene.traverseVisible(source => {
             if (!source.isMesh || !source.castShadow || source.userData.grassLeafCount != null || source.userData.grassCanopy) return;
             const mesh = source.clone(false);
@@ -47,6 +48,17 @@ export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, 
         });
         for (const source of receivers) {
             const mesh = source.clone(false);
+            // The live field specializes cached visibility; only this temporary capture needs PCF.
+            const receiverSource = receiverMaterial ?? source.material;
+            if (!receiverMaterials.has(receiverSource)) {
+                const material = receiverMaterial ? receiverMaterial.clone() : createSharedUniformMaterialVariant(source.material);
+                if (!receiverMaterial) {
+                    delete material.defines.GRASS_CANOPY_CACHED_SHADOWS;
+                    delete material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY;
+                }
+                receiverMaterials.set(receiverSource, material);
+            }
+            mesh.material = receiverMaterials.get(receiverSource);
             mesh.matrix.copy(source.matrixWorld); mesh.matrixAutoUpdate = false; mesh.receiveShadow = true; mesh.castShadow = false;
             capture.add(mesh); meshes.push(mesh);
         }
@@ -69,6 +81,7 @@ export function createGrassDebugV2CanopyShadows({ renderer, scene, sun, fields, 
             canopy.shadowUniforms.grassCanopyShadowVisibility.value = target.texture;
             for (const mesh of meshes) { capture.remove(mesh); mesh.dispose?.(); }
             casterMaterials.forEach(material => material.dispose()); light.shadow.dispose(); light.shadow.map = null;
+            receiverMaterials.forEach(material => material.dispose());
         }
     }
     return Object.freeze({ update, getSnapshot: () => ({ generations, resolution, estimatedTextureBytes: resolution * resolution * 4 / 3,

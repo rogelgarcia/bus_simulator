@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { createGrassDebugV2PeriodicSource } from './GrassDebugV2PeriodicSource.js';
 import { createGrassDebugV2FieldCanopyBake } from './GrassDebugV2FieldCanopyBake.js?v=lod4-resolution-options-1';
-import { createGrassDebugV2CanopyMaterials } from './GrassDebugV2CanopyMaterial.js?v=lod4-shadow-fast-1';
+import { createGrassDebugV2CanopyMaterials } from './GrassDebugV2CanopyMaterial.js?v=canopy-cached-1';
 import { selectGrassSparseBaseShoots } from './GrassDebugV2SparseBaseLayout.js';
 
 export async function createGrassDebugV2CardBase({ renderer, sources, density, soil, litter, shadowDirection,
@@ -38,6 +38,7 @@ export async function createGrassDebugV2CardBase({ renderer, sources, density, s
             sourceHeight, filterFootprint: 0, distanceStart: 10000, distanceEnd: 10001, farScale: 1 });
         materials.all.name = 'GrassCardBase-Sparse';
         return Object.freeze({ materials,
+            readPixels: (layer, channel, variant = 0) => bakes[variant].readPixels(layer, channel),
             getSnapshot: () => ({ density, leafCounts, layout: 'joint periodic coverage', variants: 2, resolution: 1024, tileMeters,
                 textureBytes: bakes.reduce((sum, bake) => sum + bake.getSnapshot().residentTextureBytes, 0) }),
             dispose() { Object.values(materials).forEach(material => material.dispose()); bakes.forEach(bake => bake.dispose()); }

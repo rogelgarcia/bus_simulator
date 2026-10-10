@@ -21,6 +21,9 @@ the scene bypasses it, while deliberate missing-export failures remain visible.
 
 ### Sparse base and card hybrid (2026-10-08)
 
+The initial recipe and measurements below are retained as history. The
+2026-10-09 distribution revision supersedes its LOD4 dimensions and count.
+
 The runtime-baked card path in both labs now shares a **sparser grass-and-litter
 base** under LOD3 and LOD4. LOD5 retains its full population. The base selects a
 deterministic 45% of source shoots from each existing compiled tile variation.
@@ -135,6 +138,74 @@ Run `tests/headless/e2e/grass_debug_v2_card_coverage.pwtest.js`; opt into timing
 with `GRASS_CARD_PERF=1`. Generate the report with
 `node tests/headless/visual/grass_card_hybrid_report.mjs`.
 
+### Smaller LOD4 clusters and cached shadow specialization (2026-10-09)
+
+LOD4 uses **6 × 45 cm cards/m²**, capturing 45 × 27 cm leaf strips at 25° with
+a 35 cm ground span. Sparse/full options use 4/12 cards respectively. LOD3 remains
+12 × 30 cm. Both profiles now share the near-card leaf color calibration. The
+bridge's broad, brighter 80 × 50 cm captures were reading as clumps of fabric.
+The new template adds a stable eight-way rotation/reflection of root positions
+per world cell, preserving its within-cell spacing while breaking repeated rows.
+This is a small vertex-only change; fragment shading, camera-facing bearings,
+field clipping and the existing opaque dissolve are unchanged.
+
+Total card ground footprint falls about 30%; projected overlap depends on view.
+Forced whole-scene LOD4 uses 24,192 field triangles including base quads, versus
+LOD3's 44,928. Both allocate 54 active field batches. The sparse base remains 45%
+and 36,350,626 bytes; the two card profiles each retain their 64 MiB atlases.
+No per-frame recapture, CPU card placement, or additional maps are introduced.
+
+In the bus view at 16–32 m, LOD4 leaf coverage is 83.1%, versus LOD3's 84.3%.
+Leaf-weighted displayed RGB is 107.6/127.0/55.9 versus 108.5/128.4/56.2. The smaller
+clusters reduce the broad patch pattern; they do not duplicate LOD2 parallax.
+Overhead low-coverage 25 cm regions increase from 7.4% to 11.9%, so this revision
+does not claim fewer gaps at every elevation. All four poses retain at least 89%
+of LOD2 coverage in the tested production ranges. Eight corner masks have zero
+outside pixels at 1 cm tolerance; 31 poses over 6 m retain active blend bands.
+
+The bus canopy and sparse base now define `GRASS_CANOPY_CACHED_SHADOWS` to remove
+the uniform-selected live PCF path from the displayed material. The external
+shadow cache creates owned temporary receiver variants with cached/baked-only
+defines removed and shared uniform owners, then disposes them after capture.
+The original comparison materials and `runtime_visibility` diagnostic retain
+the previous branch. Four saved pre-change LOD5 images match the adopted path
+within one RGB output level, with mean error below 0.000003 on a 0–255 scale.
+
+RTX 3060, 1360 × 952 DPR 1, six paired rounds of 16 GPU samples, rotating/reversed
+order. These values are **above actual OFF terrain**, including its own cached
+shadow, rather than the earlier soil-only-fields baseline. Preparation, shader
+compilation and shadow generation are excluded. Latest final-run means:
+
+| Pose | LOD3 | LOD4 | LOD5 previous branch | LOD5 cached specialization |
+| --- | ---: | ---: | ---: | ---: |
+| Bus | 0.328 | 0.245 | 0.236 | 0.261 |
+| Overview | 0.282 | 0.270 | 0.203 | 0.216 |
+| Along grass | 0.568 | 0.460 | 0.363 | 0.232 |
+| Rear | 0.406 | 0.300 | 0.258 | 0.191 |
+
+Final LOD4-minus-LOD3 savings have positive 95% intervals along grass and rear;
+bus/overview are inconclusive. An earlier six-round × 48-sample comparison
+supported bus/overview/along-grass savings, with rear inconclusive. Cached-shadow
+savings are supported along grass (0.131 ms, 95% CI 0.021–0.241); other final
+views are inconclusive. GPU clocks/load are uncontrolled; all trials and
+confidence intervals remain in the report, including a noisy intermediate run.
+
+LOD5 is not a single albedo lookup: its paired channels, two texture scales,
+grass/litter lighting, normal/coverage reconstruction, environment lighting and
+visibility maps all contribute pixel cost. OFF has a simpler ground material.
+Field footprints already cut the surrounding terrain, so there is no duplicate
+full ground plane. Final bus-view unlit-albedo and constant-color ablations cost
+0.054 and -0.007 ms above OFF, versus 0.261 for current LOD5. Disabling side grass
+alone is not a consistently measurable win. Ablations change the image and are
+not additive percentages; only cached specialization is adopted.
+
+Evidence: `tests/artifacts/screens/grass_debug_v2/card_coverage/distribution/index.html`.
+Generate with `node tests/headless/visual/grass_card_distribution_report.mjs`.
+The coverage test accepts `GRASS_DISTANCE_COSTS=1`, `GRASS_DISTANCE_FOCUS=1` for
+the longer five-case comparison, and `GRASS_SHADOW_REFERENCE` pointing at saved
+pre-change captures to validate external-shadow preservation. Current runs use
+the restored live material catalog, without the earlier metadata workaround.
+
 ### Shared bus-scene integration (2026-10-05)
 
 `grass_debug_v2.html` now reuses these assets, card profiles, selection bands and
@@ -148,6 +219,14 @@ The asset loader accepts `externalShadows: true` for scenes with bus/tree
 occluders, and reuses an already-loaded environment. The bus adapter caches
 external canopy shadows through instanced receiver meshes; the empty transition
 lab keeps its cheaper baked-shadow-only path. No transition shader was added.
+
+The bus layout was expanded on 2026-10-09 to three columns × five rows on each
+side: 30 fields, 1 m gaps in both directions, 8,640 selection cells. The original
+near-road field remains the camera anchor, and the benchmark grass exit extends
+to Z=143 m. The fixed scene shadow frustum and external-cache bounds include every
+new field. The transition lab's own four-field arrangement is unchanged. The
+earlier bus cost tables and distribution captures above describe six fields;
+they are not measurements of this expanded layout. See `GRASS_DEBUG_V2.md`.
 
 ### Opaque dissolve (2026-10-05)
 

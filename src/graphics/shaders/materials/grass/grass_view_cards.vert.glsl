@@ -6,18 +6,26 @@ uniform vec2 grassViewCardSpan;
 varying vec2 vGrassCardUv;
 varying vec3 vGrassCardRight;
 // @section begin
-// One jittered root per stratum prevents holes from independent cell phases.
-// Hash world slots, not a repeating two-metre tile; roots never move with the camera.
+// Bounded offsets preserve the separated roots; world hashes keep placement fixed.
 vec4 grassCardCell = vec4(0.0, 0.0, 0.0, 1.0);
 #ifdef USE_INSTANCING
     grassCardCell = instanceMatrix * grassCardCell;
 #endif
 grassCardCell = modelMatrix * grassCardCell;
-vec2 grassCardSlotWorld = grassCardCell.xz + grassCardSlot.xy;
+vec2 grassCardRoot = grassCardSlot.xy;
+#ifdef GRASS_CARD_RANDOM_LAYOUT
+    // Rotate/reflect the root pattern per world cell. Preserve its spacing while
+    // breaking repeated rows; billboard orientation and leaf lighting stay separate.
+    float grassLayout = floor(fract(sin(dot(grassCardCell.xz, vec2(43.13, 93.71))) * 28473.21) * 8.0);
+    if (grassLayout >= 4.0) grassCardRoot = grassCardRoot.yx;
+    grassCardRoot.x *= mod(grassLayout, 2.0) < 1.0 ? 1.0 : -1.0;
+    grassCardRoot.y *= mod(floor(grassLayout * 0.5), 2.0) < 1.0 ? 1.0 : -1.0;
+#endif
+vec2 grassCardSlotWorld = grassCardCell.xz + grassCardRoot;
 vec2 grassCellPhase = fract(sin(vec2(dot(grassCardSlotWorld, vec2(127.1, 311.7)),
     dot(grassCardSlotWorld, vec2(269.5, 183.3)))) * 43758.5453);
 vec3 grassCardLocal = position;
-grassCardLocal.xz = grassCardSlot.xy + (grassCellPhase - 0.5) * grassCardSlot.zw;
+grassCardLocal.xz = grassCardRoot + (grassCellPhase - 0.5) * grassCardSlot.zw;
 vec4 grassCardCenter = vec4(grassCardLocal, 1.0);
 #ifdef USE_INSTANCING
     grassCardCenter = instanceMatrix * grassCardCenter;

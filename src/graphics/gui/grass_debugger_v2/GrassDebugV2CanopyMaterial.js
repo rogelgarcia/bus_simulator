@@ -2,7 +2,7 @@
 // @ts-check
 import * as THREE from 'three';
 import { createGrassDebugV2FloorMaterial } from './GrassDebugV2FloorMaterial.js';
-import { grassFieldCanopyNormalShader, grassFieldCanopyShadowParsShader, grassFieldCanopyShadowShader, grassFieldCanopyCoverageShader, grassFieldCanopyLightingShader, grassFieldCanopySamplingShader, grassFieldCanopyDistanceShader, grassFieldCanopyColorShader, grassFieldCanopyFacingShader, grassFieldCanopySpecularShader, grassFieldCanopyShadowCaptureShader, grassFieldCanopyReliefParsShader, grassFieldCanopyReliefShader } from '../../shaders/materials/grass/GrassFieldCanopyShaderLoader.js?v=lod4-shadow-fast-1';
+import { grassFieldCanopyNormalShader, grassFieldCanopyShadowParsShader, grassFieldCanopyShadowShader, grassFieldCanopyCoverageShader, grassFieldCanopyLightingShader, grassFieldCanopySamplingShader, grassFieldCanopyDistanceShader, grassFieldCanopyColorShader, grassFieldCanopyFacingShader, grassFieldCanopySpecularShader, grassFieldCanopyShadowCaptureShader, grassFieldCanopyReliefParsShader, grassFieldCanopyReliefShader } from '../../shaders/materials/grass/GrassFieldCanopyShaderLoader.js?v=canopy-cached-1';
 import { grassFloorLightingShader } from '../../shaders/materials/grass/GrassFloorFacingShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';

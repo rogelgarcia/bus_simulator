@@ -43,7 +43,7 @@ test('Grass Debug benchmark follows the route and reports a compact result', asy
         expect(point[0]).toBeCloseTo(routeChecks.waypoints[3][0], 5);
         expect(point[1]).toBeCloseTo(1.258, 5);
     });
-    expect(routeChecks.grass.at(-1)[2]).toBeCloseTo(108, 5);
+    expect(routeChecks.grass.at(-1)[2]).toBeCloseTo(143, 5);
     expect(routeChecks.minY).toBeGreaterThan(1.25);
     expect(routeChecks.lookBackEndMs - routeChecks.lookBackStartMs).toBe(4000);
     const poses = [['arrival', routeChecks.cruiseStartMs / 2], ['cruise', (routeChecks.cruiseStartMs + routeChecks.cruiseEndMs) / 2],
@@ -131,15 +131,15 @@ test('Grass Debug benchmark follows the route and reports a compact result', asy
     await expect(outcome).toHaveText(firstText);
     await page.waitForFunction(() => window.__grassDebugV2.getSnapshot().benchmark.results.length === 2, null, { timeout: 90_000 });
     await expect(results).toHaveCount(2);
-    await expect(outcome).toHaveText(firstText);
-    await expect(results.last()).toHaveText(/^LOD3 · (?:GPU|Frame) [\d.]+ avg · [\d.]+ p99 ms$/);
+    await expect(results.last()).toHaveText(firstText);
+    await expect(results.first()).toHaveText(/^LOD3 · (?:GPU|Frame) [\d.]+ avg · [\d.]+ p99 ms$/);
     await page.screenshot({ path: `${artifacts}/complete.png` });
     await writeFile(`${artifacts}/result.json`, JSON.stringify({ result, alignment, routeChecks }, null, 2));
     await run.click();
     await page.evaluate(() => window.dispatchEvent(new Event('blur')));
     await expect(page.locator('#benchmark-status')).toHaveText('Cancelled · Window lost focus');
     await expect(results).toHaveCount(2);
-    await expect(outcome).toHaveText(firstText);
+    await expect(results.last()).toHaveText(firstText);
     await page.getByRole('button', { name: 'Bus camera' }).click();
     await page.keyboard.down('e');
     await expect.poll(() => page.evaluate(() => window.__grassDebugV2.getSnapshot().camera.position[1])).toBeGreaterThan(7);

@@ -24,6 +24,7 @@ export function createGrassTransitionBlendMaterials() {
             const material = createSharedUniformMaterialVariant(source);
             material.userData = { ...source.userData, grassTransitionBlendLevel: level };
             material.defines = { ...material.defines, GRASS_TRANSITION_BLEND_LEVEL: level };
+            if (source.userData.grassProjectedCanopyBlend && level >= 4) material.defines.GRASS_PROJECTED_CANOPY_BLEND = 1;
             if (sampleCoverage) { material.alphaToCoverage = true; material.defines.GRASS_TRANSITION_SAMPLE_COVERAGE = sampleCoverage; }
             else delete material.defines.GRASS_TRANSITION_SAMPLE_COVERAGE;
             if (style === 'alpha' && sampleCoverage) {

@@ -1,13 +1,25 @@
 // The previous coverage fade remains available for comparison. The default
 // dissolve bypasses opacity fading and exchanges fully shaded pixels instead.
+vec2 grassTransitionCoverage = vGrassTransitionCoverage;
+#ifdef GRASS_PROJECTED_CANOPY_BLEND
+// Use one point on the view ray for both heights. Interpolated vertex fade weights
+// differ between thin blades and large canopy triangles and expose the dark floor.
+float grassCanopyRange = length(vGrassTransitionCanopyRay.xz) * abs(cameraPosition.y - 0.07) / max(abs(vGrassTransitionCanopyRay.y), 0.001);
+float grassCanopyFade = smoothstep(grassTransitionBlendStarts[4], grassTransitionBlendEnds[4], grassCanopyRange);
+    #if GRASS_TRANSITION_BLEND_LEVEL == 4
+    grassTransitionCoverage.y = grassCanopyFade;
+    #else
+    grassTransitionCoverage.x = grassCanopyFade;
+    #endif
+#endif
 bool grassUseSampleCoverage = false;
 #ifdef GRASS_TRANSITION_SAMPLE_COVERAGE
     #if GRASS_TRANSITION_SAMPLE_COVERAGE == 2
-        grassUseSampleCoverage = vGrassTransitionCoverage.x == 1.0;
+        grassUseSampleCoverage = grassTransitionCoverage.x == 1.0;
     #elif GRASS_TRANSITION_SAMPLE_COVERAGE == 3
         grassUseSampleCoverage = true;
     #else
-        grassUseSampleCoverage = vGrassTransitionCoverage.y == 0.0;
+        grassUseSampleCoverage = grassTransitionCoverage.y == 0.0;
     #endif
 #endif
 #ifdef GRASS_TRANSITION_DISSOLVE
@@ -17,12 +29,12 @@ if (grassUseSampleCoverage) {
     // A concave ramp retains coverage where the two leaf populations do not overlap.
     // Depth-writing, unsorted samples are an approximation, not an exact alpha blend.
     #ifdef GRASS_TRANSITION_ALPHA
-        diffuseColor.a *= max(0.0, vGrassTransitionCoverage.x - vGrassTransitionCoverage.y);
+        diffuseColor.a *= max(0.0, grassTransitionCoverage.x - grassTransitionCoverage.y);
     #else
-        diffuseColor.a *= sqrt(max(0.0, vGrassTransitionCoverage.x - vGrassTransitionCoverage.y));
+        diffuseColor.a *= sqrt(max(0.0, grassTransitionCoverage.x - grassTransitionCoverage.y));
     #endif
     if (diffuseColor.a <= 0.0) discard;
-} else if (vGrassTransitionCoverage.x < 1.0 || vGrassTransitionCoverage.y > 0.0) {
+} else if (grassTransitionCoverage.x < 1.0 || grassTransitionCoverage.y > 0.0) {
     #ifdef GRASS_TRANSITION_DISSOLVE
     // Complementary one-pixel coverage preserves opaque leaf color and avoids
     // the repeating eight-pixel grid. Both levels share the same static threshold.
@@ -37,5 +49,5 @@ if (grassUseSampleCoverage) {
     }
     float grassTransitionSample = (float(grassTransitionRank) + 0.5) / 64.0;
     #endif
-    if (grassTransitionSample >= vGrassTransitionCoverage.x || grassTransitionSample < vGrassTransitionCoverage.y) discard;
+    if (grassTransitionSample >= grassTransitionCoverage.x || grassTransitionSample < grassTransitionCoverage.y) discard;
 }

@@ -3,14 +3,16 @@ import test, { expect } from '@playwright/test';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { measureGrassCardHybrid } from '../perf/grass_card_hybrid_metrics.mjs';
 import { captureGrassCardBoundaries } from '../visual/grass_card_boundaries.mjs';
+import { measureGrassDistanceCosts } from '../perf/grass_distance_costs.mjs';
+import { captureGrassCachedShadowComparison } from '../visual/grass_cached_shadow_comparison.mjs';
 
 const trial = process.env.GRASS_CARD_TRIAL || 'final';
 const output = `tests/artifacts/screens/grass_debug_v2/card_coverage/${trial}`;
 test.use({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, video: 'off', trace: 'off' });
 
 test('card captures preserve leaf coverage across the bus scene', async ({ page }) => {
-    test.setTimeout(process.env.GRASS_CARD_PERF ? 600000 : 120000); await mkdir(output, { recursive: true });
-    const rows = [], errors = [], performance = [];
+    test.setTimeout(process.env.GRASS_CARD_PERF || process.env.GRASS_DISTANCE_COSTS ? 600000 : 120000); await mkdir(output, { recursive: true });
+    const rows = [], errors = [], performance = [], shadowComparisons = [];
     page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     if (process.env.GRASS_MATERIAL_BACKUP) await page.route('**/assets/public/pbr/**/*.config.js*', async route => {
@@ -27,7 +29,7 @@ test('card captures preserve leaf coverage across the bus scene', async ({ page 
     await page.route('**/GrassDebugV2DistanceGrass.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text())
-            .replace('const representation = cards =>', 'window.__grassCoverageAssets = { nearCards, bridgeCards, assets };\nconst representation = cards =>')
+            .replace('const representation = cards =>', 'window.__grassCoverageAssets = { nearCards, bridgeCards, assets, land };\nconst representation = cards =>')
             .replace('fields.setLod3Representation(representation(nearCards));', 'window.__grassCoverageFields = fields;\nfields.setLod3Representation(representation(nearCards));') });
     });
     if (process.env.GRASS_CARD_PROFILE_TRIAL || process.env.GRASS_CARD_SOURCE_BEFORE) await page.route('**/GrassDebugV2ViewCards.js*', async route => {
@@ -40,7 +42,7 @@ test('card captures preserve leaf coverage across the bus scene', async ({ page 
         await page.route(`**/GrassDebugV2${name}.js*`, async route => {
             await route.fulfill({ contentType: 'text/javascript', body: await readFile(`${process.env.GRASS_CARD_CODE_BASELINE}/GrassDebugV2${name}.js`, 'utf8') });
         });
-    await page.goto('/debug_tools/grass_debug_v2.html' + (process.env.GRASS_CARD_BASE_OFF ? '?base=off' : ''));
+    await page.goto('/debug_tools/grass_debug_v2.html?grass=current' + (process.env.GRASS_CARD_BASE_OFF ? '&base=off' : ''));
     await page.waitForFunction(() => !!window.__grassDebugV2, null, { timeout: 30000 });
     await page.evaluate(() => window.__grassDebugV2.readiness);
     const metadata = await page.evaluate(async () => {
@@ -136,9 +138,11 @@ test('card captures preserve leaf coverage across the bus scene', async ({ page 
             await page.evaluate(() => window.__grassCoverageMask(false));
             rows.push({pose,mode,metrics,triangles:state.grass.triangles});
         }
+        if (process.env.GRASS_DISTANCE_COSTS) shadowComparisons.push(await captureGrassCachedShadowComparison(page, output, pose));
         await page.evaluate(() => { const view = window.__grassCoverageView; view.grass.setMode('AUTO'); view.lighting.render(0); });
         await page.locator('[data-study-canvas]').screenshot({ path: `${output}/${pose}-AUTO.png` });
-        if (process.env.GRASS_CARD_PERF) performance.push({pose, ...await page.evaluate(measureGrassCardHybrid)});
+        if (process.env.GRASS_DISTANCE_COSTS) performance.push({pose, ...await page.evaluate(measureGrassDistanceCosts, { focus: !!process.env.GRASS_DISTANCE_FOCUS })});
+        else if (process.env.GRASS_CARD_PERF) performance.push({pose, ...await page.evaluate(measureGrassCardHybrid)});
     }
     const boundaries = process.env.GRASS_CARD_BOUNDARIES ? await captureGrassCardBoundaries(page, output) : [];
     const motion = await page.evaluate(async () => {
@@ -158,10 +162,15 @@ test('card captures preserve leaf coverage across the bus scene', async ({ page 
     });
     expect(motion.every(frame => frame.triangles > 0 && frame.blended > 0)).toBe(true);
     await page.locator('[data-study-canvas]').screenshot({ path: `${output}/motion-end.png` });
-    await writeFile(`${output}/coverage.json`,JSON.stringify({metadata,rows,performance,boundaries,motion,errors},null,2));
+    await writeFile(`${output}/coverage.json`,JSON.stringify({metadata,rows,performance,boundaries,motion,shadowComparisons,errors},null,2));
+    for (const comparison of shadowComparisons) {
+        // Static branch removal can reorder floating-point arithmetic by two output levels.
+        expect(comparison.maxChannelError, JSON.stringify(comparison)).toBeLessThanOrEqual(2);
+        expect(comparison.meanRgbError, JSON.stringify(comparison)).toBeLessThan(.01);
+    }
     expect(errors).toEqual([]);
     if (!process.env.GRASS_CARD_CODE_BASELINE) for (const edge of boundaries) expect(edge.outsidePixels, JSON.stringify(edge)).toBe(0);
-    if(trial==='final') for(const pose of poses) {
+    if(trial==='final' || trial.endsWith('-final')) for(const pose of poses) {
         const reference=rows.find(r=>r.pose===pose&&r.mode==='LOD2').metrics;
         for(const row of rows.filter(r=>r.pose===pose&&r.mode!=='LOD2')) for(const band of row.metrics) {
             // Compare each representation in its actual production range.

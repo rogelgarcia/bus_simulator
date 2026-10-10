@@ -170,7 +170,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
     }
     const started = performance.now(), group = new THREE.Group(); group.name = 'GrassTransitionFields';
     const geometries = new Set(), materials = new Set(), templates = {}, allBatches = [], fields = [], cells = [], matrix = new THREE.Matrix4();
-    const canopyShape = canopy.getSnapshot().definition;
+    const canopyShape = { ...canopy.getSnapshot().definition, rootShade: canopy.rootShade ?? 1 };
     const blendMaterials = createGrassTransitionBlendMaterials(), blendBatches = new Map();
     const boundaryBatches = new Map(), boundaryMaterials = new Map();
     for (const lod of LEVELS.slice(0, 3)) {
@@ -206,9 +206,13 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             0, -1 / canopyShape.tileMeters, .5 + (minZ + 1) / canopyShape.tileMeters, 0, 0, 1);
         const canopyMaterial = surfaceMaterial(canopy.materials.all, canopyUv, bounds, canopyShape); materials.add(canopyMaterial);
         const flatCanopyMaterial = surfaceMaterial(canopy.materials.all, canopyUv); materials.add(flatCanopyMaterial);
+        const stripCanopyMaterial = canopyShape.rootShade < 1 ? cloneMaterialShaderContract(flatCanopyMaterial) : flatCanopyMaterial;
+        if (canopyShape.rootShade < 1) stripCanopyMaterial.vertexColors = true;
+        materials.add(stripCanopyMaterial);
         const originalCanopyMaterial = cloneMaterialShaderContract(canopyMaterial), originalFlatCanopyMaterial = cloneMaterialShaderContract(flatCanopyMaterial);
         for (const material of [originalCanopyMaterial, originalFlatCanopyMaterial]) {
-            delete material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY; materials.add(material);
+            delete material.defines.GRASS_CANOPY_BAKED_SHADOW_ONLY;
+            delete material.defines.GRASS_CANOPY_CACHED_SHADOWS; materials.add(material);
         }
         const batches = LEVELS.map((lod, level) => TEMPLATE_CENTERS.map((_, quadrant) => {
             const material = level === 5 ? canopyMaterial : level === 4 ? bridge.material : level === 3 ? detail.material : sources[lod].material;
@@ -254,7 +258,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
                 fringe.mesh.userData.grassLeafCount = leaves.length; fringes.set(quadrant + ':' + edge, fringe);
             }
         }
-        fields.push({ index: field, bounds, node, batches, interior, ground, cardBases, fringes, strips: new Map(), canopyMaterial, flatCanopyMaterial,
+        fields.push({ index: field, bounds, node, batches, interior, ground, cardBases, fringes, strips: new Map(), canopyMaterial, flatCanopyMaterial, stripCanopyMaterial,
             originalCanopyMaterial, originalFlatCanopyMaterial });
     }
     const levels = new Uint8Array(cells.length).fill(255), publicCells = Object.freeze(cells), fieldBounds = Object.freeze(fields.map(field => field.bounds));
@@ -347,7 +351,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
                     if (!field.strips.has(profile)) {
                         const geometry = createGrassTransitionCanopyGeometry(profile, canopyShape);
                         geometries.add(geometry);
-                        const strip = batch(geometry, materialTransform(field.flatCanopyMaterial), fieldArea, field.node.name + '-LOD5-Strip-' + profile, field.node);
+                        const strip = batch(geometry, materialTransform(field.stripCanopyMaterial), fieldArea, field.node.name + '-LOD5-Strip-' + profile, field.node);
                         Object.assign(strip.mesh.userData, { grassTransitionLevel: 5, grassCanopy: true, grassCanopyStrip: true });
                         field.strips.set(profile, strip);
                     }
@@ -393,7 +397,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             const flat = optimization === 'original' ? field.originalFlatCanopyMaterial : field.flatCanopyMaterial;
             const beveled = optimization === 'original' ? field.originalCanopyMaterial : field.canopyMaterial;
             field.interior.mesh.material = materialTransform(flat);
-            for (const entry of field.strips.values()) entry.mesh.material = materialTransform(flat);
+            for (const entry of field.strips.values()) entry.mesh.material = materialTransform(field.stripCanopyMaterial);
             for (const entry of field.batches[5]) {
                 entry.mesh.geometry = lod4Surface === 'ground' ? groundCanopyGeometry : flatLod4 ? flatCanopyGeometry : entry.canopyGeometry;
                 entry.mesh.material = materialTransform(flatLod4 ? flat : beveled);
