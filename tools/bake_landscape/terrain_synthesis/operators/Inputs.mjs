@@ -1,16 +1,19 @@
 // Implements the input operators: import-heights (landscape directory or raw float32) and plan-inputs (plan rasterization into layers).
 // @ts-check
-// import-heights binds the source grid to the recipe grid exactly, records the input hashes that enter the recipe identity and moves
-// the heights to the working grid (tent or nearest decimation; cover takes aligned labels and the native cover is kept for the
-// output). plan-inputs rasterizes the plan once: district ids (optionally clipped to the land side), the shoreline as a signed
-// distance field whose land side is found by probing the middle of the declared landscape edge, the roads with their nearest design
-// height, width and index through the exact distance transform, and the corridor, runway and apron polygons. The parsed plan and its
-// polyline sets stay on the context for the constraint operators.
+// import-heights binds the source grid to the recipe grid (exactly, or a source coarser by an integer factor over the same extent that
+// is upsampled with the declared `resample` filter, the cover by the nearest source label: AI 596 D4), records the input hashes that
+// enter the recipe identity and moves the heights to the working grid (tent or nearest decimation onto a coarser working grid, adoption
+// when the working grid is the source grid; the cover takes aligned labels and the output-grid cover is kept for the output). The
+// same-grid and decimation paths are unchanged since D1; the statistics report `importResample` for every path. plan-inputs
+// rasterizes the plan once: district ids (optionally clipped to the land side), the shoreline as a signed distance field whose land
+// side is found by probing the middle of the declared landscape edge, the roads with their nearest design height, width and index
+// through the exact distance transform, and the corridor, runway and apron polygons. The parsed plan and its polyline sets stay on the
+// context for the constraint operators.
 import path from 'node:path';
 import { authoringHash, readAuthoringFile } from '../../../landscape_authoring/AuthoringFiles.mjs';
 import { readLandscapeFileManifest } from '../../../landscape_authoring/LandscapeFileIO.mjs';
 import { readTerrainFieldSource } from '../../terrain_fields/TerrainFieldsSource.mjs';
-import { decimateCover, decimateHeights } from '../SynthesisWorkingGrid.mjs';
+import { decimateCover, decimateHeights, upsampleCover, upsampleFactor, upsampleHeights } from '../SynthesisWorkingGrid.mjs';
 import { createPolylineSet, exactDistanceTransform, polylineSide, rasterizePolylineSet, refineNearestSegments, segmentDistance } from './Distance.mjs';
 import { parseSynthesisPlan } from './Plan.mjs';
 import { rasterizePolygon } from './Polygons.mjs';
@@ -24,12 +27,18 @@ function resolveInputPath(context, relative) {
     return path.resolve(root, relative);
 }
 
-function requireSameGrid(context, grid, label) {
-    const expected = context.output;
-    for (const key of ['columns', 'rows', 'spacingX', 'spacingZ', 'minX', 'maxZ']) {
-        if (grid[key] !== expected[key]) throw new Error(`[Synthesis] operator ${context.operator.id}: ${label} grid ${key} ${grid[key]} differs from the recipe grid ${expected[key]}`);
+// the factor by which the recipe grid refines the source grid: 1 (the same grid) or an integer (a coarser source over the same extent)
+function sourceFactor(context, grid, label) {
+    const expected = context.output, same = GRID_KEYS.every(key => grid[key] === expected[key]);
+    if (same) return 1;
+    const factor = upsampleFactor(grid, expected);
+    if (factor !== null && factor >= 2) return factor;
+    for (const key of GRID_KEYS) {
+        if (grid[key] !== expected[key]) throw new Error(`[Synthesis] operator ${context.operator.id}: ${label} grid ${key} ${grid[key]} differs from the recipe grid ${expected[key]} (a source may only be the recipe grid or coarser by an integer factor over the same extent)`);
     }
+    return 1;
 }
+const GRID_KEYS = Object.freeze(['columns', 'rows', 'spacingX', 'spacingZ', 'minX', 'maxZ']);
 
 async function readLandscapeSource(context) {
     const binding = context.recipe.inputs.landscape, { memory, signal } = context;
@@ -62,11 +71,19 @@ async function readRawSource(context) {
     return { grid: context.output, heights, cover, tracked: ['source/heights', 'source/cover'], inputs };
 }
 
+// the output-grid cover of a source coarser than the recipe grid: the nearest source label, tracked as its own array
+function upsampledOutputCover(context, source) {
+    const { memory, output } = context, cover = memory.allocate('source/cover-output', Uint8Array, output.columns * output.rows);
+    context.own('source/cover-output');
+    upsampleCover(source.grid, source.cover, output, cover);
+    return cover;
+}
+
 async function importHeights(context) {
-    const { params } = context.operator, { memory } = context;
+    const { params } = context.operator, { memory, output, scope } = context;
     const source = params.source === 'landscape' ? await readLandscapeSource(context) : await readRawSource(context);
     for (const name of source.tracked ?? []) context.own(name);
-    requireSameGrid(context, source.grid, 'source');
+    const factor = sourceFactor(context, source.grid, 'source');
     if (source.seaLevel !== undefined && source.seaLevel !== context.seaLevel) throw new Error(`[Synthesis] the landscape sea level ${source.seaLevel} differs from recipe.seaLevel ${context.seaLevel}`);
     if (source.sha256) context.recordInput('landscape', source.sha256);
     for (const entry of source.inputs ?? []) context.recordInput(entry.id, entry.sha256);
@@ -74,19 +91,48 @@ async function importHeights(context) {
     let minimum = Infinity, maximum = -Infinity;
     for (let i = 0; i < n; i++) { if (source.heights[i] < minimum) minimum = source.heights[i]; if (source.heights[i] > maximum) maximum = source.heights[i]; }
     context.checkpoint();
-    let stride = 1;
-    if (context.working.coarse) {
-        const height = context.layers.create('height', Float32Array), cover = context.layers.create('cover', Uint8Array);
-        stride = decimateHeights(source.grid, source.heights, context.grid, height, params.filter);
-        decimateCover(source.grid, source.cover, context.grid, cover);
-        memory.free('source/heights'); context.disown('source/heights');
-        context.setNative({ grid: source.grid, cover: source.cover, coverName: 'source/cover' });
-    } else {
-        context.layers.adopt('height', source.heights, 'source/heights'); context.layers.adopt('cover', source.cover, 'source/cover');
-        context.setNative({ grid: source.grid, cover: source.cover, coverName: 'source/cover' });
+    const nativeGrid = { columns: source.grid.columns, rows: source.grid.rows, spacingX: source.grid.spacingX, spacingZ: source.grid.spacingZ };
+    const common = { source: params.source, revision: source.revision ?? null, nativeGrid, heightRangeMeters: [round6(minimum), round6(maximum)] };
+    if (factor === 1) {
+        // the source is the recipe grid: adopt it, or decimate it onto a coarser working grid (unchanged since D1)
+        let stride = 1;
+        if (context.working.coarse) {
+            const height = context.layers.create('height', Float32Array), cover = context.layers.create('cover', Uint8Array);
+            stride = decimateHeights(source.grid, source.heights, context.grid, height, params.filter);
+            decimateCover(source.grid, source.cover, context.grid, cover);
+            memory.free('source/heights'); context.disown('source/heights');
+            context.setNative({ grid: source.grid, cover: source.cover, coverName: 'source/cover' });
+        } else {
+            context.layers.adopt('height', source.heights, 'source/heights'); context.layers.adopt('cover', source.cover, 'source/cover');
+            context.setNative({ grid: source.grid, cover: source.cover, coverName: 'source/cover' });
+        }
+        return { ...common, workingStride: stride, filter: context.working.coarse ? params.filter : 'none', importResample: { factor: 1, filter: 'none', cover: 'none', target: context.working.coarse ? 'working' : 'output' } };
     }
-    return { source: params.source, revision: source.revision ?? null, nativeGrid: { columns: source.grid.columns, rows: source.grid.rows, spacingX: source.grid.spacingX, spacingZ: source.grid.spacingZ },
-        workingStride: stride, filter: context.working.coarse ? params.filter : 'none', heightRangeMeters: [round6(minimum), round6(maximum)] };
+    // the source is coarser than the recipe grid by `factor`: the output cover is its nearest label and the heights reach the working grid by
+    // upsampling (the working grid is the output grid or still finer than the source), by adoption (the working grid is the source grid) or
+    // by decimation (a working grid coarser than the source)
+    const outputCover = upsampledOutputCover(context, source), workingFactor = upsampleFactor(source.grid, context.grid);
+    let resample;
+    if (!context.working.coarse || (workingFactor !== null && workingFactor >= 2)) {
+        const height = context.layers.create('height', Float32Array), scratch = scope.allocate('upsample-rows', Float64Array, context.grid.columns * source.grid.rows);
+        upsampleHeights(source.grid, source.heights, context.grid, height, params.resample, { scratch });
+        scope.free('upsample-rows');
+        if (context.working.coarse) { const cover = context.layers.create('cover', Uint8Array); upsampleCover(source.grid, source.cover, context.grid, cover); memory.free('source/cover'); context.disown('source/cover'); }
+        else context.layers.adopt('cover', outputCover, 'source/cover-output');
+        memory.free('source/heights'); context.disown('source/heights');
+        if (!context.working.coarse) { memory.free('source/cover'); context.disown('source/cover'); }
+        resample = { factor, filter: params.resample, cover: 'nearest', target: context.working.coarse ? 'working' : 'output', workingFactor: context.working.coarse ? workingFactor : factor };
+    } else if (workingFactor === 1) {
+        context.layers.adopt('height', source.heights, 'source/heights'); context.layers.adopt('cover', source.cover, 'source/cover');
+        resample = { factor, filter: 'none', cover: 'nearest', target: 'output', workingFactor: 1 };
+    } else {
+        const height = context.layers.create('height', Float32Array), cover = context.layers.create('cover', Uint8Array), stride = decimateHeights(source.grid, source.heights, context.grid, height, params.filter);
+        decimateCover(source.grid, source.cover, context.grid, cover);
+        memory.free('source/heights', 'source/cover'); context.disown('source/heights'); context.disown('source/cover');
+        resample = { factor, filter: 'none', cover: 'nearest', target: 'output', workingStride: stride, decimation: params.filter };
+    }
+    context.setNative({ grid: output, cover: outputCover, coverName: 'source/cover-output' });
+    return { ...common, workingStride: resample.workingStride ?? 1, filter: resample.decimation ?? 'none', importResample: resample };
 }
 
 async function readPlanFiles(context) {

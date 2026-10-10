@@ -4,28 +4,48 @@
 // so the canonical cache is never touched; a fixture whose manifest.json is missing is reported as not measured. Receipts follow the coastal
 // performance harness (tests/headless/e2e/landscape_performance.pwtest.js): report.json, per-stop frame arrays, network records and screenshots
 // under tests/artifacts/screens/landscape/ai596/d3/browser/<fixture>/ plus a cross-fixture comparison.md regenerated from every receipt present.
+// LANDSCAPE_RESOLUTION_FIXTURES selects other ids or saved landscape directories; LANDSCAPE_RESOLUTION_ARTIFACTS moves the receipts (a directory
+// relative to the repository root); LANDSCAPE_RESOLUTION_ROUTE=natural-world measures a 4 km coastal landscape along the natural-world review
+// poses instead of the bounds-scaled fixture poses (AI 596 D4, coastal terrain v3); LANDSCAPE_RESOLUTION_SETTLE_MS raises the settle limit.
 import { test, expect } from '@playwright/test';
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
-import { createNativeGroundSampler, loadReviewPoses, reviewPoseDirection } from '../../../tools/landscape_review/ReviewPoses.mjs';
+import { createNativeGroundSampler, loadReviewPoses, resolveReviewPose, reviewPoseDirection } from '../../../tools/landscape_review/ReviewPoses.mjs';
 import { MISSING_APPEARANCE_ERROR } from '../../../tools/landscape_review/capture.mjs';
 import { readLandscapeFileChunk, readLandscapeFileManifest } from '../../../tools/landscape_authoring/LandscapeFileIO.mjs';
 import { landscapeEffectiveSurfaceCache, landscapeShippedBudgetMiB, landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const root = path.resolve('.');
 const MiB = 1024 * 1024;
-const ARTIFACTS = path.join(root, 'tests/artifacts/screens/landscape/ai596/d3/browser');
+const ARTIFACTS = path.resolve(root, process.env.LANDSCAPE_RESOLUTION_ARTIFACTS ?? 'tests/artifacts/screens/landscape/ai596/d3/browser');
 const SERVED_PREFIX = '/assets/public/landscape/coastal-city/';
 const DEFAULT_FIXTURES = ['ai596-d3-fixture-1953', 'ai596-d3-fixture-0977', 'ai596-d3-fixture-0488', 'ai596-d3-fixture-4km-1953', 'ai596-d3-fixture-4km-0977'];
-const POSE_FILE = path.join(root, 'tools/landscape_review/poses/ai596-d3-fixture-v1.json');
-const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, uploadCapBytes = 8 * MiB, settleTimeoutMs = 60000;
+const viewport = { width: 1920, height: 1080 }, warmupFrames = 30, sampleFrames = 120, uploadCapBytes = 8 * MiB;
+const settleTimeoutMs = Number(process.env.LANDSCAPE_RESOLUTION_SETTLE_MS ?? 60000);
+if (!Number.isInteger(settleTimeoutMs) || settleTimeoutMs < 1000) throw new Error(`LANDSCAPE_RESOLUTION_SETTLE_MS must be an integer number of milliseconds of at least 1000; received ${process.env.LANDSCAPE_RESOLUTION_SETTLE_MS}`);
 // The probe patch is a 41 x 31 m rectangle on the D2 fixture's gully D (pose F-04) that lies inside one finest 257-sample tile at every fixture
 // spacing (x 375-500, z 125-250 at 0.48828125 m). Vertex probes sit on multiples of 1.953125 m, native vertices of all three spacings; cell-center
 // probes add half a 0.48828125 m cell (2.5 and 3.5 cells), the center of a finest cell and an interior point of the coarser cells.
 const PROBE_PATCH = Object.freeze({ originX: 429.6875, originZ: 134.765625, stepX: 5.859375, stepZ: 9.765625, columns: 8, rows: 4, centerOffsetX: 1.220703125, centerOffsetZ: 1.708984375 });
+// The coastal city's patch is the same rectangle translated by (2918, 2642) cells of 0.9765625 m onto the high-city south flank below pose NW-07
+// (x 3279.3-3320.3, z 2714.8-2744.1), inside the one 250 m native tile x 3250-3500, z 2500-2750 of a 4097² landscape at 0.9765625 m.
+const CITY_PROBE_PATCH = Object.freeze({ ...PROBE_PATCH, originX: 3279.296875, originZ: 2714.84375 });
+// Route variants: the fixture route scales the AI 596 D3 fixture poses onto the manifest bounds; the natural-world route resolves the coastal
+// review poses (tools/landscape_review/poses/natural-world-v1.json) on the measured landscape's own native ground.
+const ROUTES = Object.freeze({
+    fixture: Object.freeze({ id: 'fixture', label: 'D3', title: 'AI 596 D3 fixture resolution measurements', poseFile: 'tools/landscape_review/poses/ai596-d3-fixture-v1.json', probePatch: PROBE_PATCH,
+        patch: 'the gully D patch', stops: Object.freeze(['overview', 'approach-bluff', 'gully-close', 'orthographic-close', 'return-overview']),
+        settleColumns: Object.freeze([['approach-bluff', 'bluff'], ['gully-close', 'gully'], ['orthographic-close', 'ortho']]) }),
+    'natural-world': Object.freeze({ id: 'natural-world', label: 'D4 (natural-world route)', title: 'AI 596 D4 coastal terrain browser measurements (natural-world route)', poseFile: 'tools/landscape_review/poses/natural-world-v1.json', probePatch: CITY_PROBE_PATCH,
+        patch: 'the high-city south flank patch below NW-07', stops: Object.freeze(['overview', 'flyover-NW-10', 'bluff-toe-NW-03', 'low-city-NW-08', 'beach-NW-01', 'orthographic-close', 'return-overview']),
+        settleColumns: Object.freeze([['flyover-NW-10', 'flyover'], ['bluff-toe-NW-03', 'bluff toe'], ['low-city-NW-08', 'low city'], ['beach-NW-01', 'beach'], ['orthographic-close', 'ortho']]) })
+});
+const ROUTE = ROUTES[process.env.LANDSCAPE_RESOLUTION_ROUTE ?? 'fixture'];
+if (!ROUTE) throw new Error(`LANDSCAPE_RESOLUTION_ROUTE must be one of ${Object.keys(ROUTES).join(', ')}; received ${process.env.LANDSCAPE_RESOLUTION_ROUTE}`);
+const POSE_FILE = path.join(root, ROUTE.poseFile);
 // top-down orthographic probe camera: 60 m of ground over 1056 px asks the planner for every level whose error exceeds 0.085 m, so the finest level
 // is resident on relief; the 0.3 m target offset keeps the look-at basis defined and tilts the rays by 0.001 rad
 const PROBE_CAMERA = Object.freeze({ height: 300, orthoHeight: 60, targetOffsetZ: -0.3 });
@@ -54,18 +74,26 @@ function unpack(values, columns) {
     return records;
 }
 
-function probePositions() {
+function probePositions(patch) {
     const vertices = [], centers = [];
-    for (let row = 0; row < PROBE_PATCH.rows; row++) for (let column = 0; column < PROBE_PATCH.columns; column++) {
-        const x = PROBE_PATCH.originX + column * PROBE_PATCH.stepX, z = PROBE_PATCH.originZ + row * PROBE_PATCH.stepZ;
+    for (let row = 0; row < patch.rows; row++) for (let column = 0; column < patch.columns; column++) {
+        const x = patch.originX + column * patch.stepX, z = patch.originZ + row * patch.stepZ;
         vertices.push({ kind: 'vertex', x, z });
-        centers.push({ kind: 'cell-center', x: x + PROBE_PATCH.centerOffsetX, z: z + PROBE_PATCH.centerOffsetZ });
+        centers.push({ kind: 'cell-center', x: x + patch.centerOffsetX, z: z + patch.centerOffsetZ });
     }
     return [...vertices, ...centers];
 }
 
+/** The probes of a patch, the top-down orthographic camera over their center and that center's stop record. */
+async function probeStop(patch, ground) {
+    const probes = probePositions(patch), xs = probes.map(probe => probe.x), zs = probes.map(probe => probe.z);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const probeCamera = { position: [cx, PROBE_CAMERA.height, cz + PROBE_CAMERA.targetOffsetZ], target: [cx, 0, cz], projection: 'orthographic', orthoHeight: PROBE_CAMERA.orthoHeight, zoom: 1 };
+    return { probes, probeCamera, stop: { id: 'orthographic-close', view: probeCamera, world: { x: cx, z: cz, groundHeight: await ground(cx, cz) } } };
+}
+
 /** The route stops derived from the manifest bounds: the fixture poses scaled onto the bounds (identity on the 1 km fixtures) plus the probe camera. */
-async function buildRoute(manifest, poses, ground) {
+async function buildRoute(manifest, poses, ground, patch) {
     const { minX, maxX, minZ, maxZ } = manifest.bounds, width = maxX - minX, depth = maxZ - minZ;
     const pose = id => poses.poses.find(entry => entry.id === id);
     const scale = entry => ({ x: minX + entry.x / 1000 * width, z: minZ + entry.z / 1000 * depth });
@@ -79,17 +107,42 @@ async function buildRoute(manifest, poses, ground) {
     const overviewPose = pose('F-08'), overviewAt = scale(overviewPose), overviewPosition = [overviewAt.x, overviewPose.altitudeMeters / 1000 * width, overviewAt.z];
     const overview = { view: { position: overviewPosition, target: aim(overviewPosition, overviewPose), projection: 'perspective', fov: overviewPose.fovDegrees, zoom: 1 }, world: { poseId: 'F-08', ...overviewAt, groundHeight: await ground(overviewAt.x, overviewAt.z) } };
     const bluff = await standing(pose('F-01')), gully = await standing(pose('F-04'));
-    const probes = probePositions(), xs = probes.map(probe => probe.x), zs = probes.map(probe => probe.z);
-    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
-    const probeCamera = { position: [cx, PROBE_CAMERA.height, cz + PROBE_CAMERA.targetOffsetZ], target: [cx, 0, cz], projection: 'orthographic', orthoHeight: PROBE_CAMERA.orthoHeight, zoom: 1 };
+    const { probes, probeCamera, stop } = await probeStop(patch, ground);
     return { probes, probeCamera, stops: [
         { id: 'overview', view: overview.view, world: overview.world },
         { id: 'approach-bluff', view: bluff.view, world: bluff.world, travelFrames: 30 },
         { id: 'gully-close', view: gully.view, world: gully.world },
-        { id: 'orthographic-close', view: probeCamera, world: { x: cx, z: cz, groundHeight: await ground(cx, cz) } },
+        stop,
         { id: 'return-overview', view: overview.view, world: overview.world }
     ] };
 }
+
+/**
+ * The coastal city route: the natural-world review poses resolved on the measured landscape's own native ground (eye-height poses follow the
+ * terrain revision, LANDSCAPE_NATURAL_WORLD_ROADMAP.md §8): the 4 km overview (NW-13, the viewer's home camera), a 30-frame flyover approach
+ * (NW-10), the bluff toe (NW-03), the high city from the low city (NW-08), the swim beach (NW-01), the probe camera, return to the overview.
+ */
+async function buildCityRoute(manifest, poses, ground, patch) {
+    const resolve = async id => {
+        const pose = poses.poses.find(entry => entry.id === id);
+        if (!pose) throw new Error(`${poses.id} has no pose ${id}`);
+        const camera = await resolveReviewPose(pose, ground);
+        return { view: { position: [...camera.position], target: [...camera.target], projection: 'perspective', fov: camera.fov, zoom: 1 }, world: { poseId: id, x: camera.position[0], z: camera.position[2], groundHeight: camera.groundHeight } };
+    };
+    const overview = await resolve('NW-13'), flyover = await resolve('NW-10'), bluffToe = await resolve('NW-03'), lowCity = await resolve('NW-08'), beach = await resolve('NW-01');
+    const { probes, probeCamera, stop } = await probeStop(patch, ground);
+    return { probes, probeCamera, stops: [
+        { id: 'overview', view: overview.view, world: overview.world },
+        { id: 'flyover-NW-10', view: flyover.view, world: flyover.world, travelFrames: 30 },
+        { id: 'bluff-toe-NW-03', view: bluffToe.view, world: bluffToe.world },
+        { id: 'low-city-NW-08', view: lowCity.view, world: lowCity.world },
+        { id: 'beach-NW-01', view: beach.view, world: beach.world },
+        stop,
+        { id: 'return-overview', view: overview.view, world: overview.world }
+    ] };
+}
+
+const ROUTE_BUILDERS = Object.freeze({ fixture: buildRoute, 'natural-world': buildCityRoute });
 
 async function settled(page) {
     await page.waitForFunction(() => {
@@ -234,9 +287,31 @@ function createStoredHeightReader(directory, manifest) {
     };
 }
 
+/** Holds at the current camera until streaming, appearance and planning report settled on two polls six frames apart (as measureStop does). */
+async function holdUntilSettled(page) {
+    return page.evaluate(async ({ settleTimeoutMs }) => {
+        const hooks = window.__landscapeTestHooks, wait = () => new Promise(resolve => requestAnimationFrame(resolve));
+        const began = performance.now();
+        let state, stable = 0;
+        do {
+            for (let index = 0; index < 6; index++) await wait();
+            state = hooks.snapshot();
+            if (state.lastError) throw new Error(state.lastError);
+            stable = state.streaming.settled && state.appearance.settled && state.planning.settled ? stable + 1 : 0;
+            if (performance.now() - began > settleTimeoutMs) throw new Error(`detail did not settle at the probe camera within ${settleTimeoutMs} ms`);
+        } while (stable < 2);
+        return performance.now() - began;
+    }, { settleTimeoutMs });
+}
+
 async function runProbes(page, probes, truths) {
     return page.evaluate(async ({ probes, truths, nudges }) => {
         const hooks = window.__landscapeTestHooks, rect = document.getElementById('game-canvas').getBoundingClientRect(), view = hooks.snapshot().camera;
+        // the planner's state around the probes: what it wanted, what is resident and why it stopped, so a coarse hit is never read as a picking defect
+        const streamingState = state => ({ targetMet: state.streaming.targetMet, achievedErrorPixels: state.streaming.achievedErrorPixels, degradationReason: state.streaming.degradationReason,
+            desiredLeaves: state.streaming.desiredLeafIds.length, residentLeaves: state.streaming.residentLeafIds.length, pending: state.streaming.pending, settled: state.streaming.settled,
+            appearanceDegradation: state.appearance.degradationReason, cpuBytes: state.budget.cpuBytes, gpuBytes: state.budget.gpuBytes });
+        const streamingBefore = streamingState(hooks.snapshot());
         // the viewer camera basis as three.js lookAt builds it (up = +Y): z toward the eye, x = up x z, y = z x x
         const sub = (a, b) => a.map((value, axis) => value - b[axis]), dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], unit = v => { const length = Math.hypot(...v); return v.map(c => c / length); };
@@ -269,7 +344,8 @@ async function runProbes(page, probes, truths) {
                 decodedBytes: context.acquisition?.decodedBytes ?? null, chunkIds: context.acquisition?.chunkIds ?? null } : null);
         }
         const state = hooks.snapshot();
-        return { camera: view, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, residentLeafIds: state.streaming.residentLeafIds, picks, queries, lastError: state.lastError };
+        return { camera: view, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, residentLeafIds: state.streaming.residentLeafIds, picks, queries, lastError: state.lastError,
+            streaming: { beforePicks: streamingBefore, afterQueries: streamingState(state) } };
     }, { probes, truths, nudges: PROBE_NUDGES });
 }
 
@@ -294,7 +370,7 @@ async function summarizeProbes(result, probes, truths, manifest, ground, storedH
     const byKind = kind => { const values = picking.filter(record => record.kind === kind && record.status === 'hit' && record.errorAtHitMeters !== null).map(record => record.errorAtHitMeters); return values.length ? { count: values.length, max: Math.max(...values), mean: values.reduce((sum, value) => sum + value, 0) / values.length } : null; };
     const levels = {};
     for (const record of picking) levels[record.residentLevel] = (levels[record.residentLevel] ?? 0) + 1;
-    return { camera: result.camera, canvasRect: result.rect, residentLeafIds: result.residentLeafIds, residentLevelHistogram: levels, lastError: result.lastError,
+    return { camera: result.camera, canvasRect: result.rect, residentLeafIds: result.residentLeafIds, residentLevelHistogram: levels, streaming: result.streaming, lastError: result.lastError,
         picking: { probes: picking.length, hits: picking.filter(record => record.status === 'hit').length, maxErrorMeters: errors.length ? Math.max(...errors) : null,
             meanErrorMeters: errors.length ? errors.reduce((sum, value) => sum + value, 0) / errors.length : null, maxLateralMeters: Math.max(0, ...picking.filter(record => record.status === 'hit').map(record => record.lateralMeters)),
             vertices: byKind('vertex'), cellCenters: byKind('cell-center'), nudged: picking.filter(record => record.nudgeMeters > 0).length, records: picking,
@@ -339,24 +415,25 @@ async function writeComparison() {
     const reports = [];
     for (const entry of await readdir(ARTIFACTS, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        try { reports.push(JSON.parse(await readFile(path.join(ARTIFACTS, entry.name, 'report.json'), 'utf8'))); } catch { /* a fixture directory without a receipt yet */ }
+        // rows are labeled by their receipt directory, so two runs of one landscape (for example coastal-city-v3 and coastal-city-v3-run1) stay distinguishable
+        try { reports.push({ ...JSON.parse(await readFile(path.join(ARTIFACTS, entry.name, 'report.json'), 'utf8')), directoryName: entry.name }); } catch { /* a fixture directory without a receipt yet */ }
     }
     const order = report => { const index = DEFAULT_FIXTURES.indexOf(report.fixture.id); return index < 0 ? DEFAULT_FIXTURES.length : index; };
     reports.sort((a, b) => order(a) - order(b) || a.fixture.id.localeCompare(b.fixture.id));
     const measured = reports.filter(report => report.status === 'measured');
-    const stopIds = ['overview', 'approach-bluff', 'gully-close', 'orthographic-close', 'return-overview'];
+    const stopIds = ROUTE.stops, settleStops = ROUTE.settleColumns;
     const headline = measured.map(report => { const f = report.fixture, s = report.startup, r = report.routeTotals, p = report.probes;
         const stop = id => report.route.find(entry => entry.id === id);
-        return `| ${f.id} | ${f.grid.columns}² / ${f.grid.spacingX} m / L${f.grid.maxLevel} / ${f.nodes} | ${mib(f.nativePayloadBytes)} / ${mib(f.totalPayloadBytes)} | ${s.nativeHeightPayloadsBeforeFirstFrame} / ${s.network.nativeHeightPayloads} of ${f.natives} | ${number(s.coarseFromLoadMs, 0)} / ${number(s.settledFromLoadMs, 0)} | ${number(s.programCompileMs, 0)} | ${mib(report.end.peakCpuBytes)} / ${mib(report.end.peakGpuBytes)} | ${mib(r.peakUploadedBytesPerFrame)} / ${mib(r.uploadedBytes)} | ${number(r.frameMs.median)} / ${number(r.frameMs.p95)} | ${number(r.cpuFrameMs.median)} / ${number(r.cpuFrameMs.p95)} | ${r.gpuMs ? `${number(r.gpuMs.median)} / ${number(r.gpuMs.p95)}` : 'not measured'} | ${Math.round(r.triangles.max).toLocaleString('en-US')} | ${number(stop('approach-bluff')?.settledAfterCameraMs, 0)} / ${number(stop('gully-close')?.settledAfterCameraMs, 0)} / ${number(stop('orthographic-close')?.settledAfterCameraMs, 0)} | ${report.route.every(entry => entry.geometryTargetMet) ? 'yes' : report.route.filter(entry => !entry.geometryTargetMet).map(entry => entry.id).join(', ')} | ${p.status === 'measured' ? `${number(p.picking.maxErrorMeters, 4)} / ${number(p.picking.meanErrorMeters, 4)} (L${Object.keys(p.residentLevelHistogram).join('/L')})` : p.status} | ${p.status === 'measured' ? `${p.query.exactVertices}/${p.query.vertices} vertices, ${p.query.exactCellCenters}/${p.query.cellCenters} centers` : p.status} |`; });
-    const missing = reports.filter(report => report.status !== 'measured').map(report => `| ${report.fixture.id} | ${report.status}: ${report.reason} |`);
-    const perStop = measured.flatMap(report => report.route.map(stop => `| ${report.fixture.id} | ${stop.id} | ${stop.residency.residentLeaves} (${Object.entries(stop.residency.leafLevels).map(([level, count]) => `L${level}:${count}`).join(' ')}) | ${Math.round(stop.triangles.median).toLocaleString('en-US')} / ${number(stop.drawCalls.median, 0)} | ${number(stop.frameMs.median)} / ${number(stop.frameMs.p95)} / ${number(stop.frameMs.max)} | ${number(stop.cpuFrameMs.median)} / ${number(stop.cpuFrameMs.p95)} / ${number(stop.cpuFrameMs.max)} | ${stop.gpuMs.status === 'measured' ? `${number(stop.gpuMs.median)} / ${number(stop.gpuMs.p95)} / ${number(stop.gpuMs.max)}` : 'not measured'} | ${mib(stop.residency.cpuBytes)} / ${mib(stop.residency.gpuBytes)} | ${mib(stop.uploadedBytes)} / ${mib(stop.peakUploadedBytesPerFrame)} | ${number(stop.settledAfterCameraMs, 0)} | ${stop.geometryTargetMet ? 'met' : stop.detailStatus} |`));
+        return `| ${report.directoryName ?? f.id} | ${f.grid.columns}² / ${f.grid.spacingX} m / L${f.grid.maxLevel} / ${f.nodes} | ${mib(f.nativePayloadBytes)} / ${mib(f.totalPayloadBytes)} | ${s.nativeHeightPayloadsBeforeFirstFrame} / ${s.network.nativeHeightPayloads} of ${f.natives} | ${number(s.coarseFromLoadMs, 0)} / ${number(s.settledFromLoadMs, 0)} | ${number(s.programCompileMs, 0)} | ${mib(report.end.peakCpuBytes)} / ${mib(report.end.peakGpuBytes)} | ${mib(r.peakUploadedBytesPerFrame)} / ${mib(r.uploadedBytes)} | ${number(r.frameMs.median)} / ${number(r.frameMs.p95)} | ${number(r.cpuFrameMs.median)} / ${number(r.cpuFrameMs.p95)} | ${r.gpuMs ? `${number(r.gpuMs.median)} / ${number(r.gpuMs.p95)}` : 'not measured'} | ${Math.round(r.triangles.max).toLocaleString('en-US')} | ${settleStops.map(([id]) => number(stop(id)?.settledAfterCameraMs, 0)).join(' / ')} | ${report.route.every(entry => entry.geometryTargetMet) ? 'yes' : report.route.filter(entry => !entry.geometryTargetMet).map(entry => entry.id).join(', ')} | ${p.status === 'measured' ? `${number(p.picking.maxErrorMeters, 4)} / ${number(p.picking.meanErrorMeters, 4)} (L${Object.keys(p.residentLevelHistogram).join('/L')})` : p.status} | ${p.status === 'measured' ? `${p.query.exactVertices}/${p.query.vertices} vertices, ${p.query.exactCellCenters}/${p.query.cellCenters} centers` : p.status} |`; });
+    const missing = reports.filter(report => report.status !== 'measured').map(report => `| ${report.directoryName ?? report.fixture.id} | ${report.status}: ${report.reason} |`);
+    const perStop = measured.flatMap(report => report.route.map(stop => `| ${report.directoryName ?? report.fixture.id} | ${stop.id} | ${stop.residency.residentLeaves} (${Object.entries(stop.residency.leafLevels).map(([level, count]) => `L${level}:${count}`).join(' ')}) | ${Math.round(stop.triangles.median).toLocaleString('en-US')} / ${number(stop.drawCalls.median, 0)} | ${number(stop.frameMs.median)} / ${number(stop.frameMs.p95)} / ${number(stop.frameMs.max)} | ${number(stop.cpuFrameMs.median)} / ${number(stop.cpuFrameMs.p95)} / ${number(stop.cpuFrameMs.max)} | ${stop.gpuMs.status === 'measured' ? `${number(stop.gpuMs.median)} / ${number(stop.gpuMs.p95)} / ${number(stop.gpuMs.max)}` : 'not measured'} | ${mib(stop.residency.cpuBytes)} / ${mib(stop.residency.gpuBytes)} | ${mib(stop.uploadedBytes)} / ${mib(stop.peakUploadedBytesPerFrame)} | ${number(stop.settledAfterCameraMs, 0)} | ${stop.geometryTargetMet ? 'met' : stop.detailStatus} |`));
     const conditions = measured[0]?.conditions;
-    const text = `# AI 596 D3 fixture resolution measurements\n\nGenerated ${new Date().toISOString()} from ${reports.length} receipt(s) under ${relative(ARTIFACTS)}/<fixture>/report.json.${conditions ? ` Host ${conditions.hardware.cpuModel}, ${conditions.hardware.logicalCpus} logical CPUs; ${conditions.metadata?.renderer?.renderer ?? 'GPU unknown'}; Chromium ${conditions.browserVersion}; ${conditions.viewport.width} × ${conditions.viewport.height} DPR ${conditions.viewport.dpr}, drawing buffer ${conditions.metadata?.renderer?.width} × ${conditions.metadata?.renderer?.height}; shipped profile ${conditions.profile.cpuMiB}/${conditions.profile.gpuMiB} MiB with the surface cache ${conditions.surfaceCache}.` : ''}\n\nEvery measured route has ${stopIds.length} stops (${stopIds.join(', ')}), ${warmupFrames} discarded warm-up frames then ${sampleFrames} sampled frames per stop; statistics are median / nearest-rank p95 (/ max) over the sampled windows, pooled per fixture. Startup counts native height payloads requested before the first covered frame (must be 0) and by the settled startup at the viewer's home camera. Picking: 64 probes on the gully D patch (32 native vertices shared by all spacings, 32 finest-cell centers) raycast from a top-down orthographic camera against the authoritative native height at the hit; query: viewer select() against the stored float32. Fixtures without an appearance sidecar render fallback soil colors (the viewer records \`${MISSING_APPEARANCE_ERROR}\`); surface detail and PBR materials are therefore not part of these numbers.\n\n| Fixture | Grid / spacing / depth / nodes | Native / all payload MiB | Startup natives before first frame / by settled | Coarse / settled startup ms | Compile ms | Peak CPU / GPU MiB | Upload max per frame / route MiB | Frame median / p95 ms | CPU median / p95 ms | GPU median / p95 ms | Max triangles | Settle ms bluff / gully / ortho | Geometry 1.5 px met | Picking max / mean error m (resident levels) | Query exact |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |\n${headline.join('\n')}\n${missing.length ? `\n| Fixture | Not measured |\n| --- | --- |\n${missing.join('\n')}\n` : ''}\n## Per stop\n\n| Fixture | Stop | Resident leaves (by level) | Triangles / draw calls (median) | Frame ms median / p95 / max | CPU ms median / p95 / max | GPU ms median / p95 / max | CPU / GPU MiB at the stop | Uploads route / max per frame MiB | Settle ms | Detail |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n${perStop.join('\n')}\n`;
+    const text = `# ${ROUTE.title}\n\nGenerated ${new Date().toISOString()} from ${reports.length} receipt(s) under ${relative(ARTIFACTS)}/<fixture>/report.json.${conditions ? ` Host ${conditions.hardware.cpuModel}, ${conditions.hardware.logicalCpus} logical CPUs; ${conditions.metadata?.renderer?.renderer ?? 'GPU unknown'}; Chromium ${conditions.browserVersion}; ${conditions.viewport.width} × ${conditions.viewport.height} DPR ${conditions.viewport.dpr}, drawing buffer ${conditions.metadata?.renderer?.width} × ${conditions.metadata?.renderer?.height}; shipped profile ${conditions.profile.cpuMiB}/${conditions.profile.gpuMiB} MiB with the surface cache ${conditions.surfaceCache}.` : ''}\n\nEvery measured route has ${stopIds.length} stops (${stopIds.join(', ')}), ${warmupFrames} discarded warm-up frames then ${sampleFrames} sampled frames per stop; statistics are median / nearest-rank p95 (/ max) over the sampled windows, pooled per fixture. Startup counts native height payloads requested before the first covered frame (must be 0) and by the settled startup at the viewer's home camera. Picking: 64 probes on ${ROUTE.patch} (32 native vertices shared by all spacings, 32 finest-cell centers) raycast from a top-down orthographic camera against the authoritative native height at the hit; query: viewer select() against the stored float32. Fixtures without an appearance sidecar render fallback soil colors (the viewer records \`${MISSING_APPEARANCE_ERROR}\`); surface detail and PBR materials are therefore not part of these numbers.\n\n| Fixture | Grid / spacing / depth / nodes | Native / all payload MiB | Startup natives before first frame / by settled | Coarse / settled startup ms | Compile ms | Peak CPU / GPU MiB | Upload max per frame / route MiB | Frame median / p95 ms | CPU median / p95 ms | GPU median / p95 ms | Max triangles | Settle ms ${settleStops.map(([, label]) => label).join(' / ')} | Geometry 1.5 px met | Picking max / mean error m (resident levels) | Query exact |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |\n${headline.join('\n')}\n${missing.length ? `\n| Fixture | Not measured |\n| --- | --- |\n${missing.join('\n')}\n` : ''}\n## Per stop\n\n| Fixture | Stop | Resident leaves (by level) | Triangles / draw calls (median) | Frame ms median / p95 / max | CPU ms median / p95 / max | GPU ms median / p95 / max | CPU / GPU MiB at the stop | Uploads route / max per frame MiB | Settle ms | Detail |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n${perStop.join('\n')}\n`;
     await writeFile(path.join(ARTIFACTS, 'comparison.md'), text);
 }
 
 for (const fixture of fixtures) {
-    test(`Landscape D3: ${fixture.id} streams within budget and picks and queries exactly against its native heights`, async ({ browser }, testInfo) => {
+    test(`Landscape ${ROUTE.label}: ${fixture.id} streams within budget and picks and queries exactly against its native heights`, async ({ browser }, testInfo) => {
         test.setTimeout(15 * 60 * 1000);
         const baseURL = String(testInfo.project.use.baseURL);
         expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
@@ -374,7 +451,7 @@ for (const fixture of fixtures) {
         const expectedAppearanceErrors = appearanceAbsent ? [MISSING_APPEARANCE_ERROR] : [];
         const ground = await createNativeGroundSampler(fixture.directory), storedHeight = createStoredHeightReader(fixture.directory, manifest);
         const poses = await loadReviewPoses(POSE_FILE);
-        const { stops, probes, probeCamera } = await buildRoute(manifest, poses, ground);
+        const { stops, probes, probeCamera } = await ROUTE_BUILDERS[ROUTE.id](manifest, poses, ground, ROUTE.probePatch);
         const probesInBounds = probes.every(probe => probe.x >= manifest.bounds.minX && probe.x <= manifest.bounds.maxX && probe.z >= manifest.bounds.minZ && probe.z <= manifest.bounds.maxZ);
         const report = { format: 'landscape-resolution-report', schemaVersion: 1, status: 'incomplete', complete: false, createdAt: new Date().toISOString(),
             fixture: { id: fixture.id, directory: relative(fixture.directory), manifestId: manifest.id, name: manifest.name, revision: manifest.revision, manifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
@@ -384,7 +461,7 @@ for (const fixture of fixtures) {
                 appearanceSidecar: appearanceAbsent ? 'absent' : 'present', fieldsSidecar: (await exists(path.join(fixture.directory, 'fields/manifest.json'))) ? 'present' : 'absent' },
             conditions: { baseURL, browserVersion: browser.version(), hardware: { platform: os.platform(), release: os.release(), arch: os.arch(), cpuModel: os.cpus()[0]?.model, logicalCpus: os.cpus().length, ramBytes: os.totalmem() },
                 viewport: { ...viewport, dpr: 1 }, profile: landscapeShippedBudgetMiB(), surfaceCache: landscapeEffectiveSurfaceCache(), warmupFrames, sampleFrames, settleTimeoutMs,
-                statistics: 'median, nearest-rank p95, max over the 120-frame sampled window per stop; route totals pool the equal-size windows', poseFile: relative(POSE_FILE), probePatch: PROBE_PATCH, probeCamera: PROBE_CAMERA },
+                statistics: 'median, nearest-rank p95, max over the 120-frame sampled window per stop; route totals pool the equal-size windows', route: ROUTE.id, stops: ROUTE.stops, poseFile: relative(POSE_FILE), probePatch: ROUTE.probePatch, probeCamera: PROBE_CAMERA },
             route: [], probes: { status: 'not measured', reason: 'not reached' } };
         const server = await serve(fixture.directory, baseURL);
         const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 });
@@ -444,22 +521,24 @@ for (const fixture of fixtures) {
                 network.setPhase('probes');
                 await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), probeCamera);
                 await settled(page);
+                // the quick settled check can pass on the previous stop's state before the planner re-refines the patch: hold like a measured stop
+                const probeSettleMs = await holdUntilSettled(page);
                 const truths = [];
                 for (const probe of probes) truths.push(await ground(probe.x, probe.z));
                 const result = await runProbes(page, probes, truths);
                 expect(result.lastError).toBeNull();
-                report.probes = { status: 'measured', ...(await summarizeProbes(result, probes, truths, manifest, ground, storedHeight)) };
+                report.probes = { status: 'measured', settleMs: probeSettleMs, ...(await summarizeProbes(result, probes, truths, manifest, ground, storedHeight)) };
                 expect(report.probes.picking.hits, 'every probe ray hits the rendered terrain').toBe(probes.length);
                 expect(report.probes.query.answered, 'every query resolves an authoritative native selection').toBe(probes.length);
                 expect(report.probes.query.exactVertices, 'queries at native vertices return the stored float32 exactly').toBe(report.probes.query.vertices);
-            } else report.probes = { status: 'not measured', reason: `the probe patch (x ${PROBE_PATCH.originX}.., z ${PROBE_PATCH.originZ}..) lies outside the fixture bounds` };
+            } else report.probes = { status: 'not measured', reason: `the probe patch (x ${ROUTE.probePatch.originX}.., z ${ROUTE.probePatch.originZ}..) lies outside the fixture bounds` };
             await network.flush();
             report.network = { startup: report.startup.network, route: networkTotals(network.records.filter(record => record.phase !== 'startup' && record.phase !== 'probes'), manifest.grid.maxLevel),
                 probes: networkTotals(network.records.filter(record => record.phase === 'probes'), manifest.grid.maxLevel), all: networkTotals(network.records, manifest.grid.maxLevel) };
             expect(report.network.all.unmeasuredResponseSizes).toBe(0);
             expect(errors).toEqual([]);
             report.status = 'measured'; report.complete = true;
-            console.log(`Landscape D3 ${fixture.id}: ${manifest.grid.columns}² at ${manifest.grid.spacingX} m, startup natives before first frame ${report.startup.nativeHeightPayloadsBeforeFirstFrame}, peak CPU/GPU ${mib(report.route.at(-1).residency.peakCpuBytes)}/${mib(report.route.at(-1).residency.peakGpuBytes)} MiB, frame median ${number(report.routeTotals.frameMs.median)} ms, picking max error ${report.probes.status === 'measured' ? number(report.probes.picking.maxErrorMeters, 4) : report.probes.status} m`);
+            console.log(`Landscape ${ROUTE.label} ${fixture.id}: ${manifest.grid.columns}² at ${manifest.grid.spacingX} m, startup natives before first frame ${report.startup.nativeHeightPayloadsBeforeFirstFrame}, peak CPU/GPU ${mib(report.route.at(-1).residency.peakCpuBytes)}/${mib(report.route.at(-1).residency.peakGpuBytes)} MiB, frame median ${number(report.routeTotals.frameMs.median)} ms, picking max error ${report.probes.status === 'measured' ? number(report.probes.picking.maxErrorMeters, 4) : report.probes.status} m`);
         } catch (error) {
             report.status = 'failed'; report.reason = error.message; report.errors = errors;
             throw error;

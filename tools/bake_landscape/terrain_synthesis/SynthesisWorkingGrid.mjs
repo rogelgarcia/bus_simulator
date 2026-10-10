@@ -5,7 +5,10 @@
 // over the 2s - 1 native samples per axis, s = integer stride, edges clamped), the same linear-reconstruction prefilter the terrain
 // fields use for coarse pages, or through nearest (aligned) sampling; categorical cover always takes the aligned native label. The
 // working result returns to the output grid by bilinear or Catmull-Rom bicubic interpolation at the output sample positions, so
-// samples shared by both grids (every corner included) are reproduced exactly.
+// samples shared by both grids (every corner included) are reproduced exactly. A source landscape coarser than the recipe grid by an
+// integer factor (AI 596 D4: the 2049² v2 base under the 4097² v3 recipe) is upsampled once at import (upsampleHeights: separable
+// Catmull-Rom with the edge continued linearly so a linear ramp is reproduced exactly, bilinear, or nearest) and its cover takes the
+// nearest source label with ties toward the lower index (upsampleCover); upsampled samples are interpolation, never source detail.
 
 /** @typedef {{columns:number,rows:number,spacingX:number,spacingZ:number,minX:number,maxZ:number}} SynthesisGrid */
 
@@ -70,6 +73,93 @@ const catmull = (t, out) => {
     out[0] = -.5 * t3 + t2 - .5 * t; out[1] = 1.5 * t3 - 2.5 * t2 + 1; out[2] = -1.5 * t3 + 2 * t2 + .5 * t; out[3] = .5 * t3 - .5 * t2;
     return out;
 };
+
+export const UPSAMPLE_FILTERS = Object.freeze(['catmull-rom', 'bilinear', 'nearest']);
+
+/**
+ * Integer factor by which a finer aligned grid refines a coarser one over the same extent (1 when the grids are equal), or null when
+ * the grids are not related that way (different extent, origin, or a non-integer ratio).
+ * @param {SynthesisGrid} coarse @param {SynthesisGrid} fine
+ */
+export function upsampleFactor(coarse, fine) {
+    const factor = coarse.spacingX / fine.spacingX;
+    if (!Number.isInteger(factor) || factor < 1 || coarse.spacingZ / fine.spacingZ !== factor || coarse.minX !== fine.minX || coarse.maxZ !== fine.maxZ) return null;
+    if ((coarse.columns - 1) * factor !== fine.columns - 1 || (coarse.rows - 1) * factor !== fine.rows - 1) return null;
+    return factor;
+}
+
+// the nearest coarse index of fine index i under refinement k, ties (an exact midpoint) toward the lower index
+const nearestCoarseIndex = (i, k) => Math.floor((i + (k - 1) / 2) / k);
+
+// one separable Catmull-Rom pass from `count` coarse samples (read through `at`) to the (count - 1) * k + 1 fine samples written through
+// `put`; the virtual samples beyond both ends continue the edge linearly (h(-1) = 2 h(0) - h(1)), so a linear ramp is reproduced exactly
+function catmullLine(count, k, at, put, weights) {
+    const fine = (count - 1) * k + 1, last = count - 1;
+    const read = j => j < 0 ? 2 * at(0) - at(1) : j > last ? 2 * at(last) - at(last - 1) : at(j);
+    for (let i = 0; i < fine; i++) {
+        const base = Math.floor(i / k), offset = i - base * k;
+        if (offset === 0) { put(i, at(base)); continue; }
+        catmull(offset / k, weights);
+        put(i, weights[0] * read(base - 1) + weights[1] * read(base) + weights[2] * read(base + 1) + weights[3] * read(base + 2));
+    }
+}
+
+function bilinearLine(count, k, at, put) {
+    const fine = (count - 1) * k + 1;
+    for (let i = 0; i < fine; i++) {
+        const base = Math.floor(i / k), offset = i - base * k;
+        if (offset === 0) { put(i, at(base)); continue; }
+        const t = offset / k;
+        put(i, at(base) * (1 - t) + at(base + 1) * t);
+    }
+}
+
+/**
+ * Upsamples coarse heights onto a finer aligned grid (integer factor over the same extent) into `target`: separable Catmull-Rom with
+ * linearly continued edges, bilinear, or nearest (ties toward the lower index); aligned samples are copied exactly by every filter.
+ * `scratch` may hold a Float64Array of target.columns * source.rows values for the row pass (allocated here otherwise).
+ * @param {SynthesisGrid} source @param {Float32Array} values @param {SynthesisGrid} target @param {Float32Array} out @param {'catmull-rom'|'bilinear'|'nearest'} filter
+ * @param {{scratch?:Float64Array}} [options] @returns {number} the factor
+ */
+export function upsampleHeights(source, values, target, out, filter, { scratch } = {}) {
+    const k = upsampleFactor(source, target);
+    if (k === null) throw new Error(`[Synthesis] The target spacing ${target.spacingX} must refine the source spacing ${source.spacingX} by an integer factor over the same extent`);
+    if (!UPSAMPLE_FILTERS.includes(filter)) throw new Error(`[Synthesis] Unsupported upsampling filter ${filter}`);
+    const { columns, rows } = source, fineColumns = target.columns, fineRows = target.rows;
+    if (k === 1) { out.set(values); return k; }
+    if (filter === 'nearest') {
+        for (let row = 0; row < fineRows; row++) {
+            const base = nearestCoarseIndex(row, k) * columns;
+            for (let column = 0; column < fineColumns; column++) out[row * fineColumns + column] = values[base + nearestCoarseIndex(column, k)];
+        }
+        return k;
+    }
+    const rowsPass = scratch && scratch.length >= fineColumns * rows ? scratch : new Float64Array(fineColumns * rows), weights = new Float64Array(4);
+    for (let row = 0; row < rows; row++) {
+        const base = row * columns, line = row * fineColumns, at = j => values[base + j], put = (i, value) => { rowsPass[line + i] = value; };
+        if (filter === 'bilinear') bilinearLine(columns, k, at, put); else catmullLine(columns, k, at, put, weights);
+    }
+    for (let column = 0; column < fineColumns; column++) {
+        const at = j => rowsPass[j * fineColumns + column], put = (i, value) => { out[i * fineColumns + column] = value; };
+        if (filter === 'bilinear') bilinearLine(rows, k, at, put); else catmullLine(rows, k, at, put, weights);
+    }
+    return k;
+}
+
+/**
+ * Nearest coarse label (ties toward the lower index) for every sample of a finer aligned grid.
+ * @param {SynthesisGrid} source @param {Uint8Array} cover @param {SynthesisGrid} target @param {Uint8Array} out @returns {number} the factor
+ */
+export function upsampleCover(source, cover, target, out) {
+    const k = upsampleFactor(source, target);
+    if (k === null) throw new Error(`[Synthesis] The target spacing ${target.spacingX} must refine the source spacing ${source.spacingX} by an integer factor over the same extent`);
+    if (k === 1) { out.set(cover); return k; }
+    for (let row = 0; row < target.rows; row++) {
+        const base = nearestCoarseIndex(row, k) * source.columns;
+        for (let column = 0; column < target.columns; column++) out[row * target.columns + column] = cover[base + nearestCoarseIndex(column, k)];
+    }
+    return k;
+}
 
 /**
  * Samples a working-grid layer at every output sample (bilinear or Catmull-Rom bicubic, edges clamped) into `target`.

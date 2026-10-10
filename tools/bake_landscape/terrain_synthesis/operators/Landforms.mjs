@@ -78,7 +78,9 @@ export function applyPlateau(context, target, params, profile, inside) {
                         }
                         if (d <= p) beyond = Math.min(G, baseAt(d));
                     } else if (!profile.marching) { toe = profile.geometry(T, G, scratch)[0]; B = groundAt(toe); }
-                    else if (d > params.daylightReachMeters) { toe = params.daylightReachMeters; B = profile.descent(toe, T); }
+                    // beyond the daylight reach no run can arrive: the sample keeps its ground (max and replace gave the ground here already; blend
+                    // used to mix the ground with the descent at the reach inside the blend band, a ring lowered by half the descent around every pad)
+                    else if (d > params.daylightReachMeters) continue;
                     else {
                         toe = profile.daylight(T, groundAt, params.daylightReachMeters, step);
                         if (toe === Infinity) { undaylighted++; toe = params.daylightReachMeters; }

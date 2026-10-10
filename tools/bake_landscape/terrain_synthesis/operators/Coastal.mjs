@@ -336,22 +336,30 @@ async function coastalBluff(context) {
 
 /**
  * Cross-shore beach profile in landward distance d from the design shoreline: the Dean 1991 equilibrium curve h = -A x^(2/3) seaward
- * of the foreshore (x from a virtual origin chosen so the curve meets the straight foreshore at the swash depth), the straight
+ * of the foreshore (x from a virtual origin chosen so the curve meets the straight foreshore at the swash depth), optionally handing
+ * over at deanDepthMeters to a planar shelf at shelfSlopeDegrees that flattens at shelfFloorDepthMeters (AI 596 D4), the straight
  * foreshore 1:N through the waterline, the berm face, the flat berm and the descending backshore (Bosboom & Stive).
- * @param {{deanA:number,foreshoreSlopeRatio:number,swashDepthMeters:number,bermHeightMeters:number,bermDistanceMeters:number,bermFaceRunMeters:number,bermWidthMeters:number,backshoreSlopeDegrees:number}} params @param {number} seaLevel
+ * @param {{deanA:number,foreshoreSlopeRatio:number,swashDepthMeters:number,bermHeightMeters:number,bermDistanceMeters:number,bermFaceRunMeters:number,bermWidthMeters:number,backshoreSlopeDegrees:number,deanDepthMeters?:number|null,shelfSlopeDegrees?:number,shelfFloorDepthMeters?:number}} params @param {number} seaLevel
  */
 export function beachProfile(params, seaLevel) {
     const N = params.foreshoreSlopeRatio, A = params.deanA, swash = params.swashDepthMeters, foreshoreSeawardMeters = swash * N, bermDistance = params.bermDistanceMeters, faceRun = params.bermFaceRunMeters;
     const bermHeight = params.bermHeightMeters, bermWidth = params.bermWidthMeters, tanBackshore = Math.tan(params.backshoreSlopeDegrees * DEGREES);
     const x0 = foreshoreSeawardMeters - Math.pow(swash / A, 1.5), foreshoreTop = (bermDistance - faceRun) / N;
+    const deanDepth = params.deanDepthMeters ?? null, xDean = deanDepth === null ? Infinity : Math.pow(deanDepth / A, 1.5), tanShelf = Math.tan((params.shelfSlopeDegrees ?? 2) * DEGREES), floor = params.shelfFloorDepthMeters ?? 30;
     const heightAt = d => {
-        if (d < -foreshoreSeawardMeters) { const x = -d - x0; return seaLevel - A * Math.cbrt(x * x); }
+        if (d < -foreshoreSeawardMeters) {
+            const x = -d - x0;
+            if (x <= xDean) return seaLevel - A * Math.cbrt(x * x);
+            return seaLevel - Math.min(floor, deanDepth + (x - xDean) * tanShelf);
+        }
         if (d <= bermDistance - faceRun) return seaLevel + d / N;
         if (d <= bermDistance) return seaLevel + foreshoreTop + (bermHeight - foreshoreTop) * (d - (bermDistance - faceRun)) / faceRun;
         if (d <= bermDistance + bermWidth) return seaLevel + bermHeight;
         return seaLevel + bermHeight - (d - bermDistance - bermWidth) * tanBackshore;
     };
-    return Object.freeze({ x0, foreshoreSeawardMeters, foreshoreTop, bermDistance, bermWidth, heightAt });
+    // distances (landward, negative = seaward of the design shoreline) of the Dean handover and of the shelf floor, null without a handover
+    const deanDepthDistance = deanDepth === null ? null : -(xDean + x0), floorDistance = deanDepth === null ? null : -(xDean + (floor - deanDepth) / tanShelf + x0);
+    return Object.freeze({ x0, foreshoreSeawardMeters, foreshoreTop, bermDistance, bermWidth, heightAt, deanDepthDistance, floorDistance });
 }
 
 function measureBeachTransects(context, before, applied, profile, params) {
@@ -381,7 +389,7 @@ async function coastalBeach(context) {
     const before = snapshot(context, 'beach-before'), applied = scope.allocate('beach-applied', Float32Array, n), profile = beachProfile(params, seaLevel);
     const protect = params.protectPlan ? planProtection(context, { districts: true, points: true, radiusMeters: params.protectRadiusMeters }) : null;
     const band = params.beachBandMeters, blend = params.blendMeters, reach = params.offshoreReachMeters, seawardEnd = profile.foreshoreSeawardMeters, surf = seaLevel - params.surfDepthMeters, cellArea = spacingX * spacingZ;
-    const zones = { surf: 0, swash: 0, berm: 0, backshore: 0 };
+    const replaceOffshore = params.offshoreMode === 'replace', zones = { surf: 0, swash: 0, berm: 0, backshore: 0 };
     let raised = 0, lowered = 0, fillVolume = 0, cutVolume = 0, veneered = 0;
     for (let row = 0; row < rows; row++) {
         if (row % 64 === 0) context.checkpoint();
@@ -391,7 +399,7 @@ async function coastalBeach(context) {
             const G = heights[i];
             let designed, w;
             if (d >= -seawardEnd) { designed = profile.heightAt(d); w = blend > 0 ? 1 - smoothstep(band - blend, band, d) : 1; }
-            else { designed = Math.min(G, profile.heightAt(d)); w = blend > 0 ? 1 - smoothstep(reach - blend, reach, -d) : 1; }
+            else { const P = profile.heightAt(d); designed = replaceOffshore ? P : Math.min(G, P); w = blend > 0 ? 1 - smoothstep(reach - blend, reach, -d) : 1; }
             w *= (mask ? mask[i] : 1) * (protect ? protect.weight[i] : 1);
             if (w <= 0) continue;
             applied[i] = w;
@@ -408,7 +416,9 @@ async function coastalBeach(context) {
     }
     const measured = measureBeachTransects(context, before, applied, profile, params), shoreline = shorelineReport(context, before);
     scope.free('beach-before', 'beach-applied');
-    return { deanA: params.deanA, deanOriginMeters: round6(profile.x0), foreshoreSlopeRatio: params.foreshoreSlopeRatio, foreshoreSeawardMeters: round6(seawardEnd), foreshoreTopMeters: round6(profile.foreshoreTop), bermHeightMeters: params.bermHeightMeters,
+    return { deanA: params.deanA, deanOriginMeters: round6(profile.x0), offshoreMode: params.offshoreMode, deanDepthMeters: params.deanDepthMeters, deanDepthDistanceMeters: profile.deanDepthDistance === null ? null : round6(profile.deanDepthDistance),
+        shelfSlopeDegrees: params.deanDepthMeters === null ? null : params.shelfSlopeDegrees, shelfFloorDistanceMeters: profile.floorDistance === null ? null : round6(profile.floorDistance),
+        foreshoreSlopeRatio: params.foreshoreSlopeRatio, foreshoreSeawardMeters: round6(seawardEnd), foreshoreTopMeters: round6(profile.foreshoreTop), bermHeightMeters: params.bermHeightMeters,
         bermDistanceMeters: params.bermDistanceMeters, raisedSamples: raised, loweredSamples: lowered, fillVolumeCubicMeters: round6(fillVolume), cutVolumeCubicMeters: round6(cutVolume), veneeredSamples: veneered, zoneSamples: zones,
         protectedSamples: protect ? protect.protectedSamples : 0, transects: measured.transects, transectSummary: measured.summary, shoreline, createdLayers: created };
 }

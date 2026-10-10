@@ -68,6 +68,56 @@ Validate an installed cache in place at any time with
 `node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city')).passed))"`
 or by running `landscape/cache-install` without `--publish` against it.
 
+### Two coastal landscapes since AI 596 D4
+
+The cache root holds one directory per landscape id, and two coastal landscapes
+coexist deliberately:
+
+- `assets/public/landscape/coastal-city` is **coastal v2** (the imported design
+  ZIP, 2049² at 1.953125 m). It stays immutable and remains the viewer/server
+  default (`LANDSCAPE_DEFAULT_DIRECTORY`) and the landscape the existing browser
+  suites pin (`tests/shared/landscapeCacheTest.js` `COASTAL_V2`).
+- `assets/public/landscape/coastal-city-v3` is **coastal terrain v3** (procedural
+  synthesis of the approved relief variant B at 0.9765625 m, 4097², 341 nodes). It
+  is the landscape `src/app/city/specs/CoastalLandscapeCitySpec.js` pins
+  (`landscapeId: 'coastal-city-v3'`, an immutable `manifest.<sha256>.json`
+  snapshot and its revision; see `specs/landscape/LANDSCAPE_CITY_BINDING.md`). A new
+  native grid changes the addressing frame, so v3 is a new id, not a revision of
+  v2. Only a cache that retains that snapshot makes the city's landscape
+  `available`; v2 alone leaves it `missing` (`probeLandscapeCache` only ever looks
+  in the pinned id's directory).
+
+A cache bundle installs into its own id's directory by default
+(`landscape/cache-install:directory=auto`, see
+[cache_install/README.md](cache_install/README.md)); a directory holding another
+landscape is refused. Verify v3 in place with
+`node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')).passed))"`
+(the geology sidecar's `geology/manifest.json` is a current pointer like the
+appearance and field sidecars).
+
+#### Publishing v3 (the sequence)
+
+1. **Synthesis leaf** → `node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish`
+   writes `assets/public/landscape/coastal-city-v3/` (terrain, hierarchy, the v2
+   references copied with their identities, the terrain-fields sidecar and the
+   geology sidecar, `appearance: 'none'`); see [terrain_synthesis/README.md](terrain_synthesis/README.md).
+2. **Edit replay** (when a previous v3 publication carried explicit edits) →
+   `node tools/landscape_authoring/run.mjs replay --previous <previous landscape> --directory assets/public/landscape/coastal-city-v3`
+   re-applies the accepted batches in acceptance order; the evaluation order is in
+   `specs/landscape/LANDSCAPE_EDITING.md` ("Regeneration and replay"). v2 carries
+   no batches, so the first v3 publication replays nothing.
+3. **Appearance leaf** →
+   `node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:directory=assets/public/landscape/coastal-city-v3" --set landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json --publish`
+   (the shared `pythonExecutable`; the multiscale request names the landscape id, so
+   v3 has its own copy of the shipped request). The appearance cannot be copied
+   from v2: its binding key covers the grid.
+4. **Cache verification** → `verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')`
+   must pass (every payload, page and snapshot authenticated; pointers by schema).
+5. **Pin** → update `CoastalLandscapeCitySpec.js` to the id, the immutable snapshot
+   the leaf wrote (`manifest.<sha256>.json`) and its revision; transform and extent
+   stay (bounds remain 0..4000). `node --test tests/node/unit/landscape_cache_availability.test.js tests/node/unit/landscape_city_binding.test.js`
+   then checks the installed pin byte for byte.
+
 ## Preparation leaves
 
 AI 596 adds the [terrain synthesis](terrain_synthesis/README.md) leaves under the

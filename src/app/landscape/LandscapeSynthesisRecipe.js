@@ -163,6 +163,15 @@ const OPERATOR_RULES = Object.freeze({
         requireCondition(foreshoreTop <= value('bermHeightMeters'), `${label}: the 1:${value('foreshoreSlopeRatio')} foreshore reaches ${foreshoreTop} m before the berm face, above bermHeightMeters ${value('bermHeightMeters')}`);
         requireCondition(value('surfDepthMeters') > value('swashDepthMeters'), `${label}.surfDepthMeters must exceed swashDepthMeters`);
         requireCondition(value('blendMeters') <= value('beachBandMeters') && value('blendMeters') <= value('offshoreReachMeters'), `${label}.blendMeters must not exceed beachBandMeters or offshoreReachMeters`);
+        if (value('deanDepthMeters') !== null) {
+            requireCondition(value('deanDepthMeters') > value('swashDepthMeters'), `${label}.deanDepthMeters must exceed swashDepthMeters`);
+            requireCondition(value('shelfFloorDepthMeters') > value('deanDepthMeters'), `${label}.shelfFloorDepthMeters must exceed deanDepthMeters`);
+        }
+    },
+    'derive-land-cover': (params, label, definition) => {
+        const value = name => params[name] === undefined ? definition.parameters[name].default : params[name];
+        requireCondition(!value('planningClasses').includes(value('emergedLandClass')), `${label}.emergedLandClass must not be a planning class`);
+        requireCondition(new Set(value('planningClasses')).size === value('planningClasses').length && new Set(value('sandCoastalZones')).size === value('sandCoastalZones').length, `${label} class lists must not repeat ids`);
     },
     'coastal-reef': (params, label, definition) => {
         const value = key => params[key] === undefined ? definition.parameters[key].default : params[key];
@@ -262,7 +271,7 @@ function validateInputs(inputs) {
 function validateOperators(operators, recipe) {
     requireCondition(Array.isArray(operators) && operators.length >= 1 && operators.length <= LANDSCAPE_SYNTHESIS_LIMITS.operators, `recipe.operators must hold 1..${LANDSCAPE_SYNTHESIS_LIMITS.operators} operators`);
     const ids = new Set(), written = new Set();
-    let exported = null;
+    let exported = null, geologyFinalized = false;
     operators.forEach((entry, i) => {
         const label = `recipe.operators[${i}]`;
         requireKeys(entry, KEYS.operator, label);
@@ -281,13 +290,17 @@ function validateOperators(operators, recipe) {
         if (entry.op === 'import-map') requireCondition(recipe.inputs.imports.some(item => item.id === entry.params.importId), `${label} (import-map) importId ${JSON.stringify(entry.params.importId)} is not declared in recipe.inputs.imports`);
         if (entry.op === 'export-map') exported = exported ?? entry.id;
         else if (definition.family === 'inputs') requireCondition(exported === null, `${label} (${entry.op}) comes after export-map ${exported}; exports carry the recipe identity, so every enabled input operator must precede them`);
+        if (entry.op === 'derive-land-cover') requireCondition(geologyFinalized, `${label} (derive-land-cover) must follow an enabled geology-channels operator (the final flow, drainage, face mask and deposits)`);
+        if (entry.op === 'geology-channels') geologyFinalized = true;
         for (const layer of requires) requireCondition(written.has(layer), `${label} (${entry.op}) reads layer ${layer} before any enabled operator writes it`);
         for (const layer of flow.writes) written.add(layer);
     });
-    const enabled = operators.filter(entry => entry.enabled), resamples = enabled.filter(entry => entry.op === 'resample');
+    const enabled = operators.filter(entry => entry.enabled), resamples = enabled.filter(entry => entry.op === 'resample'), derives = enabled.filter(entry => entry.op === 'derive-land-cover');
     requireCondition(resamples.length <= 1, 'recipe.operators may enable at most one resample operator');
     if (resamples.length === 1) requireCondition(enabled[enabled.length - 1].op === 'resample', 'the resample operator must be the last enabled operator');
     if (recipe.working !== null && recipe.working.spacing > Math.max(recipe.grid.spacingX, recipe.grid.spacingZ)) requireCondition(resamples.length === 1, 'a coarser working grid requires an enabled resample operator at the end of recipe.operators');
+    requireCondition(derives.length <= 1, 'recipe.operators may enable at most one derive-land-cover operator');
+    requireCondition((derives.length === 1) === (recipe.outputs.coverPolicy === 'derive'), 'recipe.outputs.coverPolicy derive requires exactly one enabled derive-land-cover operator, and keep-source none');
     return written;
 }
 

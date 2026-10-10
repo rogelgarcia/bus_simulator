@@ -103,6 +103,18 @@ Example (the v2 "before" set):
 node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city --poses tools/landscape_review/poses/natural-world-v1.json --output tests/artifacts/screens/landscape/ai596/d1/poses/v2 --label v2
 ```
 
+Coastal terrain v3 (AI 596 D4) is its own cache directory; `--landscape` selects it the same
+way, and once its appearance is published the capture must settle with PBR materials (no
+`--allow-missing-appearance`):
+
+```text
+node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city-v3 --select NW-13 --output tests/artifacts/screens/landscape/ai596/d4/viewer-check --label v3
+```
+
+The tool serves the directory itself (`createLandscapeServer({landscapeDirectory})` on a free
+loopback port), so the default server and its v2 default directory are not involved. To open
+v3 interactively instead, see `tools/landscape_server/README.md` ("Opening coastal terrain v3").
+
 The tool serves the landscape directory with `createLandscapeServer` on a free loopback port,
 launches headless Chromium (`PLAYWRIGHT_EXECUTABLE_PATH` or the Playwright chromium-1234 build,
 `--use-angle=d3d11 --enable-gpu --ignore-gpu-blocklist`), opens `/screens/landscape_fabrication.html`,

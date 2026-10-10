@@ -32,7 +32,7 @@ test('Landscape cache tracking: the detector recognizes every cache publication 
         `elsewhere/payloads/${hash}.f32le`, `elsewhere/payloads/${hash}.u8`, `x/appearance/pages/${hash}.rgba8`, `x/fields/pages/${hash}.rgba8`, `x/manifest.${hash}.json`,
         `x/appearance/multiscale.${hash}.json`, `x/appearance/binding.${hash}.json`, `x/source/${hash}/material_masks/water.png`, 'x/height_m_float32_le.raw',
         'tests/fixtures/terrain.f32le', 'downloads/coastal_city_terrain_v2.zip']) assert.ok(cachePublication(file), file);
-    for (const file of ['src/app/landscape/LandscapeCache.js', 'tools/bake_landscape/CacheBundle.mjs', 'tools/bake_landscape/appearance/multiscale-v1.json',
+    for (const file of ['src/app/landscape/LandscapeCache.js', 'tools/bake_landscape/CacheBundle.mjs', 'tools/bake_landscape/appearance/multiscale-v1.json', 'tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json',
         'tools/bake_landscape/terrain_fields/recipe-v1.json', 'assets/public/pbr/landscape_grass_uniform_v1/pbr.landscape.config.json', 'specs/landscape/LANDSCAPE_MODEL.md',
         'tools/landscape_authoring/examples/grade_smooth_polygon.template.json']) assert.equal(cachePublication(file), null, file);
 });

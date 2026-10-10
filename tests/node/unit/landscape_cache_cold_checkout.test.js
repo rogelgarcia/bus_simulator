@@ -7,8 +7,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, symlinkSync, unlinkSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTORY } from '../../../src/app/landscape/index.js';
-import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+import { LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTORY, landscapeCacheDirectory } from '../../../src/app/landscape/index.js';
+import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { landscapeCacheSkip, pinnedLandscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const evidence = path.join(root, 'tests/artifacts/landscape_cache_history');
@@ -91,18 +92,23 @@ test('Cold checkout: no cache is checked out, and the fallback and tooling paths
     assert.match(authoring.output, /\[LandscapeCache\] manifest\.json is not installed/);
 });
 
-test('Cold checkout: landscape/cache-install installs a verified bundle into the ignored cache and the city pin becomes available',
-    { skip: skip || landscapeCacheSkip(), timeout: 10 * 60 * 1000 }, async () => {
+// Two bundles since AI 596 D4: the viewer/server default (coastal v2, which the suites of its retained history keep) and the landscape the
+// city pins (coastal-city-v3), each into its own id directory; one bundle when the pin and the default coincide.
+test('Cold checkout: landscape/cache-install installs the verified bundles into the ignored cache and the city pin becomes available',
+    { skip: skip || landscapeCacheSkip() || pinnedLandscapeCacheSkip(), timeout: 20 * 60 * 1000 }, async () => {
         const clone = path.join(evidence, 'cold');
         assert.ok(existsSync(path.join(clone, 'tools/baking/blender.local.json')), 'runs after the fallback test prepared the clean checkout');
-        const bundle = path.join(root, LANDSCAPE_DEFAULT_DIRECTORY);
-        const install = run(clone, ['tools/bake.mjs', '--target', 'landscape/cache-install', '--set', `landscape/cache-install:bundle=${bundle}`, '--publish']);
-        await record('cold-install.txt', install.output);
-        assert.equal(install.status, 0, install.output.slice(-4000));
+        const bundles = [...new Set([LANDSCAPE_DEFAULT_DIRECTORY, landscapeCacheDirectory(createCoastalLandscapeCitySpec().landscape.landscapeId)])];
+        for (const directory of bundles) {
+            const install = run(clone, ['tools/bake.mjs', '--target', 'landscape/cache-install', '--set', `landscape/cache-install:bundle=${path.join(root, directory)}`, '--set', `landscape/cache-install:directory=${directory}`, '--publish']);
+            await record(`cold-install-${path.posix.basename(directory)}.txt`, install.output);
+            assert.equal(install.status, 0, install.output.slice(-4000));
+            const receipt = JSON.parse(await readFile(path.join(clone, 'tests/artifacts/landscape_cache_history/cache-install-validation.json'), 'utf8'));
+            assert.equal(receipt.published, true);
+            assert.equal(receipt.destination, directory);
+        }
         assert.equal(git(clone, 'status', '--porcelain'), '', 'the installed cache stays ignored');
         assert.equal(git(clone, 'ls-files', '--', LANDSCAPE_CACHE_ROOT), '');
-        const receipt = JSON.parse(await readFile(path.join(clone, 'tests/artifacts/landscape_cache_history/cache-install-validation.json'), 'utf8'));
-        assert.equal(receipt.published, true);
         const tests = run(clone, ['--test', 'tests/node/unit/landscape_cache_availability.test.js', 'tests/node/unit/landscape_city_binding.test.js']);
         await record('cold-installed-node-tests.txt', tests.output);
         assert.equal(tests.status, 0, tests.output.slice(-4000));

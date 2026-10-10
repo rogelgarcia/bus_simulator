@@ -329,3 +329,22 @@ test('Synthesis engine: the extrapolate base removes a feather without a bench a
     assert.ok(profile.feasible && profile.endDeviationMeters.every(value => value < .25), `fitted ends ${profile.endDeviationMeters}`);
     roads.release();
 });
+
+test('Synthesis engine: an embankment edge descends from the boundary itself (no escarpment rim), fills a bank to the lower ground and leaves a short blended cut where the ground stands above the pad', async () => {
+    // a 10 m pad on flat 2 m ground to the west (fill side) and 18 m ground to the east (cut side); the embankment is 30 degrees, blended over 4 m
+    const grid = gridOf(64, 2, 1), polygon = [[100, 200], [160, 200], [160, 60], [100, 60]], ground = x => (x < 160 ? 2 : 18), DEG = Math.PI / 180;
+    const params = { polygon, heightMeters: 10, profile: 'embankment', slopeDegrees: 30, baseMode: 'daylight', daylightReachMeters: 100, combine: 'blend', blendMeters: 4 };
+    const result = await run(recipeOf(grid, [op('import', 'import-heights'), op('pad', 'landform-plateau', params)], { plan: false }), { readLandscape: sourceOf(x => ground(x)) });
+    const toe = 8 / Math.tan(30 * DEG);
+    for (let d = 1; d <= 40; d++) {
+        const actual = sampleAt(result, 100 - d, 130), expected = d <= toe - 4 ? 10 - d * Math.tan(30 * DEG) : d >= toe + 4 ? 2 : null;
+        if (expected !== null) assert.ok(Math.abs(actual - expected) < .05, `bank at d=${d}: ${actual} vs ${expected}`);
+        assert.ok(actual >= 2 - 1e-6 && actual <= 10 + 1e-6, `the bank never cuts below the ground or above the pad at d=${d}: ${actual}`);
+    }
+    assert.ok(Math.abs(sampleAt(result, 130, 130) - 10) < 1e-6 && Math.abs(sampleAt(result, 40, 130) - 2) < 1e-6, 'pad and far ground untouched');
+    // cut side: the ground above the pad is reached within the blend width, never trenched below either level
+    for (let d = 1; d <= 30; d++) { const actual = sampleAt(result, 160 + d, 130); assert.ok(actual >= 10 - 1e-6 && actual <= 18 + 1e-6, `cut at d=${d}: ${actual}`); if (d >= 5) assert.ok(Math.abs(actual - 18) < 1e-6, `ground restored beyond the blend at d=${d}: ${actual}`); }
+    assert.equal(result.report.operators[1].statistics.undaylightedSamples, 0);
+    assert.ok(result.report.operators[1].statistics.maxLowerMeters < 8.5, `nothing is lowered more than the pad step: ${result.report.operators[1].statistics.maxLowerMeters}`);
+    result.release();
+});

@@ -178,7 +178,7 @@ These hold in every variant. Report any deliberate exception for user approval.
 
 ### D4. Coastal terrain v3
 
-- [ ] **Generate v3.** Use the approved variant and spacing. The terrain must include:
+- [x] **Generate v3.** Use the approved variant and spacing. The terrain must include:
   - a legible high city: plateau, rims and escarpments, with ramps where roads climb;
   - hills and valleys with drainage, and gullies;
   - the coastal bluff sector with layered faces, talus and a wave-cut platform (R10);
@@ -186,15 +186,15 @@ These hold in every variant. Report any deliberate exception for user approval.
   - foredunes where space permits;
   - natural bathymetry with bars, reefs off the bluff, and the clean sandy swim zone;
   - seasonal creek beds or ponds where hydrology demands them.
-- [ ] **Derive land cover.** Derive natural land cover (sand, grass and scrub, forest soil, rock) from
+- [x] **Derive land cover.** Derive natural land cover (sand, grass and scrub, forest soil, rock) from
   the geology and record the derivation recipe. Keep planning classes exact. Report every class change.
-- [ ] **Publish.** Publish through the registered leaves: terrain, hierarchy, appearance bindings,
+- [x] **Publish.** Publish through the registered leaves: terrain, hierarchy, appearance bindings,
   terrain fields, surface detail, natural inference, and the new geology channels (versioned, with GLSL
   mirrors where rendering needs them).
   - Re-pin the coastal city fixture deliberately.
   - Editing, reports and revert must work on v3.
   - Explicit local edits must survive regeneration in a documented evaluation order.
-- [ ] **Gate.** All hard constraints and D1 targets pass in a measured report. Provide matched
+- [x] **Gate.** All hard constraints and D1 targets pass in a measured report. Provide matched
   before/after captures at every review pose and composites against R03, R04, R07, R10 and the plan.
   The user reviews them visually.
 
@@ -549,6 +549,76 @@ fixture to its GPU ceiling.
 Engine fix during D3: the depositing operators (`sediment-deposit`, `terraces`, `hydraulic-erosion`, `thermal-weathering`)
 now respect the repose plane of a cell's neighbours (refused material continues downstream, rolls to the lowest
 neighbour or is exported and counted); the D2 gate gained a `needles` check (19/19) and `tests/node/unit/landscape_synthesis_repose.test.js`.
+
+### D4 coastal terrain v3 — delivered 2026-10-09
+
+- **Generate v3.** `node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish` (recipe `recipes/coastal-v3.json`,
+  4097² at 0.9765625 m, variant B) publishes `assets/public/landscape/coastal-city-v3/` (revision
+  `synthesis-7045f619de9de74a367bc3a8`, snapshot `manifest.3846aed4…json`, 341 nodes, 762.9 MiB with fields and geology):
+  the legible high city (80 m plateau, 26.6 m escarpment at 59° over a 33° talus, roads climbing at 5.8% through 40 m
+  cut/fill shoulders), hills and valleys with 65 incised drainage lines (p90 5.8 m), the bluff sector (11.6 m faces at 68°
+  over a 30 m platform at +0.64 m, talus, strata), berm beaches (1.80 m at 31.5 m, foreshore 2.8°), foredunes (3.3 m on 11
+  of 13 transects, none in the corridor), bathymetry (Dean A 0.137 to −8 m, 2.0° shelf, bar at −2.2 m / 111 m, reef off
+  the bluff at −4…−1 m, swim zone clean sand) and ponds/creek beds where the drainage demands them (fluvial ponds, sediment
+  floors). Engine gaps closed: upsampling import, Dean-to-shelf beach, `derive-land-cover`, the 44-row targets evaluator,
+  two edge-profile faults fixed.
+- **Derive land cover.** `derive-land-cover` (rules in the catalog, recorded in the recipe and the receipt): 260,848 of
+  16,785,409 samples changed — sand +34,966, rock +56,260, grass +133,206, forest −222,423, water −2,009; planning classes
+  5–7 identical; the full transition matrix is in `tests/artifacts/screens/landscape/ai596/d4/v3/engine-report.json`.
+- **Publish.** Terrain, hierarchy (levels 0–4), references, terrain fields (`terrain-fields-8ae5a126…`), geology
+  (`geology-cf24152c…`, GLSL mirror `chunks/landscape/geology.glsl`), appearance (revision `appearance-b9c95172…`, 66.1 MiB, bound to the v3 revision, viewer check passed); surface detail and
+  natural inference come with the fields sidecar and the runtime recipes. City spec re-pinned to `coastal-city-v3` (snapshot `manifest.3846aed4…`, revision `synthesis-7045f619…`), cache bundle verified (1,885 files, 829 MiB), v2 kept as the default directory for the existing suites. Editing, planning reports and revert verified on a copy of v3 (13 of 13 checks; apply 2.9 s, revert 2.4 s, every sample exact). Explicit edits survive regeneration by replaying the accepted batches in the documented order (`BatchReplay.mjs`, unit-tested).
+- **Gate.** 44 of 44 targets and hard constraints pass in the measured report (`.../d4/v3/targets.md`, table in the spec);
+  matched captures at NW-01..13 and composites against R03, R04, R07, R10 and the plan: 13 of 13 poses captured on v3 with PBR appearance, 29 composite sheets (pose-NW-xx before/after, R03/R04/R07/R10 and plan references; R10's image is missing on disk, placeholder noted). Browser at the
+  shipped profile: nothing native before the first frame, 4 of 256 natives by the settled startup, peaks 416 / 448 MiB (the GPU budget ceiling), uploads ≤ 7.8 MiB per frame, 60 FPS vsync-bound with GPU 5.7 ms median, picking and queries exact at L4; the 1.5 px goal is met only at the overview, orthographic and return stops — the four ground stops degrade on the GPU budget, so the budgets must grow for v3 (D6). The user reviews the composites visually (`tests/artifacts/screens/landscape/ai596/d4/REPORT.md`).
+
+| Row | Measured | Target (column B) | Result |
+| --- | --- | --- | --- |
+| natural slope share ≥ 10° | 0.177 | >= 0.1 | pass |
+| share ≥ 20° | 0.033 | >= 0.03 | pass |
+| share ≥ 30° | 0.023 | >= 0.01 | pass |
+| steepest natural slope | 85.797 | >= 65 deg | pass |
+| face mask beyond 65° | 10,320 of 10,320 samples | every natural sample at or beyond 65 deg carries face mask >= 0.5 | pass |
+| local relief p90 over 100 m | 14.228 | >= 14 m | pass |
+| local relief p90 over 500 m | 48.414 | >= 40 m | pass |
+| high-city rim face height | 26.6 m | 20..30 m | pass |
+| rim face slope | 59.1° | 55..65 deg | pass |
+| rim talus slope | 33.0° | 30..35 deg | pass |
+| west cliff face height | 11.6 m (14 of 14 transects) | 10..16 m | pass |
+| west cliff face slope | 68.0° | 60..75 deg | pass |
+| wave-cut platform width | 30 m | 20..40 m | pass |
+| platform height | +0.64 m | +0.5..+1.5 m | pass |
+| drainage lines with ≥ 3 m incision | 65 | >= 8 lines with >= 3 m incision | pass |
+| incision p90 | 5.77 m | >= 2.5 m | pass |
+| berm height | 1.80 m (13 of 13 transects) | 1.5..2 m | pass |
+| berm distance from the waterline | 31.5 m | 25..40 m from the waterline | pass |
+| foreshore slope | 2.81° | 1.9..3.8 deg | pass |
+| foredune height | 3.27 m (11 of 13 transects) | 3..6 m where space permits | pass |
+| foredune in the corridor or districts | 0 samples | no foredune sample inside the open-view corridor or a district | pass |
+| Dean A | 0.137 m^(1/3) | 0.1..0.14 m^(1/3) | pass |
+| −8 m reached | every transect, median 444 m | the profile reaches -8 m on every transect | pass |
+| shelf slope −8 → −30 m | 1.98° | 1.5..2.5 deg from -8 m to -30 m | pass |
+| bar crest depth | −2.21 m (13 of 13) | -3..-2 m | pass |
+| bar crest distance | 111 m | 60..120 m seaward | pass |
+| reef off the bluff sector | tops p05 −3.99 / p95 −1.81 m, none in the swim zone | reef off the bluff sector with tops -4..-1 m, none in the swim zone | pass |
+| high city above the skyline from NW-08 | 3.69° | >= 3.5 deg | pass |
+| from NW-01 | 1.35° | >= 1.3 deg | pass |
+| from NW-09 | 1.704° | >= 1.7 deg | pass |
+| roads sustained grade | 5.80% | <= 6% over 50 m | pass |
+| roads short grade | 5.81% | <= 8% over 20 m | pass |
+| district bands (hard) | all seven inside their bands (7 Beach arrival 2.43–2.77 m) | every district p05..p95 inside its design band | pass |
+| districts flat ≤ 8° (hard) | ≥ 99.2% of urban samples | >= 0.95 of the urban samples below 8 deg | pass |
+| district edges designed (hard) | embankment 30° on 1, 2, 3, 5, 6, 7; escarpment on 4; median edge width 0–4 m | every district edge a designed treatment (escarpment, embankment, retaining, ramp; never feather) at most 25 m wide unless an escarpment | pass |
+| road topology (hard) | 41 of 41 roads on their alignments | 41 plan roads measured on their alignments | pass |
+| shoreline (hard) | max 0.50 m, no headlands or coves | every design vertex within +/-10 m | pass |
+| beach arrival (hard) | 2.51 m, slope 0.05° | flush at 2.6 m, no walls or boulders | pass |
+| bus stop (hard) | 2.65 m ± 0.024 | kept at 2.6 m | pass |
+| view corridor (hard) | sea visible from 1,164 m | sea visible from the upper end of the descent road | pass |
+| swim zone (hard) | 0 disallowed samples, seabed p95 4.8° | clean sandy seabed and sand on land | pass |
+| sea level (hard) | Y = 0 | Y = 0 | pass |
+| planning cover 5–7 (hard) | 0 mismatches | planning classes 5-7 identical to the source cover | pass |
+
+Not measured / limitations: The R10 reference image is not saved on disk (placeholder in its sheets); the v2 performance numbers are the historical AI577 D7 run, not re-measured; warm/reload runs were not measured; visual review points for the user: the high-city rim faces render as pale vertically stretched bands with sawtooth shading (heightfield faces, rock geometry is a later layer), the bluff reads as one dark rock band (talus and platform measured, not yet distinguishable by material), and the derived rock class peppers the forest with speckles (1.6% of forest). The cold-checkout cache test passes only once the commit carries the geology pointer (it clones HEAD); the appearance leaf writes its receipts to the fixed AI 576/577 paths (copies kept under `d4/appearance/`); the default landscape server's authoring API targets v2 unless `LANDSCAPE_DIRECTORY` points at v3; the browser e2e suites were not run (they keep their v2 constants).
 
 ## On completion
 

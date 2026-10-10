@@ -182,8 +182,10 @@ export function curvatureExtremes(grid, heights, cover, options = {}) {
 export function drainageIncision(grid, heights, cover, seaLevel, options = {}) {
     assertSynthesisGrid(grid, heights, cover);
     if (!Number.isFinite(seaLevel)) throw new Error('[SynthesisAnalysis] seaLevel must be finite');
-    const { channelAreaM2 = 20000, ridgeWindowMeters = 60, exponent = 1.1, conditioningSamples = 0 } = options;
+    const { channelAreaM2 = 20000, ridgeWindowMeters = 60, exponent = 1.1, conditioningSamples = 0, lineIncisionMeters = 3, lineMinLengthMeters = 50, lineCoverClasses = NATURAL_COVER_CLASSES } = options;
     if (!(channelAreaM2 > 0) || !(ridgeWindowMeters > 0) || !(exponent > 0) || !(conditioningSamples >= 0)) throw new Error('[SynthesisAnalysis] Incision options must be positive');
+    if (!(lineIncisionMeters > 0) || !(lineMinLengthMeters >= 0)) throw new Error('[SynthesisAnalysis] Line options must be positive');
+    const lineCover = classSet(lineCoverClasses);
     const memory = memoryOf(options), { columns, rows, spacingX, spacingZ } = grid, n = columns * rows;
     let levels = heights;
     if (conditioningSamples > 0) {
@@ -209,17 +211,19 @@ export function drainageIncision(grid, heights, cover, seaLevel, options = {}) {
     let at = 0;
     for (let i = 0; i < n; i++) if (channel[i]) { incision[at++] = ridge[i] - heights[i]; byCover[cover[i]] = (byCover[cover[i]] ?? 0) + 1; }
     incision.sort();
-    // 8-connected components of channel samples
-    const label = new Int32Array(n), stack = new Int32Array(channelSamples || 1);
+    // 8-connected components of channel samples; a component is a "line with deep incision" when at least lineMinLengthMeters of its
+    // natural-cover channel samples (one spacing each) stand lineIncisionMeters or more below their local ridge (AI 596 D4 drainage target)
+    const label = new Int32Array(n), stack = new Int32Array(channelSamples || 1), components = [];
     let networks = 0, largest = 0;
     for (let seed = 0; seed < n; seed++) {
         if (!channel[seed] || label[seed]) continue;
         networks++;
-        let top = 0, size = 0;
+        let top = 0, size = 0, deep = 0, deepest = 0, deepestAt = seed, naturalSamples = 0;
         stack[top++] = seed; label[seed] = networks;
         while (top) {
-            const cell = stack[--top], row = (cell / columns) | 0, column = cell - row * columns;
+            const cell = stack[--top], row = (cell / columns) | 0, column = cell - row * columns, depth = ridge[cell] - heights[cell];
             size++;
+            if (lineCover[cover[cell]]) { naturalSamples++; if (depth >= lineIncisionMeters) deep++; if (depth > deepest) { deepest = depth; deepestAt = cell; } }
             for (let k = 0; k < 8; k++) {
                 const r = row + TERRAIN_NEIGHBORS[k][0], c = column + TERRAIN_NEIGHBORS[k][1];
                 if (r < 0 || c < 0 || r >= rows || c >= columns) continue;
@@ -228,7 +232,10 @@ export function drainageIncision(grid, heights, cover, seaLevel, options = {}) {
             }
         }
         largest = Math.max(largest, size);
+        if (deep > 0) components.push({ network: networks, samples: size, naturalSamples, deepSamples: deep, deepLengthMeters: deep * spacingX, maxIncisionMeters: deepest, maxAt: { x: worldXOf(grid, deepestAt % columns), z: worldZOf(grid, (deepestAt - deepestAt % columns) / columns) } });
     }
+    components.sort((a, b) => b.maxIncisionMeters - a.maxIncisionMeters || b.deepLengthMeters - a.deepLengthMeters || a.network - b.network);
+    const lines = components.filter(entry => entry.deepLengthMeters >= lineMinLengthMeters);
     const summary = summaryOfSorted(incision, [50, 90]);
     memory.free('flood/filled', 'flood/order', 'flats/flat', 'flats/mask', 'flats/processing', 'flow/area', 'incision/outlet');
     if (conditioningSamples > 0) memory.free('incision/levels');
@@ -236,6 +243,7 @@ export function drainageIncision(grid, heights, cover, seaLevel, options = {}) {
         channelAreaM2, ridgeWindowMeters, ridgeWindowSamples: 2 * radius + 1, exponent, conditioningSamples, seaLevel,
         channelSamples, channelLengthMeters: channelSamples * spacingX, channelFractionOfSamples: channelSamples / n, networks, largestNetworkSamples: largest, channelSamplesByCover: byCover,
         incision: { mean: summary.mean, p50: summary.p50, p90: summary.p90, max: summary.max },
+        lines: { incisionMeters: lineIncisionMeters, minLengthMeters: lineMinLengthMeters, coverClasses: [...lineCoverClasses], networksWithDeepSamples: components.length, count: lines.length, deepest: components.slice(0, 16) },
         contributingArea: { maximumM2: maximumArea, cellAreaM2: spacingX * spacingZ },
         depressions: { outlets: flood.statistics.outlets, filledSamples: flood.statistics.filledSamples, maximumFillMeters: flood.statistics.maximumFillMeters },
         flats: { flatSamples: flats.statistics.flatSamples, flats: flats.statistics.flats, undrainedFlatSamples: flats.statistics.undrainedFlatSamples } };

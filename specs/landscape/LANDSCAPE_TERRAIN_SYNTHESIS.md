@@ -129,14 +129,29 @@ are recorded inputs.
 
 | Family | Operators (D1 subset in bold) |
 | --- | --- |
-| Inputs | **`import-heights`** (landscape directory or interchange file), **`plan-inputs`** (districts, roads, shoreline, beach points, land cover → masks and distance fields), `import-map` (declared interchange map combined into a float layer under the mask) |
+| Inputs | **`import-heights`** (landscape directory or interchange file; a source coarser than the recipe grid by an integer factor over the same extent is upsampled once with the `resample` filter — `catmull-rom` (separable, edges continued linearly, so a linear ramp is reproduced exactly), `bilinear` or `nearest` — and its cover takes the nearest source label; the statistics report `importResample {factor, filter, cover, target}`, and upsampled samples are interpolation that the provenance never counts as source detail; a source on the recipe grid and the decimation onto a coarser working grid are unchanged since D1), **`plan-inputs`** (districts, roads, shoreline, beach points, land cover → masks and distance fields), `import-map` (declared interchange map combined into a float layer under the mask) |
 | Landforms | **`landform-plateau`** (district/polygon target with an edge profile: escarpment, embankment, retaining slope, ramp), **`landform-hills`** (bounded ridged multi-scale relief), **`landform-valley`**, `landform-headland`, `landform-cove` |
 | Warps and noise | **`warp`**, **`noise`** (world-anchored, bit-exact `LandscapeSurfaceNoise` octaves) |
 | Erosion | `fluvial-erosion` (stream power over a Priority-Flood/D8 drainage network, implicit), `hydraulic-erosion` (seeded droplet detail erosion), `thermal-weathering` (angle of repose per lithology, talus deposits), `sediment-deposit` |
 | Geology | `strata` (dipping layer stack with hardness), `terraces` |
-| Coastal | `coastal-bluff` (bluff retreat with a wave-cut platform), `coastal-beach` (equilibrium profile, berm, swash zone, foreshore slope), `coastal-foredune`, `coastal-nearshore` (bars), `coastal-reef` |
+| Coastal | `coastal-bluff` (bluff retreat with a wave-cut platform), `coastal-beach` (equilibrium profile, berm, swash zone, foreshore slope; since D4 `offshoreMode` `cut` lowers the seabed to the profile only where it is shallower (the D2 behaviour) or `replace` sets it, depositing beach sand where the seabed rises, and `deanDepthMeters` hands the Dean curve over at that depth to a planar shelf at `shelfSlopeDegrees` that flattens at `shelfFloorDepthMeters`, the handover and floor distances reported), `coastal-foredune`, `coastal-nearshore` (bars), `coastal-reef` |
 | Constraints | **`constrain-districts`**, **`constrain-roads`** (grade-limited centerline profile, designed cut/fill shoulders), **`constrain-shoreline`**, **`constrain-points`** (beach arrival, bus stop, view corridor, swim zone), **`constrain-runway`**, **`height-cap`** |
-| Output | **`resample`**, `geology-channels`, `export-map` (working-grid layer → interchange map with the recipe identity as provenance) |
+| Output | **`resample`**, `geology-channels`, `derive-land-cover` (D4: the natural land cover of every sample from the final geology after `geology-channels`, requires `outputs.coverPolicy: 'derive'`; see below), `export-map` (working-grid layer → interchange map with the recipe identity as provenance) |
+
+`derive-land-cover` writes the `cover` layer in a fixed precedence, every rule a catalog parameter with units and ranges: the
+`planningClasses` (5 urban, 6 road, 7 runway) are copied from the source cover exactly wherever they occur; samples below sea level
+become 0 water; 1 sand where the deposit is beach or dune sand or the coastal zone is one of `sandCoastalZones` (swash, berm,
+backshore, foredune); 4 rock where the face mask reaches `faceMaskThreshold` (0.5), the slope reaches `rockSlopeDegrees` (40°),
+talus is at least `talusRockMinMeters` (0.5 m) thick, or bedrock is exposed (mantle ≤ `exposedMantleMeters` 0.05 m) on a slope of
+at least `bedrockSlopeDegrees` (25°) in a stratum of hardness ≥ `rockHardnessThreshold` (0.6; needs the `hardness` layer of
+`strata`, else that rule is off and reported); 2 grass and scrub on alluvium valley floors (alluvium ≥ `alluviumGrassMinMeters` 0.3 m
+on slopes ≤ `valleyFloorSlopeDegrees` 6°); otherwise the source class where it is natural (the forest/grass partition of the source
+is kept wherever the geology is neutral: regolith, colluvium or thin alluvium on gentle ground) and `emergedLandClass` (2) where the
+source held water. The statistics carry the from → to transition matrix with sample counts, the per-class totals before and after
+and the count each rule decided. The recipe validator requires the operator after an enabled `geology-channels` (final flow,
+drainage, face mask and deposits) and exactly one such operator when `outputs.coverPolicy` is `derive` (none for `keep-source`);
+under `derive` the executor publishes the working cover as the output cover, nearest-upsampled from a coarser working grid with the
+planning classes restored from the native cover exactly (reported as `outputCover`).
 
 Each operator reads and writes named layers: `height`, `cover`, the plan layers (`districtId`, `landMask`,
 `roadDistance`, `roadHeight`, `roadWidth`, `roadIndex`, `shoreSigned`, `corridorMask`, `runwayMask`,
@@ -165,7 +180,14 @@ reports `reposeLimitedSamples` with the deferred, exported or held volume.
 A plateau (`landform-plateau`, `constrain-districts`) carries its target outward from the polygon boundary
 with a profile: `escarpment` (flat rim, rock face at `faceSlopeDegrees` for `faceDropMeters`, talus apron at
 `talusSlopeDegrees`), `embankment`, `retaining` (bounded by the steepest slope a heightfield holds), `ramp` or
-`feather` (the v2 smoothstep, kept for comparison). The base the profile descends to is measured along the
+`feather` (the v2 smoothstep, kept for comparison). The rim belongs to the escarpment alone: an embankment or
+retaining slope descends from the boundary and its daylight march starts there (AI 596 D4; before, the march
+skipped the escarpment's 12 m default rim and cut a trench along the descent around every embankment pad). The
+profiles only descend, so a pad below the surrounding ground gets its cut from `combine: blend` (the boundary
+step blended over `blendMeters`: a short retaining cut), the fill side the declared slope. Samples farther from
+the boundary than `daylightReachMeters` keep their ground (also D4: `blend` used to mix them with the descent at
+the reach inside the blend band, a ring lowered by half the descent around every pad; `max` and `replace` gave the
+ground there already and are unchanged). The base the profile descends to is measured along the
 outward normal on the pre-operator ground: `daylight` marches until the descent meets the ground, `probe` reads
 the ground at `baseProbeMeters` and cuts everything above it (removes an old feather, leaves a bench),
 `extrapolate` continues the natural slope measured beyond the probe distance back under the old feather and
@@ -218,9 +240,10 @@ revision and native chunk hashes (staleness shares the terrain-fields semantics)
 recipe identity, strict validation, exact JavaScript samplers (`sampleLandscapeGeologyPage`, bilinear on the
 encoded bytes then decoded; `sampleLandscapeGeologyCategory`, nearest aligned label) and the GLSL decode mirror
 `chunks/landscape/geology.glsl` (constants, `landscapeGeologyDecode`; not included by any program until a
-consumer renders geology). The `geology-channels` operator runs once, last: it derives `faceMask`, recomputes
-`flow` and `drainage` on the final surface, normalizes `wear`/`deposition` from meters to 0..1 and fills missing
-layers with their neutral values (recorded as defaulted). Publication (`geology/GeologyPreparation.mjs`) follows
+consumer renders geology). The `geology-channels` operator runs once, after every operator that moves the surface:
+it derives `faceMask`, recomputes `flow` and `drainage` on the final surface, normalizes `wear`/`deposition` from
+meters to 0..1 and fills missing layers with their neutral values (recorded as defaulted); only `derive-land-cover`
+(which reads the finalized layers), `export-map` and `resample` may follow it. Publication (`geology/GeologyPreparation.mjs`) follows
 the fields pattern: candidate pages, byte-level validation, manifest-last switch under the authoring lock.
 The sidecar limit is 1 MiB (`LANDSCAPE_GEOLOGY_LIMIT`, AI 596 D3; 256 KiB before): measured on the real
 preparation, a 341-node tree (4097² at 0.9765625 m) serializes to 283,435 bytes and a 1365-node tree (8193²)
@@ -245,7 +268,7 @@ new versioned file.
 | `landscape/synthesis/relief-study` | D1: diagnose the current terrain, synthesize the coarse relief variants from their recipes, measure constraints and targets, render hillshades, slope maps, profiles and statistics |
 | `landscape/synthesis/fixture` | D2 gate: the synthetic 1 × 1 km plateau/road/shoreline fixture with determinism, seam and constraint checks |
 | `landscape/synthesis/resolution-study` | D3: the fixture recipe at 1.953125, 0.9765625 and 0.48828125 m (and, with `city-extent=true`, the analytic base over 4 × 4 km at 1.953125 and 0.9765625 m through a reduced recipe; `city-extent=only` re-runs that pair alone into the existing receipt) written as standalone saved landscapes `ai596-d3-fixture-<tag>` with the `procedural-synthesis` provenance and measured for data size, hierarchy depth and nodes, synthesis and hierarchy seconds, peak tracked memory, relief, the height agreement between spacings and feature sharpness on fixed world geometry, with `[1.953 \| 0.977 \| 0.488]` hillshade composites; `--publish` writes the landscapes under the cache root for the browser measurements |
-| `landscape/synthesis/coastal-v3` | D4: generate, validate and publish coastal terrain v3 with its geology channels |
+| `landscape/synthesis/coastal-v3` | D4: run `tools/bake_landscape/terrain_synthesis/recipes/coastal-v3.json` once (4097² at 0.9765625 m from the v2 base upsampled 2×; `working=1953` iterates on the 1.953125 m working grid with the final resample), evaluate every column-B declared target and every hard plan constraint (`analysis/TargetsReport.mjs`: one `{id, kind, measured, target, passed, note}` row each, including `district-edges`, which lists every district's recipe edge profile (never `feather`) beside the measured edge outside its boundary — median slope of the first 20 m, width until the surface flattens, step — and fails a feather, an un-re-imposed district or an edge wider than 25 m unless it is an escarpment; the leaf fails on any failing row after writing the receipt and images), render hillshade, slope, elevation, relief, coastal-zone, deposit, drainage and cover maps, the operator sheet and the beach, bathymetry, bluff, rim and route profiles, write the landscape `coastal-city-v3` through `writeSynthesizedLandscape` (references copied from v2, appearance none because the grid changed, fields re-baked under `recipes/terrain-fields-coastal-v3.json`, the `procedural-synthesis` provenance) and prepare, validate and publish the geology sidecar manifest-last under the authoring lock (`geology=publish`, native runs only); `--publish` writes under `landscape-root` (default the cache root), otherwise under the output directory; `replay-edits=<previous landscape>` replays its accepted edit batches through `tools/landscape_authoring/BatchReplay.mjs` (skipped with a logged note when that module is absent); receipt `tests/artifacts/screens/landscape/ai596/d4/v3/coastal-v3.{json,md}` (`landscape-coastal-v3` schema 1) with the pass/fail table, per-operator timings, peak tracked memory, bytes on disk, the land cover transition matrix, the published revision and the immutable manifest snapshot name |
 
 All are Node-only (`configurationPaths: []`), excluded from production `all` and the `landscape` import parent,
 and keep the authoring lock, candidate validation and manifest-last publication gates of the existing leaves.
@@ -428,6 +451,123 @@ with resolution and up to 135 m on the 4 km pair) is fixed by the repose bound (
 `needles` check; before the fix the ancestor errors (up to 141 m) forced native residency everywhere and the 4 km 0.977 m
 fixture to its GPU ceiling.
 
+## D4 coastal terrain v3 (2026-10-09)
+
+Coastal terrain v3 is the landscape `coastal-city-v3` in `assets/public/landscape/coastal-city-v3/` (a new landscape id: the
+model forbids reinterpreting an id under a new native grid; v2 stays immutable in `coastal-city/` and remains the viewer,
+server and bake default directory for the existing suites), revision `synthesis-7045f619de9de74a367bc3a8`, immutable
+snapshot `manifest.3846aed4c17a7125df21eab7f3b486eff82daa2e5e0f3fc0ab084dc02689e9ef.json`, 4097² at 0.9765625 m
+(maxLevel 4, 341 nodes, 250 m chunks), provenance `procedural-synthesis` (recipe `tools/bake_landscape/terrain_synthesis/recipes/coastal-v3.json`,
+seed 596400, identity `synthesis-da623d87a672561647b22b5b`, source spacing 0.9765625 m, v2 imported at 1.953125 m and
+upsampled ×2 with Catmull-Rom, never counted as detail), the 29 v2 planning references copied with their identities,
+terrain fields `terrain-fields-8ae5a126ff397de346c5aea3` (341 pages, recipe `terrain-fields-coastal-v3.json` with a
+1,792 MiB working limit) and geology `geology-cf24152c9156cf1bc425da74` (341 pages, 8 field channels + 4 categories).
+On disk 762.9 MiB in 1,828 files (fields 382.8 MB, geology 275.4 MB, terrain payloads 107.9 MB, references 32.9 MB).
+Appearance: `node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:directory=assets/public/landscape/coastal-city-v3" --set "landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json" --publish` published revision `appearance-b9c951722dd0824f9f25d8a9` in 6.1 s (54 bounded pages, 36 unique, 13.4 MB; 16 multiscale pages, 55.6 MB; 66.1 MiB in 57 files) bound to the v3 revision (binding key `30bb4ee6…`, alias file byte-equal); the headless viewer loads v3 with PBR materials and terrain fields (NW-13 check: ready 1.5 s, settled 17.6 s, LOD 1–4, 22 tiles, 0 appearance errors). The cache bundle verifies before and after the appearance bake (1,828 → 1,885 files, 762.9 → 829.0 MiB, 5 pointers including `geology/manifest.json`).
+
+Generation: the leaf `landscape/synthesis/coastal-v3` runs the 34-operator recipe (variant B landforms: massif dome,
+±42 m ridged hills, the west bluff cut 115 m landward of the design shoreline, the 80 m high city with a 25 m escarpment
+at 60° over a 34° talus; strata; fluvial 150 iterations at retainRate 0.003, hydraulic, thermal, sediment, terraces;
+coastal exposure, bluff retreat with the wave-cut platform (talus 4% of the cut), Dean equilibrium beach handing over to a
+1.5–2.5° shelf, foredunes outside the corridor, nearshore bar, reef off the bluff sector; district re-imposition with
+designed edges — 30° embankments with a 5 m blend on districts 1, 2, 3, 5, 6 and 7, the escarpment on 4, the corridor
+descent before the plaza and the road fit; roads at 5.8% as one network with 40 m cut/fill shoulders; shoreline, runway,
+90 m cap; geology channels; land cover derived from the geology), evaluates every column-B target and hard constraint
+(`analysis/TargetsReport.mjs`, 44 rows, the leaf fails on any failing row) and publishes. Nine iterations on the 1.953 m
+working grid (≈3.5 min each) preceded the native run: engine 863 s (fluvial 468, high-city plateau 217, hydraulic 30),
+peak 1,985 MB tracked of a 3 GiB limit, landscape write 115 s (fields 103, hierarchy 6), geology 14 s, 1,028 s in all.
+
+Land cover derivation (`derive-land-cover`, rules declared in the catalog): water below sea level; sand where the deposit
+is beach or dune sand or the coastal zone is swash, berm, backshore or foredune; rock where the face mask ≥ 0.5, the slope
+≥ 40°, talus ≥ 0.5 m or hard bedrock is exposed (mantle ≤ 0.05 m, slope ≥ 25°, hardness ≥ 0.6); grass on alluvial floors
+≥ 0.3 m at ≤ 6°; otherwise the source class; planning classes 5–7 copied exactly. Of 16,785,409 samples 260,848 changed:
+water −2,009 (beach sand raised above the sea), sand +34,966, rock +56,260 (faces 10,315, slopes 56,407, talus 46,306,
+exposed bedrock 82,997 decided), forest −222,423, grass +133,206 (alluvial floors 60,547), planning 5/6/7 identical
+(2,760,708 / 211,900 / 18,984); the full from→to matrix is in the receipt's engine report.
+
+Measured natively (`tests/artifacts/screens/landscape/ai596/d4/v3/targets.md`; natural land = cover 1–4 above sea level):
+
+| Row | Measured | Target (column B) | Result |
+| --- | --- | --- | --- |
+| natural slope share ≥ 10° | 0.177 | >= 0.1 | pass |
+| share ≥ 20° | 0.033 | >= 0.03 | pass |
+| share ≥ 30° | 0.023 | >= 0.01 | pass |
+| steepest natural slope | 85.797 | >= 65 deg | pass |
+| face mask beyond 65° | 10,320 of 10,320 samples | every natural sample at or beyond 65 deg carries face mask >= 0.5 | pass |
+| local relief p90 over 100 m | 14.228 | >= 14 m | pass |
+| local relief p90 over 500 m | 48.414 | >= 40 m | pass |
+| high-city rim face height | 26.6 m | 20..30 m | pass |
+| rim face slope | 59.1° | 55..65 deg | pass |
+| rim talus slope | 33.0° | 30..35 deg | pass |
+| west cliff face height | 11.6 m (14 of 14 transects) | 10..16 m | pass |
+| west cliff face slope | 68.0° | 60..75 deg | pass |
+| wave-cut platform width | 30 m | 20..40 m | pass |
+| platform height | +0.64 m | +0.5..+1.5 m | pass |
+| drainage lines with ≥ 3 m incision | 65 | >= 8 lines with >= 3 m incision | pass |
+| incision p90 | 5.77 m | >= 2.5 m | pass |
+| berm height | 1.80 m (13 of 13 transects) | 1.5..2 m | pass |
+| berm distance from the waterline | 31.5 m | 25..40 m from the waterline | pass |
+| foreshore slope | 2.81° | 1.9..3.8 deg | pass |
+| foredune height | 3.27 m (11 of 13 transects) | 3..6 m where space permits | pass |
+| foredune in the corridor or districts | 0 samples | no foredune sample inside the open-view corridor or a district | pass |
+| Dean A | 0.137 m^(1/3) | 0.1..0.14 m^(1/3) | pass |
+| −8 m reached | every transect, median 444 m | the profile reaches -8 m on every transect | pass |
+| shelf slope −8 → −30 m | 1.98° | 1.5..2.5 deg from -8 m to -30 m | pass |
+| bar crest depth | −2.21 m (13 of 13) | -3..-2 m | pass |
+| bar crest distance | 111 m | 60..120 m seaward | pass |
+| reef off the bluff sector | tops p05 −3.99 / p95 −1.81 m, none in the swim zone | reef off the bluff sector with tops -4..-1 m, none in the swim zone | pass |
+| high city above the skyline from NW-08 | 3.69° | >= 3.5 deg | pass |
+| from NW-01 | 1.35° | >= 1.3 deg | pass |
+| from NW-09 | 1.704° | >= 1.7 deg | pass |
+| roads sustained grade | 5.80% | <= 6% over 50 m | pass |
+| roads short grade | 5.81% | <= 8% over 20 m | pass |
+| district bands (hard) | all seven inside their bands (7 Beach arrival 2.43–2.77 m) | every district p05..p95 inside its design band | pass |
+| districts flat ≤ 8° (hard) | ≥ 99.2% of urban samples | >= 0.95 of the urban samples below 8 deg | pass |
+| district edges designed (hard) | embankment 30° on 1, 2, 3, 5, 6, 7; escarpment on 4; median edge width 0–4 m | every district edge a designed treatment (escarpment, embankment, retaining, ramp; never feather) at most 25 m wide unless an escarpment | pass |
+| road topology (hard) | 41 of 41 roads on their alignments | 41 plan roads measured on their alignments | pass |
+| shoreline (hard) | max 0.50 m, no headlands or coves | every design vertex within +/-10 m | pass |
+| beach arrival (hard) | 2.51 m, slope 0.05° | flush at 2.6 m, no walls or boulders | pass |
+| bus stop (hard) | 2.65 m ± 0.024 | kept at 2.6 m | pass |
+| view corridor (hard) | sea visible from 1,164 m | sea visible from the upper end of the descent road | pass |
+| swim zone (hard) | 0 disallowed samples, seabed p95 4.8° | clean sandy seabed and sand on land | pass |
+| sea level (hard) | Y = 0 | Y = 0 | pass |
+| planning cover 5–7 (hard) | 0 mismatches | planning classes 5-7 identical to the source cover | pass |
+
+One needle remains (2.39 m at (672, 3587), −4.0 m in the sea off the bluff sector, reported, below the land gate).
+
+Publication, pin and editing (workstream B): The city spec `src/app/city/specs/CoastalLandscapeCitySpec.js` pins `coastal-city-v3` (snapshot `manifest.3846aed4…json`, 459,703 B, revision `synthesis-7045f619de9de74a367bc3a8`; transform and extent unchanged); the cache availability probe, `landscape/cache-install` (destination `auto` = the bundle's own id directory, a foreign id is refused, the geology pointer is authenticated) and the city-binding suites resolve the directory from the binding's id; v2 stays the viewer, server and bake default (`LANDSCAPE_DEFAULT_DIRECTORY`) and the e2e suites keep it through `tests/shared/landscapeCacheTest.js` (`COASTAL_V2`). The viewer opens v3 with `?landscape=/assets/public/landscape/coastal-city-v3/manifest.json`, the server with `LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3`.  Editing, reports and revert on a copy of v3 (`tests/artifacts/screens/landscape/ai596/d4/editing/edit-gate.md`, 13 of 13 checks): a grade (19.84 → 17.38 m) + 7 m smooth + sand batch on a ~60 m hexagon at the chunk corner (2500, 2250) applies in 2.87 s (4 natives, 5 ancestors at depth 4, 2,525 changed occurrences, 16,908,544 native samples equal to the independent recomputation, 5,614,165 aligned ancestor samples bit-equal with conservative errors, 159,340 border samples identical, working set 2,377,459 B of 8 MiB, manifest 464,515 B); the district-4 footprint report (3,645 probes, elevation 79.71–80.33 m, slope max 8.23°) and the high-city south ascent corridor report (max grade 5.82%, 100% ≤ 6%) run on the edited revision in 0.07 / 0.11 s; revert in 2.44 s restores every chunk bit for bit (22,522,709 samples, 611 payloads unchanged, tombstone retained); queries exact at 1,000 vertices and 1,000 cell centres. Explicit edits survive regeneration through `tools/landscape_authoring/BatchReplay.mjs` (`replayAcceptedBatches`; CLI `node tools/landscape_authoring/run.mjs replay --previous <dir> --directory <dir>`; the `replay-edits` option of the coastal-v3 leaf): the accepted batches of the previous landscape are re-applied in acceptance order through the bounded store with `replayedFrom` provenance per operation, idempotently; a batch outside the target bounds or whose smooth radius is invalid at the target spacing is skipped with a coded reason, never silently dropped. The documented evaluation order (`LANDSCAPE_EDITING.md`, "Regeneration and replay") is recipe → saved landscape → fields and geology sidecars → replay → appearance bake; edits are never baked into the recipe. Verified on the 1 km fixture (bit-identical channel hashes after replay, 3 of 3 unit tests).
+
+Browser (workstream C; harness `tests/headless/e2e/landscape_resolution.pwtest.js` with `LANDSCAPE_RESOLUTION_ROUTE=natural-world` (NW-13 overview → flyover to NW-10 → NW-03 → NW-08 → NW-01 → orthographic probe patch on the high-city south flank → return), shipped profile 512/448 MiB with the surface cache on, 1920 × 1080 DPR 1, NVIDIA RTX 3060 through ANGLE/D3D11, Chromium 151, 30 warm-up + 120 sampled frames per stop, no bake running; receipt `tests/artifacts/screens/landscape/ai596/d4/browser/coastal-city-v3/report.json`, `comparison.md`):
+
+| Measure | v2 (AI577 D7 standard, cold, historical) | v3 (natural-world route) |
+| --- | ---: | ---: |
+| Startup natives before the first frame / by settled | 0 | 0 / 4 of 256 |
+| Coarse / settled startup ms (compile ms) | 810 / 9,623 | 878 / 12,106 (469) |
+| Peak controlled CPU / estimated GPU MiB | 243.2 / 339.0 | 416.5 / 448.0 (GPU at the ceiling) |
+| Upload max per frame MiB (cap 8) / route total | 5.59 | 7.77 / 1,037 |
+| Frame ms median / p95 | 17.50 / 18.10 | 16.70 / 16.80 (vsync) |
+| Synchronous CPU ms median / p95 | 0.70 / 1.60 | 2.00 / 3.70 |
+| GPU ms median / p95 | 1.02 / 2.96 | 5.71 / 7.86 |
+| Max triangles / draws | 1,333,422 / 15 | 4,577,966 / 39 |
+| Settle ms | approach 4,222 | flyover 5,697, bluff toe 7,189, low city 8,295, beach 6,696, ortho 7,195, return 2,390 |
+| 1.5 px geometry target | reached | met at the overview, orthographic and return stops; missed at the four ground stops (gpu-budget; appearance mask capacity, 17 slots) |
+| Picking / queries | — | 64 of 64 hits, max error 1.1e-13 m at L4; 32 of 32 vertices and 32 of 32 cell centres exact |
+| Disposal | zero | 0 B CPU / 0 B GPU |
+
+Finding: with PBR appearance and 25 cm surface detail the shipped 512/448 MiB profile holds v3 only at a degraded level at the ground poses (achieved 2.7–80 px against the 1.5 px goal, appearance 48–96 MiB GPU, mask slots exhausted); the budgets must grow for v3 (`LANDSCAPE_STREAMING_BUDGETS`, `landscapeSurfaceCacheBudgets`, mask slots) and be re-measured — carried into D6 integrated acceptance. Frame time stays vsync-bound at 60 FPS.
+
+Captures and composites: all 13 poses settled on v3 with PBR appearance (`tests/artifacts/screens/landscape/ai596/d4/poses/v3/`, 112 s; v3 ground at the eye-height poses re-resolved: NW-03 1.84 m, NW-04 15.13 m, NW-07 40.99 m); composites under `.../d4/composites/`: `pose-NW-01..13.png` [v2 before | v3 after], `v3-R03-NW-07.png`, `v3-R03-NW-05.png`, `v3-R04-hillshade.png`, `v3-R07-NW-11.png`, `v3-R07-NW-10.png`, `v3-R10-NW-03.png`, `v3-R10-NW-04.png`, `v3-plan-topographic.png`, `v3-plan-surface.png`, plus hillshade/slope/profile sheets and `contact-sheet-v3.png`; the review report is `tests/artifacts/screens/landscape/ai596/d4/REPORT.md`. The R10 reference image is not on disk (only R01–R07 are saved; R08–R10 were supplied in conversation), so its sheets carry a labelled placeholder in the reference slot.
+
+Engine faults fixed while authoring v3 (unit-tested, D2 gate 19/19 after each): `EdgeProfiles` started the daylight march at
+the escarpment's 12 m rim for embankment and retaining profiles (a trench around every pad); `applyPlateau` blended
+samples beyond `daylightReachMeters` to the reach descent under `combine: blend` (a ring lowered by half the descent 200 m
+out). Both paths now leave the ground alone.
+
+Limitations recorded: The R10 reference image is not saved on disk (placeholder in its sheets); the v2 performance numbers are the historical AI577 D7 run, not re-measured; warm/reload runs were not measured; visual review points for the user: the high-city rim faces render as pale vertically stretched bands with sawtooth shading (heightfield faces, rock geometry is a later layer), the bluff reads as one dark rock band (talus and platform measured, not yet distinguishable by material), and the derived rock class peppers the forest with speckles (1.6% of forest). The cold-checkout cache test passes only once the commit carries the geology pointer (it clones HEAD); the appearance leaf writes its receipts to the fixed AI 576/577 paths (copies kept under `d4/appearance/`); the default landscape server's authoring API targets v2 unless `LANDSCAPE_DIRECTORY` points at v3; the browser e2e suites were not run (they keep their v2 constants). The v2 e2e suites keep their pinned constants on
+`coastal-city`; the viewer's `50cm`/`25cm` surface-detail modes count levels below a 1.953 m grid (one level fewer at
+0.977 m); the massif stays a smoothstep dome under the erosion; the fields and geology bakes still assemble the full
+native grid (working limits raised and recorded in their recipes).
+
 ## Status
 
 - D1 relief study: delivered (engine D1 subset, analysis, review poses and captures, three variants).
@@ -438,4 +578,6 @@ fixture to its GPU ceiling.
   operators).
 - D3 finer authoritative resolution: delivered 2026-10-09 (0.9765625 m chosen; resolution study, browser harness,
   contracts, edit gate; 548 landscape unit tests).
-- D4 coastal terrain v3: next.
+- D4 coastal terrain v3: delivered 2026-10-09 (`coastal-city-v3`, 44/44 targets and constraints, pinned by the city
+  spec; appearance, fields and geology published).
+- D5 far-field surround: next.

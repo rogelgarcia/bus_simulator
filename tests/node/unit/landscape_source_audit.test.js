@@ -8,13 +8,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COASTAL_SOURCE_SHA256, decodeGrayscaleIdsPng, sha256 } from '../../../tools/bake_landscape/CoastalArchive.mjs';
 import { COASTAL_CHECKPOINTS } from '../../../tools/bake_landscape/CoastalSource.mjs';
-import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
 import { validateLandscapeManifest, validateLandscapeCityBinding, landscapeGridToWorld } from '../../../src/app/landscape/index.js';
-import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+import { COASTAL_V2, createCoastalV2CitySpec, landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
+// the retained-source audit is coastal v2's (the imported ZIP); the city pins the synthesized v3 since AI 596 D4, so the v2 pin is used here
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const directory = path.join(root, 'assets/public/landscape/coastal-city');
-const cacheSkip = landscapeCacheSkip([path.basename(createCoastalLandscapeCitySpec().landscape.manifestUrl), 'PROVENANCE.json']);
+const directory = path.join(root, COASTAL_V2.directory);
+const cacheSkip = landscapeCacheSkip([path.basename(COASTAL_V2.manifestUrl), 'PROVENANCE.json'], COASTAL_V2.directory);
 const evidence = path.join(root, 'tests/artifacts/screens/landscape/ai576/d7');
 
 async function authenticate(file, expected) {
@@ -36,7 +36,7 @@ async function readExact(handle, buffer, position) {
 }
 
 test('Landscape D7 source audit: pinned manifest, all retained records and native float/category bits remain authentic', { skip: cacheSkip }, async () => {
-    const binding = createCoastalLandscapeCitySpec().landscape;
+    const binding = createCoastalV2CitySpec().landscape;
     const manifestFile = path.join(root, binding.manifestUrl), manifestBytes = await readFile(manifestFile);
     const expectedManifestHash = path.basename(manifestFile).match(/^manifest\.([a-f0-9]{64})\.json$/)?.[1];
     assert.ok(expectedManifestHash, 'city fixture must pin a content-addressed immutable manifest');

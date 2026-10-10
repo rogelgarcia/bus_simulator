@@ -10,12 +10,13 @@ import { GEOLOGY_OPERATORS } from './GeologyChannels.mjs';
 import { IMPORT_OPERATORS } from './Imports.mjs';
 import { STRATA_OPERATORS } from './Strata.mjs';
 import { COASTAL_OPERATORS } from './Coastal.mjs';
+import { LAND_COVER_OPERATORS } from './LandCover.mjs';
 
 // resample is executed by the graph after the operator loop with the filter this entry resolves (a no-op on the output grid)
 async function resample(context) { return { filter: context.operator.params.filter, resampled: context.working.coarse }; }
 
 /** @type {Readonly<Record<string, (context:any)=>Promise<any>>>} */
-export const SYNTHESIS_OPERATORS = Object.freeze({ ...INPUT_OPERATORS, ...LANDFORM_OPERATORS, ...WARP_OPERATORS, ...CONSTRAINT_OPERATORS, resample, ...GEOLOGY_OPERATORS, ...EROSION_OPERATORS, ...IMPORT_OPERATORS, ...STRATA_OPERATORS, ...COASTAL_OPERATORS });
+export const SYNTHESIS_OPERATORS = Object.freeze({ ...INPUT_OPERATORS, ...LANDFORM_OPERATORS, ...WARP_OPERATORS, ...CONSTRAINT_OPERATORS, resample, ...GEOLOGY_OPERATORS, ...EROSION_OPERATORS, ...IMPORT_OPERATORS, ...STRATA_OPERATORS, ...COASTAL_OPERATORS, ...LAND_COVER_OPERATORS });
 
 for (const op of Object.keys(LANDSCAPE_SYNTHESIS_OPERATORS)) if (!SYNTHESIS_OPERATORS[op]) throw new Error(`[Synthesis] operator ${op} is declared in the catalog but not implemented`);
 for (const op of Object.keys(SYNTHESIS_OPERATORS)) if (!LANDSCAPE_SYNTHESIS_OPERATORS[op]) throw new Error(`[Synthesis] operator ${op} is implemented but not declared in the catalog`);

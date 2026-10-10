@@ -151,7 +151,12 @@ motion review are in LANDSCAPE_APPEARANCE_RUNTIME.md.
 
 `tests/headless/e2e/landscape_resolution.pwtest.js` measures the terrain-synthesis fixture landscapes at the three
 candidate native spacings (`assets/public/landscape/ai596-d3-fixture-{1953,0977,0488}` and the 4 km
-`-4km-{1953,0977}` variants; `LANDSCAPE_RESOLUTION_FIXTURES` selects other ids or saved landscape directories).
+`-4km-{1953,0977}` variants; `LANDSCAPE_RESOLUTION_FIXTURES` selects other ids or saved landscape directories;
+`LANDSCAPE_RESOLUTION_ARTIFACTS` moves the receipts to another directory under the repository; `LANDSCAPE_RESOLUTION_ROUTE=natural-world`
+replaces the bounds-scaled fixture route with the AI 596 D4 coastal city route, the natural-world poses resolved on the measured
+landscape's own native ground: NW-13 overview, a 30-frame flyover to NW-10, NW-03 bluff toe, NW-08 low city, NW-01 beach, the
+orthographic probe camera over the same 41 × 31 m patch translated onto the high-city south flank below NW-07 (x 3279–3320, z
+2715–2744, inside one 250 m native tile of a 4097² landscape), return; `LANDSCAPE_RESOLUTION_SETTLE_MS` raises the 60 s settle limit).
 Run it like the coastal benchmark through `node tools/run_selected_test/run.mjs` with
 `E2E_BASE_URL=http://127.0.0.1:8002`, but with **no server running on 8002**: the test serves each fixture itself
 on that port (`createLandscapeServer({ root, landscapeDirectory })`) and asserts that the served manifest is the

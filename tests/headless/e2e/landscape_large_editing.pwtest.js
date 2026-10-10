@@ -1,8 +1,9 @@
 // Exercises bounded multi-chunk authoring, real-source preparation, streaming revisit and whole-batch revert.
-// The editable copy starts at the immutable snapshot the city fixture pins, not at the canonical current revision: later material-only
-// publications (the nature pass, AI577 D1a) advance the canonical revision without a city review, and the strict pin must keep refusing them.
-// Starting from the pinned revision keeps the binding valid at the start, and the revert then restores the pinned content under a new revision,
-// which the strict pin must still refuse.
+// The editable copy starts at the immutable snapshot the city fixture pinned on coastal v2 (AI 576), not at the canonical current revision:
+// later material-only publications (the nature pass, AI577 D1a) advance the canonical revision without a city review, and the strict pin must
+// keep refusing them. Starting from the pinned revision keeps the binding valid at the start, and the revert then restores the pinned content
+// under a new revision, which the strict pin must still refuse. Since AI 596 D4 the city spec pins coastal-city-v3; this workflow keeps the
+// v2 pin (COASTAL_V2) because v2 stays the immutable viewer/server default whose history it exercises.
 import { test, expect } from '@playwright/test';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -10,7 +11,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
-import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { COASTAL_V2, createCoastalV2CitySpec } from '../../shared/landscapeCacheTest.js';
 import { CityMap } from '../../../src/app/city/CityMap.js';
 import { createCityConfig } from '../../../src/app/city/CityConfig.js';
 import {
@@ -22,8 +23,8 @@ import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const run = promisify(execFile), root = path.resolve('.');
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd5'}/large-editing`);
-const source = path.join(root, 'assets/public/landscape/coastal-city');
-const boundCity = createCoastalLandscapeCitySpec();
+const source = path.join(root, COASTAL_V2.directory);
+const boundCity = createCoastalV2CitySpec();
 let server, origin, directory;
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
 const manifest = async () => JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));

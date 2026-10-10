@@ -14,7 +14,7 @@ Open `http://127.0.0.1:8002/screens/landscape_fabrication.html`, or use **Landsc
 
 The screen uses the shared first-person camera and live game performance bar. Arrows/WASD move horizontally, PageUp/PageDown change camera elevation, Shift moves faster, left-drag looks around and a plain click selects terrain. Game POV uses the game's 55° lens and bus inspection pose. It also supports perspective and orthographic navigation/zoom, focus/home and explicit poses, shaded/wireframe/combined inspection, grid/axes, resident LOD/chunk inspection, water reference, planning guides, named locations, saved camera bookmarks and elevation/contour/slope/water-depth views. Camera and display settings are separate from terrain ownership. Reload retains camera pose. Invalid new data leaves the last valid terrain visible with an error.
 
-Canonical current data is `assets/public/landscape/coastal-city/manifest.json` in the gitignored [local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache); since AI 595 it is never tracked or distributed through Git/LFS and a clean checkout installs (`landscape/cache-install`) or regenerates it. Immutable `manifest.<sha256>.json` snapshots and content-addressed `payloads/` preserve previous source states. Appearance has its own `appearance/manifest.json` and independently loadable pages. No runtime request depends on the source ZIP, `downloads/`, preview OBJ or complete original rasters.
+Canonical current data is `assets/public/landscape/coastal-city/manifest.json` in the gitignored [local landscape cache](../../tools/bake_landscape/README.md#local-landscape-cache); since AI 595 it is never tracked or distributed through Git/LFS and a clean checkout installs (`landscape/cache-install`) or regenerates it. Immutable `manifest.<sha256>.json` snapshots and content-addressed `payloads/` preserve previous source states. Appearance has its own `appearance/manifest.json` and independently loadable pages. No runtime request depends on the source ZIP, `downloads/`, preview OBJ or complete original rasters. Since AI 596 D4 the synthesized coastal terrain v3 lives beside it as its own landscape id `coastal-city-v3` (`assets/public/landscape/coastal-city-v3/`, the landscape the city spec pins); this viewer default stays v2, and v3 opens through `?landscape=/assets/public/landscape/coastal-city-v3/manifest.json` or `LANDSCAPE_DIRECTORY` (see the [server README](../../tools/landscape_server/README.md)).
 
 The follow-up nature pass installs clean CC0 beach sand and replaces the visual pavement treatment with inferred natural ground while retaining source classifications. See [natural material provenance](LANDSCAPE_NATURE_MATERIALS.md) for the material-only revision, immutable appearance snapshot and source hashes. D7 measurements below remain historical; the nature pass is verified separately.
 
@@ -159,10 +159,11 @@ mode and reads the mode the viewer actually ran from `snapshot().surfaceCache`.
 Evidence: `tests/artifacts/screens/landscape/ai577/d7/acceptance/` (`journey.json`, `requests-*.json`, `low-budgets.json`,
 lap/temporal/edit captures per cache mode).
 
-`landscape_large_editing` now starts its editable copy at the city fixture's pinned immutable snapshot (`hierarchy-afaf934…`)
-instead of the canonical current revision, so the strict pin is valid at the start; it refuses the canonical material-only
-revision (`materials-bfcf20f7…`) and every edited, prepared and reverted revision, while the pinned city keeps sampling its
-original. All numbers in "Integrated correctness and performance evidence" are unchanged.
+`landscape_large_editing` now starts its editable copy at the immutable snapshot the city fixture pinned on coastal v2
+(`hierarchy-afaf934…`, kept as `COASTAL_V2` in `tests/shared/landscapeCacheTest.js` since AI 596 D4 re-pinned the city spec to
+coastal terrain v3) instead of the canonical current revision, so the strict pin is valid at the start; it refuses the canonical
+material-only revision (`materials-bfcf20f7…`) and every edited, prepared and reverted revision, while the pinned city keeps sampling
+its original. All numbers in "Integrated correctness and performance evidence" are unchanged.
 
 ## Remaining integration work
 

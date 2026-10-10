@@ -10,6 +10,27 @@ address instead of the local cache, so a synthesis fixture such as
 touching `assets/public/landscape/coastal-city/`. Unset, the server serves the local cache
 as before.
 
+## Opening coastal terrain v3 (AI 596 D4)
+
+The viewer and server default stays coastal v2 (`assets/public/landscape/coastal-city`,
+`LANDSCAPE_DEFAULT_DIRECTORY`), which the existing browser suites pin. Coastal terrain v3 is
+the separate cache directory `assets/public/landscape/coastal-city-v3` (the landscape the
+city spec pins). Two ways to open it:
+
+- **Viewer parameter, default server**: every directory under the cache root is served as a
+  static path, so with the default server running open
+  `http://127.0.0.1:8002/screens/landscape_fabrication.html?landscape=/assets/public/landscape/coastal-city-v3/manifest.json`
+  (a `manifest.<sha256>.json` snapshot works the same way). The authoring API of that
+  server still targets the default directory, so a v3 batch sent to `/api/landscape/apply`
+  is refused as another landscape.
+- **Serve v3 at the canonical address**: `LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3 node tools/landscape_server/run.mjs`
+  (PowerShell: `$env:LANDSCAPE_DIRECTORY='assets/public/landscape/coastal-city-v3'; node tools/landscape_server/run.mjs`),
+  then open the viewer without a parameter; the authoring API edits v3 (prefer an isolated
+  copy: `node tools/landscape_authoring/run.mjs ... --directory <copy>`).
+
+Headless captures use `node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city-v3 ...`
+(see `tools/landscape_review/README.md`).
+
 This server is a development handoff tool, not an offline terrain bake command.
 Terrain preparation uses the registered `landscape/coastal-import` bake leaf.
 It serves the landscape from the gitignored

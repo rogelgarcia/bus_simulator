@@ -5,10 +5,10 @@ import path from 'node:path';
 import { lstat, mkdir, readdir, readFile, unlink } from 'node:fs/promises';
 import { hashFile } from '../baking/Files.mjs';
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from '../landscape_authoring/AuthoringFiles.mjs';
-import { LANDSCAPE_MANIFEST_BYTE_LIMIT, validateLandscapeManifest } from '../../src/app/landscape/index.js';
+import { LANDSCAPE_MANIFEST_BYTE_LIMIT, landscapeCacheDirectory, validateLandscapeManifest } from '../../src/app/landscape/index.js';
 
-/** Current pointers switch after every immutable file, sidecars first and the terrain manifest last. */
-export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'manifest.json']);
+/** Current pointers switch after every immutable file, sidecars first (the AI 596 geology sidecar included) and the terrain manifest last. */
+export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'manifest.json']);
 const BINDING_ALIAS = /^appearance\/binding\.[a-f0-9]{64}\.json$/;
 const CONTENT_ADDRESSED = /^(?:(?:manifest|multiscale)\.([a-f0-9]{64})\.json|([a-f0-9]{64})\.[a-z0-9]+)$/;
 const TRANSIENT = /(?:^|\/)(?:authoring\.lock(?:\.recovering)?|authoring-interrupted-[^/]+\.json|[^/]+\.partial)$/;
@@ -85,10 +85,18 @@ export async function verifyLandscapeCacheBundle(directory, { signal } = {}) {
     });
 }
 
+/** The cache directory a bundle installs into unless the caller names one: the bundle's own landscape id under the cache root (AI 596 D4). */
+export function landscapeCacheBundleDestination(bundle) {
+    if (typeof bundle?.landscapeId !== 'string') throw new Error('[LandscapeCache] The bundle has no landscape id; name the destination directory explicitly');
+    try { return landscapeCacheDirectory(bundle.landscapeId); }
+    catch { throw new Error(`[LandscapeCache] Landscape id ${bundle.landscapeId} does not name a cache directory; set the destination directory explicitly`); }
+}
+
 /**
  * Installs a verified bundle into a landscape cache directory under the authoring lock: immutable files first (an existing different file is
  * refused), binding aliases next, then the current pointers in LANDSCAPE_CACHE_POINTERS order. A current pointer the bundle does not retain
- * is never overwritten. A failed pointer switch restores every previous pointer.
+ * is never overwritten, and a directory that holds another landscape (a different manifest id) is refused before anything is written, so
+ * a bundle of one landscape id can never be installed over the cache of another. A failed pointer switch restores every previous pointer.
  * @param {Awaited<ReturnType<typeof verifyLandscapeCacheBundle>>} bundle @param {string} destination @param {{signal?:AbortSignal}} [options]
  */
 export async function installLandscapeCacheBundle(bundle, destination, { signal } = {}) {
@@ -107,6 +115,11 @@ export async function installLandscapeCacheBundle(bundle, destination, { signal 
         const previous = new Map();
         for (const relative of Object.keys(bundle.pointers)) {
             const bytes = await readAuthoringFile(path.join(target, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT, { signal }).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+            if (bytes && relative === 'manifest.json') {
+                let installedId = null;
+                try { installedId = JSON.parse(bytes.toString('utf8')).id ?? null; } catch { /* an unreadable current manifest is reported by the revision check below */ }
+                if (installedId !== null && installedId !== bundle.landscapeId) throw new Error(`[LandscapeCache] ${target} holds landscape ${installedId}; the bundle is ${bundle.landscapeId}. Install it into its own directory (${landscapeCacheBundleDestination(bundle)})`);
+            }
             if (bytes && authoringHash(bytes) !== bundle.pointers[relative] && !retained.has(authoringHash(bytes))) {
                 throw new Error(`[LandscapeCache] ${relative} in ${target} is a local revision the bundle does not retain; preserve it before installing over it`);
             }

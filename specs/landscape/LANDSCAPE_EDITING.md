@@ -92,7 +92,7 @@ Every operation declares `falloff`. `none` gives weight 1 throughout its closed 
 
 Operations are evaluated strictly in their array order. For height operations, each vertex is rounded to float32 after every operation; the next operation reads that result. Across batches, the next batch reads the previous published native channels. Chunk iteration order does not change values. Regions include shared boundary vertices in every owning payload, so adjacent chunks receive identical arithmetic and stored float32 results. The kernel rejects inconsistent input or output shared-edge heights/category IDs.
 
-Height effects are baked into the published native channels. The operation log is provenance/audit data; loading must not replay it on already-edited heights. Revert restores the prior immutable source channels and authoring metadata. A future source regeneration workflow must deliberately merge/reapply edits onto the intended base rather than resetting or double-applying this log.
+Height effects are baked into the published native channels. The operation log is provenance/audit data; loading must not replay it on already-edited heights. Revert restores the prior immutable source channels and authoring metadata. A source regeneration deliberately re-applies the accepted batches onto the regenerated base through the store rather than resetting or double-applying this log; see [Regeneration and replay](#regeneration-and-replay).
 
 ## Semantic soil
 
@@ -146,6 +146,47 @@ editHistory: {
 ```
 
 `lastBatchId` and `previousManifestUrl` must be present together. The snapshot is relative to the manifest and passes the same path restrictions as payload URLs. One-batch revert verifies the requested current revision and snapshot hash, authenticates every restored channel with the same bounded two-chunk validation pass, restores the saved pre-batch terrain/soil/named-region/operation state, retains batch-ID tombstones, and clears both last-batch fields. Revert has no four-chunk limit. Corrupt or missing old payloads and cancellation leave the edited current revision unchanged. This prevents a retried relative edit from being applied twice even after revert. Revert uses saved data, independent of Git.
+
+## Regeneration and replay
+
+A synthesized landscape (AI 596, `provenance.kind: procedural-synthesis`) is rebuilt from its recipe whenever the recipe, the engine or the
+grid changes; coastal terrain v3 (`coastal-city-v3`, D4) is the first regenerated publication. Explicit local edits are **never baked into
+the recipe**: a batch is an authored decision about a place, the recipe is a reproducible derivation, and mixing them would make the recipe
+non-reproducible and the edit invisible to review. Instead, regeneration evaluates in this fixed order:
+
+1. **Synthesis recipe** → the native grid (heights, land cover) at the recipe's spacing, deterministic for the recipe identity.
+2. **Saved landscape** → terrain chunks, the complete hierarchy and the copied references (`writeSynthesizedLandscape`), published as a
+   fresh current manifest with no authoring history.
+3. **Fields and geology sidecars** → baked from that native grid (`fields/`, `geology/`), bound to its channel hashes.
+4. **Replay of accepted batches** → `tools/landscape_authoring/BatchReplay.mjs` `replayAcceptedBatches({previousDirectory, directory})`
+   (CLI: `node tools/landscape_authoring/run.mjs replay --previous <previous landscape> --directory <regenerated landscape>`) reads the
+   previous landscape's current manifest history and re-applies every **accepted** batch (the `editHistory.batchIds` entries that still own
+   operation records; a reverted batch is a tombstone and is reported, not replayed) in acceptance order through the authoring store's
+   bounded `apply`. Each replayed batch keeps its batch and operation ids, world geometry, parameters, soil overrides, named regions and any
+   notes the records carry, is bound to the target's landscape id and current revision, and rebuilds its affected ancestors, validates and
+   publishes exactly as a first application does. Every replayed operation record carries `replayedFrom: {landscapeId, revision,
+   manifestSha256, batchId, sequence}` (nested when a record is replayed again), so the new history lists the edit as replayed. Named
+   regions carry no batch identity in the manifest; they are listed in batch order, so each is attributed to the latest batch consistent
+   with that order and with the first operation that references it.
+5. **Appearance bake** → `landscape/appearance` on the replayed current manifest, so the categorical soil masks include the replayed
+   overrides and the appearance binds the final revision.
+
+A batch the new terrain invalidates is **reported, never silently dropped**: the replay summary `{replayed, skipped: [{batchId, code,
+reason}], revisions}` names the batch and the invalidating change: `region-outside-bounds` (an operation or named region lies outside
+the target bounds), `grade-endpoint-outside-bounds`, `smooth-radius-invalid` (the radius spans fewer than 1 or more than
+`landscapeSmoothRadiusSampleLimit` native samples at the target spacing), `unknown-soil` (the target catalog lacks the soil), `region-unavailable`
+(a named region a skipped batch would have introduced), `already-recorded` (the target history already holds the batch id, which makes
+a repeated replay idempotent) or `invalid` (any other domain validation error). A skipped batch leaves the target unchanged, so a later
+run after the terrain is corrected can still replay it. Any other failure (I/O, staging, publication) aborts the replay after the last
+published revision. The replay changes native heights, so the terrain-field and geology pages of the changed natives are stale until their
+leaves are re-run, exactly as after any edit.
+
+On an unchanged grid the replay is bit-exact: `tests/node/unit/landscape_batch_replay.test.js` applies grade/smooth/soil, raise and smooth
+batches to a copy of the 1 km fixture `ai596-d3-fixture-0977`, reverts a fourth, replays onto an unedited copy and checks that every
+native and ancestor height channel hash equals the edited original, that the raise equals an independent recomputation, that the history
+lists the batches as replayed with their provenance, that a second replay is idempotent, that a re-replay nests the provenance chain, and
+that a coarser (1.953125 m) regenerated grid skips the 1.2 m smooth with its reason while a landscape with other bounds skips every batch
+as outside and stays unpublished.
 
 ## Ancestor rebuild, memory, and limitations
 

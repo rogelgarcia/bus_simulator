@@ -19,7 +19,9 @@ const smooth = t => { const s = Math.min(1, Math.max(0, t)); return s * s * (3 -
  */
 export function createEdgeProfile(params) {
     const tanFace = Math.tan(params.faceSlopeDegrees * DEGREES), tanTalus = Math.tan(params.talusSlopeDegrees * DEGREES);
-    const tanSlope = Math.tan((params.profile === 'retaining' ? params.maxHeightfieldSlopeDegrees : params.slopeDegrees) * DEGREES), rim = params.rimWidthMeters;
+    // the flat rim belongs to the escarpment alone: an embankment or retaining slope descends from the boundary, so its daylight march starts there too
+    // (with the escarpment's 12 m default rim the march skipped the first 12 m and cut a trench along the descent around every embankment pad)
+    const tanSlope = Math.tan((params.profile === 'retaining' ? params.maxHeightfieldSlopeDegrees : params.slopeDegrees) * DEGREES), rim = params.profile === 'escarpment' ? params.rimWidthMeters : 0;
     const marching = params.profile === 'escarpment' || params.profile === 'embankment' || params.profile === 'retaining';
     const faceRun = params.faceDropMeters > 0 ? params.faceDropMeters / tanFace : Infinity;
 

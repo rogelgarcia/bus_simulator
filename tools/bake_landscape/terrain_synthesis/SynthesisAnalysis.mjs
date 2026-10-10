@@ -14,6 +14,8 @@ export { NATURAL_COVER_CLASSES, SLOPE_BIN_EDGES_DEGREES, naturalLandMask, runnin
 export { COASTAL_ROUTE_AB, beachProfiles, edgeProfiles, subtendedAngles, routeProfile } from './analysis/ProfileMeasures.mjs';
 export { CONSTRAINT_DEFAULTS, constraintReport, parseDesignBand, swimZonePolygon } from './analysis/ConstraintReport.mjs';
 export { sampleBilinear, sampleNearest, polygonSampleIndices, polygonCentroid, polylinePath, shorelineXAt, extractGridWindow } from './analysis/GridSampling.mjs';
+export { medianOf, shoreTransect, deanFit, barMeasure, cliffPlatformMeasure, rimFaceMeasure, foreduneMeasure, reefMeasure, faceMaskBeyondSlope, districtEdgeMeasure } from './analysis/TargetMeasures.mjs';
+export { COASTAL_V3_TARGETS, COASTAL_V3_TARGETS_FORMAT, bluffSectorPolygon, measureCoastalV3, evaluateCoastalV3, coastalV3TargetsMarkdown, recipeDistrictProfiles } from './analysis/TargetsReport.mjs';
 
 export const RELIEF_DIAGNOSIS_FORMAT = 'landscape-relief-diagnosis';
 

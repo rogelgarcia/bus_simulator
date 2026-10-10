@@ -4,7 +4,8 @@
 // when it ends (also when it throws or is aborted), evaluates the operator mask once, derives the operator seed, and checks the
 // AbortSignal between operators (operators check it inside long loops through context.checkpoint). Operators run in recipe order on
 // the working grid; when the recipe declares a coarser working spacing the final height is resampled to the output grid with the
-// resample operator's filter while the output cover is the untouched native cover (keep-source). Recipe overrides (imported maps,
+// resample operator's filter while the output cover is the untouched native cover (keep-source) or, under coverPolicy derive, the
+// nearest-upsampled cover the derive-land-cover operator wrote with the planning classes restored from the native cover exactly. Recipe overrides (imported maps,
 // region edits, operator re-runs, exclude zones) evaluate after the operator loop and before the resample with contexts from the
 // same factory; the maps of import overrides are read before the first operator so the identity an export-map writes is final. The
 // report records per-operator seconds and statistics, the applied overrides, the working grid, the input hashes and the recipe
@@ -14,7 +15,7 @@ import { TerrainFieldMemory } from '../terrain_fields/TerrainFieldsGrid.mjs';
 import { SYNTHESIS_OPERATORS } from './operators/index.mjs';
 import { applyRecipeOverrides, prepareRecipeOverrides } from './operators/Overrides.mjs';
 import { evaluateSelector } from './operators/Selectors.mjs';
-import { resampleToGrid, synthesisOutputGrid, synthesisWorkingGrid } from './SynthesisWorkingGrid.mjs';
+import { resampleToGrid, synthesisOutputGrid, synthesisWorkingGrid, upsampleCover } from './SynthesisWorkingGrid.mjs';
 
 function createLayerStore(memory, grid, owned) {
     const layers = new Map(), n = grid.columns * grid.rows;
@@ -120,7 +121,7 @@ export async function executeSynthesisRecipe({ recipe: input, inputs = {}, memor
         if (!layers.has('height') || !layers.has('cover')) throw new Error('[Synthesis] the recipe produced no height or cover layer (an enabled import-heights is required)');
         const overrides = await applyRecipeOverrides({ recipe, layers, memory, grid: working.grid, contextFor, log });
         signal?.throwIfAborted();
-        let heights, cover;
+        let heights, cover, outputCover = { policy: recipe.outputs.coverPolicy, source: 'working-layer', planningRestoredSamples: 0 };
         const outputMark = performance.now();
         memory.enter('output');
         if (working.coarse) {
@@ -128,7 +129,16 @@ export async function executeSynthesisRecipe({ recipe: input, inputs = {}, memor
             if (!state.native) throw new Error('[Synthesis] the native cover was not retained for the output');
             heights = memory.allocate('output/heights', Float32Array, output.columns * output.rows); owned.add('output/heights');
             resampleToGrid(working.grid, layers.get('height'), output, heights, resampleFilter);
-            cover = state.native.cover;
+            if (recipe.outputs.coverPolicy === 'derive') {
+                // the derived working cover reaches the output grid as the nearest working label; the planning classes come from the native cover exactly
+                const native = state.native.cover, planning = new Uint8Array(256);
+                for (const id of resolveLandscapeSynthesisParameters(enabled.find(operator => operator.op === 'derive-land-cover')).planningClasses) planning[id] = 1;
+                cover = memory.allocate('output/cover', Uint8Array, output.columns * output.rows); owned.add('output/cover');
+                upsampleCover(working.grid, layers.get('cover'), output, cover);
+                let restored = 0;
+                for (let i = 0; i < cover.length; i++) if ((planning[native[i]] || planning[cover[i]]) && cover[i] !== native[i]) { cover[i] = native[i]; restored++; }
+                outputCover = { policy: 'derive', source: 'working-layer-nearest-upsampled', planningRestoredSamples: restored };
+            } else { cover = state.native.cover; outputCover = { policy: 'keep-source', source: 'native-cover', planningRestoredSamples: 0 }; }
         } else { heights = layers.get('height'); cover = layers.get('cover'); }
         let capped = 0;
         if (recipe.outputs.heightCap !== null) for (let i = 0; i < heights.length; i++) if (heights[i] > recipe.outputs.heightCap) { heights[i] = recipe.outputs.heightCap; capped++; }
@@ -136,7 +146,7 @@ export async function executeSynthesisRecipe({ recipe: input, inputs = {}, memor
         const identity = await landscapeSynthesisRecipeIdentity(recipe, inputHashes);
         const report = { identity, recipeId: recipe.id, seed: recipe.seed, operators, overrides, working: { spacing: working.grid.spacingX, columns: working.grid.columns, rows: working.grid.rows },
             output: { spacing: output.spacingX, columns: output.columns, rows: output.rows }, resampled: working.coarse, resampleFilter: working.coarse ? resampleFilter : null,
-            outputHeightCap: recipe.outputs.heightCap, outputCappedSamples: capped, coverPolicy: recipe.outputs.coverPolicy, inputs: [...inputHashes].sort((a, b) => a.id < b.id ? -1 : 1),
+            outputHeightCap: recipe.outputs.heightCap, outputCappedSamples: capped, coverPolicy: recipe.outputs.coverPolicy, outputCover, inputs: [...inputHashes].sort((a, b) => a.id < b.id ? -1 : 1),
             outputSeconds: Math.round((performance.now() - outputMark) / 1e3 * 1e6) / 1e6, totalSeconds: Math.round((performance.now() - started) / 1e3 * 1e6) / 1e6, memory: memory.report() };
         return { grid: output, heights, cover, layers: Object.fromEntries(layers.entries().map(entry => [entry.name, entry.array])), workingGrid: working.grid, report, release };
     } catch (error) { release(); throw error; }

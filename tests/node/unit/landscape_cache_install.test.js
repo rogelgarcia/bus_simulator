@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { planBakes } from '../../../tools/baking/Graph.mjs';
 import { parseBakeOptions, resolveBakeOptions } from '../../../tools/baking/Options.mjs';
 import { bakeJobs } from '../../../tools/baking/registry.mjs';
-import { installLandscapeCacheBundle, verifyLandscapeCacheBundle, LANDSCAPE_CACHE_POINTERS } from '../../../tools/bake_landscape/CacheBundle.mjs';
-import { cacheInstallJob } from '../../../tools/bake_landscape/CacheInstallJob.mjs';
+import { installLandscapeCacheBundle, landscapeCacheBundleDestination, verifyLandscapeCacheBundle, LANDSCAPE_CACHE_POINTERS } from '../../../tools/bake_landscape/CacheBundle.mjs';
+import { cacheInstallJob, resolveCacheInstallDirectory } from '../../../tools/bake_landscape/CacheInstallJob.mjs';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -17,10 +17,10 @@ const work = path.join(root, 'tests/artifacts/landscape_cache_history/install_fi
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 /** Writes the synthetic landscape as a cache bundle: current manifest, its content-addressed snapshot and record-verified channels. */
-async function writeBundle(name, { revision = 'fixture-r1', extra = {} } = {}) {
+async function writeBundle(name, { revision = 'fixture-r1', id, extra = {} } = {}) {
     const fixture = createLandscapeModelFixture(), directory = path.join(work, name);
     await rm(directory, { recursive: true, force: true });
-    const manifest = new TextEncoder().encode(JSON.stringify({ ...fixture.manifest, revision }));
+    const manifest = new TextEncoder().encode(JSON.stringify({ ...fixture.manifest, ...(id ? { id } : {}), revision }));
     const files = new Map([...fixture.resources, ['manifest.json', manifest], [`manifest.${sha256(manifest)}.json`, manifest], ...Object.entries(extra)]);
     for (const [relative, bytes] of files) {
         await mkdir(path.dirname(path.join(directory, relative)), { recursive: true });
@@ -35,11 +35,44 @@ test('Cache install: an explicit Node-only leaf of the landscape domain, outside
     assert.deepEqual(plan[0].configurationPaths, []);
     assert.equal(plan[0].always, true);
     assert.deepEqual(plan[0].outputs, ['tests/artifacts/landscape_cache_history/cache-install-validation.json']);
-    assert.deepEqual(resolveBakeOptions(plan, parseBakeOptions([])).get('landscape/cache-install'), { directory: 'assets/public/landscape/coastal-city' });
+    assert.deepEqual(resolveBakeOptions(plan, parseBakeOptions([])).get('landscape/cache-install'), { directory: 'auto' });
     assert.equal(resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:bundle=downloads/coastal-city'])).get('landscape/cache-install').bundle, 'downloads/coastal-city');
+    assert.equal(resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:directory=assets/public/landscape/coastal-city-v3'])).get('landscape/cache-install').directory, 'assets/public/landscape/coastal-city-v3');
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:source=x.zip'])), /No selected job consumes/);
     assert.ok(planBakes(bakeJobs, 'all').every(job => !job.id.startsWith('landscape')));
     assert.ok(planBakes(bakeJobs, 'landscape').every(job => job.id !== 'landscape/cache-install'));
+});
+
+// AI 596 D4: the city pins coastal-city-v3 while the viewer default stays coastal-city, so a bundle installs into its own id's directory by default.
+test('Cache install: the destination follows the bundle landscape id unless a directory is named, and never another landscape\'s cache', async () => {
+    const v3 = { landscapeId: 'coastal-city-v3' }, v2 = { landscapeId: 'coastal-city' };
+    assert.equal(landscapeCacheBundleDestination(v3), 'assets/public/landscape/coastal-city-v3');
+    assert.equal(landscapeCacheBundleDestination(v2), 'assets/public/landscape/coastal-city');
+    assert.throws(() => landscapeCacheBundleDestination({ landscapeId: 'nested/id' }), /does not name a cache directory/);
+    assert.throws(() => landscapeCacheBundleDestination({ landscapeId: null }), /no landscape id/);
+    assert.equal(resolveCacheInstallDirectory(root, { directory: 'auto' }, v3), path.resolve(root, 'assets/public/landscape/coastal-city-v3'));
+    assert.equal(resolveCacheInstallDirectory(root, {}, v2), path.resolve(root, 'assets/public/landscape/coastal-city'));
+    assert.equal(resolveCacheInstallDirectory(root, { directory: 'tests/artifacts/elsewhere' }, v3), path.resolve(root, 'tests/artifacts/elsewhere'));
+    const hill = await writeBundle('identity-hill'), other = await writeBundle('identity-other', { id: 'synthetic-hill-v3' });
+    const target = path.join(work, 'identity-target');
+    await rm(target, { recursive: true, force: true });
+    await installLandscapeCacheBundle(await verifyLandscapeCacheBundle(hill.directory), target);
+    const verifiedOther = await verifyLandscapeCacheBundle(other.directory);
+    assert.equal(verifiedOther.landscapeId, 'synthetic-hill-v3');
+    await assert.rejects(installLandscapeCacheBundle(verifiedOther, target), /holds landscape synthetic-hill; the bundle is synthetic-hill-v3\. Install it into its own directory \(assets\/public\/landscape\/synthetic-hill-v3\)/);
+    assert.deepEqual(await readFile(path.join(target, 'manifest.json')), Buffer.from(hill.manifest), 'the refused install left the other landscape untouched');
+    // the AI 596 geology sidecar is a current pointer like the appearance and field sidecars: it is authenticated by schema and switched before the terrain manifest
+    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'manifest.json']);
+    const page = new Uint8Array([1, 2, 3, 4]), geology = new TextEncoder().encode(JSON.stringify({ format: 'landscape-geology', pages: [{ url: `pages/${sha256(page)}.u8`, sha256: sha256(page), byteLength: page.length }] }));
+    const withGeology = await writeBundle('geology', { extra: { 'geology/manifest.json': geology, [`geology/manifest.${sha256(geology)}.json`]: geology, [`geology/pages/${sha256(page)}.u8`]: page } });
+    const verified = await verifyLandscapeCacheBundle(withGeology.directory);
+    assert.equal(verified.passed, true, verified.problems.join('\n'));
+    assert.deepEqual(Object.keys(verified.pointers), ['geology/manifest.json', 'manifest.json']);
+    assert.equal(verified.files.find(file => file.relative === 'geology/manifest.json').verifiedBy, 'schema');
+    const geologyTarget = path.join(work, 'geology-target');
+    await rm(geologyTarget, { recursive: true, force: true });
+    const installed = await installLandscapeCacheBundle(verified, geologyTarget);
+    assert.deepEqual(installed.slice(-2).map(file => path.relative(geologyTarget, file).split(path.sep).join('/')), ['geology/manifest.json', 'manifest.json']);
 });
 
 test('Cache install: every bundle file authenticates by name, hashed record or schema; corruption and transient state are refused', async () => {

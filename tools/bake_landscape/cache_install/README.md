@@ -11,9 +11,14 @@ node tools/bake.mjs --target landscape/cache-install --set "landscape/cache-inst
 node tools/bake.mjs --target landscape/cache-install --set "landscape/cache-install:bundle=<bundle-directory>" --publish
 ```
 
-`directory` defaults to `assets/public/landscape/coastal-city`
-(`LANDSCAPE_DEFAULT_DIRECTORY`); set `landscape/cache-install:directory=<path>` for
-another landscape. `node tools/bake_landscape/cache_install/run.mjs` is the
+`directory` defaults to `auto`: the bundle's own landscape id directory under the
+cache root (`assets/public/landscape/<id>`, `landscapeCacheDirectory`), so a
+`coastal-city` bundle installs into `assets/public/landscape/coastal-city` and a
+`coastal-city-v3` bundle into `assets/public/landscape/coastal-city-v3` (AI 596 D4:
+the city pins v3 while the viewer default stays v2). Set
+`landscape/cache-install:directory=<path>` to install elsewhere; a directory that
+already holds another landscape (a different manifest id) is refused before
+anything is written. `node tools/bake_landscape/cache_install/run.mjs` is the
 equivalent shared-planner entry. The leaf is Node-only (`configurationPaths: []`),
 always re-verifies (`always: true`), and stays outside `all` and the `landscape`
 import parent.
@@ -27,9 +32,9 @@ Before anything is written, every file of the bundle must authenticate:
 - every other file through a `{url, sha256, byteLength}` record in a manifest,
   sidecar or `PROVENANCE.json` (this covers the retained source archive);
 - current pointers (`manifest.json`, `appearance/manifest.json`,
-  `appearance/multiscale.json`, `fields/manifest.json`), binding aliases and
-  `PROVENANCE.json` by schema; `manifest.json` must validate as a landscape
-  manifest.
+  `appearance/multiscale.json`, `fields/manifest.json`, `geology/manifest.json`),
+  binding aliases and `PROVENANCE.json` by schema; `manifest.json` must validate as
+  a landscape manifest.
 
 Links, devices, transient authoring state (`authoring.lock`, `*.partial`,
 `authoring-interrupted-*.json`), unreadable JSON, dangling or mismatched records
@@ -45,8 +50,8 @@ With `--publish`, installation runs under the landscape authoring lock:
    the run stops before writing, so local authored revisions are never lost.
 2. Immutable files are written first (identical existing files are accepted, a
    different existing file is refused), then binding aliases.
-3. Current pointers switch last: appearance, multiscale and field sidecars, then
-   the terrain `manifest.json`. A failed switch restores the previous pointers.
+3. Current pointers switch last: appearance, multiscale, field and geology sidecars,
+   then the terrain `manifest.json`. A failed switch restores the previous pointers.
 4. The installed directory is re-verified with the same rules.
 
 Reruns and resumed partial installs converge to the same authenticated result.
