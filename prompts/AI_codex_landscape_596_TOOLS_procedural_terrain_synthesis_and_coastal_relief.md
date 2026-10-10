@@ -165,14 +165,14 @@ These hold in every variant. Report any deliberate exception for user approval.
 
 ### D3. Finer authoritative resolution
 
-- [ ] **Compare spacings.** Compare 1.953 m, about 0.98 m and about 0.49 m native spacing for generated
+- [x] **Compare spacings.** Compare 1.953 m, about 0.98 m and about 0.49 m native spacing for generated
   terrain. Measure visible gain at the review poses (ridges, gullies, berms, bluff crests), data size,
   hierarchy depth, CPU and GPU residency, uploads, compile and frame cost, and query, edit and picking
   accuracy.
-- [ ] **Extend contracts.** Extend the model, import, hierarchy, streaming, editing and query contracts
+- [x] **Extend contracts.** Extend the model, import, hierarchy, streaming, editing and query contracts
   to the chosen spacing. Use explicit provenance: "procedurally synthesized, not measured". Upsampling
   never counts as new source detail. Older revisions stay readable.
-- [ ] **Gate.** A synthetic high-resolution fixture streams within the declared budgets. Nothing is
+- [x] **Gate.** A synthetic high-resolution fixture streams within the declared budgets. Nothing is
   fetched at full resolution on startup. Edits, queries and picking are exact at the new spacing. Record
   the choice with its measurements.
 
@@ -449,6 +449,106 @@ Limitations carried forward: `inputs.plan.landCover` PNG decoding in `plan-input
 (cover comes from the imported landscape or the base); the fixture landscape carries no planning
 references or appearance, so it is reviewed through its maps (hillshade, slope, zones, deposits,
 drainage, profiles), not in the game viewer; D4 adds the city-scale recipe and the viewer captures.
+
+### D3 finer authoritative resolution — delivered 2026-10-09
+
+- **Compare spacings.** Leaf `landscape/synthesis/resolution-study` (`tools/bake_landscape/terrain_synthesis/resolution_study/`)
+  synthesizes the D2 gate recipe at 1.953125 / 0.9765625 / 0.48828125 m (fixture base and gate parameterized by spacing;
+  recipes `plateau-road-shoreline{,-0977,-0488}.json`) plus a 4 km pair at the city's node counts (`city-extent-{1953,0977}.json`,
+  `--set "landscape/synthesis/resolution-study:city-extent=true|only"`), measures size, depth, cost, memory, relief,
+  landform agreement, feature sharpness (bluff face, berm crest, gully width, ridge crest curvature) and needles, and
+  renders `[1.953 | 0.977 | 0.488]` composites. Browser harness `tests/headless/e2e/landscape_resolution.pwtest.js`
+  (fixture poses `tools/landscape_review/poses/ai596-d3-fixture-v1.json` F-01..F-08, matched captures and composites
+  under `tests/artifacts/screens/landscape/ai596/d3/{poses,composites}/`) measures startup, residency, uploads, compile,
+  frame and GPU cost, settle time, picking and query accuracy per fixture.
+- **Extend contracts.** `procedural-synthesis` provenance with the statement "procedurally synthesized, not measured"
+  and `sourceSpacingMeters` / `upsampled` (upsampling never counts as source detail); model, import, hierarchy, streaming,
+  editing (smooth radius 16 samples below 1.5 m spacing) and query (radius span/2, viewer bound from the manifest)
+  contracts extended; sidecar manifests 1 MiB; older revisions load unchanged (coastal v2 validated read-only; 548
+  landscape unit tests pass, `node --test tests/node/unit/landscape_*.test.js`).
+- **Gate.** The 0.977 m fixtures stream within the shipped budgets with nothing native fetched before the first frame;
+  edits, queries and picking are exact at the new spacing (tables below); the choice is recorded with its measurements
+  in `specs/landscape/LANDSCAPE_TERRAIN_SYNTHESIS.md` (D3 section).
+
+Decision: **0.9765625 m native spacing** for synthesized terrain (the 4 km city as 4097², maxLevel 4, 341 nodes, 250 m
+chunks; the 1 km fixtures as 1025²), recorded with the measurements below. 1.953125 m reads the designed coastal edges
+5–10° too shallow (the 65° bluff face measures 53° at 1.953 m and 59–64° at 0.977 m), broadens the berm crest 2.7×
+(radius 70.8 → 25.8 m) and widens gullies by about 10%, so the roadmap's 2–4 m features (rills, ledges, berms, crest
+lines) need the finer grid; 0.48828125 m adds little beyond 0.977 m on the designed edges (the berm is identical, the
+bluff face within 0–6°), costs 4× the data and 3.2–4.6× the synthesis time of 0.977 m per km², and over the 4 km city
+(8193², 1365 nodes) its measured-hierarchy manifest is 1,762,795 bytes, above the 1 MiB limit every bounded reader
+enforces, so it stays a fixture-only spacing until a smaller per-node record or a split index exists.
+
+| Measure | 1.953125 m (513², L1, 5 nodes) | 0.9765625 m (1025², L2, 21 nodes) | 0.48828125 m (2049², L3, 85 nodes) |
+| --- | --- | --- | --- |
+| saved landscape (by manifest / on disk) | 1.60 MB / 1.60 MB (12 files) | 6.68 MB / 6.30 MB (38 files) | 26.99 MB / 24.28 MB (129 files) |
+| synthesis seconds (one Node process) | 9.1 | 46.7 | 177.2 |
+| peak tracked memory | 31.12 MB | 124.25 MB | 496.49 MB |
+| ancestor max geometric error by level | L0 3.67 m | L0 5.73 m, L1 4.97 m | L0 6.30 m, L1 5.41 m, L2 3.90 m |
+| natural slope above 10 / 20 / 30° | 13.77% / 3.73% / 2.50% | 12.79% / 3.43% / 2.62% | 11.90% / 3.32% / 2.72% |
+| incision p50 / p90 / max | 4.57 / 8.25 / 16.74 | 4.61 / 10.33 / 16.73 | 4.13 / 11.52 / 16.61 |
+| shared vertices within 0.5 / 1 / 3 m of the 1.953 m result | reference | 97.23% / 99.23% / 99.94% | 93.83% / 98.57% / 99.89% |
+| needles (one-sample spikes > 2 m) | 0 / 0 | 0 / 0 | 0 / 0 |
+| bluff face, tallest coastal steps (B-965 / B-55): mean slope of the ≥ 40° face | 52.8° / 53.4° (2.0 m runs) | 58.5° / 52.6° (1.5–1.75 m) | 58.9° / 59.2° (1.25–1.5 m) |
+| B-965 steepest 1 m slope (designed face 65°) | 54.5° | 64.0° | 63.4° |
+| berm crest radius T-300 / T-700 | 70.8 / 51.4 m | 25.8 / 22.8 m | 25.8 / 22.8 m |
+| gully width 1 m above the floor, mean / median | 36.3 / 37.5 m | 33.4 / 34.5 m | 34.5 / 35.0 m |
+| ridge crest radius R1..R6 (re-centred) | 50 / 58 / 78 / 65 / 50 / 127 m | 52 / 76 / 75 / 66 / 52 / 109 m | 57 / 86 / 77 / 71 / 55 / 120 m |
+
+| Measure | 4 km, 1.953125 m (2049², L3, 85 nodes) | 4 km, 0.9765625 m (4097², L4, 341 nodes) |
+| --- | --- | --- |
+| saved landscape (by manifest / on disk) | 26.99 MB / 22.77 MB (105 files) | 108.25 MB / 90.11 MB (396 files) |
+| synthesis seconds (reduced recipe, fluvial 40 iterations) | 60.5 | 253.6 |
+| peak tracked memory | 348.37 MB | 1392.74 MB |
+| ancestor max geometric error by level | L0 8.34 m, L1 5.95 m, L2 3.24 m | L0 6.20 m, L1 6.00 m, L2 4.30 m, L3 3.39 m |
+| natural slope > 10 / > 20°, p90 / p99 / max | 12.16% / 0.81%, 10.55 / 18.51 / 66.3 deg | 11.98% / 0.67%, 10.50 / 17.74 / 71.1 deg |
+| manifest.json (exact, measured-hierarchy, limit 1 MiB) | 114,074 B | 443,246 B (1365 nodes at 0.488 m: 1,762,795 B, over) |
+| terrain-fields / geology sidecar manifests (exact; limit 1 MiB since D3, was 256 KiB) | 78,864 / 75,553 B | 246,836–293,636 / 283,435 B (1365 nodes: 899,938–1,126,866 / 1,116,668 B) |
+| hierarchy preparation native reads | 448 | 2,304 (1365 nodes: 11,264) |
+
+Browser (shipped profile 512/448 MiB, surface cache on, 1920x1080 DPR 1 (drawing buffer 1920x1056), Chromium 151.0.7922.34, NVIDIA GeForce RTX 3060 through ANGLE/D3D11, AMD Ryzen 5 9600X 6-Core Processor; 30 warm-up + 120 sampled frames per stop; route overview from the sea, 30-frame approach to the bluff crest, gully close pose, top-down orthographic close view over the probe patch, return to the overview; all runs vsync-bound at 16.7 ms median frame interval):
+
+| Fixture | Startup natives before the first frame / by settled | Peak controlled CPU / estimated GPU | Upload max per frame / route | GPU ms median / p95 | Max triangles (draws) | Settle ms bluff / gully / ortho | 1.5 px geometry target | Picking max error (level) | Queries exact |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1953 (513², L1, 5 nodes) | 0 / 0 of 4 | 33.6 / 189.8 MiB | 3.51 / 14.03 MiB | 2.85 / 3.65 ms | 534,702 (7) | 200 / 196 / 199 | met at every stop | 6e-14 m (L1) | 64/64 |
+| 0977 (1025², L2, 21 nodes) | 0 / 0 of 16 | 113.7 / 242.4 MiB | 3.51 / 108.70 MiB | 3.81 / 5.90 ms | 2,132,142 (19) | 600 / 496 / 487 | met at every stop | 6e-14 m (L2) | 64/64 |
+| 0488 (2049², L3, 85 nodes) | 0 / 0 of 64 | 279.6 / 351.1 MiB | 3.51 / 462.84 MiB | 5.53 / 6.85 ms | 5,327,022 (43) | 2501 / 5897 / 1998 | met at every stop | 6e-14 m (L3) | 64/64 |
+| 4km-1953 (2049², L3, 85 nodes) | 0 / 0 of 64 | 275.6 / 351.2 MiB | 3.51 / 476.87 MiB | 5.66 / 6.49 ms | 4,528,302 (37) | 3000 / 5884 / 3492 | met at every stop | 6e-14 m (L3) | 64/64 |
+| 4km-0977 (4097², L4, 341 nodes) | 0 / 0 of 256 | 424.2 / 445.8 MiB | 3.51 / 788.93 MiB | 4.33 / 6.48 ms | 6,924,462 (55) | 6901 / 12088 / 8396 | missed at approach-bluff (gpu-budget) | 8e-14 m (L4) | 64/64 |
+
+Every fixture disposed to zero controlled CPU/GPU bytes; uploads never above 3.51 MiB per frame (cap 8); no native height payload was requested before the first covered frame on any fixture; 1953, 0977, 0488, 4km-1953 met the 1.5 px geometry target at every stop; 4km-0977 missed it at approach-bluff (gpu-budget). The fixtures carry no appearance or terrain-fields sidecars, so they render fallback soil colors (viewer error "[Landscape] appearance manifest HTTP 404") and PBR materials and generated surface detail are not measured; picking and query probes use the gully D patch at world x 430-471, z 135-166 m on every fixture, and the 4 km routes use the 1 km poses scaled onto their bounds.
+
+Edit and query gate on the published 0.977 m and 0.488 m fixtures (copies under `.../d3/editing/<tag>/`, one batch =
+grade with 6 m linear falloff + 7 m smooth at strength 0.5 + a sand soil override on a ~60 m hexagon straddling four
+natives at (500, 500), through the Node authoring store): every changed native sample equals the independently
+recomputed designed height (1,056,784 / 1,056,784 at 0.977 m, 4,227,136 / 4,227,136 at 0.488 m), every ancestor's
+aligned samples equal the native float32 bits (330,245 and 1,387,029 samples) with conservative errors, all shared
+borders identical (7,196 / 35,980 samples), apply 0.69 / 1.19 s and revert 0.14 / 0.54 s restore the pre-edit
+manifest and channels bit for bit; `sampleLandscapeChunk` equals the stored float32 at 1,000 random native vertices
+and the NW-SE triangle formula at 1,000 random cell centres on both.
+
+Costs accepted with 0.977 m over the city (the 4 km fixtures measure them at the real node count): ≈ 108 MB per saved
+revision (plus the terrain-fields and geology sidecars), synthesis ≈ 4.3 min for the reduced 4 km recipe and ≈ 10–12 min
+projected for the full city recipe (150 fluvial iterations at 2.4× the 40-iteration cost), peak tracked synthesis memory
+1392.74 MB in one process (above the fixture's 1 GiB working limit: the D4 recipe declares a larger limit or tiles the
+erosion), the fields and geology bakes' full-grid assembly ≈ 1.5 GB (above their 768 / 512 MiB limits: streamed assembly
+is a D4 prerequisite), hierarchy preparation 5–7 s (2,304 native reads), the appearance pages re-baked (the binding key
+covers the grid), and the surface-detail recipe re-derived (the viewer's `50cm` / `25cm` modes count levels below a
+1.953 m native grid; at 0.977 m the same spacings are one level fewer).
+
+Limitations recorded: the fixture landscapes carry no appearance or terrain-fields sidecars (the viewer draws fallback
+soil colours and reports the missing appearance; `capture.mjs --allow-missing-appearance on`), so the browser numbers
+exclude PBR materials and surface detail; the 4 km fixtures run a reduced recipe without plan constraints (budget
+evidence at the city's node count, not the v3 content); warm/reload runs were not measured; the updated authoring e2e
+constants were smoke-tested in the browser, not run as Playwright. The engine defect the study exposed (one-sample
+needle deposits of `sediment-deposit`, `terraces`, `hydraulic-erosion` and `thermal-weathering`, 39 → 162 → 577 per km²
+with resolution and up to 135 m on the 4 km pair) is fixed by the repose bound (Operators) and gated by the fixture's
+`needles` check; before the fix the ancestor errors (up to 141 m) forced native residency everywhere and the 4 km 0.977 m
+fixture to its GPU ceiling.
+
+Engine fix during D3: the depositing operators (`sediment-deposit`, `terraces`, `hydraulic-erosion`, `thermal-weathering`)
+now respect the repose plane of a cell's neighbours (refused material continues downstream, rolls to the lowest
+neighbour or is exported and counted); the D2 gate gained a `needles` check (19/19) and `tests/node/unit/landscape_synthesis_repose.test.js`.
 
 ## On completion
 

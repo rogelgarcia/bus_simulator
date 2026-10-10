@@ -2,9 +2,10 @@
 // @ts-check
 import { reliefStudyJob } from './relief_study/ReliefStudyJob.mjs';
 import { fixtureJob } from './fixture/FixtureJob.mjs';
+import { resolutionStudyJob } from './resolution_study/ResolutionStudyJob.mjs';
 
-export const synthesisJobs = Object.freeze([reliefStudyJob, fixtureJob, {
+export const synthesisJobs = Object.freeze([reliefStudyJob, fixtureJob, resolutionStudyJob, {
     id: 'landscape/synthesis', configurationPaths: [], codePaths: ['tools/bake_landscape'],
     description: 'Explicit terrain synthesis studies, gates and publications (AI 596); Node only, excluded from all and from the landscape import parent',
-    children: ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture']
+    children: ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture', 'landscape/synthesis/resolution-study']
 }]);

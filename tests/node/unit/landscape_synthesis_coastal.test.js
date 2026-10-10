@@ -138,10 +138,12 @@ test('Coastal synthesis: terraces cut benches onto hard strata (bimodal slopes) 
     const talus = await run(recipeOf(GRID, [op('import', 'import-heights'), op('strata', 'strata', geometry), op('terraces', 'terraces', { ...terrace, depositTalus: true, talusSpreadMeters: 16 })], { plan: false }), { readLandscape: sourceOf(slope) });
     const conserved = statisticsOf(talus, 'terraces');
     assert.ok(conserved.talusSamples > 1000 && conserved.stuckRoutes === 0 && Math.abs(conserved.massBalanceCubicMeters) < 1e-6 * conserved.cutVolumeCubicMeters, JSON.stringify(conserved));
-    assert.ok(Math.abs(conserved.talusVolumeCubicMeters - conserved.cutVolumeCubicMeters) < 1e-6 * conserved.cutVolumeCubicMeters, 'the routed talus equals the cut volume');
+    // the talus settles at repose: the lowest bench's share that reaches the west edge, where the slope runs off the landscape, is exported and counted
+    assert.ok(Math.abs(conserved.talusVolumeCubicMeters + conserved.reposeExportedVolumeCubicMeters - conserved.cutVolumeCubicMeters) < 1e-6 * conserved.cutVolumeCubicMeters, 'the routed talus plus the export equals the cut volume');
+    assert.ok(conserved.reposeExportedVolumeCubicMeters > 0 && conserved.reposeExportedVolumeCubicMeters < .05 * conserved.cutVolumeCubicMeters, `only the lowest bench reaches the edge: ${conserved.reposeExportedVolumeCubicMeters} of ${conserved.cutVolumeCubicMeters} m3`);
     let sum = 0, talusDeposits = 0;
     for (let i = 0; i < talus.heights.length; i++) { sum += talus.heights[i] - before[i]; if (talus.layers.depositType[i] === 1) { talusDeposits++; assert.ok(talus.layers.depositThickness[i] > 0); } }
-    assert.ok(Math.abs(sum) * 4 < 1e-4 * conserved.cutVolumeCubicMeters + .5, `the surface volume is conserved to float32 rounding: ${sum * 4} m3 of ${conserved.cutVolumeCubicMeters}`);
+    assert.ok(Math.abs(sum * 4 + conserved.reposeExportedVolumeCubicMeters) < 1e-4 * conserved.cutVolumeCubicMeters + .5, `the surface volume is conserved to float32 rounding up to the export: ${sum * 4} m3 of ${conserved.cutVolumeCubicMeters}`);
     assert.ok(talusDeposits === conserved.talusSamples, 'talus samples carry depositType 1');
     assertInvariant(talus);
     await review('terraces-talus', talus, before);

@@ -73,6 +73,16 @@ levels 1 and 2 may be inserted in D3 without changing native chunk identities.
 This is partitioned authority and coarse coverage, not completed camera/zoom
 streaming. Upsampling does not add measured or authored detail.
 
+The ZIP importer stays the 2049² v2 import (`COASTAL_GRID`: 1.953125 m, 256-interval
+chunks, maxLevel 3). Finer native data never enters through it (AI 596 D3): a grid
+synthesized at 0.9765625 or 0.48828125 m is written by `writeSynthesizedLandscape`
+(`tools/bake_landscape/terrain_synthesis/SynthesisLandscape.mjs`) with
+`provenance.kind: procedural-synthesis` and the `synthesis` block
+(`LANDSCAPE_MODEL.md`, provenance), which deepens the tree (4097² = maxLevel 4,
+8193² = maxLevel 5) with the same 257² tiles. An upsampled v2 raster would be a
+`synthesis.upsampled: true` document whose `sourceSpacingMeters` stays 1.953125;
+it adds no source detail, and this importer never produces one.
+
 ## Soil, cover and planning records
 
 The class-to-soil mapping is explicit and independent of visual texture choice:

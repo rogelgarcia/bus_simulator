@@ -1,0 +1,237 @@
+{
+  "format": "landscape-synthesis-recipe",
+  "schemaVersion": 1,
+  "id": "ai596-d3-fixture-city-extent-0977",
+  "seed": 596200,
+  "seaLevel": 0,
+  "grid": {
+    "columns": 4097,
+    "rows": 4097,
+    "spacingX": 0.9765625,
+    "spacingZ": 0.9765625,
+    "bounds": {
+      "minX": 0,
+      "maxX": 4000,
+      "minZ": 0,
+      "maxZ": 4000
+    },
+    "chunkIntervals": 256,
+    "maxLevel": 4
+  },
+  "working": null,
+  "inputs": {
+    "landscape": null,
+    "plan": null,
+    "imports": []
+  },
+  "operators": [
+    {
+      "id": "import",
+      "op": "import-heights",
+      "params": {
+        "source": "raw-float32",
+        "file": "fixture-base.raw",
+        "columns": 4097,
+        "rows": 4097,
+        "coverFile": "fixture-base-cover.u8"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "hills",
+      "op": "landform-hills",
+      "params": {
+        "amplitudeMeters": 48,
+        "wavelengthsMeters": [
+          500,
+          250,
+          120,
+          60
+        ],
+        "amplitudes": [
+          1,
+          0.5,
+          0.25,
+          0.12
+        ],
+        "ridgedMix": 0.5,
+        "offset": "signed",
+        "warpMeters": 60,
+        "warpWavelengthMeters": 400,
+        "combine": "add"
+      },
+      "mask": {
+        "type": "height",
+        "edge": {
+          "from": 1.4,
+          "to": 10
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "strata",
+      "op": "strata",
+      "params": {
+        "source": "height",
+        "dipEastMetersPerKm": 15,
+        "thicknessMeters": 5,
+        "hardnessPattern": [
+          0.9,
+          0.3,
+          0.6,
+          0.2
+        ],
+        "warpMeters": 2,
+        "warpWavelengthMeters": 300
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "fluvial",
+      "op": "fluvial-erosion",
+      "params": {
+        "iterations": 40,
+        "routingEveryIterations": 2,
+        "erodibility": 0.008,
+        "uplift": "retain-target",
+        "retainRate": 0.003,
+        "diffusivity": 0.1,
+        "useHardness": true
+      },
+      "mask": {
+        "type": "height",
+        "edge": {
+          "from": 1.4,
+          "to": 7
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "hydraulic",
+      "op": "hydraulic-erosion",
+      "params": {
+        "droplets": null,
+        "maxSteps": 64,
+        "erosionRate": 0.05,
+        "maxErosionPerStepMeters": 0.006,
+        "radius": 10,
+        "dropletsPerSquareKilometer": 30000
+      },
+      "mask": {
+        "type": "height",
+        "edge": {
+          "from": 1.4,
+          "to": 7
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "thermal",
+      "op": "thermal-weathering",
+      "params": {
+        "iterations": 30,
+        "weatheringRateMetersPerIteration": 0.02,
+        "weatheringSlopeDegrees": 30
+      },
+      "mask": {
+        "type": "height",
+        "edge": {
+          "from": 1.4,
+          "to": 7
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "sediment",
+      "op": "sediment-deposit",
+      "params": {
+        "iterations": 1,
+        "supplyLayer": "wear",
+        "supplyFraction": 0.1,
+        "depositionFraction": 0.2
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "terraces",
+      "op": "terraces",
+      "params": {
+        "dipEastMetersPerKm": 15,
+        "thicknessMeters": 5,
+        "hardnessPattern": [
+          0.9,
+          0.3,
+          0.6,
+          0.2
+        ],
+        "warpMeters": 2,
+        "warpWavelengthMeters": 300,
+        "hardThreshold": 0.6,
+        "minSlopeDegrees": 15,
+        "benchWidthMeters": 10,
+        "strength": 0.5,
+        "depositTalus": true
+      },
+      "mask": {
+        "type": "height",
+        "edge": {
+          "from": 1.4,
+          "to": 7
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "cap",
+      "op": "height-cap",
+      "params": {
+        "capMeters": 160,
+        "shoulderMeters": 0
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "geology",
+      "op": "geology-channels",
+      "params": {},
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "output",
+      "op": "resample",
+      "params": {
+        "filter": "bicubic"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    }
+  ],
+  "outputs": {
+    "heightCap": 160,
+    "coverPolicy": "keep-source",
+    "channels": [
+      "height"
+    ]
+  },
+  "overrides": []
+}

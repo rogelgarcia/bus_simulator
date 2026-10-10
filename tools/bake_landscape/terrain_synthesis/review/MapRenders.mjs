@@ -6,7 +6,7 @@
 // hypsometric stops are the plan's topographic map colors so renders compare directly with it) and is bit-identical across runs.
 import { LANDSCAPE_LAND_COVER_CATALOG } from '../../../../src/app/landscape/LandscapeCatalog.js';
 import { TerrainFieldMemory } from '../../terrain_fields/TerrainFieldsGrid.mjs';
-import { assertSynthesisGrid, slopeDegreesRaster } from '../analysis/GridSampling.mjs';
+import { assertSynthesisGrid, extractGridWindow, slopeDegreesRaster } from '../analysis/GridSampling.mjs';
 import { DEFAULT_WORKING_LIMIT_BYTES, SLOPE_BIN_EDGES_DEGREES } from '../analysis/ReliefMeasures.mjs';
 import { createCanvas, drawText, fillRect, mixRgb, rgbOf, textWidth } from './RasterCanvas.mjs';
 
@@ -115,6 +115,23 @@ export function renderHillshade(grid, heights, options = {}) {
     const { azimuthDegrees = 315, altitudeDegrees = 45, verticalExaggeration = 1, size = 1024, seaLevel = 0, waterTint = true } = options;
     if (![azimuthDegrees, altitudeDegrees, verticalExaggeration, seaLevel].every(Number.isFinite) || !(verticalExaggeration > 0)) throw new Error('[SynthesisReview] Hillshade parameters must be finite (positive exaggeration)');
     return shadeToCanvas(grid, hillshadeRaster(grid, heights, azimuthDegrees, altitudeDegrees, verticalExaggeration), heights, seaLevel, size, waterTint);
+}
+
+/**
+ * Hillshade of one fixed world window (edges on native vertices) at `size` pixels, so the same window compares across spacings: the shade
+ * is computed on the window plus a one-sample halo (exact central differences inside the window) and only the window is drawn, each
+ * native sample covering size / intervals pixels, so a coarse grid shows its sample blocks instead of an interpolated surface.
+ * @param {import('../analysis/GridSampling.mjs').SynthesisGrid} grid @param {Float32Array} heights
+ * @param {{window:{minX:number,maxX:number,minZ:number,maxZ:number},azimuthDegrees?:number,altitudeDegrees?:number,verticalExaggeration?:number,size?:number,seaLevel?:number,waterTint?:boolean}} options
+ */
+export function renderHillshadeWindow(grid, heights, options) {
+    assertSynthesisGrid(grid, heights);
+    const { window, azimuthDegrees = 315, altitudeDegrees = 45, verticalExaggeration = 1, size = 512, seaLevel = 0, waterTint = true } = options;
+    if (![azimuthDegrees, altitudeDegrees, verticalExaggeration, seaLevel].every(Number.isFinite) || !(verticalExaggeration > 0)) throw new Error('[SynthesisReview] Hillshade parameters must be finite (positive exaggeration)');
+    const haloed = extractGridWindow(grid, heights, window, { halo: 1 }), inner = extractGridWindow(grid, heights, window);
+    const shade = hillshadeRaster(haloed.grid, haloed.values, azimuthDegrees, altitudeDegrees, verticalExaggeration), { columns, rows } = inner.grid, cropped = new Float32Array(columns * rows);
+    for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) cropped[row * columns + column] = shade[(row + haloed.halo.north) * haloed.grid.columns + column + haloed.halo.west];
+    return shadeToCanvas(inner.grid, cropped, inner.values, seaLevel, size, waterTint);
 }
 
 /** Average of the 225, 270, 315 and 360 degree shades. @param {import('../analysis/GridSampling.mjs').SynthesisGrid} grid @param {Float32Array} heights */

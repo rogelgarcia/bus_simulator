@@ -9,7 +9,7 @@
 // channel sample. All arithmetic is float64 in a fixed visitation order.
 import { TerrainFieldMemory, gaussianSmooth } from '../../terrain_fields/TerrainFieldsGrid.mjs';
 import { TERRAIN_NEIGHBORS, flowAccumulation, priorityFlood, resolveFlats } from '../../terrain_fields/TerrainFieldsHydrology.mjs';
-import { assertSynthesisGrid, slopeDegreesRaster, sortedSelection, summaryOfSorted } from './GridSampling.mjs';
+import { assertSynthesisGrid, slopeDegreesRaster, sortedSelection, summaryOfSorted, worldXOf, worldZOf } from './GridSampling.mjs';
 
 export const NATURAL_COVER_CLASSES = Object.freeze([1, 2, 3, 4]);
 export const SLOPE_BIN_EDGES_DEGREES = Object.freeze([0, 2, 5, 10, 15, 20, 30, 45]);
@@ -52,6 +52,39 @@ export function runningWindowExtreme(grid, values, radius, greater, output) {
         pass(rows, (r, value) => { output[r * columns + column] = value; });
     }
     return output;
+}
+
+/** Height of a sample above the highest of its 8 neighbours (clamped at the edge): a needle is one sample standing above everything around it. @param {{columns:number,rows:number}} grid @param {ArrayLike<number>} heights @param {number} i */
+export function neighborProminence(grid, heights, i) {
+    const column = i % grid.columns, row = (i - column) / grid.columns;
+    let highest = -Infinity;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const r = row + dr, c = column + dc;
+        if (r < 0 || c < 0 || r >= grid.rows || c >= grid.columns) continue;
+        const h = heights[r * grid.columns + c];
+        if (h > highest) highest = h;
+    }
+    return heights[i] - highest;
+}
+
+/**
+ * Needles of a surface: samples standing more than `thresholdMeters` above all 8 neighbours. A heightfield cannot hold a one-sample spike
+ * at any spacing (its slope is the spacing), so needles are operator artifacts (a deposit dumped on one cell above the repose plane of its
+ * neighbours), not relief; the fixture gate requires none and the resolution study reports them per spacing.
+ * @param {import('./GridSampling.mjs').SynthesisGrid} grid @param {Float32Array} heights
+ */
+export function needleStatistics(grid, heights, thresholdMeters = 2) {
+    if (!(thresholdMeters > 0)) throw new Error('[SynthesisAnalysis] needleStatistics needs a positive threshold');
+    const n = grid.columns * grid.rows, areaKm2 = (grid.columns - 1) * grid.spacingX * (grid.rows - 1) * grid.spacingZ / 1e6;
+    let count = 0, maximum = 0, at = null, total = 0;
+    for (let i = 0; i < n; i++) {
+        const prominence = neighborProminence(grid, heights, i);
+        if (prominence <= thresholdMeters) continue;
+        count++; total += prominence;
+        if (prominence > maximum) { maximum = prominence; const column = i % grid.columns; at = { x: worldXOf(grid, column), z: worldZOf(grid, (i - column) / grid.columns), height: heights[i] }; }
+    }
+    return { thresholdMeters, count, perSquareKilometer: count / areaKm2, meanProminenceMeters: count ? total / count : null, maxProminenceMeters: maximum, maxAt: at };
 }
 
 /**

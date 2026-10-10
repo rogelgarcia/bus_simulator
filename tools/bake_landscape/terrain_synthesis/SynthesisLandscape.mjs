@@ -10,7 +10,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readdir, rm } from 'node:fs/promises';
-import { createLandscapeChunkId, createLandscapeManifest, encodeLandscapeChannel, validateLandscapeManifest, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest } from '../../../src/app/landscape/index.js';
+import { createLandscapeChunkId, createLandscapeManifest, encodeLandscapeChannel, validateLandscapeManifest, landscapeAppearanceBindingKey, validateLandscapeAppearanceManifest,
+    LANDSCAPE_SYNTHESIS_PROVENANCE_KIND, LANDSCAPE_SYNTHESIS_PROVENANCE_STATEMENT } from '../../../src/app/landscape/index.js';
 import { LANDSCAPE_PLANNING_ROLES } from '../../../src/app/landscape/LandscapePlanningReferences.js';
 import { LANDSCAPE_DEFAULT_DIRECTORY } from '../../../src/app/landscape/LandscapeCache.js';
 import { LANDSCAPE_LAND_COVER_CATALOG } from '../../../src/app/landscape/LandscapeCatalog.js';
@@ -26,8 +27,22 @@ export const DEFAULT_FIELDS_RECIPE_FILE = path.join(REPOSITORY_ROOT, 'tools/bake
 const STAGE_DIRECTORY = '.synthesis-stage';
 const FILE_READ_LIMIT = 64 * 1024 * 1024;
 const REFERENCE_POLICIES = Object.freeze(['copy-planning', 'copy-all', 'none']);
+const SYNTHESIS_IDENTITY = /^synthesis-[a-f0-9]{24}$/;
 const jsonBytes = value => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const seconds = started => (performance.now() - started) / 1000;
+
+// the optional synthesis option turns the provenance into the procedural-synthesis kind (AI 596 D3): the recipe identity and the spacing the
+// operators ran at are facts only the caller that executed the recipe knows, so they are explicit inputs rather than inferred here
+function assertSynthesis(synthesis, spacing) {
+    if (synthesis === undefined || synthesis === null) return null;
+    if (!synthesis || typeof synthesis !== 'object') throw new Error('[SynthesisLandscape] synthesis must be an object {recipeId, identity, recipeSha256, sourceSpacingMeters}');
+    const { recipeId, identity, recipeSha256, sourceSpacingMeters } = synthesis;
+    if (typeof recipeId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,159}$/.test(recipeId)) throw new Error('[SynthesisLandscape] synthesis.recipeId must be the recipe id');
+    if (typeof identity !== 'string' || !SYNTHESIS_IDENTITY.test(identity)) throw new Error('[SynthesisLandscape] synthesis.identity must be the recipe identity (synthesis-<24 hex>)');
+    if (typeof recipeSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(recipeSha256)) throw new Error('[SynthesisLandscape] synthesis.recipeSha256 must be the lowercase SHA-256 of the recipe file');
+    if (!Number.isFinite(sourceSpacingMeters) || sourceSpacingMeters < spacing) throw new Error(`[SynthesisLandscape] synthesis.sourceSpacingMeters must be the spacing the operators ran at (at least the native spacing ${spacing})`);
+    return { recipeId, identity, recipeSha256, sourceSpacingMeters };
+}
 
 function assertOptions(options) {
     const { sourceDirectory, outputDirectory, grid, heights, cover, id, name, revisionLabel, provenance, references = 'copy-planning', appearance = 'copy', fields = 'bake' } = options;
@@ -48,7 +63,7 @@ function assertOptions(options) {
     if (!REFERENCE_POLICIES.includes(references)) throw new Error(`[SynthesisLandscape] references must be one of ${REFERENCE_POLICIES.join(', ')}`);
     if (!['copy', 'none'].includes(appearance)) throw new Error('[SynthesisLandscape] appearance must be copy or none');
     if (!['bake', 'none'].includes(fields)) throw new Error('[SynthesisLandscape] fields must be bake or none');
-    return { ...options, outputDirectory: output, references, appearance, fields };
+    return { ...options, outputDirectory: output, references, appearance, fields, synthesis: assertSynthesis(options.synthesis, grid.spacingX) };
 }
 
 function heightsLittleEndian(heights) {
@@ -86,6 +101,7 @@ async function listFilesRecursive(directory, relative = '') {
 /**
  * @param {{sourceDirectory:string,outputDirectory:string,grid:{columns:number,rows:number,spacingX:number,spacingZ:number,minX:number,maxZ:number},heights:Float32Array,cover:Uint8Array,
  *   id:string,name:string,revisionLabel:string,provenance:{sourceName:string,[key:string]:any},references?:'copy-planning'|'copy-all'|'none',appearance?:'copy'|'none',fields?:'bake'|'none',
+ *   synthesis?:{recipeId:string,identity:string,recipeSha256:string,sourceSpacingMeters:number}|null,
  *   fieldsRecipeFile?:string,verifyFieldsDeterminism?:boolean,chunkIntervals?:number,maxLevel?:number,seaLevel?:number,signal?:AbortSignal,log?:(message:string)=>void}} options
  */
 export async function writeSynthesizedLandscape(options) {
@@ -170,8 +186,14 @@ export async function writeSynthesizedLandscape(options) {
         // provisional manifest, then the hierarchy staged beside the output
         mark = performance.now();
         const { sourceName, preparation: preparationExtra = {}, ...provenanceExtra } = settings.provenance;
-        const provenance = { kind: 'designed-prototype', ...provenanceExtra, sourceName, sourceSha256: heightsSha256, nativeResolutionMeters: spacing,
-            preparation: { algorithm: SYNTHESIS_PREPARATION_ALGORITHM, chunkIntervals, overviewStride: 2 ** maxLevel, maxLevel, revisionLabel, coverSha256, ...preparationExtra } };
+        const preparation = { algorithm: SYNTHESIS_PREPARATION_ALGORITHM, chunkIntervals, overviewStride: 2 ** maxLevel, maxLevel, revisionLabel, coverSha256, ...preparationExtra };
+        // with a synthesis option the source is the recipe (its SHA-256 is the source identity, the heights hash moves into preparation) and the
+        // provenance states that the terrain was synthesized, not measured; without it the pre-D3 shape is kept so older callers and revisions read on
+        const provenance = settings.synthesis
+            ? { ...provenanceExtra, kind: LANDSCAPE_SYNTHESIS_PROVENANCE_KIND, sourceName, sourceSha256: settings.synthesis.recipeSha256, nativeResolutionMeters: spacing, preparation: { ...preparation, heightsSha256 },
+                synthesis: { recipeId: settings.synthesis.recipeId, identity: settings.synthesis.identity, statement: LANDSCAPE_SYNTHESIS_PROVENANCE_STATEMENT,
+                    sourceSpacingMeters: settings.synthesis.sourceSpacingMeters, upsampled: settings.synthesis.sourceSpacingMeters > spacing } }
+            : { kind: 'designed-prototype', ...provenanceExtra, sourceName, sourceSha256: heightsSha256, nativeResolutionMeters: spacing, preparation };
         const provisional = createLandscapeManifest({ id, name, revision: contentRevision, bounds, grid: { columns: grid.columns, rows: grid.rows, spacingX: spacing, spacingZ: spacing, chunkIntervals, maxLevel },
             coordinates: { units: 'meters', upAxis: 'Y', xDirection: 'east', zDirection: 'north', rasterRow0: 'north', origin: { x: bounds.minX, y: 0, z: bounds.minZ }, seaLevel }, chunks, overviewId: 'l0/c0/r0', provenance, references });
         log(`[SynthesisLandscape] ${id}: preparing hierarchy levels 1..${maxLevel - 1}`);

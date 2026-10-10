@@ -34,6 +34,13 @@ at 4 MiB; the coast uses 1,585,176 bytes. Repeated sequential native reads repla
 a full source raster allocation. Metadata, file caches and runtime overhead are
 outside this array estimate. Source reads and actual comparisons are recorded.
 
+A deeper tree (AI 596 D3: 4097² = maxLevel 4 with 341 nodes, 8193² = maxLevel 5
+with 1365 nodes) keeps that per-tile memory and grows only the sequential I/O:
+every derived node reads each descendant native twice (the aligned copy, then the
+exact error), `4^L + 2·L·4^L` reads over a depth-L tree — 448 at maxLevel 3,
+2,304 at 4 and 11,264 at 5 (measured on 4-interval fixtures,
+`tests/artifacts/screens/landscape/ai596/d3/limits/sidecar-limits.json`).
+
 ## Manifest-last publication
 
 Preparation shares the authoring mutation lock and framework input-stability

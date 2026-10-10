@@ -3,6 +3,12 @@
 Run `node tools/landscape_server/run.mjs` from this worktree. It serves the viewer at
 `http://127.0.0.1:8002/screens/landscape_fabrication.html`. `PORT` can select another
 available port; port 8001 is reserved for other worktrees and is rejected.
+`LANDSCAPE_DIRECTORY=<saved landscape directory>` (relative to the worktree or absolute;
+it must hold a `manifest.json`) serves that directory at the viewer's canonical cache
+address instead of the local cache, so a synthesis fixture such as
+`assets/public/landscape/ai596-d3-fixture-0977` can be inspected and measured without
+touching `assets/public/landscape/coastal-city/`. Unset, the server serves the local cache
+as before.
 
 This server is a development handoff tool, not an offline terrain bake command.
 Terrain preparation uses the registered `landscape/coastal-import` bake leaf.

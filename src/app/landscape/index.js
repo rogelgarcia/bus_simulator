@@ -1,7 +1,8 @@
 // Exposes renderer-independent landscape manifests, channels, coordinates, and sampling.
 // @ts-check
 export { LANDSCAPE_LAND_COVER_CATALOG, LANDSCAPE_SOIL_CATALOG } from './LandscapeCatalog.js';
-export { LANDSCAPE_SCHEMA_VERSION, LANDSCAPE_MAX_CHUNK_SAMPLES, LANDSCAPE_SUPPORTED_CAPABILITIES, createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest } from './LandscapeManifest.js';
+export { LANDSCAPE_SCHEMA_VERSION, LANDSCAPE_MAX_CHUNK_SAMPLES, LANDSCAPE_SUPPORTED_CAPABILITIES, LANDSCAPE_PROVENANCE_KINDS, LANDSCAPE_SYNTHESIS_PROVENANCE_KIND, LANDSCAPE_SYNTHESIS_PROVENANCE_STATEMENT,
+    createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest } from './LandscapeManifest.js';
 export { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CHUNK_BYTE_LIMIT, encodeLandscapeChannel, decodeLandscapeChannel, loadLandscapeManifest, loadLandscapeChunk, loadLandscapeOverview } from './LandscapePayload.js';
 export { landscapeGridToWorld, landscapeWorldToGrid, landscapeCityTileToWorld, landscapeWorldToCityTile } from './LandscapeCoordinates.js';
 export { sampleLandscapeChunk, createLandscapeSelectionContext } from './LandscapeSampling.js';
@@ -9,8 +10,10 @@ export { resolveLandscapeSoil } from './LandscapeSoil.js';
 export { LANDSCAPE_MAX_POLYGON_VERTICES, validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight, landscapeRegionsEqual, landscapeRegionSignedDistance, landscapeRegionNearestBoundaryPoint } from './LandscapeRegions.js';
 export { LANDSCAPE_SURFACE_DETAIL_FORMAT, LANDSCAPE_SURFACE_DETAIL_MAX_LEVELS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_METERS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_SLOPE, validateLandscapeSurfaceDetailRecipe, createLandscapeSurfaceDetailIndex,
     landscapeSurfaceDetailSupport, landscapeSurfaceDetailInputs, landscapeSurfaceDetailKey, landscapeSurfaceDetailRecipeHash, landscapeSurfaceDetailSeed, landscapeSurfaceDetailSearchRadius } from './LandscapeSurfaceDetail.js';
-export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
-export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams } from './LandscapeAcquisition.js';
+export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES_FINE,
+    LANDSCAPE_SMOOTH_FINE_SPACING_METERS, landscapeSmoothRadiusSampleLimit, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
+export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams,
+    landscapeQueryRadiusLimit } from './LandscapeAcquisition.js';
 export { LANDSCAPE_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatch } from './LandscapeEditing.js';
 export { LANDSCAPE_STREAMED_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatchStreamed } from './LandscapeStreamedEditing.js';
 export { createLandscapeViewPlanner, planLandscapeView, landscapeResourceKey } from './LandscapeStreaming.js';

@@ -25,7 +25,8 @@ export const REVIEW_POSE_LIMITS = Object.freeze({
     lookDistanceMeters: Object.freeze([1, 20000]), fovDegrees: Object.freeze([5, 110]), pitchDegrees: Object.freeze([-89, 89]), poses: 200, references: 16
 });
 
-const POSE_ID = /^[A-Z]{2,4}-\d{2}$/, FILE_ID = /^[a-z0-9][a-z0-9-]{1,63}$/, REFERENCE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+// pose ids are a one- to four-letter series prefix and a two-digit number (NW-01 natural world, F-01 the AI 596 D3 fixture poses)
+const POSE_ID = /^[A-Z]{1,4}-\d{2}$/, FILE_ID = /^[a-z0-9][a-z0-9-]{1,63}$/, REFERENCE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const FILE_KEYS = ['format', 'schemaVersion', 'id', 'conventions', 'poses'];
 const COMMON_KEYS = ['id', 'intent', 'fovDegrees', 'references', 'notes'];
 const DIRECTIONAL_KEYS = ['x', 'z', 'headingDegrees', 'pitchDegrees', 'lookDistanceMeters'];

@@ -38,7 +38,7 @@ export class LandscapePanel {
                 <h2 data-field="selection-title">Point to the terrain</h2>
                 <p data-field="selection">Click a surface to identify its world coordinates and cover type.</p>
                 <small data-field="chunk">Select a point to inspect its rendered chunk and LOD.</small>
-                <label class="landscape-radius">Selection radius (m)<input data-field="radius" type="number" value="25" min="0" max="1000" step="1" aria-label="Selection radius in meters" /><small>0 selects a point. Larger areas are checked against the native-data budget.</small></label>
+                <label class="landscape-radius">Selection radius (m)<input data-field="radius" type="number" value="25" min="0" max="1000" step="1" aria-label="Selection radius in meters" /><small data-field="radius-hint">0 selects a point. Larger areas are checked against the native-data budget.</small></label>
                 <div class="landscape-selection-actions" data-group="selection"></div>
                 <small data-field="handoff">Selections are view-only. Terrain is unchanged.</small>
                 <small class="landscape-report" data-field="report">Terrain report: select an area, then Inspect area.</small>
@@ -79,6 +79,12 @@ export class LandscapePanel {
 
     /** @param {string} field @param {string} value */
     text(field, value) { this.root.querySelector(`[data-field="${field}"]`).textContent = value; }
+
+    /** The loaded landscape's admissible selection radius (half its native chunk span) bounds the field and is named in its hint. @param {number} limit @param {number} span */
+    selectionRadiusLimit(limit, span) {
+        this.root.querySelector('[data-field="radius"]').max = String(limit);
+        this.text('radius-hint', `0 selects a point. At most ${limit} m: an exact query covers at most four ${span} m native chunks.`);
+    }
 
     active(action, enabled) {
         const button = this.root.querySelector(`[data-action="${action}"]`);

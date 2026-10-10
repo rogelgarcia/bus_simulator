@@ -7,7 +7,9 @@ import { REVIEW_POSE_CONVENTIONS, loadReviewPoses, resolveReviewPose, reviewPose
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const poseFile = path.join(root, 'tools/landscape_review/poses/natural-world-v1.json');
+const fixturePoseFile = path.join(root, 'tools/landscape_review/poses/ai596-d3-fixture-v1.json');
 const EXPECTED_IDS = Array.from({ length: 13 }, (_, index) => `NW-${String(index + 1).padStart(2, '0')}`);
+const FIXTURE_IDS = Array.from({ length: 8 }, (_, index) => `F-${String(index + 1).padStart(2, '0')}`);
 const close = (actual, expected, message) => actual.forEach((value, axis) => assert.ok(Math.abs(value - expected[axis]) < 1e-9, `${message}: axis ${axis} ${value} vs ${expected[axis]}`));
 
 function document(poses) {
@@ -32,6 +34,30 @@ test('Review poses: natural-world-v1 validates and pins NW-01..NW-13 once each w
     const eye = poses.poses.filter(pose => 'eyeHeightMeters' in pose).map(pose => pose.id);
     assert.deepEqual(eye, ['NW-01', 'NW-02', 'NW-03', 'NW-04', 'NW-05', 'NW-06', 'NW-07', 'NW-08']);
     assert.ok(poses.poses.filter(pose => 'altitudeMeters' in pose).every(pose => ['NW-09', 'NW-10', 'NW-11', 'NW-12'].includes(pose.id)));
+});
+
+test('Review poses: ai596-d3-fixture-v1 pins F-01..F-08 on the 1 km synthesis fixture with the shared conventions', async () => {
+    const poses = await loadReviewPoses(fixturePoseFile);
+    assert.equal(poses.id, 'ai596-d3-fixture-v1');
+    assert.deepEqual(poses.poses.map(pose => pose.id), FIXTURE_IDS);
+    assert.deepEqual(poses.conventions, { ...REVIEW_POSE_CONVENTIONS });
+    for (const pose of poses.poses) {
+        assert.equal(pose.fovDegrees, 55, `${pose.id} fov`);
+        assert.equal(pose.lookDistanceMeters, 100, `${pose.id} look distance`);
+        assert.match(pose.notes, /D2 (synthesis )?fixture/, `${pose.id} records the fixture revision it was pinned on`);
+        assert.ok(pose.notes.length > 80, `${pose.id} records how it was chosen`);
+    }
+    // the standing poses are on the 1 km fixture ground; the flyover and the overview use altitudes (the overview outside the western edge)
+    const eye = poses.poses.filter(pose => 'eyeHeightMeters' in pose);
+    assert.deepEqual(eye.map(pose => pose.id), ['F-01', 'F-02', 'F-03', 'F-04', 'F-05', 'F-06']);
+    for (const pose of eye) assert.ok(pose.x >= 0 && pose.x <= 1000 && pose.z >= 0 && pose.z <= 1000 && pose.eyeHeightMeters === 1.7, `${pose.id} stands inside the 1 km fixture at eye height`);
+    assert.deepEqual(poses.poses.filter(pose => 'altitudeMeters' in pose).map(pose => [pose.id, pose.altitudeMeters]), [['F-07', 40], ['F-08', 450]]);
+    const overview = poses.poses.find(pose => pose.id === 'F-08');
+    assert.deepEqual([overview.x, overview.z, overview.headingDegrees, overview.pitchDegrees], [-250, 500, 90, -30]);
+    // the bluff pair stands on the crest bench and on the wave-cut platform of the same bluff row
+    const [crest, toe] = poses.poses;
+    assert.deepEqual([crest.x, crest.z, toe.x, toe.z], [363, 300, 334, 300]);
+    assert.equal(toe.headingDegrees, 90);
 });
 
 test('Review poses: heading 0 looks north (+Z), 90 east (+X), pitch -90 straight down, and the direction stays unit length', () => {
@@ -84,6 +110,9 @@ test('Review poses: the schema rejects duplicates, ranges, mixed forms, unknown 
     assert.throws(() => validateReviewPoses(document([standing({ eyeHeightMeters: undefined })])), /exactly one of/);
     assert.throws(() => validateReviewPoses(document([standing({ extra: true })])), /unknown keys: extra/);
     assert.throws(() => validateReviewPoses(document([standing({ id: 'nw-1' })])), /id must match/);
+    assert.doesNotThrow(() => validateReviewPoses(document([standing({ id: 'F-01' })])), 'a one-letter series prefix (the fixture poses) is valid');
+    assert.throws(() => validateReviewPoses(document([standing({ id: 'FIXTS-01' })])), /id must match/);
+    assert.throws(() => validateReviewPoses(document([standing({ id: 'F-1' })])), /id must match/);
     assert.throws(() => validateReviewPoses(document([standing({ references: ['R01', 'R01'] })])), /repeats a reference/);
     assert.throws(() => validateReviewPoses(document([standing({ notes: '' })])), /notes/);
     assert.throws(() => validateReviewPoses(document([{ id: 'NW-13', intent: 'x', camera: { position: [1, 2, 3], target: [1, 2, 3] }, fovDegrees: 55, references: [], notes: 'same' }])), /coincide/);

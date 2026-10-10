@@ -147,6 +147,30 @@ timings drift 1–2 ms between runs; only paired measurements compare tightly. R
 (receipts `tests/artifacts/screens/landscape/ai577/d7/cache-default/suites-default|off/`); paired 1440p/4K GPU and the
 motion review are in LANDSCAPE_APPEARANCE_RUNTIME.md.
 
+## Fixture resolution harness (AI 596 D3)
+
+`tests/headless/e2e/landscape_resolution.pwtest.js` measures the terrain-synthesis fixture landscapes at the three
+candidate native spacings (`assets/public/landscape/ai596-d3-fixture-{1953,0977,0488}` and the 4 km
+`-4km-{1953,0977}` variants; `LANDSCAPE_RESOLUTION_FIXTURES` selects other ids or saved landscape directories).
+Run it like the coastal benchmark through `node tools/run_selected_test/run.mjs` with
+`E2E_BASE_URL=http://127.0.0.1:8002`, but with **no server running on 8002**: the test serves each fixture itself
+on that port (`createLandscapeServer({ root, landscapeDirectory })`) and asserts that the served manifest is the
+fixture's file byte for byte, so the canonical cache is never involved. A fixture whose `manifest.json` is missing
+is skipped with a `not measured` receipt. Per fixture it records, under
+`tests/artifacts/screens/landscape/ai596/d3/browser/<fixture>/`: the shipped profile of the run's surface cache
+mode at 1920 × 1080 DPR 1; startup (no native height payload requested before the first covered frame, measured
+from request timing against the page clock; what was fetched; coarse/settled startup; program compile ms); a
+five-stop route derived from the manifest bounds (overview from the sea, a 30-frame approach to the bluff crest,
+the gully close pose, a top-down orthographic close view over the probe patch, return) with 30 warm-up + 120
+sampled frames per stop (frame interval, synchronous CPU, GPU ms; draw calls, triangles; resident leaves by level;
+controlled CPU / estimated GPU current and lifetime peaks; uploads per frame ≤ 8 MiB and route totals; time to
+settled detail and whether the 1.5 px geometry target was met); 64 picking probes (32 native vertices shared by
+all spacings, 32 finest-cell centers on the gully D patch, raycast from the orthographic view against the
+authoritative native height at the hit) and 64 `select()` queries that must return the stored float32 heights
+exactly at vertices; disposal to zero controlled allocations. `comparison.md` beside the receipts is regenerated
+from every receipt present. Fixtures saved without an appearance sidecar render fallback soil colors (the viewer
+records `[Landscape] appearance manifest HTTP 404`), so these numbers exclude PBR materials and surface detail.
+
 ## Verification
 
 `tests/node/unit/landscape_performance_capture.test.js` covers denied reservation rollback, bounded/drop-accounted frame and unique GPU sampling, prior-submission exclusion, and finish/abandon disposal without releasing terrain allocations. The browser benchmark verifies actual camera-driven I/O, resource limits, both fixed-position zoom modes, repeated coarsening/reload, and final zero controlled residency. Broader failure/cancellation/edit/source-fidelity gates remain in their focused D3–D7 suites.

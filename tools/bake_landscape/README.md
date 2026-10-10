@@ -78,7 +78,12 @@ landscape beside the cache (`assets/public/landscape/coastal-city-ai596-<variant
 `tools/landscape_review` captures; `node tools/bake.mjs --target landscape/synthesis/fixture` runs the D2
 engine gate (the synthetic 1 × 1 km plateau/road/shoreline fixture through every operator family with
 determinism, constraint, relief, geology, seam and interchange checks; receipt and review maps under
-`tests/artifacts/screens/landscape/ai596/d2/fixture/`). Both are Node only, excluded from `all` and the
+`tests/artifacts/screens/landscape/ai596/d2/fixture/`); `node tools/bake.mjs --target landscape/synthesis/resolution-study`
+runs the D3 resolution study (the fixture recipe at 1.953125, 0.9765625 and 0.48828125 m written as standalone
+saved landscapes and measured for size, cost, relief and feature sharpness, receipt and composites under
+`tests/artifacts/screens/landscape/ai596/d3/resolution/`; `--publish` writes the landscapes as
+`assets/public/landscape/ai596-d3-fixture-<tag>/`, gitignored, and `--set "landscape/synthesis/resolution-study:city-extent=true"`
+adds the 4 × 4 km pair `ai596-d3-fixture-4km-<tag>`). All are Node only, excluded from `all` and the
 `landscape` import parent.
 
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through

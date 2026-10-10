@@ -47,8 +47,10 @@ rounds its output once to float32 before the following operation reads it.
 `smooth` adds `radiusMeters` and `strength`. Strength must be in `(0,1]`.
 The rectangular box kernel has native half-widths
 `floor(radiusMeters / spacingX)` and `floor(radiusMeters / spacingZ)`; each must
-be 1–8 samples. Every value in that `(2*radiusX+1) × (2*radiusZ+1)` window has equal
-weight. Source-extent edges repeat the clamped boundary sample. Samples outside
+be 1–8 samples at a spacing of 1.5 m or coarser and 1–16 samples below it
+(`landscapeSmoothRadiusSampleLimit`, AI 596 D3: 15.625 m of reach at 1.953125 and
+0.9765625 m, 7.8125 m at 0.48828125 m). Every value in that
+`(2*radiusX+1) × (2*radiusZ+1)` window has equal weight. Source-extent edges repeat the clamped boundary sample. Samples outside
 the edit region remain valid halo inputs; the region/falloff controls which
 outputs change. First compute `target = original + (boxMean - original) * strength`
 in float64, then `float32(original + (target - original) * weight)`; full weight
@@ -145,8 +147,10 @@ scratch and callback staging. At most two complete decoded chunks are held by
 the domain at a time. I/O is sequential.
 
 For a 257×257 coastal chunk, a four-sample halo reserves **2,349,043 bytes**.
-The maximum eight-sample halo reserves **2,387,011 bytes**. Sixteen and sixty-four
-affected chunks have the same reservation with otherwise identical inputs.
+The eight-sample halo reserves **2,387,011 bytes** and the sixteen-sample halo
+allowed below 1.5 m spacing **2,464,867 bytes** (AI 596 D3, measured). Sixteen and sixty-four
+affected chunks have the same reservation with otherwise identical inputs, and so
+does a deeper tree: its extra ancestors are rebuilt one at a time.
 These are conservative tracked-array bounds, not total process RSS/heap.
 Manifest/descriptor indexes are metadata; the file store separately enforces its
 1 MiB manifest limit. Scratch disk/I/O and total work grow with the footprint and

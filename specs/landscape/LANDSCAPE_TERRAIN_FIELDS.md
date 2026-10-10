@@ -15,6 +15,13 @@ The registered `landscape/terrain-fields` bake leaf (Node only, `configurationPa
 the whole grid, and only then slices pages. Parameters live in the tracked recipe
 `tools/bake_landscape/terrain_fields/recipe-v1.json`, embedded in provenance with its SHA-256.
 
+The full-grid assembly (`TerrainFieldsSource.mjs`) bounds the native grids the leaf can bake: the coast
+peaks at about 380 MiB of tracked arrays at 2049² under the recipe's 768 MiB limit, so a 4097² grid
+(0.9765625 m over 4 km) needs about four times that, roughly 1.5 GB, and 8193² sixteen times. The
+geology preparation reads the same full grid under its 512 MiB limit. Finer native grids therefore need
+a streamed, tiled assembly of both bakes before their leaves can run on them: an AI 596 D4 prerequisite
+recorded here, not implemented in D3 (the 1 km D3 fixtures bake unchanged).
+
 | Field | Algorithm (recipe v1) | Normalization |
 | --- | --- | --- |
 | slope | central differences matching mesh vertex normals | degrees / 90 |
@@ -50,7 +57,10 @@ presentation and imported reference data (AI577 D5).
 
 ## Sidecar
 
-`<landscape>/fields/manifest.json`, at most 256 KiB, with an immutable `manifest.<sha256>.json`
+`<landscape>/fields/manifest.json`, at most 1 MiB (`LANDSCAPE_TERRAIN_FIELDS_LIMIT`; 256 KiB before AI 596 D3:
+the sidecar lists every node and every native, so a 341-node tree measures 246,836 bytes, 293,636 with a
+natural-soil entry on every page, and a 1365-node tree 899,938–1,126,866 bytes, which exceeds even 1 MiB in the
+worst case), with an immutable `manifest.<sha256>.json`
 snapshot and content-addressed `pages/<sha256>.rgba8` / `pages/<sha256>.u8`. Every object has an exact
 field set; unknown or missing fields are rejected; JSON key order is irrelevant.
 
@@ -143,8 +153,8 @@ identical.
 ## Runtime
 
 `LandscapeTerrainFieldPages` (engine3d) reuses the memoized sidecar load of the load's
-`LandscapeNaturalInference` (one request for both) after the appearance materials (768 KiB
-transient decode credit), computes staleness and allocates one RGBA8 `DataArrayTexture`
+`LandscapeNaturalInference` (one request for both) after the appearance materials (a transient decode
+credit of three times the sidecar limit: 3 MiB since AI 596 D3, 768 KiB before), computes staleness and allocates one RGBA8 `DataArrayTexture`
 (linear, no mipmaps) of `native mask capacity x 4` layers: the page of native mask slot s occupies layers
 `4s .. 4s + 3`. A page is requested (appearance worker job `field`: fetch and SHA-256) for every native
 mask record holding a slot, at most two in flight at priority 25, and is evicted with its mask record.

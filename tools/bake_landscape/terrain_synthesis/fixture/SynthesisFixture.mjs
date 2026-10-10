@@ -1,33 +1,36 @@
-// Runs the D2 gate: the synthetic 1 x 1 km plateau/road/shoreline fixture through every synthesis operator with determinism, constraint, relief, geology, seam and interchange checks.
+// Runs the D2 gate: the synthetic 1 x 1 km plateau/road/shoreline fixture through every synthesis operator with determinism, constraint, relief, needle, geology, seam and interchange checks.
 // @ts-check
 // The fixture is the engine's acceptance test on terrain no one authored: an analytic base (FixtureBase), the committed plan under
 // fixture/plan and the committed recipe exercise every operator family. The gate declares its targets as data (FIXTURE_GATE), runs the
 // recipe twice (bit-identical hashes), measures the result with the same analysis the coastal studies use, writes the result as a
 // standalone saved landscape (whose preparation verifies the chunk seams) plus a geology sidecar candidate (whose validation verifies
-// page borders and halos), re-imports the exported height map, renders a hillshade after every operator, and writes one receipt.
+// page borders and halos), re-imports the exported height map, renders a hillshade after every operator, and writes one receipt. The base
+// is generated at the recipe's grid, which must be one of the fixture spacings (fixtureGridOf), so the same gate runs the finer D3 recipes.
 import path from 'node:path';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { TerrainFieldMemory } from '../../terrain_fields/TerrainFieldsGrid.mjs';
 import { executeSynthesisRecipe } from '../SynthesisGraph.mjs';
-import { diagnoseRelief, reliefDiagnosisMarkdown, shorelineXAt, polygonCentroid } from '../SynthesisAnalysis.mjs';
+import { diagnoseRelief, needleStatistics, reliefDiagnosisMarkdown, shorelineXAt, polygonCentroid } from '../SynthesisAnalysis.mjs';
 import { renderHillshade, renderMultidirectionalHillshade, renderSlopeMap, renderElevationMap, renderCoverMap, renderProfilePlot, composeSheet, writeReviewPng } from '../SynthesisReview.mjs';
 import { writeSynthesizedLandscape } from '../SynthesisLandscape.mjs';
 import { prepareLandscapeGeology, validateLandscapeGeologyCandidate } from '../geology/GeologyPreparation.mjs';
 import { importLandscapeMap } from '../interchange/Interchange.mjs';
 import { readLandscapeFileManifest } from '../../../landscape_authoring/LandscapeFileIO.mjs';
 import { authoringHash } from '../../../landscape_authoring/AuthoringFiles.mjs';
-import { createFixtureBase, FIXTURE_GRID, FIXTURE_SEA_LEVEL } from './FixtureBase.mjs';
+import { createFixtureBase, fixtureGridForSpacing, FIXTURE_SEA_LEVEL } from './FixtureBase.mjs';
 import { validateLandscapeSynthesisRecipe, LANDSCAPE_GEOLOGY_LAYERS } from '../../../../src/app/landscape/index.js';
 
 export const SYNTHESIS_FIXTURE_FORMAT = 'landscape-synthesis-fixture-gate';
 export const FIXTURE_RECIPE = 'tools/bake_landscape/terrain_synthesis/fixture/recipes/plateau-road-shoreline.json';
 export const FIXTURE_BASE_FILES = Object.freeze({ heights: 'fixture-base.raw', cover: 'fixture-base-cover.u8' });
-/** Declared gate targets: plan constraints of the fixture plan, relief that reads as eroded ground, geology consistency and coastal zones. */
+/** Declared gate targets: plan constraints of the fixture plan, relief that reads as eroded ground, no needles, geology consistency and coastal zones. */
 export const FIXTURE_GATE = Object.freeze({
     plateau: { districtId: 1, bandMeters: [35, 37], flatFractionMinimum: .95 }, plaza: { districtId: 2, bandMeters: [2.3, 3.3] },
     roads: { maxSustainedGradePercent: 6, maxShortGradePercent: 8 }, shorelineToleranceMeters: 10, headlandOperatorId: 'headland',
     relief: { above10DegreesMinimumFraction: .12, above20DegreesMinimumFraction: .03, maximumSlopeMinimumDegrees: 60, incisionP90MinimumMeters: 1, relief100mP90MinimumMeters: 8 },
+    // a heightfield cannot hold a one-sample spike at any spacing: a sample more than thresholdMeters above all 8 neighbours is an operator artifact
+    needles: { thresholdMeters: 2, maximumCount: 0 },
     geologyInvariantToleranceMeters: 1e-3, requiredCoastalZones: Object.freeze([2, 3, 5, 6, 8, 9, 11]),
     swimZone: Object.freeze({ zMin: 300, zMax: 700, seawardMeters: 100, landwardMeters: 40, allowedLandCover: Object.freeze([0, 1]), maxSeabedSlopeDegrees: 6 }),
     viewCorridorRoadName: 'Coast road', routeRoadName: 'Plateau ascent'
@@ -46,19 +49,41 @@ export function fixtureHashes(result) {
     return hashes;
 }
 
-function fixtureReadFile(base) {
+/** The read hook that serves the generated base to import-heights (raw-float32) instead of a file on disk. @param {ReturnType<typeof createFixtureBase>} base */
+export function fixtureReadFile(base) {
     const files = { [FIXTURE_BASE_FILES.heights]: Buffer.from(base.heightBytes.buffer, base.heightBytes.byteOffset, base.heightBytes.byteLength), [FIXTURE_BASE_FILES.cover]: Buffer.from(base.coverBytes.buffer, base.coverBytes.byteOffset, base.coverBytes.byteLength) };
     return relative => { const bytes = files[relative]; if (!bytes) throw new Error(`[SynthesisFixture] the fixture serves only ${Object.keys(files).join(', ')}, not ${relative}`); return bytes; };
 }
 
-async function readPlan(root, recipe) {
+/** The fixture plan files bound by a recipe. @param {string} root @param {any} recipe */
+export async function readFixturePlan(root, recipe) {
     const plan = {};
     for (const name of ['districts', 'roads', 'shoreline', 'beachPoints']) plan[name] = JSON.parse(await readFile(path.resolve(root, recipe.inputs.plan[name]), 'utf8'));
     return plan;
 }
 
-/** Measurement sets of the fixture: transects across the coast, rim profiles of the plateau, two observers and the ascent as the route. */
-function fixtureSets(plan) {
+/**
+ * The fixture grid a recipe runs on: one of the fixture spacings over the extent its bounds declare (1 km, or the 4 km city extent), with
+ * the grid and hierarchy the base generator defines for it, so the base is generated at exactly the recipe grid (the D2 gate at
+ * 1.953125 m; the D3 resolution study at every fixture spacing and at the city extent).
+ * @param {any} recipe
+ */
+export function fixtureGridOf(recipe) {
+    const extentMeters = recipe.grid.bounds.maxX - recipe.grid.bounds.minX, grid = fixtureGridForSpacing(recipe.grid.spacingX, { extentMeters });
+    const same = recipe.grid.columns === grid.columns && recipe.grid.rows === grid.rows && recipe.grid.spacingZ === grid.spacingZ && recipe.grid.chunkIntervals === grid.chunkIntervals && recipe.grid.maxLevel === grid.maxLevel
+        && ['minX', 'maxX', 'minZ', 'maxZ'].every(key => recipe.grid.bounds[key] === grid.bounds[key]);
+    if (!same || recipe.working !== null) throw new Error(`[SynthesisFixture] the recipe grid must be the native fixture grid at ${grid.spacingX} m (${grid.columns} x ${grid.rows}, chunks ${grid.chunkIntervals}, maxLevel ${grid.maxLevel}, bounds 0..${grid.bounds.maxX})`);
+    return grid;
+}
+
+/** The constraint-report options of the fixture plan (district 1 is the 36 m plateau town; the base cover is the planning cover). @param {ReturnType<typeof createFixtureBase>} base */
+export function fixtureConstraintOptions(base) {
+    return { highCityDistrictId: FIXTURE_GATE.plateau.districtId, highCityTargetMeters: 36, maxSustainedGradePercent: FIXTURE_GATE.roads.maxSustainedGradePercent, maxShortGradePercent: FIXTURE_GATE.roads.maxShortGradePercent,
+        shorelineToleranceMeters: FIXTURE_GATE.shorelineToleranceMeters, viewCorridorRoadName: FIXTURE_GATE.viewCorridorRoadName, swimZone: { ...FIXTURE_GATE.swimZone }, sourceCover: base.cover };
+}
+
+/** Measurement sets of the fixture: transects across the coast, rim profiles of the plateau, two observers and the ascent as the route. @param {any} plan */
+export function fixtureSets(plan) {
     const district = plan.districts.find(entry => entry.id === FIXTURE_GATE.plateau.districtId), centroid = polygonCentroid(district.boundary_xz_m);
     return {
         transects: [300, 500, 700].map(z => { const shoreX = shorelineXAt(plan.shoreline.points_xyz_m, z); return { id: `T-${z}`, z, xStart: shoreX - 150, xEnd: shoreX + 300, stepMeters: 1, shorelineX: shoreX }; }),
@@ -74,14 +99,14 @@ function check(id, passed, actual, expected) { return { id, passed: !!passed, ac
  * @param {{root:string,recipeFile?:string,outputRoot:string,landscapeDirectory:string,signal?:AbortSignal,log?:(message:string)=>void}} options
  */
 export async function runSynthesisFixture({ root, recipeFile = FIXTURE_RECIPE, outputRoot, landscapeDirectory, signal, log = () => {} }) {
-    const started = performance.now(), timing = {}, base = createFixtureBase(), readFileHook = fixtureReadFile(base);
-    const recipeBytes = await readFile(path.resolve(root, recipeFile)), recipe = validateLandscapeSynthesisRecipe(JSON.parse(recipeBytes.toString('utf8'))), plan = await readPlan(root, recipe);
-    if (recipe.grid.columns !== FIXTURE_GRID.columns || recipe.grid.spacingX !== FIXTURE_GRID.spacingX) throw new Error('[SynthesisFixture] the recipe grid must be the fixture grid');
+    const started = performance.now(), timing = {};
+    const recipeBytes = await readFile(path.resolve(root, recipeFile)), recipe = validateLandscapeSynthesisRecipe(JSON.parse(recipeBytes.toString('utf8'))), plan = await readFixturePlan(root, recipe);
+    const fixtureGrid = fixtureGridOf(recipe), base = createFixtureBase(fixtureGrid), readFileHook = fixtureReadFile(base);
     const operatorsDirectory = path.join(outputRoot, 'operators'), exportRoot = path.join(outputRoot, 'exports'), geologyCandidate = path.join(outputRoot, 'geology-candidate');
     // gate outputs are regenerated every run: the saved landscape and the geology candidate hold immutable content-addressed files of the previous recipe
     for (const directory of [operatorsDirectory, exportRoot, geologyCandidate, landscapeDirectory]) await rm(directory, { recursive: true, force: true });
     await mkdir(operatorsDirectory, { recursive: true }); await mkdir(exportRoot, { recursive: true });
-    const baseGrid = { columns: FIXTURE_GRID.columns, rows: FIXTURE_GRID.rows, spacingX: FIXTURE_GRID.spacingX, spacingZ: FIXTURE_GRID.spacingZ, minX: FIXTURE_GRID.bounds.minX, maxZ: FIXTURE_GRID.bounds.maxZ };
+    const baseGrid = { columns: fixtureGrid.columns, rows: fixtureGrid.rows, spacingX: fixtureGrid.spacingX, spacingZ: fixtureGrid.spacingZ, minX: fixtureGrid.bounds.minX, maxZ: fixtureGrid.bounds.maxZ };
     const thumbnails = [{ image: renderHillshade(baseGrid, base.heights, { size: 320, seaLevel: FIXTURE_SEA_LEVEL }), label: '00 base' }];
     await writeReviewPng(path.join(operatorsDirectory, '00-base.png'), thumbnails[0].image);
     let mark = performance.now();
@@ -105,9 +130,7 @@ export async function runSynthesisFixture({ root, recipeFile = FIXTURE_RECIPE, o
         // measurements and the plan constraints
         mark = performance.now();
         const { grid, heights, cover, layers } = first;
-        const constraintsOptions = { highCityDistrictId: FIXTURE_GATE.plateau.districtId, highCityTargetMeters: 36, maxSustainedGradePercent: FIXTURE_GATE.roads.maxSustainedGradePercent, maxShortGradePercent: FIXTURE_GATE.roads.maxShortGradePercent,
-            shorelineToleranceMeters: FIXTURE_GATE.shorelineToleranceMeters, viewCorridorRoadName: FIXTURE_GATE.viewCorridorRoadName, swimZone: { ...FIXTURE_GATE.swimZone }, sourceCover: base.cover };
-        const doc = diagnoseRelief(grid, heights, cover, FIXTURE_SEA_LEVEL, plan, { label: recipe.id, log, constraints: constraintsOptions, sets: fixtureSets(plan), landscape: { recipe: recipeFile, identity: first.report.identity } });
+        const doc = diagnoseRelief(grid, heights, cover, FIXTURE_SEA_LEVEL, plan, { label: recipe.id, log, constraints: fixtureConstraintOptions(base), sets: fixtureSets(plan), landscape: { recipe: recipeFile, identity: first.report.identity } });
         timing.diagnosisSeconds = seconds(mark);
         const districts = doc.constraints.districts.districts, plateau = districts.find(entry => entry.id === FIXTURE_GATE.plateau.districtId), plaza = districts.find(entry => entry.id === FIXTURE_GATE.plaza.districtId);
         checks.push(check('plateau-band', plateau.heights.p05 >= FIXTURE_GATE.plateau.bandMeters[0] && plateau.heights.p95 <= FIXTURE_GATE.plateau.bandMeters[1] && plateau.flatFraction >= FIXTURE_GATE.plateau.flatFractionMinimum,
@@ -125,6 +148,8 @@ export async function runSynthesisFixture({ root, recipeFile = FIXTURE_RECIPE, o
             { above10: above10, above20: natural.atLeast20Degrees.fraction, max: natural.percentiles.p100 }, FIXTURE_GATE.relief));
         checks.push(check('relief-incision', doc.incision.incision.p90 >= FIXTURE_GATE.relief.incisionP90MinimumMeters, { p90: doc.incision.incision.p90, networks: doc.incision.networks, max: doc.incision.incision.max }, { p90Minimum: FIXTURE_GATE.relief.incisionP90MinimumMeters }));
         checks.push(check('relief-100m', relief100.natural.p90 >= FIXTURE_GATE.relief.relief100mP90MinimumMeters, { p90: relief100.natural.p90, max: relief100.natural.max }, { p90Minimum: FIXTURE_GATE.relief.relief100mP90MinimumMeters }));
+        const needles = needleStatistics(grid, heights, FIXTURE_GATE.needles.thresholdMeters);
+        checks.push(check('needles', needles.count <= FIXTURE_GATE.needles.maximumCount, { count: needles.count, perSquareKilometer: needles.perSquareKilometer, maxProminenceMeters: needles.maxProminenceMeters, maxAt: needles.maxAt }, FIXTURE_GATE.needles));
         // geology consistency and coastal zones
         let invariant = 0;
         for (let i = 0; i < heights.length; i++) invariant = Math.max(invariant, Math.abs(heights[i] - layers.bedrock[i] - layers.regolith[i] - layers.depositThickness[i]));
@@ -140,14 +165,16 @@ export async function runSynthesisFixture({ root, recipeFile = FIXTURE_RECIPE, o
         // seams: a standalone saved landscape (chunk borders verified by the preparation) and a geology sidecar candidate (page borders and halos)
         mark = performance.now();
         const written = await writeSynthesizedLandscape({ sourceDirectory: null, outputDirectory: landscapeDirectory, grid, heights, cover, id: 'synthesis-fixture', name: 'AI 596 D2 synthesis fixture', revisionLabel: recipe.id,
-            provenance: { sourceName: `${recipe.id} on the analytic fixture base`, recipeIdentity: first.report.identity, recipeSha256: authoringHash(recipeBytes) }, references: 'none', appearance: 'none', fields: 'none',
-            chunkIntervals: FIXTURE_GRID.chunkIntervals, maxLevel: FIXTURE_GRID.maxLevel, seaLevel: FIXTURE_SEA_LEVEL, signal, log });
+            provenance: { sourceName: `${recipe.id} on the analytic fixture base` }, references: 'none', appearance: 'none', fields: 'none',
+            synthesis: { recipeId: recipe.id, identity: first.report.identity, recipeSha256: authoringHash(recipeBytes), sourceSpacingMeters: first.report.working.spacing },
+            chunkIntervals: fixtureGrid.chunkIntervals, maxLevel: fixtureGrid.maxLevel, seaLevel: FIXTURE_SEA_LEVEL, signal, log });
         const saved = await readLandscapeFileManifest(landscapeDirectory), geologyLayers = Object.fromEntries(LANDSCAPE_GEOLOGY_LAYERS.map(name => [name, layers[name]]));
         const geology = await prepareLandscapeGeology({ directory: landscapeDirectory, outputDirectory: geologyCandidate, source: saved, layers: geologyLayers, grid, heights,
             provenance: { recipeIdentity: first.report.identity, recipeSha256: authoringHash(recipeBytes) }, verifyDeterminism: true, signal, log });
         const geologyValidation = await validateLandscapeGeologyCandidate(geology);
         timing.landscapeSeconds = seconds(mark);
-        checks.push(check('seams', written.manifest.chunks.length === 1 + 4 ** FIXTURE_GRID.maxLevel && geologyValidation !== null, { landscape: landscapeDirectory, revision: written.revision, chunks: written.manifest.chunks.length, geologyRevision: geology.value?.revision ?? geology.revision ?? null, geologyPages: geology.value?.pages?.length ?? null }, 'native seams and geology page borders validated'));
+        // a complete quadtree holds (4^(maxLevel + 1) - 1) / 3 nodes (5 at level 1, 21 at level 2, 85 at level 3)
+        checks.push(check('seams', written.manifest.chunks.length === (4 ** (fixtureGrid.maxLevel + 1) - 1) / 3 && geologyValidation !== null, { landscape: landscapeDirectory, revision: written.revision, chunks: written.manifest.chunks.length, geologyRevision: geology.value?.revision ?? geology.revision ?? null, geologyPages: geology.value?.pages?.length ?? null }, 'native seams and geology page borders validated'));
         // review images
         mark = performance.now();
         const images = {};
@@ -169,7 +196,7 @@ export async function runSynthesisFixture({ root, recipeFile = FIXTURE_RECIPE, o
         await writeFile(path.join(outputRoot, 'engine-report.json'), JSON.stringify(first.report, null, 1));
         const passed = checks.every(entry => entry.passed);
         const receipt = { format: SYNTHESIS_FIXTURE_FORMAT, schemaVersion: 1, passed, recipe: recipeFile, recipeSha256: authoringHash(recipeBytes), identity: first.report.identity, hashes, checks, gate: FIXTURE_GATE,
-            engine: { operators: first.report.operators.map(({ id, op, seconds }) => ({ id, op, seconds })), totalSeconds: first.report.totalSeconds, peakTrackedBytes: first.report.memory?.peakBytes ?? null },
+            engine: { operators: first.report.operators.map(({ id, op, seconds }) => ({ id, op, seconds })), totalSeconds: first.report.totalSeconds, peakTrackedBytes: first.report.memory?.peakTrackedBytes ?? null },
             landscape: { directory: landscapeDirectory, revision: written.revision, geologyCandidate }, images, timing: { ...timing, totalSeconds: seconds(started) } };
         await writeFile(path.join(outputRoot, 'fixture-gate.json'), JSON.stringify(receipt, null, 1));
         await writeFile(path.join(outputRoot, 'fixture-gate.md'), fixtureGateMarkdown(receipt));

@@ -15,18 +15,21 @@ import { createNativeGroundSampler, loadReviewPoses, resolveReviewPose } from '.
 export const REVIEW_CAPTURE_FORMAT = 'landscape-review-capture';
 export const REVIEW_CAPTURES_FORMAT = 'landscape-review-captures';
 export const REVIEW_CAPTURE_DEFAULTS = Object.freeze({
-    poses: 'tools/landscape_review/poses/natural-world-v1.json', width: 1920, height: 1080, water: true, planning: false,
+    poses: 'tools/landscape_review/poses/natural-world-v1.json', width: 1920, height: 1080, water: true, planning: false, allowMissingAppearance: false,
     chromium: 'C:/Users/rogel/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe',
     chromiumArgs: Object.freeze(['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']),
     readyTimeoutMs: 180000, settleTimeoutMs: 120000, settlePollMs: 250, tailMs: 1500, sizeTimeoutMs: 10000
 });
+/** The one appearance error a landscape saved without an appearance sidecar produces (the viewer then draws its fallback soil colors). */
+export const MISSING_APPEARANCE_ERROR = '[Landscape] appearance manifest HTTP 404';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PLANNING_LAYERS = Object.freeze(['districts', 'roads', 'shoreline', 'points', 'corridors']);
 const OVERLAY_SELECTOR = '.landscape-ui, #ui-perf-bar';
 const USAGE = `Usage: node tools/landscape_review/capture.mjs --landscape <saved landscape directory> --output <directory>
-       [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]`;
+       [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]
+       [--allow-missing-appearance on|off]`;
 
-/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number}} CaptureOptions */
+/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean}} CaptureOptions */
 
 /** @param {string} message @returns {never} */
 function fail(message) { throw new Error(`[LandscapeReview] ${message}`); }
@@ -55,15 +58,20 @@ export function parseCaptureOptions(args) {
     const { values } = parseArgs({ args: [...args], strict: true, options: {
         landscape: { type: 'string' }, output: { type: 'string' }, poses: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.poses }, select: { type: 'string' },
         label: { type: 'string' }, water: { type: 'string', default: 'on' }, planning: { type: 'string', default: 'off' },
-        width: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.width) }, height: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.height) } } });
+        width: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.width) }, height: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.height) },
+        'allow-missing-appearance': { type: 'string', default: 'off' } } });
     if (!values.landscape || !values.output) fail(`--landscape and --output are required\n${USAGE}`);
     const select = values.select === undefined ? null : values.select.split(',').map(id => id.trim()).filter(Boolean);
     if (select && !select.length) fail('--select needs at least one pose id');
     const landscapeDirectory = path.resolve(values.landscape);
     return Object.freeze({ landscapeDirectory, outputDirectory: path.resolve(values.output), posesFile: path.resolve(/** @type {string} */ (values.poses)), select: select && Object.freeze(select),
         label: values.label ?? path.basename(landscapeDirectory), water: parseSwitch(/** @type {string} */ (values.water), 'water'), planning: parseSwitch(/** @type {string} */ (values.planning), 'planning'),
-        width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height') });
+        width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height'),
+        allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance') });
 }
+
+/** @param {readonly any[]} errors appearance errors as the viewer reports them ({message} records, or strings) */
+const errorMessages = errors => errors.map(error => typeof error === 'string' ? error : error?.message ?? JSON.stringify(error));
 
 /** @param {import('playwright-core').Page} page */
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
@@ -90,8 +98,12 @@ async function fitCanvas(page, width, height) {
     return clip;
 }
 
-/** @param {import('playwright-core').Page} page */
-async function settleViewer(page) {
+/**
+ * Waits for a settled viewer. Appearance errors abort the capture, except, with allowMissingAppearance, the single error of a landscape saved without an
+ * appearance sidecar (MISSING_APPEARANCE_ERROR): the viewer is settled on its fallback soil colors and the error is returned for the receipt.
+ * @param {import('playwright-core').Page} page @param {boolean} allowMissingAppearance
+ */
+async function settleViewer(page, allowMissingAppearance) {
     const started = Date.now();
     let consecutive = 0, state = null;
     await renderedFrames(page, 2, REVIEW_CAPTURE_DEFAULTS.settleTimeoutMs);
@@ -103,12 +115,13 @@ async function settleViewer(page) {
         });
         if (state.lastError) fail(`the viewer reported an error while settling: ${state.lastError}`);
         if (state.lighting === 'failed') fail('the viewer lighting failed to load');
-        if (state.errors.length) fail(`the viewer appearance reported errors: ${state.errors.join('; ')}`);
+        const appearanceErrors = errorMessages(state.errors), unexpected = allowMissingAppearance ? appearanceErrors.filter(message => message !== MISSING_APPEARANCE_ERROR) : appearanceErrors;
+        if (unexpected.length) fail(`the viewer appearance reported errors: ${unexpected.join('; ')}${allowMissingAppearance ? '' : ' (a landscape saved without an appearance sidecar needs --allow-missing-appearance on)'}`);
         consecutive = state.pending === 0 && state.streamingSettled && state.appearanceSettled && (state.lighting === null || state.lighting === 'ready') ? consecutive + 1 : 0;
-        if (consecutive >= 2) return { settled: true, waitedMs: Date.now() - started };
+        if (consecutive >= 2) return { settled: true, waitedMs: Date.now() - started, appearanceErrors };
         await page.waitForTimeout(REVIEW_CAPTURE_DEFAULTS.settlePollMs);
     }
-    return { settled: false, waitedMs: Date.now() - started, state };
+    return { settled: false, waitedMs: Date.now() - started, state, appearanceErrors: errorMessages(state?.errors ?? []) };
 }
 
 /** @param {any} view */
@@ -131,7 +144,7 @@ function selectPoses(poses, select) {
 
 /** @param {CaptureOptions} options */
 export async function captureReviewPoses(options) {
-    const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height } = options;
+    const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height, allowMissingAppearance } = options;
     const poses = await loadReviewPoses(posesFile), selected = selectPoses(poses, select);
     const sampleGround = await createNativeGroundSampler(landscapeDirectory);
     const cameras = [];
@@ -169,7 +182,7 @@ export async function captureReviewPoses(options) {
         for (const { pose, camera } of cameras) {
             const poseStarted = Date.now();
             await page.evaluate(camera => window.__landscapeTestHooks.setCamera({ position: camera.position, target: camera.target, projection: camera.projection, fov: camera.fov, zoom: camera.zoom }), camera);
-            const settle = await settleViewer(page);
+            const settle = await settleViewer(page, allowMissingAppearance);
             await page.waitForTimeout(REVIEW_CAPTURE_DEFAULTS.tailMs);
             const view = await snapshot(page), fileName = `${pose.id}.png`, file = path.join(outputDirectory, fileName);
             const screenshotStarted = Date.now();
@@ -178,9 +191,9 @@ export async function captureReviewPoses(options) {
             const receipt = { format: REVIEW_CAPTURE_FORMAT, schemaVersion: 1, poseId: pose.id, label, landscapeDirectory: posix(landscapeDirectory), revision: loaded.revision,
                 poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) }, pose, camera, groundHeight: camera.groundHeight, file: fileName, settled: settle.settled, waitedMs: settle.waitedMs,
                 canvas: { width, height }, clip, snapshotSummary: summarize(view), timing: { settleMs: settle.waitedMs, tailMs: REVIEW_CAPTURE_DEFAULTS.tailMs, screenshotMs, totalMs },
-                viewer: { water, planning, width, height }, ...(settle.settled ? {} : { unsettledState: settle.state }) };
+                viewer: { water, planning, width, height, allowMissingAppearance }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
             await writeFile(path.join(outputDirectory, `${pose.id}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
-            captures.push({ poseId: pose.id, file: fileName, receipt: `${pose.id}.json`, settled: settle.settled, groundHeight: camera.groundHeight, totalMs });
+            captures.push({ poseId: pose.id, file: fileName, receipt: `${pose.id}.json`, settled: settle.settled, groundHeight: camera.groundHeight, totalMs, appearanceErrors: settle.appearanceErrors });
             log(`${pose.id} ${settle.settled ? 'settled' : 'NOT settled'} in ${(settle.waitedMs / 1000).toFixed(1)} s, total ${(totalMs / 1000).toFixed(1)} s, ground ${camera.groundHeight === null ? 'outside' : `${camera.groundHeight.toFixed(2)} m`} -> ${shown(file)}`);
         }
     } finally {
@@ -191,7 +204,7 @@ export async function captureReviewPoses(options) {
         await new Promise(resolve => server.close(() => resolve(undefined)));
     }
     const index = { format: REVIEW_CAPTURES_FORMAT, schemaVersion: 1, label, landscapeDirectory: posix(landscapeDirectory), revision: sampleGround.revision, poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) },
-        viewer: { width, height, water, planning, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
+        viewer: { width, height, water, planning, allowMissingAppearance, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
     await writeFile(path.join(outputDirectory, 'captures.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;
 }
@@ -200,7 +213,8 @@ async function main() {
     const options = parseCaptureOptions(process.argv.slice(2));
     const index = await captureReviewPoses(options);
     const unsettled = index.captures.filter(capture => !capture.settled).map(capture => capture.poseId);
-    console.log(`[LandscapeReview] ${index.captures.length} captures in ${(index.totalMs / 1000).toFixed(1)} s -> ${posix(options.outputDirectory)}/captures.json${index.pageErrors.length ? ` (${index.pageErrors.length} page errors recorded)` : ''}`);
+    const fallback = index.captures.filter(capture => capture.appearanceErrors.length).length;
+    console.log(`[LandscapeReview] ${index.captures.length} captures in ${(index.totalMs / 1000).toFixed(1)} s -> ${posix(options.outputDirectory)}/captures.json${index.pageErrors.length ? ` (${index.pageErrors.length} page errors recorded)` : ''}${fallback ? ` (${fallback} captured on fallback soil colors: no appearance sidecar)` : ''}`);
     if (unsettled.length) { console.error(`[LandscapeReview] poses that did not settle: ${unsettled.join(', ')}`); process.exitCode = 1; }
 }
 

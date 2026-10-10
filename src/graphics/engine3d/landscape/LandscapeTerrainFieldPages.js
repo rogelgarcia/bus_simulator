@@ -11,14 +11,16 @@
 // from the decoded root page and the root heights and land cover before the root page counts as decoded (its working memory reserved meanwhile),
 // then uploaded with the root page in one frame inside the same per-frame upload allowance; a failed or unaffordable derivation leaves the
 // root page usable and the layer absent (state bit 1 clear, every terrain-appearance term neutral).
-import { LANDSCAPE_TERRAIN_FIELD_CHANNELS, LANDSCAPE_TERRAIN_FIELDS_FILTER, LANDSCAPE_TERRAIN_FIELDS_LAYOUT, landscapeTerrainFieldsLayout, landscapeTerrainFieldsStaleness,
+import { LANDSCAPE_TERRAIN_FIELD_CHANNELS, LANDSCAPE_TERRAIN_FIELDS_FILTER, LANDSCAPE_TERRAIN_FIELDS_LAYOUT, LANDSCAPE_TERRAIN_FIELDS_LIMIT, landscapeTerrainFieldsLayout, landscapeTerrainFieldsStaleness,
     landscapeTerrainSunVisibility, loadLandscapeTerrainFields, sampleLandscapeTerrainFieldPage, sampleLandscapeTerrainFieldSlots } from '../../../app/landscape/index.js';
 import { landscapeTerrainVisibility } from './LandscapeLightingModel.js';
 import { LANDSCAPE_TERRAIN_APPEARANCE, landscapeAppearanceLayerWorkBytes, landscapePlanningCoverMask } from './LandscapeTerrainAppearance.js';
 
+// the sidecar decode credit is three times the sidecar byte limit (response bytes, parsed JSON and the validated frozen clone), so it follows
+// the limit (256 KiB before AI 596 D3, 1 MiB since: deeper trees list every node)
 export const LANDSCAPE_TERRAIN_FIELD_RUNTIME = Object.freeze({
     id: 'landscape-terrain-field-streaming-v1', arrivalSeconds: LANDSCAPE_TERRAIN_FIELDS_FILTER.arrivalSeconds, retryDelayMs: 2500, maxAttempts: 2, maxInFlight: 2,
-    workerPriority: 25, budgetShare: 1 / 8, manifestDecodeBytes: 768 * 1024, progressScale: .25, modes: Object.freeze(['auto', 'off'])
+    workerPriority: 25, budgetShare: 1 / 8, manifestDecodeBytes: LANDSCAPE_TERRAIN_FIELDS_LIMIT * 3, progressScale: .25, modes: Object.freeze(['auto', 'off'])
 });
 
 /** Packs a native slot's field arrival progress into uMaskMeta.w (1 = native without fields, up to 1.25 with fields fully arrived). @param {number} progress */

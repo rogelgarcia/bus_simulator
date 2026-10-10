@@ -116,7 +116,8 @@ export async function synthesizeReliefVariant({ root, recipeFile, outputDirector
         if (landscape) {
             const written = await writeSynthesizedLandscape({ sourceDirectory: path.resolve(root, landscape.sourceDirectory), outputDirectory: path.resolve(root, landscape.outputDirectory), grid, heights, cover,
                 id: 'coastal-city', name: `Coastal City relief variant ${recipe.id}`, revisionLabel: `${recipe.id}-${result.report.identity.slice(-8)}`,
-                provenance: { sourceName: `${recipe.id} synthesized from coastal_city_terrain_v2 by landscape-synthesis-v1`, recipeIdentity: result.report.identity, recipeSha256: authoringHash(recipeBytes), workingSpacingMeters: result.report.working.spacing },
+                provenance: { sourceName: `${recipe.id} synthesized from coastal_city_terrain_v2 by landscape-synthesis-v1` },
+                synthesis: { recipeId: recipe.id, identity: result.report.identity, recipeSha256: authoringHash(recipeBytes), sourceSpacingMeters: result.report.working.spacing },
                 references: 'copy-planning', appearance: 'copy', fields: landscape.fields, signal, log });
             published = { directory: landscape.outputDirectory, revision: written.revision, manifestSha256: written.manifestSha256, fields: written.fields ? { revision: written.fields.revision, pages: written.fields.pages } : null, timing: written.timing };
             await writeFile(path.join(outputDirectory, 'landscape-receipt.json'), JSON.stringify({ ...published, files: written.files.length }, null, 1));

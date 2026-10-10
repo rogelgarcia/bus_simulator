@@ -9,6 +9,17 @@ export const LANDSCAPE_MAX_BATCH_OPERATIONS = 64;
 export const LANDSCAPE_MAX_AUTHORING_RECORDS = 1024;
 export const LANDSCAPE_MAX_NAMED_REGIONS = 256;
 export const LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES = 8;
+// AI 596 D3: below 1.5 m native spacing the kernel may span 16 samples, so the metric reach stays 15.625 m at 0.9765625 m (7.8125 m at
+// 0.48828125 m) instead of halving with every finer grid; the 16-sample halo of a 257² tile reserves 2,464,867 bytes, inside the 8 MiB cap
+export const LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES_FINE = 16;
+export const LANDSCAPE_SMOOTH_FINE_SPACING_METERS = 1.5;
+
+/** Largest smoothing half-width in native samples for one axis spacing (meters). @param {number} spacing */
+export function landscapeSmoothRadiusSampleLimit(spacing) {
+    requireFinite(spacing, 'spacing');
+    requireCondition(spacing > 0, 'spacing must be positive');
+    return spacing < LANDSCAPE_SMOOTH_FINE_SPACING_METERS ? LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES_FINE : LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES;
+}
 
 function withinLandscape(region, manifest, label) {
     const bounds = landscapeRegionBounds(region);
@@ -61,8 +72,8 @@ function validateOperation(operation, manifest, regions) {
         requireFinite(operation.strength, 'smooth.strength');
         requireCondition(operation.strength > 0 && operation.strength <= 1, 'smooth strength must be within (0,1]');
         for (const spacing of [manifest.grid.spacingX, manifest.grid.spacingZ]) {
-            const samples = Math.floor(operation.radiusMeters / spacing);
-            requireCondition(samples >= 1 && samples <= LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, `smooth radiusMeters must span 1..${LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES} native samples on each axis`);
+            const samples = Math.floor(operation.radiusMeters / spacing), limit = landscapeSmoothRadiusSampleLimit(spacing);
+            requireCondition(samples >= 1 && samples <= limit, `smooth radiusMeters must span 1..${limit} native samples on each axis (${spacing} m spacing: at most ${limit * spacing} m)`);
         }
     } else if (operation.type === 'grade') {
         for (const [name, point] of [['start', operation.start], ['end', operation.end]]) {

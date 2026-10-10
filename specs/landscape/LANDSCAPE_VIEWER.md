@@ -302,7 +302,12 @@ native context through `POST /api/landscape/query`, targeting the displayed
 revision. An explicit radius field (default 25 meters, zero for a point) defines
 the selected area; its circle is drawn on the displayed terrain. The native
 query admits at most four chunks and rejects areas outside the landscape or
-the acquisition budget. The panel distinguishes resolving, authoritative, and
+the acquisition budget. The field's maximum follows the loaded manifest (AI 596
+D3): half the native chunk span, `landscapeQueryRadiusLimit` — 250 m on the
+500 m coastal chunks, 125 m at 0.9765625 m, 62.5 m at 0.48828125 m — so a radius
+that could never be acquired exactly is refused with a notice before any query and
+the current selection is kept; a radius carried over a reload of a finer landscape
+is clamped and reported. The panel distinguishes resolving, authoritative, and
 unavailable states. Late/obsolete replies cannot replace a newer selection.
 
 Native context includes elevation, normal/slope, semantic soil, retained cover

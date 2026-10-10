@@ -47,7 +47,9 @@ JSON without changing terrain; a stale batch still fails at apply time.
 
 Exact queries retain a four-native-chunk and 2 MiB decoded-input limit. A coastal
 four-way query acquires 1,320,980 decoded bytes. A larger query fails before I/O;
-it never substitutes an approximate sample. Point ownership is deterministic
+it never substitutes an approximate sample. A circle is admitted everywhere only
+up to half the native chunk span (`landscapeQueryRadiusLimit`: 250 m on the coast,
+125 m at 0.9765625 m, 62.5 m at 0.48828125 m). Point ownership is deterministic
 at shared borders. The resolved context releases arrays before returning.
 
 ## Large named-region workflow

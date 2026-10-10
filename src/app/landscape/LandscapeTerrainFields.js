@@ -9,7 +9,10 @@ import { validateLandscapeManifest } from './LandscapeManifest.js';
 
 export const LANDSCAPE_TERRAIN_FIELDS_FORMAT = 'landscape-terrain-fields';
 export const LANDSCAPE_TERRAIN_FIELDS_ALGORITHM = 'landscape-terrain-fields-v1';
-export const LANDSCAPE_TERRAIN_FIELDS_LIMIT = 256 * 1024;
+// 1 MiB since AI 596 D3: a 341-node tree (4097² at 0.9765625 m) serializes to 246,836–293,636 bytes (measured, every page with a natural-soil
+// entry) and a 1365-node tree (8193²) to 899,938–1,126,866, so the former 256 KiB bound held only the 85-node coast; the runtime decode
+// credits derive from this limit
+export const LANDSCAPE_TERRAIN_FIELDS_LIMIT = 1024 * 1024;
 export const LANDSCAPE_TERRAIN_FIELDS_PAGE_LIMIT = 2 * 1024 * 1024;
 export const LANDSCAPE_TERRAIN_FIELDS_STALE_GRID = 8;
 export const LANDSCAPE_TERRAIN_FIELDS_LAYOUT = Object.freeze({ layers: 4, halo: 2, encoding: 'rgba8', filter: 'linear', rowOrder: 'north-first' });

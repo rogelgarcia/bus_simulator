@@ -10,10 +10,10 @@ import { curvatureExtremes, drainageIncision, localRelief, slopeStatistics } fro
 import { COASTAL_ROUTE_AB, beachProfiles, edgeProfiles, routeProfile, subtendedAngles } from './analysis/ProfileMeasures.mjs';
 import { constraintReport } from './analysis/ConstraintReport.mjs';
 
-export { NATURAL_COVER_CLASSES, SLOPE_BIN_EDGES_DEGREES, naturalLandMask, runningWindowExtreme, slopeStatistics, localRelief, curvatureExtremes, drainageIncision } from './analysis/ReliefMeasures.mjs';
+export { NATURAL_COVER_CLASSES, SLOPE_BIN_EDGES_DEGREES, naturalLandMask, runningWindowExtreme, neighborProminence, needleStatistics, slopeStatistics, localRelief, curvatureExtremes, drainageIncision } from './analysis/ReliefMeasures.mjs';
 export { COASTAL_ROUTE_AB, beachProfiles, edgeProfiles, subtendedAngles, routeProfile } from './analysis/ProfileMeasures.mjs';
 export { CONSTRAINT_DEFAULTS, constraintReport, parseDesignBand, swimZonePolygon } from './analysis/ConstraintReport.mjs';
-export { sampleBilinear, sampleNearest, polygonSampleIndices, polygonCentroid, polylinePath, shorelineXAt } from './analysis/GridSampling.mjs';
+export { sampleBilinear, sampleNearest, polygonSampleIndices, polygonCentroid, polylinePath, shorelineXAt, extractGridWindow } from './analysis/GridSampling.mjs';
 
 export const RELIEF_DIAGNOSIS_FORMAT = 'landscape-relief-diagnosis';
 

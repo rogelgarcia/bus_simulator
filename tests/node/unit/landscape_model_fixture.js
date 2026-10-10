@@ -15,8 +15,9 @@ export function createLandscapeModelFixture({ chunkIntervals = 4, maxLevel = 1, 
             sourceCover[row * (intervals + 1) + column] = coverAt ? coverAt(column, row) : column <= 2 ? 1 : row < 4 ? 2 : 3;
         }
     }
-    const minHeight = Math.min(...sourceHeights);
-    const maxHeight = Math.max(...sourceHeights);
+    // a loop rather than a spread: a 1025² or 2049² grid (AI 596 D3 fixtures) has more samples than the argument list allows
+    let minHeight = Infinity, maxHeight = -Infinity;
+    for (const value of sourceHeights) { if (value < minHeight) minHeight = value; if (value > maxHeight) maxHeight = value; }
     const chunks = [];
     const decoded = new Map();
     const resources = new Map();

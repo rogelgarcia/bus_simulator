@@ -130,10 +130,13 @@ test('Landscape D2: native area, raise and sand, persistent reopen, stale refusa
     await page.screenshot({ path: path.join(artifacts, '03-reverted-patch.png') });
     const replay = await page.request.post(`${origin}/api/landscape/apply`, { data: { ...batch, expectedRevision: restored.revision } });
     expect(replay.ok()).toBe(false);
+    // AI 596 D3: the radius field is bounded by the manifest (half the 500 m native span); a larger radius is refused before any query and the
+    // current exact selection is kept
     await page.evaluate(() => window.__landscapeTestHooks.setSelectionRadius(1000));
-    await expect(page.locator('[data-field="notice"]')).toContainText('D2 limit is 4');
-    expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).selection.editingReady).toBe(false);
+    await expect(page.locator('[data-field="notice"]')).toContainText('between 0 and 250 meters');
+    expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).selection.editingReady).toBe(true);
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).revision).toBe(restored.revision);
+    expect(await page.getByLabel('Selection radius in meters').getAttribute('max')).toBe('250');
     await page.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect.poll(async () => (await page.request.get(`${origin}/api/landscape/selection`)).status()).toBe(404);
     expect(errors).toEqual([]);

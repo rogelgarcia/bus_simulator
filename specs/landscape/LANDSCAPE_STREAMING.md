@@ -21,6 +21,20 @@ the declared NW-SE triangulation over descendant native vertices. Native nodes
 have zero source error. Edits rebuild every affected ancestor and conservatively
 increase its error bound until the hierarchy is measured again.
 
+A finer synthesized grid is a deeper tree of the same 257² tiles (AI 596 D3:
+4097² at 0.9765625 m is maxLevel 4 with 341 nodes and 250 m natives, 8193² at
+0.48828125 m is maxLevel 5 with 1,365 nodes and 125 m natives). What scales with
+the depth: the planner's per-frame cost, which projects the error and tests the
+visibility of every node each frame (85, 341 or 1,365 nodes; the appearance
+planner loops the same nodes); the root-to-native refinement of one view path,
+which is `maxLevel` sequential refine tasks (one four-sibling task at a time),
+each at least four upload frames plus the 0.3 s morph — 3 tasks at 1.953125 m, 4 at
+0.9765625 m, 5 at 0.48828125 m; and the prefetch margin `min(250 m, span / 4)`
+of a candidate child, 125 m for 500 m natives, 62.5 m for 250 m, 31.25 m for 125 m.
+What does not: the per-tile CPU and GPU reservation, the one-tile 8 MiB upload
+per frame, the 1.5 px target and the startup contract — nothing native is fetched
+before the first frame at any depth, only the manifest and the root's two channels.
+
 ## Camera planning
 
 `createLandscapeViewPlanner(manifest)` validates and indexes metadata once. Its

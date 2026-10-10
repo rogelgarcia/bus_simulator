@@ -7,9 +7,12 @@
 // depositThickness: a rise adds a deposit of the operator's type, a fall removes deposits first, then regolith, then bedrock, and a
 // sand veneer takes its minimum thickness from the rock below. Terraces follow the mesa/cuesta rule: where a soft stratum rests on a
 // hard one on a slope, the soft rock above the hard top within the bench width is cut down to that top and the cut rock is routed
-// downslope as talus (Musgrave 1989 thermal weathering deposits), so mass is conserved and the slope histogram becomes bimodal.
+// downslope as talus (Musgrave 1989 thermal weathering deposits) that settles at its repose angle: a sample takes talus only up to the
+// repose plane of its neighbours and the rest rolls on to its lowest neighbour (routes converging on a hollow used to stack their whole
+// load on one sample), so mass is conserved (deposited + exported = cut) and the slope histogram becomes bimodal.
 import { createLandscapeNoiseOctaves } from '../../../../src/graphics/engine3d/landscape/LandscapeSurfaceNoise.js';
 import { smoothstep, terrainGradient } from '../../terrain_fields/TerrainFieldsGrid.mjs';
+import { neighborTable, reposeCeiling, slopesOffEdge } from './Erosion.mjs';
 
 const DEGREES = Math.PI / 180, TALUS = 1, WALK_LIMIT = 512;
 const round6 = value => Math.round(value * 1e6) / 1e6;
@@ -179,21 +182,41 @@ async function terraces(context) {
     memory.free(`${prefix}dhdx`, `${prefix}dhdz`);
     for (let i = 0; i < n; i++) if (cut[i] > 0) ledger.set(i, ground[i] - cut[i], 0);
     context.checkpoint();
-    let talus = { stuck: 0, routed: 0 }, deposited = 0, talusSamples = 0, maxFill = 0;
+    let talus = { stuck: 0, routed: 0 }, deposited = 0, exported = 0, talusSamples = 0, maxFill = 0, limitedSamples = 0, hops = 0, exportedRoutes = 0;
     if (params.depositTalus && benchSamples > 0) {
-        const fill = scope.allocate('terrace-fill', Float64Array, n), spread = Math.max(1, Math.round(params.talusSpreadMeters / Math.min(spacingX, spacingZ)));
+        const fill = scope.allocate('terrace-fill', Float64Array, n), placed = scope.allocate('terrace-placed', Float32Array, n), limited = scope.allocate('terrace-repose-limited', Uint8Array, n);
+        const spread = Math.max(1, Math.round(params.talusSpreadMeters / Math.min(spacingX, spacingZ))), neighbors = neighborTable(grid), tanRepose = Math.tan(params.talusReposeDegrees * DEGREES);
         talus = routeTalus(grid, ground, cut, fill, spread);
+        // the routed shares settle at repose in index order: a sample takes talus up to the plane of its neighbours on the current surface,
+        // the rest rolls on to its lowest neighbour (strictly lower, since the plane runs through it) for at most WALK_LIMIT hops; what rolls
+        // off the landscape edge or exceeds the hops is exported and counted
         for (let i = 0; i < n; i++) {
             if (!(fill[i] > 0)) continue;
-            ledger.set(i, heights[i] + fill[i], TALUS);
-            deposited += fill[i]; talusSamples++;
-            if (fill[i] > maxFill) maxFill = fill[i];
+            let remaining = fill[i], cell = i, walked = 0;
+            while (remaining > 0) {
+                const row = (cell / columns) | 0, col = cell - row * columns, h = heights[cell], room = reposeCeiling(heights, grid, neighbors, row, col, cell, tanRepose) - h;
+                if (room > 0) {
+                    const amount = remaining < room ? remaining : room;
+                    ledger.set(cell, h + amount, TALUS);
+                    deposited += amount; remaining -= amount; placed[cell] += amount;
+                    if (remaining <= 0) break;
+                }
+                if (!limited[cell]) { limited[cell] = 1; limitedSamples++; }
+                if (walked >= WALK_LIMIT) break;
+                const next = descend(grid, heights, cell);
+                if (next < 0 || slopesOffEdge(heights, grid, neighbors, row, col, cell, heights[next])) break;
+                cell = next; walked++;
+            }
+            hops += walked;
+            if (remaining > 0) { exported += remaining; exportedRoutes++; }
         }
-        scope.free('terrace-fill');
+        for (let i = 0; i < n; i++) { if (!(placed[i] > 0)) continue; talusSamples++; if (placed[i] > maxFill) maxFill = placed[i]; }
+        scope.free('terrace-fill', 'terrace-placed', 'terrace-repose-limited');
     }
     scope.free('terrace-ground', 'terrace-cut');
     return { seed, benchSamples, cutVolumeCubicMeters: round6(cutVolume * cellArea), maxCutMeters: round6(maxCut), depositTalus: params.depositTalus, talusSamples, talusVolumeCubicMeters: round6(deposited * cellArea),
-        maxTalusMeters: round6(maxFill), stuckRoutes: talus.stuck, massBalanceCubicMeters: round6((cutVolume - deposited) * cellArea), createdLayers: ledger.created };
+        maxTalusMeters: round6(maxFill), stuckRoutes: talus.stuck, reposeLimitedSamples: limitedSamples, reposeHops: hops, reposeExportedVolumeCubicMeters: round6(exported * cellArea), exportedRoutes,
+        massBalanceCubicMeters: round6((cutVolume - deposited - exported) * cellArea), createdLayers: ledger.created };
 }
 
 export const STRATA_OPERATORS = Object.freeze({ strata, terraces });

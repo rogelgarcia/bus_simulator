@@ -50,6 +50,26 @@ Conventions (the `conventions` block must repeat them verbatim; `validateReviewP
 | NW-12 | Shore break at water level (R09) | 1152, 1800 | altitude 1.0 m | 0° / −6° | At the waterline (sea-level crossing x 1148 on row Z 1800); 18 m west of the roadmap point |
 | NW-13 | 4 km overview | camera (4400, 3000, −2300) → (2000, 0, 2000) | — | — | The viewer's `home` preset as an absolute camera |
 
+### AI 596 D3 fixture poses (`poses/ai596-d3-fixture-v1.json`)
+
+Eight poses for the 1 × 1 km terrain-synthesis fixture (`tools/bake_landscape/terrain_synthesis/fixture/`),
+pinned on the D2 fixture landscape (recipe `plateau-road-shoreline`, 513² at 1.953125 m; the D3 resolution
+study writes the same recipe at 0.9765625 m and 0.48828125 m, so the poses compare the spacings on one set of
+world-anchored landforms). Pose ids are `F-01`..`F-08` (ids are one to four capital letters, a dash and two
+digits). Positions were measured on the saved landscape with the exact NW–SE sampler; the notes carry the
+transects.
+
+| Pose | Intent | x, z | Height | Heading / pitch | How it was chosen |
+| --- | --- | --- | --- | --- | --- |
+| F-01 | Bluff crest along the coast | 363, 300 | eye 1.7 m | 355° / −8° | Crest bench (7.85 m) 6 m behind the crest edge; the face climbs 0.67 → 7.06 m over x 345–357 on row Z 300, the platform (0.4–0.67 m) lies at x 330–345 |
+| F-02 | Bluff toe on the platform, at the face | 334, 300 | eye 1.7 m | 90° / +2° | On the wave-cut platform (0.47 m); the toe 13 m ahead, the crest 23 m ahead spanning −6.6° to +12° |
+| F-03 | Beach berm along the beach | 279, 300 | eye 1.7 m | 0° / −5° | On the 1.80 m berm crest (flat x 275–283), 35 m behind the waterline (x 243.7) |
+| F-04 | Gully in the hills | 449, 164 | eye 1.7 m | 95° / −8° | North rim of the drainage map's gully D (floor 6.0 m at Z 150, rims 8.4 m at Z 139/164); looks up the gully whose floor rises to 14 m at x 524 |
+| F-05 | Ridge crest | 556, 100 | eye 1.7 m | 15° / −4° | 8 m north of the 21.0 m hilltop at (556.6, 91.8), the most prominent natural maximum; looks along the ridge toward (560, 290) |
+| F-06 | Plateau escarpment rim from below | 572, 557 | eye 1.7 m | 90° / +8° | 40 m west of the rim (x 612, 36 m) below the 36 → 25.6 m face and the 24 m bench; natural land at 20.5 m |
+| F-07 | Low oblique over the coast | 160, 180 | altitude 40 m | 15° / −12° | Over water 84 m off the waterline (seabed −4.9 m), looking NNE across the berm at the bluff |
+| F-08 | 1 km overview from the sea | −250, 500 | altitude 450 m | 90° / −30° | 250 m outside the western edge (ground null); the center ray meets sea level at x 529, mid-landscape |
+
 ## Resolver (`ReviewPoses.mjs`)
 
 - `loadReviewPoses(file)` / `validateReviewPoses(value)`: strict schema (exact keys, unique ids,
@@ -67,8 +87,15 @@ Conventions (the `conventions` block must repeat them verbatim; `validateReviewP
 ```text
 node tools/landscape_review/capture.mjs --landscape <saved landscape directory> --output <directory>
      [--poses tools/landscape_review/poses/natural-world-v1.json] [--select NW-01,NW-04] [--label <text>]
-     [--water on|off] [--planning on|off] [--width 1920 --height 1080]
+     [--water on|off] [--planning on|off] [--width 1920 --height 1080] [--allow-missing-appearance on|off]
 ```
+
+A landscape saved without an appearance sidecar (`writeSynthesizedLandscape` with `appearance: 'none'`, as
+the AI 596 D3 fixtures are) loads and settles, but the viewer records the appearance error
+`[Landscape] appearance manifest HTTP 404` and draws its fallback soil colors (no PBR materials, no generated
+surface detail; the terrain-fields sidecar 404 is handled as `absent`). The tool aborts on appearance errors
+unless `--allow-missing-appearance on` accepts exactly that one error; the receipts then carry it in
+`appearanceErrors` so a fallback-color capture is never mistaken for a PBR one.
 
 Example (the v2 "before" set):
 
@@ -90,7 +117,7 @@ renders a 1.5 s tail, then screenshots the canvas box to `<output>/<poseId>.png`
 ```text
 {poseId, label, landscapeDirectory, revision, poseFile, pose, camera, groundHeight, file, settled, waitedMs, canvas, clip,
  snapshotSummary:{streaming:{lodRange, tiles, pending, settled}, appearance:{pending, settled, ready}, lighting:{status, tier}, terrainFields:{status}, ...},
- timing:{settleMs, tailMs, screenshotMs, totalMs}, viewer:{water, planning, width, height}}
+ timing:{settleMs, tailMs, screenshotMs, totalMs}, viewer:{water, planning, width, height, allowMissingAppearance}, appearanceErrors:[...]}
 ```
 
 `captures.json` indexes the run (label, directory, revision, pose file, viewer settings, per-pose

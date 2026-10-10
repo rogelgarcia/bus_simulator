@@ -13,7 +13,9 @@ import { decodeLandscapeTerrainField, encodeLandscapeTerrainField, landscapeTerr
 
 export const LANDSCAPE_GEOLOGY_FORMAT = 'landscape-geology';
 export const LANDSCAPE_GEOLOGY_ALGORITHM = 'landscape-geology-v1';
-export const LANDSCAPE_GEOLOGY_LIMIT = 256 * 1024;
+// 1 MiB since AI 596 D3: a 341-node tree (4097² at 0.9765625 m) serializes to 283,435 bytes, over the former 256 KiB bound that held only the
+// 85-node coast; the runtime decode credits derive from this limit
+export const LANDSCAPE_GEOLOGY_LIMIT = 1024 * 1024;
 export const LANDSCAPE_GEOLOGY_PAGE_LIMIT = 2 * 1024 * 1024;
 export const LANDSCAPE_GEOLOGY_LAYOUT = Object.freeze({ layers: 2, halo: 2, encoding: 'rgba8', filter: 'linear', rowOrder: 'north-first' });
 export const LANDSCAPE_GEOLOGY_CATEGORICAL_LAYOUT = Object.freeze({ encoding: 'uint8', halo: 0, rowOrder: 'north-first' });

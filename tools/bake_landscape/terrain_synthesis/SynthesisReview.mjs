@@ -9,7 +9,7 @@ import { encodePng } from './interchange/PngCodec.mjs';
 
 export { createCanvas, fillRect, strokeRect, drawLine, drawText, blit, textWidth, textHeight, rgbOf, mixRgb, niceStep, tickLabel } from './review/RasterCanvas.mjs';
 export { GLYPH_WIDTH, GLYPH_HEIGHT, GLYPH_ADVANCE, glyphRows } from './review/BitmapFont.mjs';
-export { LEGEND_HEIGHT, SLOPE_COLORS, RELIEF_RAMP, HYPSOMETRIC_STOPS, resampleArea, resampleNearest, hillshadeRaster, renderHillshade, renderMultidirectionalHillshade, renderSlopeMap, renderReliefMap, renderElevationMap, renderCoverMap, hypsometricColor, rampColor } from './review/MapRenders.mjs';
+export { LEGEND_HEIGHT, SLOPE_COLORS, RELIEF_RAMP, HYPSOMETRIC_STOPS, resampleArea, resampleNearest, hillshadeRaster, renderHillshade, renderHillshadeWindow, renderMultidirectionalHillshade, renderSlopeMap, renderReliefMap, renderElevationMap, renderCoverMap, hypsometricColor, rampColor } from './review/MapRenders.mjs';
 export { SERIES_COLORS, renderProfilePlot, renderHistogramPlot, composeSheet } from './review/PlotRenders.mjs';
 
 /** Encodes a review image as PNG and writes it (creating the directory). @param {string} file @param {import('./review/RasterCanvas.mjs').ReviewImage} image */

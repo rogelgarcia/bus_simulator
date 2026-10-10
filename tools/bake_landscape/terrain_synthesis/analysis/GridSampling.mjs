@@ -50,6 +50,26 @@ export function slopeDegreesRaster(grid, heights, memory, name = 'slope') {
     return slope;
 }
 
+/**
+ * The native samples of a world window (its edges must lie on native vertices) as their own grid, optionally with a halo of extra samples
+ * clamped at the landscape edge, so a renderer or a fit works on one fixed world window at every spacing without resampling.
+ * @param {SynthesisGrid} grid @param {Float32Array|Float64Array|Uint8Array} values @param {{minX:number,maxX:number,minZ:number,maxZ:number}} window
+ * @param {{halo?:number}} [options]
+ */
+export function extractGridWindow(grid, values, window, { halo = 0 } = {}) {
+    if (!window || !['minX', 'maxX', 'minZ', 'maxZ'].every(key => Number.isFinite(window[key])) || !Number.isInteger(halo) || halo < 0) throw new Error('[SynthesisAnalysis] extractGridWindow needs a finite window and a non-negative integer halo');
+    const column0 = Math.round(gridColumnOf(grid, window.minX)), column1 = Math.round(gridColumnOf(grid, window.maxX)), row0 = Math.round(gridRowOf(grid, window.maxZ)), row1 = Math.round(gridRowOf(grid, window.minZ));
+    for (const [actual, wanted, label] of [[worldXOf(grid, column0), window.minX, 'minX'], [worldXOf(grid, column1), window.maxX, 'maxX'], [worldZOf(grid, row0), window.maxZ, 'maxZ'], [worldZOf(grid, row1), window.minZ, 'minZ']]) {
+        if (Math.abs(actual - wanted) > 1e-6) throw new Error(`[SynthesisAnalysis] window ${label} = ${wanted} is not on a native vertex of the ${grid.spacingX} m grid (nearest ${actual})`);
+    }
+    if (column0 < 0 || row0 < 0 || column1 >= grid.columns || row1 >= grid.rows || column1 <= column0 || row1 <= row0) throw new Error('[SynthesisAnalysis] window must lie inside the grid with a positive extent');
+    const c0 = Math.max(0, column0 - halo), c1 = Math.min(grid.columns - 1, column1 + halo), r0 = Math.max(0, row0 - halo), r1 = Math.min(grid.rows - 1, row1 + halo);
+    const columns = c1 - c0 + 1, rows = r1 - r0 + 1, Type = /** @type {any} */ (values.constructor), output = new Type(columns * rows);
+    for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) output[row * columns + column] = values[(r0 + row) * grid.columns + c0 + column];
+    return { grid: { columns, rows, spacingX: grid.spacingX, spacingZ: grid.spacingZ, minX: worldXOf(grid, c0), maxZ: worldZOf(grid, r0) }, values: output, origin: { column: c0, row: r0 },
+        halo: { west: column0 - c0, north: row0 - r0, east: c1 - column1, south: r1 - row1 } };
+}
+
 /** Even-odd point-in-polygon test. @param {ArrayLike<ArrayLike<number>>} polygon [x,z] vertices */
 export function pointInPolygon(polygon, x, z) {
     let inside = false;

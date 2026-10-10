@@ -5,7 +5,7 @@ import { LandscapeCameraController } from './LandscapeCameraController.js';
 import { LANDSCAPE_NAVIGATION } from './LandscapeNavigationState.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
-import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS,
+import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, landscapeQueryRadiusLimit, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS,
     LANDSCAPE_DEFAULT_DIRECTORY, probeLandscapeCache, describeLandscapeCacheAvailability } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
 import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
@@ -266,6 +266,7 @@ export class LandscapeView {
             this.syncPlanningPanel();
             if (this.bookmarkStore.error) this.panel.text('bookmark-status', this.bookmarkStore.error);
             const { manifest, chunk } = loaded;
+            this.applySelectionRadiusLimit(manifest);
             this.panel.text('source', `${manifest.name} · ${(manifest.bounds.maxX - manifest.bounds.minX) / 1000} × ${(manifest.bounds.maxZ - manifest.bounds.minZ) / 1000} km`);
             this.panel.text('revision', `Revision ${manifest.revision} · ${manifest.chunks.length} prepared tiles · Native level ${manifest.grid.maxLevel}`);
             this.panel.text('status', 'Worker streaming ready · Soil PBR + independent masks · Y up / +Z north · Native queries independent of appearance');
@@ -902,8 +903,25 @@ export class LandscapeView {
         this.panel.notice('');
     }
 
+    /** Half the loaded landscape's native chunk span: the largest circle an exact query admits everywhere (AI 596 D3; 250 m at 1.953125 m). Before a load nothing bounds it but the former static 1000 m. */
+    selectionRadiusLimit() {
+        return this.loaded ? landscapeQueryRadiusLimit(this.loaded.manifest) : 1000;
+    }
+
+    // the radius field's maximum follows the manifest, so a selection that could never be acquired exactly is refused before any query; a radius
+    // carried over from a coarser landscape is clamped and reported rather than silently kept
+    applySelectionRadiusLimit(manifest) {
+        const limit = landscapeQueryRadiusLimit(manifest);
+        this.panel.selectionRadiusLimit(limit, manifest.grid.chunkIntervals * Math.min(manifest.grid.spacingX, manifest.grid.spacingZ));
+        if (this.selectionRadius <= limit) return;
+        this.selectionRadius = limit;
+        this.panel.root.querySelector('[data-field="radius"]').value = String(limit);
+        this.panel.notice(`Selection radius reduced to ${limit} m: an exact query of this landscape covers at most four native chunks.`);
+    }
+
     setSelectionRadius(value) {
-        if (!Number.isFinite(value) || value < 0 || value > 1000) { this.panel.notice('Selection radius must be between 0 and 1000 meters.'); return; }
+        const limit = this.selectionRadiusLimit();
+        if (!Number.isFinite(value) || value < 0 || value > limit) { this.panel.notice(`Selection radius must be between 0 and ${limit} meters: an exact query covers at most four native chunks of this landscape.`); return; }
         this.selectionRadius = value;
         this.panel.root.querySelector('[data-field="radius"]').value = String(value);
         if (this.selection) return this.select(this.selection.position.x, this.selection.position.z);
