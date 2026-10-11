@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The carved and moulded relief of the Bradbury block reads flat and washed out: the floral frieze under the main cornice,
@@ -80,3 +82,10 @@ Shared rules (every step):
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary (2026-10-11, approved by the owner)
+- New wear feature `cavity` (`wear/features/cavity.py`, `wear_cavity`, 0 reverts; `wear_cavity_reach`): dust in the relief's hollows -- modelled relief by Cycles AO over 6 cm on masonry, drawn relief (flower tiles, medallion band, lettering, frieze flowers) by the low of each set's height map on faces `apply()` tags (7 block + 3 portal objects); soiling's deposit colour; capitals (unclassed) keep their baked AO.
+- Strength from the owner's sweep (0.6 / 1 / 1.6, "use a more subtle approach; value 1 or even less"): calibrated amount 0.44 = 0.8 x the first.
+- Revert: `wear_cavity=0` (and `realism=off`) give step 1's look, pose 12 max 1 level; render time unchanged (pose 12 28-31 s off/on at 1600x1000, 96 spp, OptiX).
+- Mid-step, the shared assets were deleted by another session's worktree archival and restored from a snapshot; the Bradbury area was audited exact (`tests/artifacts/screens/bradbury_fix/recovery_audit_2026-10-11/AUDIT.md`), and `make_ground_floor_pbr.py` gained `--stage DIR` for regenerating into staging.
+- Evidence: `tests/artifacts/screens/bradbury_weathering/606/` (sweep, v1 sheets with 1:1 crops, x8 heat maps, debug view); README "The weathering-realism group".

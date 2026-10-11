@@ -7893,3 +7893,16 @@ because it is subtle"; runoff turned up greys the whole wall under the crown's c
 Render time (OptiX, 1600x1000, 96 spp, group off / on): pose 12 32 / 34 s, hero_3q 32 / 40, st_along 31 / 32, the ground
 floor street view 35 / 33. Evidence `tests/artifacts/screens/bradbury_weathering/605/v1/` (the suggestion | before |
 after composite, before/after sheets with 1:1 crops and x8 heat maps for poses 12, 02, 04 and 07, the debug view).
+
+**AI 606, dust in the carving's recesses.** A new feature, `wear/features/cavity.py` (`wear_cavity`, default 1, 0
+reverts; `wear_cavity_reach`, default 1, the reach's scale): the darker dust that settles in the relief's hollows, so
+the carving reads deep while its faces stay clean. Two sources, one rule: modelled relief (dentil gaps, mouldings'
+quirks, brackets, inner corners) by Cycles' ambient occlusion over 6 cm at render time, on the masonry classes (brick
+at 0.55); drawn relief (the frieze's flower tiles, the medallion band, the portal's lettering and frieze flowers) by the
+low of each set's own height map, on those sets alone -- `apply()` tags their faces (7 block and 3 portal objects), since
+every other set's height holds pores that would speckle. A hollow facing up or down takes a little more than one facing
+the street. Soiling's deposit colour. The carved stage-2 capitals are an unclassed material and keep their own AO.
+Strength: the owner's sweep on the frieze close-up (0.6, 1, 1.6) -- "use a more subtle approach; value 1 or even less" --
+set the calibrated amount at 0.8 of the first (`AMOUNT` 0.44). Revert checked: `wear_cavity=0` against step 1 on pose 12,
+max 1 level. Render time: no measurable change on pose 12 (the occlusion node runs at every strength). Evidence
+`tests/artifacts/screens/bradbury_weathering/606/` (`sweep/`, `v1/`).

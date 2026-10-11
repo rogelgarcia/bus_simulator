@@ -3,6 +3,8 @@ three materials in assets/public/pbr/<slug>/ in the catalog's layout, each with 
 place in the catalog index.
 
     python make_ground_floor_pbr.py            (from anywhere; reads downloads/, writes assets/public/pbr/)
+    python make_ground_floor_pbr.py --stage DIR   the same sets into DIR/<slug>/ only: no manifest, no catalog index
+                                                  (to regenerate and compare before replacing anything in the store)
 
 The pack (AI-generated albedo with synthesized, pixel-aligned response maps, supplied by the project owner 2026-10-07)
 holds three coordinated materials, all repeating in U and V (its README):
@@ -200,6 +202,15 @@ def register(slug):
 
 
 if __name__ == "__main__":
+    import sys
+    if "--stage" in sys.argv:
+        PBR = os.path.abspath(sys.argv[sys.argv.index("--stage") + 1])
+        os.makedirs(PBR, exist_ok=True)
+        for s in SETS:
+            zp = os.path.join(ROOT, *s["zip"].split("/")); assert os.path.isfile(zp), f"missing: {zp}"
+            with zipfile.ZipFile(zp) as z: install(z, s)
+        print(f"staged {len(SETS)} sets in {PBR}; the store, its manifest and catalog index untouched")
+        sys.exit(0)
     entries = []
     for s in SETS:
         zp = os.path.join(ROOT, *s["zip"].split("/")); assert os.path.isfile(zp), f"missing: {zp}"
