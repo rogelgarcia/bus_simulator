@@ -115,7 +115,7 @@ test('Cold checkout: landscape/cache-install installs the verified bundles into 
         assert.match(tests.output, /^(?:ℹ|#) skipped 0$/m, 'with the installed cache nothing skips, including the byte-exact city pin');
     });
 
-test('Cold checkout: the import and hierarchy leaves regenerate the cache from the source ZIP; the city pin then reports stale',
+test('Cold checkout: the import and hierarchy leaves regenerate the cache from the source ZIP; the v3 city pin reports missing and the v2 binding stale',
     { skip: skip || (!existsSync(sourceZip) && `source ZIP not found at ${sourceZip}; set LANDSCAPE_COASTAL_SOURCE_ZIP`), timeout: 10 * 60 * 1000 }, async () => {
         const clone = await cleanCheckout('cold-generate');
         shareNodeModules(clone);
@@ -133,11 +133,16 @@ test('Cold checkout: the import and hierarchy leaves regenerate the cache from t
             import { createCoastalLandscapeCitySpec } from ${JSON.stringify(pathToFileURL(path.join(clone, 'src/app/city/specs/CoastalLandscapeCitySpec.js')).href)};
             const fetchImpl = async url => { try { return new Response(await readFile(path.join(${JSON.stringify(clone)}, decodeURIComponent(new URL(url).pathname.slice(1))))); }
                 catch (error) { if (error.code === 'ENOENT') return new Response('', { status: 404 }); throw error; } };
+            import { createCoastalV2CitySpec } from ${JSON.stringify(pathToFileURL(path.join(clone, 'tests/shared/landscapeCacheTest.js')).href)};
             const city = await resolveCityLandscape(createCoastalLandscapeCitySpec().landscape, { baseUrl: 'https://cache.test/', fetchImpl });
+            const previous = await resolveCityLandscape(createCoastalV2CitySpec().landscape, { baseUrl: 'https://cache.test/', fetchImpl });
             const current = await probeLandscapeCache('https://cache.test/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json', { fetchImpl });
-            console.log(JSON.stringify({ city: city.status, cityReason: city.reason ?? null, current: current.status, revision: current.revision ?? null }));`]);
+            console.log(JSON.stringify({ city: city.status, cityReason: city.reason ?? null, previous: previous.status, current: current.status, revision: current.revision ?? null }));`]);
         await record('cold-generate-probe.txt', probe.output);
         const states = JSON.parse(probe.output.trim().split('\n').at(-1));
         assert.equal(states.current, 'available', 'the regenerated cache is a usable landscape');
-        assert.equal(states.city, 'stale', 'the city pin is reported, not thrown, when regeneration does not retain it');
+        // since AI 596 D4 the city pins the synthesized coastal-city-v3, which the ZIP importer never produces: the pin reports missing, never throws
+        assert.equal(states.city, 'missing', 'the city pin is reported, not thrown, when regeneration does not produce the pinned landscape');
+        // the historical v2 binding sees the regenerated v2 directory as another revision of its own landscape
+        assert.equal(states.previous, 'stale', 'the v2 binding is reported stale against a regenerated v2 cache');
     });
