@@ -3139,6 +3139,7 @@ except Exception as e: print("look not set:", e)
 if WEAR != "off":
     wear_controls.apply(S, WEAR_MODE, WEAR_STRENGTHS)
     wear_edges.apply(S, *wear_edges.parse(args))      # AI 576: the worn block's materials round their edges by these (no effect on wear=off)
+    wear_controls.apply_realism(S, wear_controls.parse_realism(args, default=1.0))   # AI 605-610: the weathering group, realism=off to revert
 bpy.ops.wm.save_as_mainfile(filepath=SCENE, compress=True, relative_remap=True)
 print(f"SCENE SAVED {SCENE} | {len(VIEWS)} cameras: {', '.join(VIEWS)} | ground: {GROUND} | block: {BLOCK_KIND} | "
       f"wear: {WEAR}")

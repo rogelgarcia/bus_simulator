@@ -180,6 +180,7 @@ markers = build_markers(specs, results, log=log)
 defaults = {s.NAME: float(s.DEFAULT_STRENGTH) for s in specs}
 defaults.update({f"{s.NAME}_{k}": float(v) for s in specs for k, v in getattr(s, "CONTROLS", {}).items()})
 controls.apply(bpy.context.scene, "on", defaults, log=log)
+controls.apply_realism(bpy.context.scene, 1.0, log=log)
 bpy.ops.file.make_paths_relative()
 save_as(paths.WORN_BLOCK, relative_remap=True, compress=True)
 log(f"saved {os.path.relpath(paths.WORN_BLOCK, paths.ART)}")

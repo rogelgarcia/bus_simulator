@@ -5,7 +5,7 @@
 #   blender -b -P render_wear.py -- [scene=<file.blend>] [wear=on|off|debug] [wear_<feature>=<strength> ...]
 #                                   [view=<camera>] [cam=x,y,z:tx,ty,tz:lens] [shift=<x>,<y>] [frame=<w>:<h>]
 #                                   [edges=on|off|<scale>] [edge_worn=<strength>]
-#                                   [gf_top=r,g,b] [gf_pier=r,g,b] [gf_tone=off]
+#                                   [gf_top=r,g,b] [gf_pier=r,g,b] [gf_tone=off] [realism=on|off]
 #                                   [pct=100] [samples=128] [res=1920] [exposure=0] [devices=hybrid|gpu] [out=<png>]
 #
 #   blender -b -P render_wear.py -- wear=debug wear_probe=1 view=st_up
@@ -51,6 +51,7 @@ if mode != "off" and not any(c.name.startswith("WEAR_") or c.name == controls.SO
 controls.apply(S, mode, strengths)
 edge_scale, edge_worn = edges.parse(args, S)      # AI 576: edges=on|off|<scale>, edge_worn=<strength>; a saved scene's own otherwise
 edges.apply(S, edge_scale, edge_worn)
+controls.apply_realism(S, controls.parse_realism(args, S))   # AI 605-610: realism=on|off, else the saved scene's own
 # the ground floor's tone, to try one without a rebuild (assemble_building.gf_tone_override, portal_lib.fill_sandstone):
 # gf_top=r,g,b the moulding and the portal, gf_pier=r,g,b the piers, sRGB 0..255; one not given keeps the built tone;
 # gf_tone=off renders the built tones whatever the scene holds

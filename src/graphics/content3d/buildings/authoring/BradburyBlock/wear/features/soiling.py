@@ -99,6 +99,13 @@ LABEL = "sheltered soiling under overhangs"
 ORDER = 200
 DEFAULT_STRENGTH = 1.0
 DEBUG_COLOR = (0.55, 0.20, 0.95)
+# The upper floors' extra (AI 605, the weathering-realism group): on the strength sweep of 2026-10-10 the owner kept
+# only soiling at three times its strength ("F is the only one acceptable because it is subtle"), judged on the top
+# floor, so above the ground floor the strength is raised by UPPER x its value, ramping in over UPPER_H of height above
+# the pavement; the street level keeps its calibration. wear_soiling_upper: 2.0 is the owner's x3, 0 the look before
+# AI 605; the group's switch wear_realism (0 or absent) turns it off too.
+CONTROLS = {"upper": 2.0}
+UPPER_H = (5.8, 8.0)             # the ramp: none at the ground floor's crown, all of it from the second floor's mid height
 MASK = dict(res=0.05, channels=4, bits=16)   # R: the shelter of the surface the street sees, as its element's soiling
 RES = MASK["res"]                            # reaches; G, B: that element's share above and below 1; A: the depth
 
@@ -1160,7 +1167,10 @@ def shader(g):
     # the joints hold a little more of it (the material's own mortar, from its height map), so the deposit keeps the
     # brick's pattern instead of lying over it like a shadow
     hold = g.add(1.0, g.mul(g.clamp(g.i("Joint")), JOINT_HOLD))
-    amt = g.mul(g.mul(g.mul(v, k), hold), g.mul(g.i("Strength"), AMOUNT))
+    # the upper floors' extra (AI 605): 1 + upper x the group's switch x the height ramp; both controls absent (a scene
+    # from before AI 605) read 0, and the factor is exactly 1
+    boost = g.add(1.0, g.mul(g.mul(g.control("upper"), g.attr("wear_realism")), g.smooth(UPPER_H[0], UPPER_H[1], g.i("H"))))
+    amt = g.mul(g.mul(g.mul(v, k), hold), g.mul(g.mul(g.i("Strength"), boost), AMOUNT))
     col = g.i("Color")
     y = g.lum(col)
     deposit = g.rgb(g.mul(y, DIRT_TINT[0]), g.mul(y, DIRT_TINT[1]), g.mul(y, DIRT_TINT[2]))

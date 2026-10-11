@@ -13,6 +13,24 @@ import json, os
 from . import paths
 
 MODES = {"off": 0.0, "on": 1.0, "debug": 2.0}
+# The weathering-realism group's one switch (AI 605-610): every step of the group reads it in its shader and does
+# nothing at 0. Absent reads 0 too, so a scene built before the group renders exactly as it did; build_scene.py sets it
+# on (1) by default, and render_wear.py realism=off renders any saved scene as it was before AI 605.
+REALISM = "wear_realism"
+
+
+def parse_realism(args, scene=None, default=1.0):
+    """realism=on|off|<0..1> from the args; else the scene's own value (absent: 0, the group off); else `default`."""
+    v = args.get("realism")
+    if v is None:
+        return float(scene.get(REALISM, 0.0)) if scene is not None else float(default)
+    v = v.lower()
+    return 1.0 if v == "on" else 0.0 if v == "off" else float(v)
+
+
+def apply_realism(scene, value, log=print):
+    scene[REALISM] = float(value)
+    log(f"weathering group (AI 605-610): {'on' if value >= 1.0 else 'off' if value <= 0.0 else value}")
 SOURCES = "WEAR_SOURCES"
 SRC, GEO, ORIG = "WEAR_SRC_", "WEAR_GEO_", "WEAR_ORIG_"
 

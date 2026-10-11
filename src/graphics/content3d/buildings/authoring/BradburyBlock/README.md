@@ -7848,3 +7848,48 @@ the pack's promises first: one size per material, the ORM equal to the separate 
   `whole_corner`, `whole_hero`, `whole_ref`), `sheets/` (before | after, with a 1:1 crop of the most-changed window),
   and the superseded cuts `after_v1_whole_moulding_weathered/`, `after_v2_cornice_pieces_weathered/`,
   `after_v3_box_projected_under/` with their sheets. Render times unchanged (37 to 65 s a pose before and after).
+
+## The standard poses (`render_poses.py`, 2026-10-10)
+
+`python render_poses.py [out=<dir>] [res=2400] [samples=128] [only=...] [skip=1]` renders the block's standard set of
+stills from the saved `bradbury_scene.blend`, one headless `render_wear.py` per pose (OptiX alone, so repeatable;
+nothing rebuilt or saved), into `tests/artifacts/screens/bradbury_poses/<date>/<nn>_<pose>.png`. A pose that fails
+(a CUDA error on a long run) is tried once more; `only=` takes numbers or names, `skip=1` keeps stills already there.
+The fifteen poses: the scene's six cameras; the ground floor from Broadway's roadway; the portal capital close up; the
+portal from a standing eye 8.6 m out, 15 degrees to its right and to its left, its vestibule and doors showing through
+the arch (user: "a pose in front of the portal so we can see inside, not perfectly straight, a bit sideways", the
+README's portal stills' camera, 4:5); the 3rd Street face and its fire escapes from the roadway, a stop brighter as the
+flyover's escapes shot (that face is in the sun's shade); the top cornice and arched windows close from above; the
+chamfered corner from its pavement; the cornice's weathered undersides on 3rd Street from below; and the 3rd Street
+face from the far pavement behind a street tree (kept from a probe at the user's asking). Add a pose to
+`POSES` and it joins the set.
+
+## The weathering-realism group (AI 605-610, 2026-10-10)
+
+The owner found the block still very clean up high and sent a suggested weathered version of the top floor ("subtle
+terracotta variation, worn edges, light staining beneath ledges, and more natural glass reflections"; later: "the
+lines are not straight, they are like 'waves'"). Six steps, each in `prompts/AI_buildings_60x_...` and approved by the
+owner before the next: 605 staining beneath ledges up high, 606 dust in the carving's recesses, 607 a tone per
+terracotta piece, 608 per-pane glass, 609 worn arrises and chips up high, 610 hand-set uneven lines (geometry copies,
+the owner's choice). Rules: no pattern ("noise is ok if it doesn't look like pattern"), nothing repeated, every mark
+from a physical source; and every step revertible.
+
+**The group switch** `wear_realism` (`wear/controls.py` `REALISM`): a scene property every step's shader multiplies
+in. `build_scene.py` sets it to 1; `render_wear.py -- realism=off` renders any saved scene exactly as before AI 605
+(checked: pose 12 with the group off against the pre-605 render, at most 1 8-bit level apart at any pixel, mean 0.007);
+absent reads 0, so a scene from before the group renders unchanged.
+
+**AI 605, staining beneath ledges up high.** The owner's sweep (`tests/artifacts/screens/bradbury_weathering/605/sweep/`:
+runoff and soiling raised alone and together) kept only soiling at three times its strength, "the only one acceptable
+because it is subtle"; runoff turned up greys the whole wall under the crown's curtain. So:
+- soiling's upper floors: `wear_soiling_upper` (default 2.0: strength x3 above the ground floor, ramping in from 5.8 to
+  8.0 m over the pavement; 0 reverts), the street level as calibrated;
+- a new feature, `wear/features/ledge_stain.py` (`wear_ledge_stain`, default 1, 0 reverts): the narrow strip under each
+  upper course -- runoff's published drip lines of the crown, the impost course and the band 4-5, 258 runs --
+  darkest at the ledge and fading over a 6 to 16 cm e-fold (taller under a deeper course, darker the higher), each run's
+  darkness and height its own seeded draw, drifting slowly along the run on three long waves of unrelated lengths and
+  seeded phases (nothing repeats at any spacing), with a seeded short drip every few metres (62); its lower edge held by
+  the wall's own joints; soiling's warm grey-brown deposit. Not on the ground floor's courses.
+Render time (OptiX, 1600x1000, 96 spp, group off / on): pose 12 32 / 34 s, hero_3q 32 / 40, st_along 31 / 32, the ground
+floor street view 35 / 33. Evidence `tests/artifacts/screens/bradbury_weathering/605/v1/` (the suggestion | before |
+after composite, before/after sheets with 1:1 crops and x8 heat maps for poses 12, 02, 04 and 07, the debug view).
