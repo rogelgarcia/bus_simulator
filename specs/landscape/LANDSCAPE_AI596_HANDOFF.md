@@ -2,7 +2,10 @@
 
 Status: written 2026-10-11 for AI 596 D6 (integrated acceptance); D1–D6 are delivered (`LANDSCAPE_TERRAIN_SYNTHESIS.md`,
 completion records in the AI 596 prompt file). The D6 regression, flyover and performance receipts live under
-`tests/artifacts/screens/landscape/ai596/d6/`. This page is the contract the natural-world prompts
+`tests/artifacts/screens/landscape/ai596/d6/`; its `before-after/` folder holds the same-pose render set that shows the change
+(coastal v2 against v3 with the surround at seven natural-world poses, one labelled sheet per pose plus a contact sheet and the
+D4 plan hillshade; `build_sheets.sh` there rebuilds it from `tools/landscape_review/capture.mjs` captures of both landscapes and
+`tools/landscape_review/composite.py`). This page is the contract the natural-world prompts
 AI 597–604 build on: what AI 596 delivers, where it lives, how it is encoded and sampled, and what is known to be
 missing. Every number is copied from a receipt or a published manifest (paths given); nothing here is projected.
 
