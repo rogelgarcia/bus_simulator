@@ -114,6 +114,14 @@ If using resources from downloads/ folder, always copy to the application.
 - New tools under `tools/` must live in their own subfolder and include a `README.md`.
 - Register all tools in `PROJECT_TOOLS.md`.
 
+### Worktree cleanup safety
+
+- NEVER invoke `mcp__codex_app__archive_worktree` (`archive_worktree`) for this project or any of its worktrees. The October 11, 2026 incident deleted shared assets outside the requested checkout during managed-worktree archival. Related report: https://github.com/openai/codex/issues/34702.
+- Do not bypass this prohibition through task/chat archival or UI actions that can delete the checkout, or otherwise trigger managed-worktree deletion. Do not substitute `git worktree remove` (with or without `--force`) or recursive filesystem deletion for the prohibited tool.
+- Worktree junctions/symlinks such as `assets`, `downloads`, `docs`, and `node_modules` refer to shared data. Never traverse these links during cleanup or delete their targets. Being Git-ignored does not make the data disposable or ensure that an archive snapshot preserves it.
+- If a request requires worktree removal, leave the checkout intact and explain this project restriction. A separate cleanup procedure must be validated to preserve shared targets before it can be proposed; do not experiment on this project's live worktrees or shared folders.
+- This prohibition remains in force until the user explicitly removes it after a fix has been verified. Do not assume that a newer app version or an archive snapshot makes the operation safe.
+
 ### Blender
 
 - Prefer headed Blender controlled through MCP so the user can see progress. Before launching or attaching to Blender, check for an existing Blender process, render job, or unsaved interactive session. Use the headed/MCP workflow when Blender is free or when the user confirms that the open session belongs to the current task. Never interrupt, close, attach to, or repurpose an occupied session.
