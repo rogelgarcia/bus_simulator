@@ -2,6 +2,8 @@
 // @ts-check
 import * as THREE from 'three';
 
+export const GRASS_FAR_TEXTURE_PROFILE = Object.freeze({ mipContrast: 4.9, coarseGain: 1.58, cavityPower: .65, colorRange: 3 });
+
 /** Prepare the existing linear RGB canopy map, retaining the same dimensions and mip count.
  * @param {THREE.DataTexture} texture @param {number} maxAnisotropy */
 export function prepareGrassDebugV2FarTexture(texture, maxAnisotropy) {
@@ -23,10 +25,10 @@ export function prepareGrassDebugV2FarTexture(texture, maxAnisotropy) {
         data = next; width = w; height = h; level++;
         const output = new Uint8Array(next.length), mean = [0, 0, 0];
         for (let i = 0; i < next.length; i += 4) for (let c = 0; c < 3; c++) mean[c] += next[i + c] / (w * h);
-        const gain = 1 + 3.9 * Math.min(1, level / 4);
+        const gain = 1 + (GRASS_FAR_TEXTURE_PROFILE.mipContrast - 1) * Math.min(1, level / 4);
         // Coarser levels lose bright blade tips as they average into root cavities.
         // Compensate in the prepared map, not with a camera-distance shader branch.
-        const coarseGain = level > 4 ? 1.33 : 1;
+        const coarseGain = level > 4 ? GRASS_FAR_TEXTURE_PROFILE.coarseGain : 1;
         const average = mean[0] * .2126 + mean[1] * .7152 + mean[2] * .0722;
         for (let i = 0; i < next.length; i += 4) {
             const luma = next[i] * .2126 + next[i + 1] * .7152 + next[i + 2] * .0722;
@@ -35,6 +37,21 @@ export function prepareGrassDebugV2FarTexture(texture, maxAnisotropy) {
             output[i + 3] = 255;
         }
         mipmaps.push({ data: output, width, height });
+    }
+    // Restore cavities after filtering without dimming every coarse mip. Square-root means
+    // approximate displayed brightness; range encoding avoids clipping bright tips in RGBA8.
+    // The existing material color decodes that range, with no extra runtime texture or shader work.
+    for (const { data } of mipmaps) {
+        const shaped = new Float32Array(data.length), before = [0, 0, 0], after = [0, 0, 0];
+        for (let i = 0; i < data.length; i += 4) {
+            const cavity = Math.pow((data[i] * .2126 + data[i + 1] * .7152 + data[i + 2] * .0722) / 255, GRASS_FAR_TEXTURE_PROFILE.cavityPower);
+            for (let c = 0; c < 3; c++) {
+                shaped[i + c] = data[i + c] * cavity;
+                before[c] += Math.sqrt(data[i + c]); after[c] += Math.sqrt(shaped[i + c]);
+            }
+        }
+        const gain = before.map((value, c) => after[c] > 0 ? (value / after[c]) ** 2 / GRASS_FAR_TEXTURE_PROFILE.colorRange : 0);
+        for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) data[i + c] = Math.round(Math.min(255, shaped[i + c] * gain[c]));
     }
     texture.magFilter = THREE.LinearFilter;
     texture.minFilter = THREE.LinearMipmapLinearFilter;

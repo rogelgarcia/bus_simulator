@@ -37,7 +37,7 @@
             <button type="button" data-grass-mode="LOD5" aria-pressed="false" disabled>LOD5</button>
         </div>
         <p id="grass-ranges" class="grass-v2-ranges">Baked grass · Switches: 0.6 / 0.8 / 20 / 30 / 40 m</p>
-        <div class="grass-v2-version-links"><a href="?grass=baked">Latest baked</a><a href="?grass=current">Original lit</a></div>
+        <div class="grass-v2-version-links"><a href="?grass=baked" data-grass-strategy="baked">Latest baked</a><a href="?grass=current" data-grass-strategy="current">Original lit</a></div>
         <label class="grass-v2-fade">Blend
             <select id="grass-fade" disabled>
                 <option value="dissolve">Opaque dissolve</option>
@@ -68,7 +68,7 @@
 <script type="importmap">
 {
     "imports": {
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=bus-baked-grass-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=lod-alignment-13",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js?v=roadside-flight-smooth-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js?v=roadside-flight-smooth-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=bus-baked-grass-1",
@@ -83,6 +83,6 @@
     }
 }
 </script>
-<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=bus-baked-grass-1"></script>
+<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=lod-alignment-13"></script>
 </body>
 </html>

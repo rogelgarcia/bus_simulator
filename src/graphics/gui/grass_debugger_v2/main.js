@@ -59,6 +59,10 @@ function updateBenchmarkPanel(state) {
 
 function updateGrassPanel() {
     const grass = view.grass.getSnapshot();
+    for (const link of document.querySelectorAll('[data-grass-strategy]')) {
+        if (link.dataset.grassStrategy === grass.strategy) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    }
     for (const button of grassButtons) button.setAttribute('aria-pressed', String(button.dataset.grassMode === grass.mode));
     grassCounts.textContent = `${grass.triangles.toLocaleString('en-US')} triangles\n`
         + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');

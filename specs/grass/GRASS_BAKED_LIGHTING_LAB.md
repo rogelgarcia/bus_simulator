@@ -1,5 +1,57 @@
 # Nine-field baked appearance experiment
 
+The current detailed appearance includes the shared
+[bus palette and repetition correction](GRASS_DEBUG_V2.md#bus-palette-and-repetition-correction-2026-10-11):
+LOD5 vertex elevation calibration, closer prepared blade colors, and stable
+placement/UV variation. Earlier appearance presets retain their previous assets.
+
+## Static endpoint alignment (v13, 2026-10-11)
+
+The detailed profile now corrects the LOD5 texture before increasing transition
+complexity. LOD0–4, field distribution, switch distances, fade widths, texture
+resolution, anisotropy and draw counts are unchanged from bus-blend-12.
+
+Each prepared mip receives a luminance-dependent cavity curve (power 0.65).
+Per-channel square-root means approximately preserve perceived brightness;
+this avoids turning the restored dark roots into an overall darkening of the
+far canopy. RGB is encoded over a 3× range in the existing RGBA8 allocation,
+decoded through the material's existing color multiplier. Coarse levels above
+4 use 1.58× compensation. Texture preparation occurs once at initialization;
+there are no new shader instructions, color samples, textures or geometry.
+The existing vertex elevation factors are retuned to RGB 0.80 / 0.88 / 0.73
+at shallow angles and 0.47 / 0.48 / 0.44 from above. The projected dissolve
+and cached external shadows are retained.
+
+The mismatch depends on angle: the v12 bus-height canopy was brighter than
+LOD4, while the 1.4 m grazing view was darker and had much less fine detail.
+A uniform darkening cannot fix both. Raising raw mip contrast alone also
+changed brightness after clipping. The retained correction separates mip
+contrast, brightness normalization and the already-existing elevation tint.
+This is static appearance matching, not proof of matching silhouettes; the
+flat canopy still lacks upright blades at extreme grazing angles.
+
+`grass_lod_alignment.pwtest.js` captures forced LOD0–5 and AUTO at identical
+20/30/40 m bus poses, 1.4 m grazing and 32 m elevated views without the shelter.
+`GRASS_ALIGNMENT_PHASE=before` reuses the preserved pre-correction source
+artifacts; other phase names capture the current implementation into separate
+folders. `grass_lod_alignment_report.mjs` builds the all-six-LOD contact sheet,
+adjacent-LOD and before/after split controls, and bus-scene comparison under
+`tests/artifacts/screens/grass_debug_v2/lod_alignment/`.
+It verifies identical cameras and submitted geometry before/after. These
+counts establish unchanged work submission, not new GPU timing results.
+
+The seam regression measures extra dark pixels relative to both endpoint
+images, rather than counting intentional root cavities as missing coverage.
+Its original brightness, detail and coverage limits remain in force.
+
+Final v13 captures pass those seam limits in four bus poses: absolute mean
+luminance error is 1.11–1.76 / 255 and LOD5/LOD4 fine-contrast ratio is
+1.00–1.04. The bus scene passes adjacent RGB limits in all five camera poses
+(maximum channel difference 7.69 / 255). Its separate 80-frame movement test
+uses 17 scans; forcing a fresh selection changes at most 0.00614% of pixels
+by more than eight RGB levels. These are separate appearance and cache checks,
+not a claim that the visible grazing-angle shape change has disappeared.
+
 Entrypoint: `debug_tools/grass_baked_lighting_scene.html`. The original
 `grass_litter_scene.html` and transition lab retain their rendering defaults.
 The bus scene now shares this lab's detailed baked appearance and ranges by
@@ -7,6 +59,41 @@ default; `grass_debug_v2.html?grass=current` retains its previous lit strategy.
 The baked entrypoints request the additional 60% source population bake.
 Current/baked/split views share nine 12 × 12 m fields, 1 m paths, the camera,
 game sun, exposure, environment and central shelter.
+
+## Wider detailed-profile transitions (2026-10-11)
+
+The current detailed appearance and baked bus scene use the last 30% of each
+distance band for the existing opaque dissolve. The distant fades are
+14.24–20 m (LOD2/3), 27–30 m (LOD3/4), and 37–40 m (LOD4/5).
+All switch endpoints stay at 0.6 / 0.8 / 20 / 30 / 40 m. Historical ranged
+appearance retains its 10% bands; the separate original-lit bus mode is unchanged.
+
+The previous one-metre LOD3/4 and LOD4/5 bands completed in one third of a second
+at 3 m/s. They now take one second, without changing the dissolve shader,
+texture reads, shadow cache, 50 ms scan interval or 0.2 m movement threshold.
+The increased overlap does submit additional geometry; it is not a free
+performance improvement. In a deterministic 12 m bus-height flight, mean
+submitted triangles rose from 2.076 M to 2.258 M (8.8%), while mean draw calls
+changed from 392.1 to 385.8. No new GPU timing claim is made from those counts.
+
+`grass_bus_blend_motion.pwtest.js` first reproduces the too-short bands, then
+checks the widened ranges and compares cached versus freshly rebuilt selections
+at identical moving-camera poses. The 80-frame flight uses 17 selection scans;
+at most 0.0062% of pixels change by more than eight RGB levels on a forced
+refresh, below the 0.1% regression limit. This separates the visible spatial
+handoff from CPU selection popping. Before/after captures and metrics live in
+`tests/artifacts/screens/grass_debug_v2/blend_motion/`.
+
+Four nine-field views also pass the original coverage bounds (no blend luminance
+below 98% of the darker endpoint and no more than 2% additional dark pixels).
+At v12 the older strict endpoint appearance gate failed with both narrow and wide
+bands: 3.544 display-luminance levels at `bus_19m_front` versus a limit of 3,
+and LOD5 fine contrast of 0.78–0.81 times LOD4 versus a target of 0.9. Endpoint
+measurements are identical across both runs, so this remains a separate
+appearance issue, not a regression from widening the fade; v13 addresses the
+prepared endpoint appearance separately. The thresholds were
+not relaxed. `grass_bus_blend_report.mjs` verifies the coverage and unchanged
+endpoint data and creates the before/after viewer and `coverage-validation.json`.
 
 ## Detailed distant canopy (v10, default)
 
@@ -30,7 +117,7 @@ the base to 4.9× at mip 4 and below, preserving the source hue per texel. A fix
 material calibration of RGB 1.06 / 1.05 / 0.946 matches LOD4 near 40 m while
 keeping the surface from becoming a uniform green wash. This remains a flat
 surface; it does not reproduce upright blade parallax or silhouettes.
-Levels 5 and coarser receive a prepared 1.33× linear RGB compensation before
+The original v10 levels 5 and coarser received 1.33× linear RGB compensation before
 quantization. A mip-isolation capture identified level 4/5 mixing around 40–45 m
 and mainly level 5 around 64 m at 1360 × 900; applying one radiance reduction to
 every level made the farther surface too dark. Hardware trilinear filtering
@@ -56,7 +143,8 @@ The main comparison accepts `#lod5` to open LOD4 versus LOD5 at 40–50 m.
 
 ### LOD4–5 seam correction
 
-The detailed profile retains its 39–40 m blend and all distance limits. Its
+This correction originally used a 39–40 m blend; the current detailed profile
+uses the wider 37–40 m band described above. Its
 outgoing blades and incoming flat canopy now evaluate the final dissolve weight
 at one common point on each view ray, projected onto a 7 cm horizontal turf plane.
 The fragment shader evaluates that weight instead of interpolating separately

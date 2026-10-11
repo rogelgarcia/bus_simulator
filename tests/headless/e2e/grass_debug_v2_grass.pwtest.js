@@ -24,10 +24,12 @@ test('Bus scene uses distance grass, cached lighting, and complete terrain in OF
     await mkdir(output, { recursive: true });
     const initial = await page.evaluate(() => window.__grassDebugV2.getSnapshot());
     expect(initial.grass).toMatchObject({ mode: 'AUTO', system: 'distance-lod', strategy: 'baked', patches: 8640, fieldCount: 30, columnsPerSide: 3, rowsPerSide: 5, gapMeters: 1,
-        appearance: { paletteRevision: 'lod-canopy-detail-10', canopyRootShade: .32, projectedCanopyBlend: true, canopyFiltering: { size: 1024, preparedMipContrast: 4.9, coarseMipGain: 1.33 } },
+        appearance: { paletteRevision: 'lod-alignment-13', canopyRootShade: .32, projectedCanopyBlend: true, canopyFiltering: { size: 1024, preparedMipContrast: 4.9, coarseMipGain: 1.58, cavityPower: .65, colorRange: 3 } },
         field: { fieldSize: 8, fieldDepth: 36, fadeStyle: 'dissolve', edgeStrips: true, lod3CardsPerSquareMeter: 0, lod4CardsPerSquareMeter: 0, cardBase: null },
-        cards: null, selection: { distances: [.6, .8, 20, 30, 40], transitionFraction: .1, intervalMs: 50, movementThreshold: .2 } });
+        cards: null, selection: { distances: [.6, .8, 20, 30, 40], transitionFraction: .3, intervalMs: 50, movementThreshold: .2 } });
     await expect(page.locator('#grass-ranges')).toContainText('0.6 / 0.8 / 20 / 30 / 40');
+    await expect(page.locator('[data-grass-strategy="baked"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-grass-strategy="current"]')).not.toHaveAttribute('aria-current');
     expect(initial.grass.levels.reduce((sum, n) => sum + n, 0)).toBe(8640);
     expect(initial.grass.placement).toMatchObject({ side: -1, column: 0, row: 0, minZ: -4 });
     expect(initial.land.grassPatchExcluded).toBe(true);
@@ -178,4 +180,6 @@ test('Bus scene retains the original lit strategy at its comparison URL', async 
         field: { lod3CardsPerSquareMeter: 12, lod4CardsPerSquareMeter: 6, cardBase: { enabled: true } },
         selection: { distances: [.6, .8, 1, 16, 32], transitionFraction: .5 } });
     await expect(page.locator('#grass-ranges')).toContainText('Original lit grass');
+    await expect(page.locator('[data-grass-strategy="current"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-grass-strategy="baked"]')).not.toHaveAttribute('aria-current');
 });

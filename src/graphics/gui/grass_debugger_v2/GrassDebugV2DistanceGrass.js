@@ -46,7 +46,7 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
         fields.setLod3Representation(representation(near)); fields.setEdgeStrips(true);
         if (useBaked) fields.group.traverse(mesh => { if (mesh.isMesh) mesh.castShadow = false; });
         const selection = new GrassDebugV2TransitionSelection({ cells: fields.cells,
-            ...(useBaked ? { distances: [.6, .8, 20, 30, 40], transitionFraction: .1 } : {}) });
+            ...(useBaked ? { distances: [.6, .8, 20, 30, 40], transitionFraction: .3 } : {}) });
         const settings = selection.getSnapshot();
         fields.configureBlend(settings.transitionBands, settings.bridgeEnabled);
         if (!useBaked) {

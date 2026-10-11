@@ -50,7 +50,8 @@ export async function createGrassDebugV2BakedLightingScene() {
     const currentCards = [];
     for (const profile of ['near', 'bridge']) currentCards.push(await createGrassDebugV2ViewCards({ renderer, source: assets.sources.LOD2, profile, onProgress }));
     onProgress('Preparing baked colors and coverage…');
-    const bakedAssets = await createGrassDebugV2BakedLightingAssets({ renderer, assets, lighting, onProgress, appearance: params.get('appearance') || 'detailed' });
+    const appearance = params.get('appearance') || 'detailed';
+    const bakedAssets = await createGrassDebugV2BakedLightingAssets({ renderer, assets, lighting, onProgress, appearance });
     const bakedRepresentations = bakedAssets.blades ?? bakedAssets.cards;
     const representation = card => ({ templates: card.templates.cards, material: card.material, textureBytes: card.getSnapshot().textureBytes });
     const current = createGrassDebugV2TransitionFields({ ...assets, origins, fieldSize: 12, bridge: representation(currentCards[1]) });
@@ -87,7 +88,7 @@ export async function createGrassDebugV2BakedLightingScene() {
     const cachedVisibility = assets.canopy.shadowUniforms.grassCanopyShadowVisibility.value;
     const whiteVisibility = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat); whiteVisibility.needsUpdate = true;
     const selection = new GrassDebugV2TransitionSelection({ cells: current.cells,
-        ...(bakedAssets.blades ? { distances: [.6, .8, 20, 30, 40], transitionFraction: .1 } : {}) });
+        ...(bakedAssets.blades ? { distances: [.6, .8, 20, 30, 40], transitionFraction: appearance === 'detailed' ? .3 : .1 } : {}) });
     const gpu = getOrCreateGpuFrameTimer(renderer), draw = { triangles: 0, calls: 0 };
     let strategy = 'split', lod = 'AUTO', pose = 'bus_19m_front', animating = false, frame = null, previous = performance.now(), drive = false, busy = false;
     let cpuMs = 0, lastTelemetry = 0, split = .5, externalShadows = true;

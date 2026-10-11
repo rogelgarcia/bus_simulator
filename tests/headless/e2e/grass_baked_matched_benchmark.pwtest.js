@@ -22,9 +22,9 @@ test('original bus grass and baked v10 share LOD distances during soil-relative 
     });
     await page.goto('/debug_tools/grass_baked_lighting_scene.html?appearance=detailed&shelter=0&strategy=baked');
     const initial = await page.evaluate(() => window.__grassBakedReadiness);
-    expect(initial.appearance.paletteRevision).toBe('lod-canopy-detail-10');
+    expect(initial.appearance.paletteRevision).toBe('lod-alignment-13');
     expect(initial.selection.effectiveDistances).toEqual([.6, .8, 20, 30, 40]);
-    expect(initial.selection.transitionFraction).toBe(.1);
+    expect(initial.selection.transitionFraction).toBe(.3);
     expect(initial.fields.current.fields).toEqual(initial.fields.baked.fields);
     expect(initial.fields.current.cells).toBe(1296);
     expect(initial.fields.current.fadeStyle).toBe(initial.fields.baked.fadeStyle);

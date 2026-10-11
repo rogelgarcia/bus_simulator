@@ -5,7 +5,7 @@ import { createBakedGrassSource, createBakedGrassColorMaps, createBakedGrassMate
 import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js';
 import { createGrassDebugV2NaturalSource } from './GrassDebugV2NaturalAppearance.js';
 import { createGrassDebugV2RangeBlades } from './GrassDebugV2RangeBlades.js';
-import { prepareGrassDebugV2FarTexture } from './GrassDebugV2FarTexture.js';
+import { prepareGrassDebugV2FarTexture, GRASS_FAR_TEXTURE_PROFILE } from './GrassDebugV2FarTexture.js';
 
 const MIDRANGE_CARDS = Object.freeze({
     near: { width: .25, depth: .12, span: .18, pitch: 12.5, density: 24, gain: 1.8 },
@@ -47,9 +47,11 @@ export async function createGrassDebugV2BakedLightingAssets({ renderer, assets, 
     const baseColors = createBakedGrassColorMaps(assets.canopy.extraCardBase, renderer, { leafLayers: baseLeafLayers, contrast: natural ? 1 : depth ? 1.25 : 1, natural, understoryGain: natural ? .38 : 1 });
     if (detailed) colors.forEach(map => prepareGrassDebugV2FarTexture(map, renderer.capabilities.getMaxAnisotropy()));
     const canopyColorGain = detailed ? [1.06, 1.05, .946] : ranged ? [1.42, 1.43, 1.6] : [1, 1, 1];
-    const canopySettings = ranged ? { ...settings, radiance: settings.radiance.clone().multiply(new THREE.Color(...canopyColorGain)) } : settings;
+    const canopySettings = ranged ? { ...settings, radiance: settings.radiance.clone().multiply(new THREE.Color(...canopyColorGain)).multiplyScalar(detailed ? GRASS_FAR_TEXTURE_PROFILE.colorRange : 1) } : settings;
     const canopyMaterial = createBakedGrassMaterial({ maps: colors, shadowUniforms, settings: canopySettings });
+    if (detailed) canopyMaterial.defines.BAKED_GRASS_CANOPY_VIEW = 1;
     const baseMaterial = createBakedGrassMaterial({ maps: baseColors, shadowUniforms, settings });
+    if (detailed) [canopyMaterial, baseMaterial].forEach(material => { material.defines.BAKED_GRASS_TILE_VARIATION = 1; });
     const leafMaterial = createBakedGrassMaterial({ vertexColors: true, shadowUniforms, settings });
     if (detailed) [canopyMaterial, leafMaterial].forEach(material => { material.userData.grassProjectedCanopyBlend = true; });
     const cards = [];
@@ -74,21 +76,25 @@ export async function createGrassDebugV2BakedLightingAssets({ renderer, assets, 
             dispose() { material.dispose(); captured.dispose(); } });
     }
     Object.values(sources).forEach(source => { source.material = leafMaterial; });
-    const blades = ranged ? [{ fraction: .5, widthScale: 2, colorGain: [1.35, 1.33, 1.42] }, { fraction: 1 / 3, widthScale: 2.7, colorGain: [1.55, 1.48, 1.63] }].map(profile => createGrassDebugV2RangeBlades(sources.LOD2, profile)) : null;
+    const blades = ranged ? [{ fraction: .5, widthScale: 2, colorGain: detailed ? [1.35, 1.38, 1.39] : [1.35, 1.33, 1.42] }, { fraction: 1 / 3, widthScale: 2.7, colorGain: detailed ? [1.60, 1.60, 1.63] : [1.55, 1.48, 1.63] }].map(profile => createGrassDebugV2RangeBlades(sources.LOD2, profile)) : null;
     const canopy = { materials: { all: canopyMaterial }, cardBase: null, rootShade: detailed ? .32 : 1, getSnapshot: assets.canopy.getSnapshot };
-    return Object.freeze({ sources, canopy, settings, cards, blades, litterMaterial: baseMaterial,
+    return Object.freeze({ sources, canopy, settings, cards, blades, tileVariation: detailed, litterMaterial: baseMaterial,
         litterUv: new THREE.Matrix3().set(.5, 0, 0, 0, -.5, 0, 0, 0, 1),
         getSnapshot: () => ({ baseShootDensity: .6, baseLeafLayers, rootShade: natural ? [.045, 1] : [.225, .9], leafContrast, leafVariation, sourcePaletteGains, cardCounts: cards.map(card => card.getSnapshot().cardsPerSquareMeter),
             naturalRoots: natural, understoryGain: natural ? .38 : 1,
             bladeFaceGains: natural ? [.5, 1.15] : null, cardColorGains: ranged ? [] : midrange ? Object.values(MIDRANGE_CARDS).map(shape => shape.gain) : natural ? [1.5, 1.3] : null,
             cardRadianceCalibration: midrange ? [.93, 1, .85] : null,
             preparedTextureContrast: natural ? { base: 1, canopy: 1.55 } : depth ? { base: 1.25, canopy: 1.35 } : { base: 1, canopy: 1 },
-            paletteRevision: detailed ? 'lod-canopy-detail-10' : ranged ? 'lod-ranged-9' : midrange ? 'lod-midrange-8' : natural ? 'lod-natural-7' : depth ? 'lod-depth-6' : consistent ? 'lod-consistency-5' : 'canopy-coverage-4', canopyLeafLayers: 3, cardProfiles: cards.map(card => card.getSnapshot()),
+            paletteRevision: detailed ? 'lod-alignment-13' : ranged ? 'lod-ranged-9' : midrange ? 'lod-midrange-8' : natural ? 'lod-natural-7' : depth ? 'lod-depth-6' : consistent ? 'lod-consistency-5' : 'canopy-coverage-4', canopyLeafLayers: 3, cardProfiles: cards.map(card => card.getSnapshot()),
             bladeProfiles: blades?.map(blade => blade.getSnapshot()) ?? [],
             canopyColorGain, canopyRootShade: canopy.rootShade, projectedCanopyBlend: detailed, canopyFiltering: { size: colors[0].image.width, anisotropy: colors[0].anisotropy,
-                linearMagnification: colors[0].magFilter === THREE.LinearFilter, preparedMipContrast: detailed ? 4.9 : 1, coarseMipGain: detailed ? 1.33 : 1 },
+                linearMagnification: colors[0].magFilter === THREE.LinearFilter, preparedMipContrast: detailed ? GRASS_FAR_TEXTURE_PROFILE.mipContrast : 1,
+                coarseMipGain: detailed ? GRASS_FAR_TEXTURE_PROFILE.coarseGain : 1, cavityPower: detailed ? GRASS_FAR_TEXTURE_PROFILE.cavityPower : 0,
+                colorRange: detailed ? GRASS_FAR_TEXTURE_PROFILE.colorRange : 1 },
             colorTextureBytes: [...colors, ...baseColors, ...cards.map(card => card.maps.albedo)].reduce((sum, map) => sum + (map.image.width * map.image.height * 4 - 1) / 3 * 4, 0),
             runtimeNormalMaps: 0, runtimeRoughnessMaps: 0, externalShadowSamples: 1, distanceColorCorrection: false,
+            canopyViewCorrection: detailed ? 'vertex elevation: darker roots visible from above' : null,
+            tileVariation: detailed ? 'balanced source permutations and quarter-turns; vertex UV offsets and reflections' : null,
             fixedRadiance: settings.radiance.toArray(), groundSelfShadowBaked: true, mipmaps: 'linear RGB; alpha-weighted card RGB and average alpha coverage' }),
         dispose() { Object.values(sources).forEach(source => source.geometry.dispose());
             [canopyMaterial, baseMaterial, leafMaterial].forEach(material => material.dispose());

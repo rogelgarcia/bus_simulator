@@ -15,7 +15,7 @@ The bus scene defaults to **Auto** with the `detailed` appearance shared with
 the [baked lighting lab](GRASS_BAKED_LIGHTING_LAB.md). The 30 roadside fields,
 camera controls, terrain cutouts and benchmark route are retained.
 
-- Horizontal switches are **0.6 / 0.8 / 20 / 30 / 40 m**, with the lab's 10%
+- Horizontal switches are **0.6 / 0.8 / 20 / 30 / 40 m**, with the lab's 30%
   transition bands and 50 ms / 0.2 m selection cache.
 - LOD0–2 use prepared blade colors; LOD3/4 use the same reduced individual
   blades as the lab. Their floor uses the denser, shaded grass-and-litter bake.
@@ -31,12 +31,54 @@ camera controls, terrain cutouts and benchmark route are retained.
   and selection metadata so results from different renderers remain identifiable.
 - Page links select `?grass=baked` or `?grass=current` with a fresh load. The latter
   preserves the previous lit cards, materials and distances documented below.
-  The ranges text follows the active strategy.
+  The ranges text follows the active strategy. The loaded version link receives
+  `aria-current="page"` and the same green selected treatment as the LOD buttons.
 
 Validation: `tests/headless/e2e/grass_debug_v2_grass.pwtest.js` checks the shared
 appearance and ranges, all 30 footprints, camera anchors, every LOD, OFF terrain,
 shaded wall vertices and rendered external shadows. It also loads the original
 strategy explicitly. Captures go under `tests/artifacts/screens/grass_debug_v2/roadside_baked/`.
+
+## Bus palette and repetition correction (2026-10-11)
+
+The v11 palette/repetition correction is shared by both labs. Fixed
+LOD captures reproduced the reported bright LOD5 arc: at 40 m, the elevated
+bus-scene overview differed from LOD4 by up to 36 RGB values. A flat overhead
+texture does not naturally reveal dark roots as the viewing angle rises, unlike
+the blade geometry. LOD3/4 also needed small prepared palette adjustments.
+
+LOD5 now interpolates a calibrated RGB factor from viewing elevation in its
+vertex shader. It retains the same one color lookup plus cached shadow lookup;
+there is no restored sun/normal/environment lighting. This is an inexpensive
+view-dependent appearance correction, not a wider fade concealing the mismatch.
+The ranges, transition widths and projected dissolve remain unchanged.
+
+Detailed blade placements permute the four source quadrants in complete 2 × 2 m
+blocks and apply stable quarter-turns to interior cells. Each template retains
+exactly its allocated instance count. The same cell transform applies to every
+geometric LOD and its blend copy; the perimeter remains unrotated. Hashing is
+done during construction, and cached selection uploads use fixed rotation
+matrices without trigonometry. Ground/canopy texture coordinates use stable
+vertex-computed offsets, reflections and variant selection, keeping one texture
+sample per pixel. Neither shader instruction performs live lighting.
+
+`tests/headless/e2e/grass_bus_palette.pwtest.js` captures forced LOD2–5 and Auto
+at bus, low grass, overview and elevated cameras. Adjacent RGB differences at
+20/30/40 m are now at most 6.1 values across the tested views (8-value guard).
+The 2 m repeat correlation falls from 0.41–0.55 to 0.00–0.07 for LOD2–4, and
+from 0.17 to about 0.01 for LOD5. It also verifies instance capacity and selected
+version state. `GRASS_PALETTE_REFERENCE=1` renders the preserved d39f8164 source
+through test-only routes; production reference mode remains unchanged.
+Captures: `tests/artifacts/screens/grass_debug_v2/bus_palette/`.
+
+The current detailed profile is `lod-alignment-13`. It retains the v11 blade
+colors and distribution and the v12 transition widths. The
+[static endpoint correction](GRASS_BAKED_LIGHTING_LAB.md#static-endpoint-alignment-v13-2026-10-11)
+restores LOD5 cavity detail in prepared mips and recalibrates the existing
+elevation tint. Color checks now include a 1.4 m grazing view. The comparison
+page shows all six LODs and before/after versions at matching poses; the bus
+scene shares the same corrected material. Extreme grazing silhouettes remain
+different because LOD5 is a flat texture.
 
 ## Preserved lit bus strategy (2026-10-05)
 

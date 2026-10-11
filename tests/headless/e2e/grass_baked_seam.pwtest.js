@@ -3,7 +3,7 @@ import test, { expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const tall = !!process.env.GRASS_SEAM_TALL;
-const output = 'tests/artifacts/screens/grass_debug_v2/baked_lighting/canopy_seam' + (tall ? '/tall' : '');
+const output = process.env.GRASS_SEAM_OUTPUT || 'tests/artifacts/screens/grass_debug_v2/baked_lighting/canopy_seam' + (tall ? '/tall' : '');
 test.use({ viewport: tall ? { width: 910, height: 866 } : { width: 1812, height: 960 }, deviceScaleFactor: tall ? 2 : 1, video: 'off', trace: 'off' });
 test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) => {
     test.setTimeout(180000); await mkdir(output, { recursive: true });
@@ -12,7 +12,9 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
         const response = await route.fetch();
-        await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__seamTest = { renderer, camera, sets, selection };\nconst api = Object.freeze') });
+        let body = await response.text();
+        if (process.env.GRASS_SEAM_NARROW) body = body.replace("transitionFraction: appearance === 'detailed' ? .3 : .1", 'transitionFraction: .1');
+        await route.fulfill({ response, body: body.replace('const api = Object.freeze', 'window.__seamTest = { renderer, camera, sets, selection };\nconst api = Object.freeze') });
     });
     await page.goto('/debug_tools/grass_baked_lighting_scene.html?appearance=detailed&shelter=0&strategy=baked&lod=AUTO');
     await page.evaluate(() => window.__grassBakedReadiness);
@@ -129,8 +131,11 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
         const before = rows.find(other => other.pose === row.pose && other.lod === 'AUTO-before');
         expect(row.snapshot.draw).toEqual(before.snapshot.draw);
         expect(row.snapshot.selection.effectiveDistances).toEqual([.6, .8, 20, 30, 40]);
-        const excessDark = values => Math.max(...values.bins.filter(bin => bin.pixels > 100).map(bin => bin.dark));
-        expect(excessDark(row)).toBeLessThan(excessDark(before) * .35);
+        const endpoints = ['LOD4', 'LOD5'].map(lod => rows.find(other => other.pose === row.pose && other.lod === lod));
+        // Prepared root cavities are intentional; measure only darkness introduced by the transition.
+        const excessDark = values => Math.max(0, ...values.bins.flatMap((bin, i) => bin.pixels > 100
+            ? [bin.dark - Math.max(...endpoints.map(endpoint => endpoint.bins[i].dark))] : []));
+        expect(excessDark(row)).toBeLessThan(Math.max(.003, excessDark(before) * .35));
     }
     for (const row of costs.filter(row => row.mode === 'after')) expect(row.draw).toEqual(costs.find(other => other.mode === 'before' && other.round === row.round).draw);
 });

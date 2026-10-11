@@ -10,6 +10,7 @@ import { grassTransitionCanopyProfile, createGrassTransitionCanopyGeometry } fro
 
 const LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 'LOD4', 'LOD5']);
 const TEMPLATE_CENTERS = Object.freeze([[-.5, -.5], [.5, -.5], [-.5, .5], [.5, .5]]);
+const QUARTER_TURNS = Object.freeze([[1, 0], [0, 1], [-1, 0], [0, -1]]);
 
 function validateCardExtent(representation) {
     if (representation.templates.some(geometry => !geometry.boundingBox
@@ -149,9 +150,9 @@ function boundaryMask(x, z, width, depth) {
 /**
  * Source geometry and textures remain owned by the caller. Selection updates are explicit; there is no frame callback.
  * @param {{sources:Record<string,THREE.Mesh|THREE.Group>,detail:object,canopy:object,bridge:object,litterMaterial?:THREE.Material,
- * soilMaterial:THREE.Material,soilUv:THREE.Matrix3,litterUv?:THREE.Matrix3,fieldSize?:number,fieldDepth?:number,origins?:number[][],gap?:number}} options
+ * soilMaterial:THREE.Material,soilUv:THREE.Matrix3,litterUv?:THREE.Matrix3,fieldSize?:number,fieldDepth?:number,origins?:number[][],gap?:number,tileVariation?:boolean}} options
  */
-export function createGrassDebugV2TransitionFields({ sources, detail, canopy, bridge, litterMaterial, soilMaterial, soilUv, litterUv, fieldSize = 32, fieldDepth = fieldSize, origins = null, gap = 1 }) {
+export function createGrassDebugV2TransitionFields({ sources, detail, canopy, bridge, litterMaterial, soilMaterial, soilUv, litterUv, fieldSize = 32, fieldDepth = fieldSize, origins = null, gap = 1, tileVariation = false }) {
     if (!Number.isInteger(fieldSize) || fieldSize < 2 || fieldSize % 2 || !(gap > 0) || !Number.isFinite(gap)
         || !soilMaterial?.isMaterial || !soilUv?.isMatrix3 || (litterMaterial && !litterUv?.isMatrix3)
         || !detail?.decode?.isVector3 || !detail.group?.isGroup || !canopy?.materials?.all
@@ -161,6 +162,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
         || (origins !== null && (!Array.isArray(origins) || !origins.length || origins.some(p => !Array.isArray(p) || p.length !== 2 || p.some(v => !Number.isFinite(v))))))
         throw new Error('Transition field origins and depth must describe finite, even-metre rectangles.');
     const fieldOrigins = origins ?? Array.from({ length: 4 }, (_, field) => [field % 2 ? gap / 2 : -fieldSize - gap / 2, field >= 2 ? gap / 2 : -fieldDepth - gap / 2]);
+    if (typeof tileVariation !== 'boolean') throw new Error('Grass tile variation must be boolean.');
     validateCardExtent(bridge);
     const fieldArea = fieldSize * fieldDepth;
     for (const lod of LEVELS.slice(0, 3)) {
@@ -245,8 +247,12 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             }
         }
         for (let z = 0; z < fieldDepth; z++) for (let x = 0; x < fieldSize; x++) {
-            const quadrant = x % 2 + 2 * (z % 2), edge = boundaryMask(x, z, fieldSize, fieldDepth), id = cells.length;
-            cells.push(Object.freeze({ id, field, x, z, template: quadrant, edge, centerX: minX + x + .5, centerZ: minZ + z + .5,
+            const edge = boundaryMask(x, z, fieldSize, fieldDepth), id = cells.length;
+            // Permute complete 2 × 2 blocks so every template retains its fixed batch capacity.
+            let hash = Math.imul(field * fieldArea / 4 + Math.floor(z / 2) * fieldSize / 2 + Math.floor(x / 2) + 1, 1597334677);
+            hash = Math.imul(hash ^ hash >>> 16, 2246822519) >>> 0;
+            const varied = tileVariation && !edge, quadrant = (x % 2 + 2 * (z % 2)) ^ (tileVariation ? (hash >>> 2) % 4 : 0);
+            cells.push(Object.freeze({ id, field, x, z, template: quadrant, rotation: varied ? hash & 3 : 0, edge, centerX: minX + x + .5, centerZ: minZ + z + .5,
                 minX: minX + x, maxX: minX + x + 1, minZ: minZ + z, maxZ: minZ + z + 1 }));
             if (edge && !fringes.has(quadrant + ':' + edge)) {
                 const source = templates.LOD2[quadrant];
@@ -384,7 +390,9 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             if (!changed) continue;
             entry.members = entry.pending; entry.mesh.count = entry.members.length; entry.mesh.visible = entry.members.length > 0;
             entry.members.forEach((id, i) => {
-                const cell = cells[id]; matrix.makeTranslation(cell.centerX, 0, cell.centerZ); entry.mesh.setMatrixAt(i, matrix);
+                const cell = cells[id], level = entry.mesh.userData.grassTransitionLevel;
+                const [c, s] = QUARTER_TURNS[level < 5 ? cell.rotation : 0];
+                matrix.set(c, 0, s, cell.centerX, 0, 1, 0, 0, -s, 0, c, cell.centerZ, 0, 0, 0, 1); entry.mesh.setMatrixAt(i, matrix);
             });
             entry.mesh.instanceMatrix.needsUpdate = true; uploads++;
             entry.mesh.computeBoundingBox(); entry.mesh.computeBoundingSphere();
@@ -512,7 +520,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             const geometryBytes = chunks.getSnapshot().geometryBytes + [...geometries].reduce((sum, geometry) => sum + (geometry.index?.array.byteLength ?? 0)
                 + Object.values(geometry.attributes).reduce((bytes, attribute) => bytes + attribute.array.byteLength, 0), 0);
             return { fields: fields.map(field => ({ index: field.index, ...field.bounds })), fieldSize, fieldDepth, gap, selectionCellMeters: 1,
-                cells: cells.length, levels: [...selectedCounts], soilOnly, flatLod4, lod4Surface, optimization, edgeStrips, fadeStyle, activeBatches: active.length, mainBatchCapacity: allBatches.length,
+                cells: cells.length, levels: [...selectedCounts], soilOnly, flatLod4, lod4Surface, optimization, edgeStrips, fadeStyle, tileVariation, activeBatches: active.length, mainBatchCapacity: allBatches.length,
                 lod4InteriorCells: fields.reduce((sum, field) => sum + field.interior.mesh.count, 0),
                 lod4GridCells: flatLod4 ? 0 : fields.reduce((sum, field) => sum + field.batches[5].reduce((n, entry) => n + entry.mesh.count, 0), 0),
                 triangles, geometryBytes, chunks: chunks.getSnapshot(), instanceBytes: allBatches.reduce((sum, entry) => sum + entry.mesh.instanceMatrix.array.byteLength, 0) + chunks.getSnapshot().instanceBytes,
