@@ -1,8 +1,8 @@
 # AI 596 handoff: channels later prompts consume
 
-Status: written 2026-10-11 for AI 596 D6 (integrated acceptance). D1–D5 are delivered (`LANDSCAPE_TERRAIN_SYNTHESIS.md`,
-completion records in the AI 596 prompt file); D6 acceptance is in progress and its regression, flyover and performance
-receipts land under `tests/artifacts/screens/landscape/ai596/d6/`. This page is the contract the natural-world prompts
+Status: written 2026-10-11 for AI 596 D6 (integrated acceptance); D1–D6 are delivered (`LANDSCAPE_TERRAIN_SYNTHESIS.md`,
+completion records in the AI 596 prompt file). The D6 regression, flyover and performance receipts live under
+`tests/artifacts/screens/landscape/ai596/d6/`. This page is the contract the natural-world prompts
 AI 597–604 build on: what AI 596 delivers, where it lives, how it is encoded and sampled, and what is known to be
 missing. Every number is copied from a receipt or a published manifest (paths given); nothing here is projected.
 
@@ -339,7 +339,10 @@ Measured residency on v3 with the surround at the shipped profile (`d5/browser/`
 RTX 3060 through ANGLE/D3D11): lifetime peaks 565.6 / 543.9 MiB, GPU 6.65 / 8.18 ms median / p95, 60 FPS vsync-bound, the
 1.5 px goal met at the overview, NW-08, orthographic and return stops and missed with `gpu-budget` at NW-10, NW-03 and
 NW-01 (the D4 finding carried into D6). The D6 same-condition tables against v2 are written under
-`tests/artifacts/screens/landscape/ai596/d6/performance/`. A later prompt that adds GPU work measures against these
+`tests/artifacts/screens/landscape/ai596/d6/performance/` (cache on at 640/544: v2 GPU 1.03 / 2.74 ms, v3 with the
+surround 5.01 / 6.83 ms, both vsync-bound at 17.50 / 18.10 ms; cache off at 640/352: v2 stays vsync-bound, v3 is GPU-bound
+at 17.60 / 35.10 ms cold, 51.4 FPS — the surface cache is what keeps v3 at vsync; the GPU was not idle, the Codex desktop
+app's process held 29–41%). A later prompt that adds GPU work measures against these
 numbers and grows a budget only with the accounting the roadmap §10 requires.
 
 ## 13. Known limitations and open items
