@@ -27,7 +27,7 @@ self.onmessage = async ({ data }) => {
         const chunk = suppliedChunk ?? await loadLandscapeChunk(context.manifest, chunkId, { manifestUrl: context.manifestUrl });
         const parentChunk = sourceOnly || parent || !chunk.descriptor.parentId ? parent ?? chunk : await loadLandscapeChunk(context.manifest, chunk.descriptor.parentId, { manifestUrl: context.manifestUrl });
         const soil = !sourceOnly && natural ? await naturalSamples(chunk.descriptor, natural) : { naturalAt: () => -1, read: false };
-        const buffers = sourceOnly ? null : buildLandscapeMeshBuffers({ chunk, parent: parentChunk, root: context.root, manifest: context.manifest, presentation, naturalAt: soil.naturalAt });
+        const buffers = sourceOnly ? null : buildLandscapeMeshBuffers({ chunk, parent: parentChunk, root: context.root, manifest: context.manifest, presentation, naturalAt: soil.naturalAt, exclusion: context.exclusion ?? null, soilPalette: context.soilPalette === true });
         const transfer = [chunk.heights.buffer, chunk.landCover.buffer, ...(buffers ? landscapeMeshTransferList(buffers) : [])];
         self.postMessage({ id, chunk, buffers, naturalSoil: { read: soil.read } }, transfer);
     } catch (error) {

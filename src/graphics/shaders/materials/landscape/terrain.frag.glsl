@@ -63,6 +63,9 @@ uniform float uSurfaceWarpEnabled;
 varying vec3 vLandscapeColor;
 varying vec3 vLandscapeNormal;
 varying vec3 vLandscapeWorld;
+// AI 596 D5: the fallback surface of a stream in soil-palette mode (LandscapeSoilPalette; zero response, roughness 0.9 and no occlusion otherwise)
+varying vec3 vLandscapeResponse;
+varying vec2 vLandscapeSurface;
 
 #include <shaderlib:landscape/surface_warp>
 #include <shaderlib:landscape/material_clumps>
@@ -967,8 +970,8 @@ void landscapeSurfaceCacheMicro(inout vec3 albedo, inout vec3 mapped, float weig
 // unchanged lighting (terrain fields, natural-ground response, bounce, atmosphere, water) shades it; natural landscape materials have metalness 0.
 // The vertex-color fallback stays until both the appearance and the cache's root page are ready.
 vec3 landscapeSurfaceCacheRadiance(vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy) {
-    vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vec3(0.0), groundAlbedo = albedo;
-    float roughness = 0.9, ao = 1.0, reach = 0.0;
+    vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vLandscapeResponse, groundAlbedo = albedo;
+    float roughness = vLandscapeSurface.x, ao = vLandscapeSurface.y, reach = 0.0;
     if (uAppearanceReady > 0.5 && uSurfaceCacheState.x > 0.5) {
         LandscapeCachedSurface cached = landscapeSurfaceCacheSample(world, dx, dy);
         vec3 tangent = normalize(vec3(normal.y, -normal.x, 0.0)), north = normalize(cross(tangent, normal));
@@ -1076,9 +1079,10 @@ void main() {
     } else
 #endif
     {
-        // the vertex-color fallback until the appearance is ready; both share one lighting call site (AI577 D5: halves the inlined lighting code)
-        vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vec3(0.0), groundAlbedo = albedo;
-        float roughness = 0.9, metalness = 0.0, ao = 1.0, reach = 0.0;
+        // the vertex-color fallback until the appearance is ready (its response, roughness and occlusion are the soil palette's in palette mode, AI 596 D5);
+        // both share one lighting call site (AI577 D5: halves the inlined lighting code)
+        vec3 albedo = mix(vLandscapeColor, uTint, uLodColor), surfaceNormal = normal, response = vLandscapeResponse, groundAlbedo = albedo;
+        float roughness = vLandscapeSurface.x, metalness = 0.0, ao = vLandscapeSurface.y, reach = 0.0;
         if (uAppearanceReady > 0.5) {
             Coverage coverage = hierarchyCoverage(world, dx, dy, warped, warpedDx, warpedDy);
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS

@@ -111,6 +111,11 @@ const OPERATOR_RULES = Object.freeze({
         if (params.source === 'raw-float32') {
             for (const key of ['file', 'columns', 'rows']) requireCondition(params[key] !== undefined && params[key] !== null, `${label}.${key} is required for a raw-float32 import`);
         } else for (const key of ['file', 'columns', 'rows', 'coverFile']) requireCondition(params[key] === undefined || params[key] === null, `${label}.${key} applies only to raw-float32 imports`);
+        // the embedded placement (AI 596 D5) binds a landscape sub-rectangle; the fill parameters describe only what lies outside it
+        if ((params.placement ?? 'extent') === 'embed') {
+            requireCondition((params.source ?? 'landscape') === 'landscape', `${label}.placement embed applies only to landscape sources (a raw-float32 source declares the recipe grid)`);
+            if (params.fillSmoothingMeters) requireCondition(params.fillFadeMeters > 0, `${label}.fillSmoothingMeters needs a positive fillFadeMeters (the sigma grows with the distance over the fade)`);
+        } else for (const key of ['fillMode', 'fillHeightMeters', 'fillFadeMeters', 'fillSmoothingMeters', 'fillCoverClass']) requireCondition(params[key] === undefined || params[key] === null, `${label}.${key} applies only to placement embed`);
     },
     'import-map': (params, label) => importTargetRule(params.target ?? 'height', `${label}.target`),
     'export-map': (params, label) => {

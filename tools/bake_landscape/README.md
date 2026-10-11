@@ -93,7 +93,17 @@ A cache bundle installs into its own id's directory by default
 landscape is refused. Verify v3 in place with
 `node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')).passed))"`
 (the geology sidecar's `geology/manifest.json` is a current pointer like the
-appearance and field sidecars).
+appearance and field sidecars). The AI 596 D5 far-field surround lives beside them
+as its own saved landscape `surround/` (`surround/manifest.json`, its immutable
+`surround/manifest.<sha256>.json` snapshot and `surround/payloads/`;
+`node tools/bake.mjs --target landscape/synthesis/surround --publish`, see
+[terrain_synthesis/README.md](terrain_synthesis/README.md)): render-only, never
+authoritative, its provenance `preparation.surround` names the v3 id, revision and
+manifest SHA-256 it continues. `surround/manifest.json` is a current pointer too
+(`LANDSCAPE_CACHE_POINTERS`, switched before the terrain manifest): the bundle
+verifier validates it as a landscape manifest, authenticates its payloads through
+its chunk records and refuses a surround whose binding names another terrain id,
+revision or manifest hash than the installed `manifest.json`.
 
 #### Publishing v3 (the sequence)
 
@@ -111,9 +121,14 @@ appearance and field sidecars).
    (the shared `pythonExecutable`; the multiscale request names the landscape id, so
    v3 has its own copy of the shipped request). The appearance cannot be copied
    from v2: its binding key covers the grid.
-4. **Cache verification** → `verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')`
-   must pass (every payload, page and snapshot authenticated; pointers by schema).
-5. **Pin** → update `CoastalLandscapeCitySpec.js` to the id, the immutable snapshot
+4. **Surround leaf** (AI 596 D5) → `node tools/bake.mjs --target landscape/synthesis/surround --publish`
+   writes the render-only far-field surround `surround/` bound to the v3 revision just
+   published (a changed v3 is refused; remove an older `surround/` first so no orphan
+   payloads stay in its content-addressed store).
+5. **Cache verification** → `verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')`
+   must pass (every payload, page and snapshot authenticated; pointers by schema; the
+   surround bound to the current terrain manifest).
+6. **Pin** → update `CoastalLandscapeCitySpec.js` to the id, the immutable snapshot
    the leaf wrote (`manifest.<sha256>.json`) and its revision; transform and extent
    stay (bounds remain 0..4000). `node --test tests/node/unit/landscape_cache_availability.test.js tests/node/unit/landscape_city_binding.test.js`
    then checks the installed pin byte for byte.

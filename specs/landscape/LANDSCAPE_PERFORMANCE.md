@@ -22,7 +22,7 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | --- | --- |
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
-| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 512 / 256 MiB since AI577 D4 (384 / 192 MiB in D2–D3); 512 / 448 MiB with the surface cache on at 1920 × 1080, the default since AI577 D7 (`landscapeSurfaceCacheBudgets` of the display: 588 at 2560×1440, 950 at 3840×2160) |
+| Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 640 / 352 MiB since AI 596 D5 (512 / 256 MiB in AI577 D4 – AI 596 D4, 384 / 192 MiB in D2–D3); 640 / 544 MiB with the surface cache on at 1920 × 1080, the default since AI577 D7 (`landscapeSurfaceCacheBudgets` of the display: 684 at 2560×1440, 1046 at 3840×2160; 448 / 588 / 950 before D5). The D5 raise is the render-only surround's 128 / 96 MiB share ("Far-field surround" below) |
 | Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |
@@ -175,6 +175,43 @@ authoritative native height at the hit) and 64 `select()` queries that must retu
 exactly at vertices; disposal to zero controlled allocations. `comparison.md` beside the receipts is regenerated
 from every receipt present. Fixtures saved without an appearance sidecar render fallback soil colors (the viewer
 records `[Landscape] appearance manifest HTTP 404`), so these numbers exclude PBR materials and surface detail.
+
+## Far-field surround (AI 596 D5)
+
+The render-only surround (LANDSCAPE_STREAMING.md "Far-field surround") streams a second terrain document beside
+the authoritative one, so its cost is measured with the natural-world route of the fixture harness
+(`LANDSCAPE_RESOLUTION_FIXTURES=coastal-city-v3 LANDSCAPE_RESOLUTION_ROUTE=natural-world`, `LANDSCAPE_RESOLUTION_SURROUND=on|off|<url>`,
+receipts under `tests/artifacts/screens/landscape/ai596/d5/browser/<run>/coastal-city-v3/`, 1920 × 1080 DPR 1, surface cache on,
+RTX 3060 through ANGLE/D3D11, Chromium 151, 30 warm-up + 120 sampled frames per stop, no bake running; the `off at 512/448`
+row is the AI 596 D4 receipt of the same machine and route). The surround document of the first runs was the D5 placeholder
+sidecar (written into the cache root with `writeSynthesizedLandscape`, 2049² at 15.625 m, 85 nodes, bound to the v3 revision; deleted
+once the sidecar was published), then the published sidecar `assets/public/landscape/coastal-city-v3/surround` at the same grid and
+node count, so the residency figures carry over. "Surround" bytes are its own
+ledger kind inside the shared totals; "GPU ms" is the renderer pass (both terrains, water, backdrop).
+
+| Run (profile CPU/GPU MiB, surround share) | Settled startup ms | Lifetime peak CPU / GPU MiB | Surround tiles (levels) and bytes CPU / GPU MiB (peak) | Authoritative leaves at NW-10 / NW-03 / NW-08 / NW-01 | 1.5 px met | GPU ms median / p95 | CPU ms median / p95 | Max triangles / draws | Route uploads MiB (max per frame) | Settle ms NW-10 / NW-03 / NW-08 / NW-01 |
+| --- | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| off at 512/448 (D4 receipt) | 12,106 | 416.5 / 448.0 | — | 46 / 46 / 55 / 40 | overview, ortho, return | 5.71 / 7.86 | 2.00 / 3.70 | 4,577,966 / 39 | 1,037 (7.77) | 5,697 / 7,189 / 8,295 / 6,696 |
+| on at 512/448, share 96/64 | 15,291 | 438.3 / 448.0 | 13 (L1 1, L2 12) at every stop, 76.7 / 49.1 (95.8 / 59.6); CPU share saturated, 2,097 → 10,030 share denials | 31 / 31 / 40 / 34 | overview, ortho, return | 6.59 / 8.55 | 1.90 / 2.90 | 4,502,566 / 37 | 756 (5.9) | 5,680 / 5,663 / 5,254 / 4,731 |
+| on at 640/544, share 128/96 (shipped since D5) | 12,789 (surround decided 9.0 s later in the background, its program compile 8.9 s) | 569.7 / 543.9 | 19 (L2 15, L3 4: the four natives under the camera) at NW-10/NW-03/NW-01, 16 at NW-08 and the probe camera, 108.0 / 70.1 (127.8 / 80.6); share denials 682 → 7,815 | 52 / 52 / 61 / 49 | overview, NW-08, ortho, return | 6.99 / 8.69 | 1.90 / 2.90 | 6,792,872 / 56 | 1,262 (7.8) | 6,613 / 8,498 / 8,629 / 8,086 |
+| off at 640/544 | 9,083 | 535.3 / 542.1 | — | 73 / 64 / 61 / 67 | overview, NW-03, NW-08, ortho, return | 6.20 / 8.71 | 1.70 / 2.80 | 6,327,982 / 57 | 1,419 (5.9) | 8,087 / 10,716 / 8,924 / 10,612 |
+| on at 640/544, the published sidecar (`coastal-city-v3-surround` `synthesis-3034994a218a819ca042438f`, served from its cache-root copy) | 15,202 (includes the surround's 11.2 s background load and compile, which the harness waits for) | 565.6 / 543.9 | 19 (L2 15, L3 4; L1 1, L2 10, L3 8 at NW-08 and NW-01), 108.0 / 70.1 (128.0 / 80.6); share denials 1,370 → 18,093 | 52 / 52 / 61 / 49 | overview, NW-08, ortho, return | 6.65 / 8.18 | 2.20 / 3.40 | 7,192,232 / 59 | 1,229 (7.3) | 5,896 / 8,595 / 8,895 / 8,095 |
+
+Reading: at the pre-D5 512/448 MiB profile the surround (the overview, one level-1 and twelve level-2 tiles, 49 MiB of GPU) took
+its room from the authoritative stream, which sat at the 448 MiB GPU ceiling at every ground stop and lost 15 to 20 leaves per stop
+against D4; the surround's own 96 MiB CPU share saturated at 13 tiles (the four 4 km natives under the camera were denied) — the
+shipped profile could not hold v3 and the surround. The constants were raised by exactly the surround share: `LANDSCAPE_STREAMING_BUDGETS`
+512/256 → **640/352 MiB**, `LANDSCAPE_SURFACE_CACHE_BUDGETS` 512/448 → **640/544 MiB** (the 2560×1440 and 3840×2160 profiles 588/950 →
+684/1046), `LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes` 256 → **352 MiB** (the cache ceiling stays 192 MiB), and the share
+`LANDSCAPE_SURROUND.budgets` to **128/96 MiB** (room for the four natives, their twelve level-2 neighbours, the hidden ancestors and the build
+peaks). At 640/544 the authoritative stream holds more leaves than in D4 at every ground stop and reaches the 1.5 px target at NW-08
+(the other three ground stops still settle with `gpu-budget`, the D4 finding carried into D6), the surround reaches its natives, and the
+renderer pass costs 1.3 ms more at the median than the D4 run (the surround's 2.1–2.5 M triangles and up to 19 draws) while the frame stays
+vsync-bound at 60 FPS. Without the surround the raised profile is filled by the authoritative stream itself (73/64/61/67 leaves, two more
+stops at the 1.5 px target, GPU 6.20 ms): at the same 640/544 MiB the surround therefore costs about fifteen authoritative leaves at the
+ground stops and +0.8 ms of GPU time at the route median, with the authoritative stream never below its D4 residency. The surround's cold program compile (its own terrain variant, 6–9 s on this host) runs in the background after `load()` returns,
+so settled startup is unchanged. Picking and queries are unaffected (64 of 64 probe hits, 32 of 32 exact vertices in every run); disposal
+returns every surround byte (0 entries of kind `landscape-surround` after dispose).
 
 ## Verification
 

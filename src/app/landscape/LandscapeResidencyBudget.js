@@ -1,6 +1,8 @@
 // Accounts terrain working sets and protects resources held by independent consumers.
 // @ts-check
-export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 512 * 1024 * 1024, gpuBytes: 256 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
+// AI 596 D5: 640 MiB CPU / 352 MiB GPU, the pre-D5 512/256 MiB plus the render-only surround's 128/96 MiB share (LANDSCAPE_SURROUND.budgets), so the
+// authoritative streams keep the room they had while the surround streams beside them; measured in LANDSCAPE_PERFORMANCE.md "Far-field surround".
+export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 640 * 1024 * 1024, gpuBytes: 352 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
 
 function bytes(value, label) {
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`[LandscapeResidency] ${label} must be a nonnegative safe byte count`);

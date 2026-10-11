@@ -184,8 +184,9 @@ test('Surface cache: the atlas fits whole 256-slot layers above the streams\' re
     assert.equal(LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes, LANDSCAPE_STREAMING_BUDGETS.cpuBytes);
     const fit = (cpu, gpu, options = {}) => fitLandscapeSurfaceCache({ limits: { cpuBytes: cpu * MIB, gpuBytes: gpu * MIB }, geometry: coastal, ...options });
     const brief = ({ slots, reason }) => ({ slots, reason });
-    // the cache's shipped 1920x1080 profile (512/448 MiB) holds the 12-layer reference target under its 192 MiB ceiling (D6's 3/8 fraction capped
-    // the ceiling at 168 MiB and the target at 11 layers)
+    // the cache's shipped 1920x1080 profile (640/544 MiB since AI 596 D5, 512/448 before: the streams' reserve and the profile both grew by the
+    // surround share) holds the 12-layer reference target under its unchanged 192 MiB ceiling (D6's 3/8 fraction capped the ceiling at 168 MiB and
+    // the target at 11 layers)
     const shipped = fitLandscapeSurfaceCache({ limits: LANDSCAPE_SURFACE_CACHE_BUDGETS, geometry: coastal });
     assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 12, reason: null });
     assert.equal(LANDSCAPE_SURFACE_CACHE.targetSlots, 3072);
@@ -194,27 +195,28 @@ test('Surface cache: the atlas fits whole 256-slot layers above the streams\' re
     assert.equal(shipped.gpuBytes, 12 * 14598144 + 576 * 576 * 16 + 212992, 'twelve layers, the packed generation scratch and the indirection');
     assert.equal(shipped.scratchBytes, 5308416);
     assert.equal(shipped.cpuBytes, 212992 + 3072 * 8);
-    // 768/384: the reserve leaves 128 MiB, eight layers
-    const large = fit(768, 384);
+    const reserveMiB = LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes / MIB, profile = LANDSCAPE_SURFACE_CACHE_BUDGETS.gpuBytes / MIB;
+    // reserve + 128 MiB: eight layers under a 128 MiB ceiling
+    const large = fit(768, reserveMiB + 128);
     assert.deepEqual({ ...brief(large), ceiling: large.ceilingBytes, atlasBytes: large.atlasBytes }, { slots: 2048, reason: 'surface-cache-gpu-ceiling', ceiling: 128 * MIB, atlasBytes: 116785152 });
     // the uncached shipped profile and the reduced profiles have no room above the reserve: no atlas, the cache stays off with its reason
-    for (const [cpu, gpu] of [[512, 256], [128, 64], [48, 24], [16, 8]]) assert.deepEqual(brief(fit(cpu, gpu)), { slots: 0, reason: 'surface-cache-gpu-budget' }, `${cpu}/${gpu} MiB`);
+    for (const [cpu, gpu] of [[LANDSCAPE_STREAMING_BUDGETS.cpuBytes / MIB, LANDSCAPE_STREAMING_BUDGETS.gpuBytes / MIB], [512, 256], [128, 64], [48, 24], [16, 8]]) assert.deepEqual(brief(fit(cpu, gpu)), { slots: 0, reason: 'surface-cache-gpu-budget' }, `${cpu}/${gpu} MiB`);
     // a budget that leaves at least the minimum atlas degrades its size with the reason; below the minimum the cache stays off
-    assert.deepEqual(brief(fit(512, 320)), { slots: 1024, reason: 'surface-cache-gpu-ceiling' });
-    assert.deepEqual(brief(fit(512, 300)), { slots: 0, reason: 'surface-cache-gpu-budget' }, 'two layers would truncate most views below the uncached quality');
-    assert.deepEqual(brief(fit(512, 448, { targetSlots: 512 })), { slots: 512, reason: null }, 'an explicit small target is its own minimum');
-    assert.deepEqual(brief(fit(1024, 640, { targetSlots: 4096 })), { slots: 4096, reason: null });
-    assert.equal(fit(512, 448, { maxTextureSize: 1024 }).reason, 'surface-cache-device-capacity');
-    assert.equal(fit(512, 448, { maxArrayLayers: 4 }).reason, 'surface-cache-device-capacity');
-    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 100000, gpuBytes: 448 * MIB }, geometry: coastal }).reason, 'surface-cache-cpu-budget');
+    assert.deepEqual(brief(fit(512, reserveMiB + 64)), { slots: 1024, reason: 'surface-cache-gpu-ceiling' });
+    assert.deepEqual(brief(fit(512, reserveMiB + 44)), { slots: 0, reason: 'surface-cache-gpu-budget' }, 'two layers would truncate most views below the uncached quality');
+    assert.deepEqual(brief(fit(512, profile, { targetSlots: 512 })), { slots: 512, reason: null }, 'an explicit small target is its own minimum');
+    assert.deepEqual(brief(fit(1024, reserveMiB + 384, { targetSlots: 4096 })), { slots: 4096, reason: null });
+    assert.equal(fit(512, profile, { maxTextureSize: 1024 }).reason, 'surface-cache-device-capacity');
+    assert.equal(fit(512, profile, { maxArrayLayers: 4 }).reason, 'surface-cache-device-capacity');
+    assert.equal(fitLandscapeSurfaceCache({ limits: { cpuBytes: 100000, gpuBytes: profile * MIB }, geometry: coastal }).reason, 'surface-cache-cpu-budget');
     assert.throws(() => fitLandscapeSurfaceCache({ limits: { cpuBytes: 1, gpuBytes: 1 }, geometry: coastal, targetSlots: 10 }), /target slots/);
     // switched on beside resident streams: the ledger's free bytes bound the atlas below its ceiling, with their own reason
-    const beside = fit(512, 448, { available: { gpuBytes: 68 * MIB } });
+    const beside = fit(512, profile, { available: { gpuBytes: 68 * MIB } });
     assert.deepEqual(brief(beside), { slots: 1024, reason: 'surface-cache-gpu-available' });
     assert.ok(beside.gpuBytes <= 68 * MIB);
-    assert.deepEqual(brief(fit(512, 448, { available: { gpuBytes: 200 * MIB }, targetSlots: 4096 })), { slots: 3328, reason: 'surface-cache-gpu-ceiling' }, 'the 192 MiB ceiling binds first when the ledger has room');
-    assert.equal(fit(512, 448, { available: { gpuBytes: 10 * MIB } }).reason, 'surface-cache-gpu-budget');
-    assert.equal(fit(512, 448, { available: { gpuBytes: 448 * MIB } }).reason, null);
+    assert.deepEqual(brief(fit(512, profile, { available: { gpuBytes: 200 * MIB }, targetSlots: 4096 })), { slots: 3328, reason: 'surface-cache-gpu-ceiling' }, 'the 192 MiB ceiling binds first when the ledger has room');
+    assert.equal(fit(512, profile, { available: { gpuBytes: 10 * MIB } }).reason, 'surface-cache-gpu-budget');
+    assert.equal(fit(512, profile, { available: { gpuBytes: profile * MIB } }).reason, null);
 });
 
 test('Surface cache capacity (AI577 D7): slots, window and budget profile scale with the drawing buffer above the 1920x1080 reference', () => {
@@ -222,7 +224,7 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
     const brief = size => { const capacity = landscapeSurfaceCacheCapacity(size); return { slots: capacity.targetSlots, window: capacity.windowPages, reason: capacity.reason }; };
     const reference = landscapeSurfaceCacheCapacity({ width: 1920, height: 1080 });
     assert.deepEqual({ slots: reference.targetSlots, window: reference.windowPages, reason: reference.reason, pixels: reference.pixels }, { slots: 3072, window: 64, reason: null, pixels: 2073600 });
-    assert.deepEqual({ ...landscapeSurfaceCacheBudgets(reference) }, { ...LANDSCAPE_SURFACE_CACHE_BUDGETS }, 'the reference keeps the 512/448 MiB profile');
+    assert.deepEqual({ ...landscapeSurfaceCacheBudgets(reference) }, { ...LANDSCAPE_SURFACE_CACHE_BUDGETS }, 'the reference keeps the shipped cache profile (640/544 MiB since AI 596 D5)');
     // smaller or equal drawing buffers keep the reference capacity (its LRU room and the root pyramid do not shrink with the view)
     for (const size of [{ width: 1920, height: 1032 }, { width: 1280, height: 720 }, { width: 960, height: 540 }, { width: 512, height: 512 }, { width: 1080, height: 1920 }, { width: 2048, height: 1012 }]) {
         assert.deepEqual(brief(size), { slots: 3072, window: 64, reason: null }, JSON.stringify(size));
@@ -249,8 +251,9 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
         return { gpuMiB: limits.gpuBytes / MIB, cpuMiB: limits.cpuBytes / MIB, cacheMiB: fit.gpuBytes / MIB, room: limits.gpuBytes - fit.gpuBytes };
     };
     const base = roomAt({ width: 1920, height: 1080 }), qhd = roomAt({ width: 2560, height: 1440 }), uhd = roomAt({ width: 3840, height: 2160 });
-    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [448, 588, 950]);
-    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [512, 512, 512]);
+    // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile)
+    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [544, 684, 1046]);
+    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [640, 640, 640]);
     assert.ok(Math.abs(uhd.cacheMiB - 674.1) < .1 && Math.abs(qhd.cacheMiB - 312.2) < .1 && Math.abs(base.cacheMiB - 172.3) < .1, `${base.cacheMiB} / ${qhd.cacheMiB} / ${uhd.cacheMiB} MiB`);
     for (const value of [qhd, uhd]) assert.ok(value.room >= base.room && value.room - base.room < MIB, 'the streams keep the reference room');
     assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 2816, windowPages: 64 }), /target slots/, 'below the reference');
@@ -558,9 +561,9 @@ test('Surface cache default (AI577 D7): a view runs the cache unless it selects 
         delete process.env.LANDSCAPE_TEST_SURFACE_CACHE;
         assert.equal(landscapeEffectiveSurfaceCache(), 'on');
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html', 'an unselected run keeps the address');
-        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 512, gpuMiB: 448 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 512, gpuMiB: 588 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 512, gpuMiB: 950 });
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 640, gpuMiB: 544 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 640, gpuMiB: 684 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 640, gpuMiB: 1046 });
         process.env.LANDSCAPE_TEST_SURFACE_CACHE = 'off';
         assert.equal(landscapeEffectiveSurfaceCache(), 'off');
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off');

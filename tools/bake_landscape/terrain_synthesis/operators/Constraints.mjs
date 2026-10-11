@@ -67,6 +67,7 @@ async function constrainRoads(context) {
         if (!road) throw new Error(`[Synthesis] operator ${context.operator.id}: road "${name}" is not in the plan`);
         return road;
     });
+    if (!selected.length) throw new Error(`[Synthesis] operator ${context.operator.id}: the plan has no road to constrain`);
     const constrained = new Set(selected.map(road => road.index)), reports = [], profiled = [];
     const districtId = context.layers.get('districtId');
     const districtAt = (x, z) => districtId[Math.min(rows - 1, Math.max(0, Math.round((grid.maxZ - z) / grid.spacingZ))) * columns + Math.min(columns - 1, Math.max(0, Math.round((x - grid.minX) / grid.spacingX)))];

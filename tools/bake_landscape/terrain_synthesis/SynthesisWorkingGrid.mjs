@@ -9,8 +9,16 @@
 // integer factor (AI 596 D4: the 2049² v2 base under the 4097² v3 recipe) is upsampled once at import (upsampleHeights: separable
 // Catmull-Rom with the edge continued linearly so a linear ramp is reproduced exactly, bilinear, or nearest) and its cover takes the
 // nearest source label with ties toward the lower index (upsampleCover); upsampled samples are interpolation, never source detail.
+// An embedded source (AI 596 D5: the 4097² v3 landscape inside the 2049² surround grid at 15.625 m) covers an aligned sub-rectangle of
+// the target grid at its spacing or finer by an integer factor: embedHeights decimates it (the same tent or nearest filter) into that
+// rectangle and fills the rest of the grid, continuing the nearest rectangle boundary sample outward with a smoothstep fade toward a fill
+// height (extend-edge) or writing a constant; embedCover takes the aligned source label inside and one class outside.
+import { smoothstep } from '../terrain_fields/TerrainFieldsGrid.mjs';
 
 /** @typedef {{columns:number,rows:number,spacingX:number,spacingZ:number,minX:number,maxZ:number}} SynthesisGrid */
+
+export const EMBED_FILL_MODES = Object.freeze(['extend-edge', 'constant']);
+const nearlyInteger = value => Math.abs(value - Math.round(value)) <= 1e-9 * Math.max(1, Math.abs(value));
 
 /** @param {any} recipe validated recipe @returns {SynthesisGrid} */
 export function synthesisOutputGrid(recipe) {
@@ -159,6 +167,92 @@ export function upsampleCover(source, cover, target, out) {
         for (let column = 0; column < target.columns; column++) out[row * target.columns + column] = cover[base + nearestCoarseIndex(column, k)];
     }
     return k;
+}
+
+/**
+ * Placement of a source grid as an aligned sub-rectangle of a target grid: the source spacing divides the target spacing by one integer
+ * factor, the source spans whole target intervals and its origin lies on a target sample inside the target grid. Returns the factor and
+ * the rectangle in target samples, or throws naming the misalignment.
+ * @param {SynthesisGrid} source @param {SynthesisGrid} target
+ * @returns {{factor:number,column:number,row:number,columns:number,rows:number}}
+ */
+export function embedPlacement(source, target) {
+    const factor = target.spacingX / source.spacingX;
+    if (!nearlyInteger(factor) || Math.round(factor) < 1 || !nearlyInteger(target.spacingZ / source.spacingZ) || Math.round(target.spacingZ / source.spacingZ) !== Math.round(factor)) throw new Error(`[Synthesis] An embedded source spacing ${source.spacingX} x ${source.spacingZ} must divide the target spacing ${target.spacingX} x ${target.spacingZ} by one integer factor`);
+    const stride = Math.round(factor);
+    if ((source.columns - 1) % stride !== 0 || (source.rows - 1) % stride !== 0) throw new Error(`[Synthesis] An embedded source of ${source.columns} x ${source.rows} samples does not span whole target intervals at factor ${stride}`);
+    const column = (source.minX - target.minX) / target.spacingX, row = (target.maxZ - source.maxZ) / target.spacingZ;
+    if (!nearlyInteger(column) || !nearlyInteger(row)) throw new Error(`[Synthesis] An embedded source origin (${source.minX}, ${source.maxZ}) must lie on a target sample (target origin ${target.minX}, ${target.maxZ} at ${target.spacingX} x ${target.spacingZ} m)`);
+    const columns = (source.columns - 1) / stride + 1, rows = (source.rows - 1) / stride + 1, c0 = Math.round(column), r0 = Math.round(row);
+    if (c0 < 0 || r0 < 0 || c0 + columns > target.columns || r0 + rows > target.rows) throw new Error(`[Synthesis] The embedded source rectangle (columns ${c0}..${c0 + columns - 1}, rows ${r0}..${r0 + rows - 1}) leaves the target grid of ${target.columns} x ${target.rows} samples`);
+    return { factor: stride, column: c0, row: r0, columns, rows };
+}
+
+// Gaussian average of a boundary line (values at stride apart) around index k with sigma in samples (3 sigma taps, clamped at the ends)
+function smoothedEdge(out, start, stride, count, k, sigma) {
+    if (sigma <= 0) return out[start + k * stride];
+    const reach = Math.ceil(3 * sigma), from = Math.max(0, k - reach), to = Math.min(count - 1, k + reach);
+    let sum = 0, weight = 0;
+    for (let j = from; j <= to; j++) { const w = Math.exp(-.5 * ((j - k) / sigma) ** 2); sum += w * out[start + j * stride]; weight += w; }
+    return sum / weight;
+}
+
+/**
+ * Writes a source grid into its rectangle of the target grid, decimated by the placement factor (tent or nearest, as decimateHeights;
+ * copied at factor 1), and fills every target sample outside the rectangle: extend-edge continues the nearest rectangle boundary sample
+ * outward and fades it with a smoothstep of the Euclidean distance to the rectangle over fillFadeMeters toward fillHeightMeters (0 never
+ * fades; at and beyond the fade distance the fill height is written exactly), constant writes fillHeightMeters. With
+ * fillSmoothingMeters the continued boundary is averaged along the boundary with a Gaussian whose sigma grows linearly from 0 at the
+ * boundary to fillSmoothingMeters at the fade distance, so the continuation blurs instead of streaking outward (the boundary itself stays
+ * exact; a corner region continues the corner sample smoothed along its row). `scratch` may hold a Float32Array of the rectangle's
+ * samples for the decimated block (allocated here otherwise).
+ * @param {SynthesisGrid} source @param {Float32Array} values @param {SynthesisGrid} target @param {Float32Array} out
+ * @param {{filter?:'tent'|'nearest',fillMode?:'extend-edge'|'constant',fillHeightMeters?:number,fillFadeMeters?:number,fillSmoothingMeters?:number,scratch?:Float32Array}} [options]
+ * @returns {{factor:number,column:number,row:number,columns:number,rows:number,filledSamples:number,fill:{mode:string,heightMeters:number,fadeMeters:number,smoothingMeters:number}}}
+ */
+export function embedHeights(source, values, target, out, { filter = 'tent', fillMode = 'extend-edge', fillHeightMeters = 0, fillFadeMeters = 0, fillSmoothingMeters = 0, scratch } = {}) {
+    if (!EMBED_FILL_MODES.includes(fillMode)) throw new Error(`[Synthesis] Unsupported embed fill mode ${fillMode}`);
+    if (!Number.isFinite(fillHeightMeters) || !(fillFadeMeters >= 0) || !(fillSmoothingMeters >= 0)) throw new Error('[Synthesis] embedHeights needs a finite fill height and non-negative fade and smoothing distances');
+    if (fillSmoothingMeters > 0 && !(fillFadeMeters > 0)) throw new Error('[Synthesis] embedHeights smoothing needs a positive fade distance (the sigma grows with the distance over the fade)');
+    const placement = embedPlacement(source, target), { factor, column: c0, row: r0, columns, rows } = placement, { columns: targetColumns, spacingX, spacingZ } = target;
+    const decimated = { columns, rows, spacingX: source.spacingX * factor, spacingZ: source.spacingZ * factor, minX: source.minX, maxZ: source.maxZ };
+    const block = scratch && scratch.length >= columns * rows ? scratch : new Float32Array(columns * rows);
+    decimateHeights(source, values, decimated, block, filter);
+    for (let r = 0; r < rows; r++) out.set(block.subarray(r * columns, (r + 1) * columns), (r0 + r) * targetColumns + c0);
+    const c1 = c0 + columns - 1, r1 = r0 + rows - 1, fade = fillFadeMeters, fill = fillHeightMeters, smoothing = fillSmoothingMeters, sigmaPerMeter = fade > 0 ? smoothing / fade : 0;
+    let filled = 0;
+    for (let row = 0; row < target.rows; row++) {
+        const dr = row < r0 ? r0 - row : row > r1 ? row - r1 : 0, edgeRow = row < r0 ? r0 : row > r1 ? r1 : row;
+        for (let column = 0; column < targetColumns; column++) {
+            const dc = column < c0 ? c0 - column : column > c1 ? column - c1 : 0;
+            if (dr === 0 && dc === 0) continue;
+            filled++;
+            const i = row * targetColumns + column, edgeColumn = column < c0 ? c0 : column > c1 ? c1 : column;
+            if (fillMode === 'constant') { out[i] = fill; continue; }
+            const distance = Math.hypot(dc * spacingX, dr * spacingZ), w = fade > 0 ? smoothstep(0, fade, distance) : 0;
+            if (w >= 1) { out[i] = fill; continue; }
+            let edge;
+            if (sigmaPerMeter <= 0) edge = out[edgeRow * targetColumns + edgeColumn];
+            else if (dr > 0 || dc === 0) edge = smoothedEdge(out, edgeRow * targetColumns + c0, 1, columns, edgeColumn - c0, sigmaPerMeter * distance / spacingX);
+            else edge = smoothedEdge(out, r0 * targetColumns + edgeColumn, targetColumns, rows, edgeRow - r0, sigmaPerMeter * distance / spacingZ);
+            out[i] = fade <= 0 ? edge : edge + (fill - edge) * w;
+        }
+    }
+    return { ...placement, filledSamples: filled, fill: { mode: fillMode, heightMeters: fill, fadeMeters: fade, smoothingMeters: smoothing } };
+}
+
+/**
+ * Aligned source labels inside the embedded rectangle of the target grid (as decimateCover) and `fillClass` everywhere outside it.
+ * @param {SynthesisGrid} source @param {Uint8Array} cover @param {SynthesisGrid} target @param {Uint8Array} out @param {number} fillClass
+ */
+export function embedCover(source, cover, target, out, fillClass) {
+    const placement = embedPlacement(source, target), { factor, column: c0, row: r0, columns, rows } = placement;
+    out.fill(fillClass);
+    for (let r = 0; r < rows; r++) {
+        const base = (r0 + r) * target.columns + c0, sourceBase = r * factor * source.columns;
+        for (let c = 0; c < columns; c++) out[base + c] = cover[sourceBase + c * factor];
+    }
+    return placement;
 }
 
 /**

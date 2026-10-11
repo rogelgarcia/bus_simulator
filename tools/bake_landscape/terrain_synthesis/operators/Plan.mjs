@@ -2,7 +2,8 @@
 // @ts-check
 // The plan JSON keeps the generator's conventions (X east, Y elevation, Z north, metres); this module checks them once and hands the
 // operators plain arrays: district polygons with targets, road centerlines with per-vertex design heights and widths, the shoreline
-// polyline and the beach reservations with the open-view corridor.
+// polyline and the beach reservations with the open-view corridor. A plan may hold no districts and no roads (the far-field surround of
+// AI 596 D5 carries only its far shoreline); the shoreline is always required.
 
 const requireFinite = (value, label) => { if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`[Synthesis] ${label} must be a finite number`); return value; };
 const COORDINATE_ORDER = /^X east, Y (elevation|sea level), Z north; metres$/;
@@ -23,7 +24,7 @@ function requireOrder(data, label) {
 
 /** @param {any} data districts.json */
 export function parsePlanDistricts(data) {
-    if (!Array.isArray(data) || data.length === 0 || data.length > 255) throw new Error('[Synthesis] districts.json must be an array of 1..255 district records');
+    if (!Array.isArray(data) || data.length > 255) throw new Error('[Synthesis] districts.json must be an array of 0..255 district records');
     const ids = new Set();
     return data.map((record, i) => {
         const label = `districts[${i}]`;
@@ -39,7 +40,7 @@ export function parsePlanDistricts(data) {
 /** @param {any} data roads.json */
 export function parsePlanRoads(data) {
     requireOrder(data, 'roads.json');
-    if (!Array.isArray(data.roads) || data.roads.length === 0 || data.roads.length > 512) throw new Error('[Synthesis] roads.json must hold 1..512 roads');
+    if (!Array.isArray(data.roads) || data.roads.length > 512) throw new Error('[Synthesis] roads.json must hold 0..512 roads');
     const names = new Set();
     return data.roads.map((record, index) => {
         const label = `roads[${index}]`;

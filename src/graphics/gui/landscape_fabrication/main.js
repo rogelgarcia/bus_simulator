@@ -7,6 +7,7 @@ import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeRes
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_LIGHTING, LANDSCAPE_LIGHTING_TIERS } from '../../engine3d/landscape/LandscapeLightingModel.js';
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
+import { LANDSCAPE_SURROUND, landscapeSurroundOption } from '../../engine3d/landscape/LandscapeSurroundModel.js';
 
 const canvas = document.getElementById('game-canvas');
 const parameters = new URL(location.href).searchParams;
@@ -50,14 +51,18 @@ const surfaceCacheAnisotropy = Number(parameters.get('landscapeSurfaceCacheAniso
 if (![1, 2, 4, 8, 16].includes(surfaceCacheAnisotropy)) throw new Error(`landscapeSurfaceCacheAnisotropy must be 1, 2, 4, 8 or 16; received ${parameters.get('landscapeSurfaceCacheAnisotropy')}`);
 // landscapeSurfaceCacheNear=on|off: per-pixel evaluation of the near field under the cache (on by default; off for A/B evidence)
 const surfaceCacheNear = mode('landscapeSurfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, 'on');
+// landscapeSurround=auto|off|<manifest url>: the AI 596 D5 render-only far-field surround (auto streams the sidecar published beside the landscape when it exists)
+const surround = landscapeSurroundOption(parameters.get('landscapeSurround') ?? LANDSCAPE_SURROUND.defaultMode);
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
-    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear });
+    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
     setCamera: options => view.setCamera(options),
     setInspection: options => view.setInspection(options),
     setWater: visible => view.setWater(visible),
+    // AI 596 D5 render-only surround: 'auto', 'off' or a manifest URL; resolves with snapshot().surround once applied
+    setSurround: mode => view.setSurround(mode),
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),

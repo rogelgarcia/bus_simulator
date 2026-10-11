@@ -29,6 +29,8 @@ import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeN
 import { LANDSCAPE_SURFACE_CACHE_RUNTIME, LandscapeSurfaceCache, landscapeSurfaceCacheAdmission } from '../../engine3d/landscape/LandscapeSurfaceCache.js';
 import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
+import { createLandscapeSurround } from '../../engine3d/landscape/LandscapeSurround.js';
+import { LANDSCAPE_SURROUND, landscapeSurroundOption, landscapeSurroundUrl, landscapeSurroundWaterBounds } from '../../engine3d/landscape/LandscapeSurroundModel.js';
 
 const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 
@@ -92,12 +94,16 @@ export class LandscapeView {
      *   display's capacity (landscapeSurfaceCacheShippedBudgets; explicit budgets keep their values; a profile without room above the streams' reserve keeps
      *   the cache off with its reason); the cache's slot target and window follow the drawing buffer (landscapeSurfaceCacheCapacity, AI577 D7) unless
      *   surfaceCacheSlots / surfaceCacheWindow fix them; surfaceCacheAnisotropy is its sampler anisotropy; surfaceCacheNear 'off' leaves the near field to the
-     *   cache instead of evaluating it per pixel (landscape-surface-cache-near-v1 A/B evidence)
+     *   cache instead of evaluating it per pixel (landscape-surface-cache-near-v1 A/B evidence); surround (AI 596 D5) 'auto' streams the render-only
+     *   far-field surround when the landscape publishes its sidecar, 'off' never loads it, a manifest URL loads that surround (landscapeSurroundOption)
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
         lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
         surfaceCache = LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, surfaceCacheSlots = null, surfaceCacheWindow = null, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy,
-        surfaceCacheNear = 'on' } = {}) {
+        surfaceCacheNear = 'on', surround = LANDSCAPE_SURROUND.defaultMode } = {}) {
+        this.surroundOption = landscapeSurroundOption(surround);
+        this.surround = null;
+        this.surroundSequence = 0;
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
@@ -235,6 +241,8 @@ export class LandscapeView {
             this.appearance?.dispose();
             this.water?.dispose();
             this.planning?.dispose();
+            this.surround?.dispose();
+            this.surround = null;
             this.loaded = loaded;
             if (!this.bookmarkStore || this.bookmarkStore.landscapeId !== loaded.manifest.id) this.bookmarkStore = new LandscapeBookmarks({ landscapeId: loaded.manifest.id, source: this.source });
             this.panel.bookmarks(this.bookmarkStore.snapshot());
@@ -261,6 +269,9 @@ export class LandscapeView {
             await planning.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingPlanning = null;
+            // AI 596 D5: the render-only surround loads last and in the background (its program compiles in parallel; snapshot().surround reads `loading`
+            // until it is decided), so the authoritative streams are up before its stream reserves and a load without one is unchanged
+            this.loadSurround(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Surround failed: ${error.message}`); } });
             this.loadTiming.readyAtMs = performance.now();
             this.panel.references(planning.features);
             this.syncPlanningPanel();
@@ -288,6 +299,57 @@ export class LandscapeView {
             this.budget.release(loadKey);
             if (sequence === this.loadSequence) this.reloading = false;
         }
+    }
+
+    /**
+     * AI 596 D5: loads the render-only surround of the loaded landscape per the surround option (the sidecar beside its manifest, an explicit URL, or
+     * none) and widens the water reference to the surround bounds while it is active. A surround that is absent, stale, unbound, invalid or failed holds
+     * nothing and is reported in the snapshot (and as a notice unless merely absent). Resolves once decided; a newer request or load supersedes it.
+     * @param {number} sequence the load this surround belongs to @param {any} loaded the loaded landscape
+     */
+    async loadSurround(sequence, loaded) {
+        const request = ++this.surroundSequence;
+        this.surround?.dispose();
+        this.surround = null;
+        const url = landscapeSurroundUrl(loaded.manifestUrl, this.surroundOption);
+        if (!url) { this.water?.setBounds(loaded.manifest.bounds); this.panel.active('surround', false); return null; }
+        const surround = await createLandscapeSurround({ landscape: loaded, url, budget: this.budget, renderer: this.renderer, scene: this.scene, camera: this.camera, coverageSlots: this.coverageSlots.total,
+            lighting: this.lighting, lightingTier: this.lighting.tier, materialSampling: this.materialSampling, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, palette: this.surroundPalette(), signal: this.loadAbort.signal });
+        if (this.disposed || sequence !== this.loadSequence || request !== this.surroundSequence || loaded !== this.loaded) { surround.dispose(); return null; }
+        this.surround = surround;
+        this.water?.setBounds(landscapeSurroundWaterBounds(loaded.manifest, surround));
+        this.panel.active('surround', surround.status === 'active');
+        if (surround.status !== 'active' && surround.status !== 'absent') this.panel.notice(`Surround not drawn (${surround.status}): ${surround.reason}`);
+        return surround;
+    }
+
+    /**
+     * Switches the render-only surround ('auto', 'off' or a manifest URL; AI 596 D5) for the loaded landscape and later loads. Resolves with the surround
+     * snapshot once applied (or superseded). @param {string} mode
+     */
+    async setSurround(mode) {
+        this.surroundOption = landscapeSurroundOption(mode);
+        if (!this.loaded || !this.stream || this.reloading) return this.surroundSnapshot();
+        try { await this.loadSurround(this.loadSequence, this.loaded); }
+        catch (error) { if (error.name !== 'AbortError') throw error; }
+        return this.surroundSnapshot();
+    }
+
+    /**
+     * AI 596 D5: the far colours the surround draws with: the loaded appearance's palette (each soil's mean corrected albedo of its coarse page) once every
+     * coarse page is in, re-derived when the material calibration changes; null (the surround's catalog colours) without an appearance or before it is ready.
+     */
+    surroundPalette() {
+        const palette = this.appearance?.materials?.soilPalette() ?? null;
+        return palette?.ready ? palette : null;
+    }
+
+    /** The surround's snapshot; without a decided surround it is `off` (option off) or `loading` (a load or switch has not decided it yet), never settled while loading. */
+    surroundSnapshot() {
+        const mode = this.surroundOption.mode, status = mode === 'off' ? 'off' : 'loading';
+        const inert = { recipe: LANDSCAPE_SURROUND.id, status, present: false, reason: null, url: null, settled: status === 'off', pending: 0, tiles: 0, residentByLevel: {},
+            share: { kind: LANDSCAPE_SURROUND.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_SURROUND.budgets, denied: 0, entries: 0 } };
+        return { mode, ...(this.surround?.snapshot() ?? inert) };
     }
 
     // AI577 D6: the runtime surface cache bound to a load's geometry and appearance streams. A reload of the same landscape at the same budget and
@@ -443,6 +505,7 @@ export class LandscapeView {
         this.materialSampling = mode;
         this.loadingStream?.setMaterialSampling(mode);
         this.stream?.setMaterialSampling(mode);
+        this.surround?.setMaterialSampling(mode);
         this.loadingAppearance?.setMaterialSampling(mode);
         this.appearance?.setMaterialSampling(mode);
         return this.appearance?.snapshot().materialSampling ?? { mode };
@@ -472,6 +535,7 @@ export class LandscapeView {
             this.lighting.setTier(tier);
             this.loadingStream?.setLightingTier(tier);
             this.stream?.setLightingTier(tier);
+            this.surround?.setLightingTier(tier);
             this.water?.setLightingTier(tier);
             this.backdrop.setLightingTier(tier);
         }
@@ -584,6 +648,7 @@ export class LandscapeView {
 
     setInspection({ lod = this.lodColors, boundaries = this.boundaries } = {}) {
         this.stream?.setInspection({ lod, boundaries });
+        this.surround?.setInspection({ lod, boundaries });
         this.lodColors = lod;
         this.boundaries = boundaries;
         this.panel.active('lod', lod);
@@ -752,6 +817,8 @@ export class LandscapeView {
         this.selectionAbort?.abort();
         for (const lease of this.consumerLeases.values()) lease.release();
         this.consumerLeases.clear();
+        this.surround?.dispose();
+        this.surround = null;
         this.stream?.dispose();
         this.stream = null;
         this.loaded = null;
@@ -820,6 +887,7 @@ export class LandscapeView {
     setMode(mode) {
         if (!['shaded', 'wireframe', 'combined'].includes(mode)) throw new Error(`Unknown inspection mode: ${mode}`);
         this.stream?.setInspection({ mode });
+        this.surround?.setInspection({ mode });
         this.mode = mode;
         this.panel.mode(mode);
         this.perfBar.requestUpdate();
@@ -989,6 +1057,7 @@ export class LandscapeView {
         if (action === 'lod') return this.setInspection({ lod: !this.lodColors });
         if (action === 'boundaries') return this.setInspection({ boundaries: !this.boundaries });
         if (action === 'water') return this.setWater(!this.waterVisible);
+        if (action === 'surround') return this.setSurround(this.surroundOption.mode === 'off' ? LANDSCAPE_SURROUND.defaultMode : 'off');
         if (action === 'focus-selection') return this.focusSelection();
         if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
@@ -1027,6 +1096,7 @@ export class LandscapeView {
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null }, lighting: { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot() },
+            surround: this.surroundSnapshot(),
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
             terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off', surfaceCache: this.surfaceCache,
@@ -1034,7 +1104,7 @@ export class LandscapeView {
                 runtime: this.surfaceCacheRuntime?.available ? { targetSlots: this.surfaceCacheRuntime.fit.targetSlots, slots: this.surfaceCacheRuntime.fit.slots, windowPages: this.surfaceCacheRuntime.geometry.windowPages } : null },
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
-            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
+            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.surround?.stream?.uploadedBytes ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
             peakUploadedBytesPerFrame: this.peakUploadedBytes,
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
@@ -1089,8 +1159,13 @@ export class LandscapeView {
                 this.stream?.update(rawDt, this.camera, this.canvas.height);
                 const geometryStats = this.stream?.snapshot();
                 const uploadLimit = geometryStats?.uploadLimitBytes ?? LANDSCAPE_STREAMING_BUDGETS.uploadBytesPerFrame;
-                this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
-                const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + (this.appearance?.uploadedBytes ?? 0);
+                // AI 596 D5: the surround streams after the authoritative geometry with what it left of the frame's upload allowance, and follows the
+                // appearance palette (a versioned object: the cells change only when a coarse page or the calibration did)
+                this.surround?.setPalette(this.surroundPalette());
+                this.surround?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
+                const surroundUploads = this.surround?.stream?.uploadedBytes ?? 0;
+                this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0) - surroundUploads));
+                const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + surroundUploads + (this.appearance?.uploadedBytes ?? 0);
                 const planningUploads = this.planning?.update(Math.max(0, uploadLimit - terrainUploads)) ?? 0;
                 // AI577 D6: surface cache demand and page generation run on the GPU before the frame, the indirection uploads with them
                 const cacheUploads = this.surfaceCacheRuntime?.update({ dt: rawDt, camera: this.camera, viewportHeight: this.canvas.height, viewportWidth: this.canvas.width,
@@ -1103,7 +1178,9 @@ export class LandscapeView {
                 const errorBound = stats.achievedErrorPixels >= 10000 ? stats.achievedErrorPixels.toExponential(1) : stats.achievedErrorPixels.toFixed(2);
                 const levels = stats.lods.map(lod => lod.level);
                 this.panel.text('streaming', `LOD ${Math.min(...levels)}–${Math.max(...levels)} · ${stats.residentLeafIds.length} tiles · ${stats.pending} pending · CPU ${mib(stats.budget.cpuBytes)}/${mib(stats.budget.limits.cpuBytes)} MiB · GPU est. ${mib(stats.budget.gpuBytes)}/${mib(stats.budget.limits.gpuBytes)} MiB · error bound ${errorBound}/${stats.targetErrorPixels.toFixed(1)} px · ${stats.degradationReason ?? 'ready'}`);
-                this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`);
+                const surround = this.surround?.snapshot();
+                this.panel.text('streaming-detail', `Loaded ${stats.loaded} · evicted ${stats.evicted} · canceled ${stats.canceled} · queue ${stats.queueDepth} · upload ${mib(stats.uploadedBytesPerFrame)} MiB/frame · stream ${stats.frameCostMs.toFixed(2)} ms`
+                    + (surround ? ` · surround ${surround.present ? `${surround.tiles} tiles · CPU ${mib(surround.share.cpuBytes)} / GPU est. ${mib(surround.share.gpuBytes)} MiB · ${surround.degradationReason ?? (surround.settled ? 'ready' : 'streaming')}` : surround.status}` : ''));
                 const appearance = this.appearance?.snapshot();
                 if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}${value.micro?.shown ? '+micro' : ''}`).join(' / ')} px · multiscale ${appearance.multiscale.status} · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
                 if (appearance) this.panel.text('surface-detail', this.surfaceDetailLine(appearance.detail));
@@ -1123,9 +1200,9 @@ export class LandscapeView {
             if (this.stream && this.loadTiming?.coarseReadyAtMs !== null && this.loadTiming?.firstCoveredFrameAtMs === null) this.loadTiming.firstCoveredFrameAtMs = performance.now();
             this.perfBar.onFrame({ dt: Math.min(rawDt, .1), rawDt, nowMs: now, renderer: this.renderer, frameIndex: ++this.frameIndex });
             this.performanceCapture?.record({ nowMs: now, intervalMs: rawDt * 1000, cpuFrameMs: performance.now() - frameStart,
-                geometryStreamingMs: this.reloading ? 0 : this.stream?.frameCostMs ?? 0,
+                geometryStreamingMs: this.reloading ? 0 : (this.stream?.frameCostMs ?? 0) + (this.surround?.stream?.frameCostMs ?? 0),
                 appearanceStreamingMs: this.reloading ? 0 : this.appearance?.frameCostMs ?? 0,
-                uploadedBytes: this.reloading ? 0 : (this.stream?.uploadedBytes ?? 0) + (this.appearance?.uploadedBytes ?? 0) + (this.planning?.uploadedBytes ?? 0),
+                uploadedBytes: this.reloading ? 0 : (this.stream?.uploadedBytes ?? 0) + (this.surround?.stream?.uploadedBytes ?? 0) + (this.appearance?.uploadedBytes ?? 0) + (this.planning?.uploadedBytes ?? 0),
                 render: this.renderer.info.render, memory: this.renderer.info.memory });
             this.frameRequest = requestAnimationFrame(frame);
         };
@@ -1156,6 +1233,7 @@ export class LandscapeView {
         this.water = null;
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;
         this.planning?.dispose(); this.planning = null;
+        this.surround?.dispose(); this.surround = null;
         this.stream?.dispose();
         this.stream = null;
         this.backdrop.dispose();

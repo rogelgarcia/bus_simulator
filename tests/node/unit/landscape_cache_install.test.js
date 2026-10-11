@@ -62,7 +62,7 @@ test('Cache install: the destination follows the bundle landscape id unless a di
     await assert.rejects(installLandscapeCacheBundle(verifiedOther, target), /holds landscape synthetic-hill; the bundle is synthetic-hill-v3\. Install it into its own directory \(assets\/public\/landscape\/synthetic-hill-v3\)/);
     assert.deepEqual(await readFile(path.join(target, 'manifest.json')), Buffer.from(hill.manifest), 'the refused install left the other landscape untouched');
     // the AI 596 geology sidecar is a current pointer like the appearance and field sidecars: it is authenticated by schema and switched before the terrain manifest
-    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'manifest.json']);
+    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'manifest.json']);
     const page = new Uint8Array([1, 2, 3, 4]), geology = new TextEncoder().encode(JSON.stringify({ format: 'landscape-geology', pages: [{ url: `pages/${sha256(page)}.u8`, sha256: sha256(page), byteLength: page.length }] }));
     const withGeology = await writeBundle('geology', { extra: { 'geology/manifest.json': geology, [`geology/manifest.${sha256(geology)}.json`]: geology, [`geology/pages/${sha256(page)}.u8`]: page } });
     const verified = await verifyLandscapeCacheBundle(withGeology.directory);
@@ -73,6 +73,35 @@ test('Cache install: the destination follows the bundle landscape id unless a di
     await rm(geologyTarget, { recursive: true, force: true });
     const installed = await installLandscapeCacheBundle(verified, geologyTarget);
     assert.deepEqual(installed.slice(-2).map(file => path.relative(geologyTarget, file).split(path.sep).join('/')), ['geology/manifest.json', 'manifest.json']);
+    // the AI 596 D5 far-field surround is its own saved landscape under surround/: validated as a landscape manifest, its chunks record-verified
+    // relative to it, switched before the terrain manifest, and bound to the terrain's id, revision and current manifest bytes
+    const surroundOf = (terrainManifest, binding) => {
+        const document = createLandscapeModelFixture().manifest, bytes = new TextEncoder().encode(JSON.stringify({ ...document, id: 'synthetic-hill-surround', revision: 'surround-r1',
+            provenance: { ...document.provenance, preparation: { ...document.provenance.preparation, surround: { landscapeId: 'synthetic-hill', revision: 'fixture-r1', manifestSha256: sha256(terrainManifest), extent: { minX: 0, maxX: 8, minZ: 0, maxZ: 8 }, boundaryHash: 'ab'.repeat(32), ...binding } } } }));
+        const extra = { 'surround/manifest.json': bytes, [`surround/manifest.${sha256(bytes)}.json`]: bytes };
+        for (const [url, resource] of createLandscapeModelFixture().resources) if (url !== 'manifest.json') extra[`surround/${url}`] = resource;
+        return extra;
+    };
+    const terrain = await writeBundle('surround-terrain'), withSurround = await writeBundle('surround', { extra: surroundOf(terrain.manifest, {}) });
+    const surround = await verifyLandscapeCacheBundle(withSurround.directory);
+    assert.equal(surround.passed, true, surround.problems.join('\n'));
+    assert.deepEqual(Object.keys(surround.pointers), ['surround/manifest.json', 'manifest.json']);
+    assert.equal(surround.files.find(file => file.relative === 'surround/manifest.json').verifiedBy, 'schema');
+    assert.ok(surround.files.filter(file => file.relative.startsWith('surround/chunks/')).every(file => file.verifiedBy === 'record'), 'the surround chunks authenticate through the surround manifest');
+    assert.deepEqual(surround.surround, { id: 'synthetic-hill-surround', revision: 'surround-r1', binding: { landscapeId: 'synthetic-hill', revision: 'fixture-r1', manifestSha256: sha256(terrain.manifest), extent: { minX: 0, maxX: 8, minZ: 0, maxZ: 8 }, boundaryHash: 'ab'.repeat(32) } });
+    const surroundTarget = path.join(work, 'surround-target');
+    await rm(surroundTarget, { recursive: true, force: true });
+    const installedSurround = await installLandscapeCacheBundle(surround, surroundTarget);
+    assert.deepEqual(installedSurround.slice(-2).map(file => path.relative(surroundTarget, file).split(path.sep).join('/')), ['surround/manifest.json', 'manifest.json']);
+    assert.equal((await verifyLandscapeCacheBundle(surroundTarget)).passed, true);
+    const stale = await verifyLandscapeCacheBundle((await writeBundle('surround-stale', { extra: surroundOf(terrain.manifest, { revision: 'fixture-r0', manifestSha256: 'cd'.repeat(32) }) })).directory);
+    assert.equal(stale.passed, false);
+    assert.match(stale.problems.join('\n'), /surround\/manifest\.json continues revision fixture-r0, the terrain manifest is fixture-r1/);
+    assert.match(stale.problems.join('\n'), /surround\/manifest\.json binds terrain manifest cdcdcdcdcdcd/);
+    const foreign = await verifyLandscapeCacheBundle((await writeBundle('surround-foreign', { extra: surroundOf(terrain.manifest, { landscapeId: 'synthetic-hill-v3' }) })).directory);
+    assert.match(foreign.problems.join('\n'), /continues landscape synthetic-hill-v3, the cache holds synthetic-hill/);
+    const unbound = await verifyLandscapeCacheBundle((await writeBundle('surround-unbound', { extra: surroundOf(terrain.manifest, { landscapeId: undefined, revision: undefined, manifestSha256: undefined }) })).directory);
+    assert.equal(unbound.passed, false, 'a surround without the binding fields is refused');
 });
 
 test('Cache install: every bundle file authenticates by name, hashed record or schema; corruption and transient state are refused', async () => {

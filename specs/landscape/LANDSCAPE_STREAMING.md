@@ -82,18 +82,19 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 
 | Resource or work limit | Default |
 | --- | ---: |
-| Controlled terrain CPU buffers and reservations | 512 MiB (128 MiB before AI577 D2, 384 MiB in D2–D3) |
-| Estimated terrain GPU buffers and reservations | 256 MiB (64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Controlled terrain CPU buffers and reservations | 640 MiB since AI 596 D5 (512 MiB in AI577 D4 – AI 596 D4, 128 MiB before AI577 D2, 384 MiB in D2–D3) |
+| Estimated terrain GPU buffers and reservations | 352 MiB since AI 596 D5 (256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Render-only surround share inside the totals (AI 596 D5, `LANDSCAPE_SURROUND.budgets`, kind `landscape-surround`) | 128 MiB CPU / 96 MiB GPU: the raise above is exactly this share, so the authoritative streams keep their 512/256 MiB |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
 | Concurrent independent appearance worker | 1 |
 | Concurrent surface-detail generation workers (AI577 D2) | 2 |
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
-| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 512 MiB CPU / 448 MiB GPU up to 1920×1080, 588 at 2560×1440, 950 at 3840×2160 (the display's capacity); the cache takes at most the GPU limit less 256 MiB, so the streams keep the 256 MiB of the uncached profile |
-| Geometric screen error goal | 1.5 pixels |
+| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 640 MiB CPU / 544 MiB GPU up to 1920×1080, 684 at 2560×1440, 1046 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
+| Geometric screen error goal | 1.5 pixels (the render-only surround streams at 3 pixels) |
 
-URL budgets may not exceed the profile of the selected mode (surface cache off: 512/256 MiB; on: the display's cache profile, 512/448 MiB up to 1920×1080).
+URL budgets may not exceed the profile of the selected mode (surface cache off: 640/352 MiB; on: the display's cache profile, 640/544 MiB up to 1920×1080).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle
@@ -168,7 +169,108 @@ The viewer clamps a frame interval at zero: an animation frame's time is the tim
 ran just before its callbacks (a tab shown again, the pause hook). The negative interval drove a running LOD morph below zero and
 the edge stitching assertion stopped the frame loop for good (AI577 D7 fix, `landscape_lifecycle` regression test).
 
+## Far-field surround (AI 596 D5)
+
+A landscape may publish a **render-only surround** beside its manifest: `surround/manifest.json`, a
+standalone saved landscape document (coastal v3: `coastal-city-v3-surround`, 2049² at 15.625 m,
+chunkIntervals 256, maxLevel 3, 85 nodes, bounds −14000..18000 on X and Z, 32 × 32 km centred on the
+4 km extent, sea level 0, no appearance, no fields, no geology) whose `provenance.preparation.surround`
+block binds it to one landscape: `{landscapeId, revision, manifestSha256, extent, boundaryHash}` with
+`extent` the landscape bounds and `boundaryHash` the SHA-256 of the native heights along the four
+boundary rows/columns. Inside the extent it carries the landscape decimated ×16; outside it continues
+the landform. The surround is not authoritative: it is never edited, queried, reported or picked, and
+a picking ray that leaves the landscape reports no terrain whatever the surround draws there.
+
+Runtime (`src/graphics/engine3d/landscape/LandscapeSurround.js`, contract constants in
+`LandscapeSurroundModel.js`, `landscape-surround-v1`): the sidecar is fetched with the bounded manifest
+loader and validated as a landscape document; `landscapeSurroundBinding` then compares the block with
+the loaded landscape **before anything is reserved**. A sidecar that is absent (404), `unbound` (no
+block), `stale` (another landscape id, another revision, or an extent that is not the landscape bounds),
+`invalid` (a malformed block, or bounds that do not contain the extent) or `failed` holds no resources
+and is reported with its reason in the view snapshot; only `bound` is drawn, so a terrain edit can never
+show the surround of the terrain before it. An active surround is a second `LandscapeStreamer` over the
+surround document in render-only mode: program variant `{diagnostics: false, terrainAppearance: false,
+surfaceCache: false}` in **soil-palette mode** (below; one far colour and fallback surface per display
+soil, lit by the shared lighting uniforms with the same aerial perspective and water column as the
+authoritative tiles), natural inference `overview` (no fields request), target error **3 px** instead of
+1.5, one worker, and the per-frame upload allowance the authoritative stream left (`update(dt, camera,
+viewportHeight, uploadAllowance)`; the combined uploads of geometry, surround, appearance and planning
+stay under the 8 MiB cap).
+
+**Soil palette** (`LandscapeSoilPalette.js`, `landscape-soil-palette-v1`; streamer option `soilPalette`).
+A stream in soil-palette mode builds its tiles with each vertex's display soil index in the red byte of the
+colour attribute (`buildLandscapeMeshBuffers({soilPalette: true})`, the same `presentation.sample` index
+the catalog colours use) and binds one set of palette cells to every tile (`uSoilPalette[6]`,
+`uSoilPaletteResponse[6]`, `uSoilPaletteSurface[6]`, `uSoilPaletteMode`), which the terrain vertex
+shader reads into the fallback surface varyings (`vLandscapeColor`, `vLandscapeResponse`,
+`vLandscapeSurface`); outside palette mode the attribute is the colour and the fallback surface is the
+plain one (no response, roughness 0.9, no occlusion), so every other stream is unchanged. The cells start
+on the land-cover catalog colours the vertex path carries (`landscapeCatalogSoilPalette`, byte-identical)
+and each soil's natural-ground response (`LandscapeMaterialResponse`: EON diffuse roughness, specular
+shadowing weight, opposition amplitude — a property of the soil, applied in both states), and take the
+loaded appearance's palette once every material has its coarse page (`LandscapeMaterialPages.soilPalette()`,
+versioned by coarse arrivals and calibration changes): per soil the **mean linear albedo of the 32 px
+base-colour page under the material's albedo correction** (`correctedAlbedo` in JavaScript: brightness ×
+landscape-local calibration gain, hue, saturation, tint — what the authoritative tiles show once their
+mips average the page) and the **mean roughness and ambient occlusion of the 32 px ORM page** after the
+material's remap and intensity. The view feeds it every frame (`surround.setPalette(palette)`, a no-op
+for an applied version; null restores the catalog), so a calibration switch or a late appearance never
+rebuilds a tile. Without an appearance the surround keeps the catalog colours. The terrain-field macro
+variation, catena tinting, rock exposure and coastal wetting need the appearance's field pages and stay
+with the authoritative tiles; the response alone accounted for most of the boundary step (with it off on
+the authoritative tiles the NW-11 band step fell from 50 to 13 sRGB units, `d5/colour/attribution/`).
+Seabed and sand bind the same beach material, so the surround sea floor and beach follow the beach.
+
+Its tiles reserve in the shared `LandscapeResidencyBudget` through `createLandscapeSurroundLedger`: every
+reservation carries the kind `landscape-surround` and is admitted against the surround's own share
+(`LANDSCAPE_SURROUND.budgets`) before the shared ledger admits it; a share denial reads like a ledger
+denial (`cpu-budget` / `gpu-budget`), so the stream prunes, retries and settles on coarser coverage, and
+the authoritative stream keeps the rest of the ledger. The share is accounted inside the shipped profiles
+(`LANDSCAPE_STREAMING_BUDGETS` and `landscapeSurfaceCacheBudgets` grew by it; the measured peaks are in
+`LANDSCAPE_PERFORMANCE.md`), and the unit test `landscape_surround.test.js` pins that both profiles keep
+the authoritative streams at least their pre-D5 room beside the share.
+
+**Exclusion.** The surround stream runs with a mesh exclusion equal to the landscape bounds
+(`landscapeMeshExclusion`, `LandscapeMeshBuffers.js`): a surround tile whose bounds lie inside the
+extent is never built, fetched or reserved (`excludedIds` in the stream snapshot; the centred coastal
+sidecar has none, since the extent's centre is a native tile corner, so four natives straddle it); a tile
+straddling the extent takes the **reference surface** — the authoritative overview chunk the view
+passes (`loaded.chunk`, the exact native samples at 15.625 m) — exactly on the boundary line and,
+lowered by the **1.5 m skirt**, for vertices strictly inside, written into positions and parent heights
+alike so no LOD transition moves them; no cell without a corner outside the extent is triangulated,
+so the surround ends on the boundary line and nothing of it lies under or over the authoritative
+surface (an apron one cell deep, lowered by the skirt, was tried first: at grazing views within 300 m it
+showed through wherever the native relief dips below the 15.625 m chord); and a **boundary wall**
+(`LANDSCAPE_SURROUND.boundaryWallMeters`, 4.5 m, deeper than the native relief between samples) hangs
+from the boundary vertices as a quad per boundary edge in both windings, so a grazing ray from inside
+that passes under the surround's edge meets the wall, never the backdrop, while below the authoritative
+surface the wall is never seen. The wall's bytes are admitted through `estimateLandscapeMeshExclusionBytes`
+(a copy and an edge per vertex of the ring a tile can hold) on top of the tile estimate. Its tiles also
+draw behind coincident authoritative ones (`depthBehind`: render order 1, `LessDepth`, one polygon-offset unit).
+The only remaining seam error is the native relief between the shared samples along the boundary: where
+the authoritative rises above the chord its own LOD skirt faces the surround as a wall of that height,
+where it dips below, the surround's edge stands that much above it (measured in the D5 record: max 3.4 m
+at the north coast crossing, p95 ≤ 0.7 m on every edge; sub-pixel beyond about 1 km, visible as a scalloped
+colour boundary when looking along the edge from within 300 m). Picking restores an excluded tile to its
+displayed heights (`exclusionHeights`), not to the replaced source samples.
+
+**Water.** `createLandscapeWaterReference({bounds})` / `setBounds` size the sea plane: the surround bounds
+while a surround is active (`snapshot().water.extent === 'surround'`), the landscape bounds otherwise.
+The plane keeps every authoritative rule (never picked, never queried, never converts seabed to sea).
+
+**AI 597 interface.** The animated ocean must cover every surround sample below sea level out to the
+surround bounds and must not intersect surround land; the surround's seabed continues the Dean/shelf
+profile to a −30…−60 m floor; the water reference's extent is the surround's bounds; and the sidecar's
+`surround` block tells the ocean which landscape revision it continues (a stale block means the ocean's
+far field is stale too).
+
 ## Verification
+
+AI 596 D5: `tests/node/unit/landscape_surround.test.js` covers the binding and staleness rules, the sidecar address, the water extent, the
+mesh exclusion (reference surface, skirt, dropped cells, picking restore, admission bound), the surround ledger (kind, share denials,
+release to zero) and the budget accounting; `tests/headless/e2e/landscape_surround.pwtest.js` runs the surround on coastal v3 (served by the
+suite on port 8002): binding, no excluded tile resident, straddling tiles with the skirt, water extent, surround bytes under their kind
+and share, picking never reaching it, off/on/stale/absent switches and disposal to zero. The cost receipts are in `LANDSCAPE_PERFORMANCE.md`.
 
 `tests/node/unit/landscape_streaming.test.js` exercises fixed-position perspective
 and orthographic zoom, viewport and altitude changes, frustum exit, hysteresis,

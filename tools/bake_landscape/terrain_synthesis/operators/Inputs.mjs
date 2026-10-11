@@ -3,17 +3,20 @@
 // import-heights binds the source grid to the recipe grid (exactly, or a source coarser by an integer factor over the same extent that
 // is upsampled with the declared `resample` filter, the cover by the nearest source label: AI 596 D4), records the input hashes that
 // enter the recipe identity and moves the heights to the working grid (tent or nearest decimation onto a coarser working grid, adoption
-// when the working grid is the source grid; the cover takes aligned labels and the output-grid cover is kept for the output). The
-// same-grid and decimation paths are unchanged since D1; the statistics report `importResample` for every path. plan-inputs
-// rasterizes the plan once: district ids (optionally clipped to the land side), the shoreline as a signed distance field whose land
-// side is found by probing the middle of the declared landscape edge, the roads with their nearest design height, width and index
-// through the exact distance transform, and the corridor, runway and apron polygons. The parsed plan and its polyline sets stay on the
-// context for the constraint operators.
+// when the working grid is the source grid; the cover takes aligned labels and the output-grid cover is kept for the output). With
+// placement embed (AI 596 D5) the landscape source covers an aligned sub-rectangle of the recipe grid at its spacing or finer by an
+// integer factor: it is decimated with the declared filter into that rectangle of the working grid (the cover by the aligned label) and
+// the grid outside is filled (the boundary continued outward with a fade, or a constant; the fill cover class), reported as
+// `importPlacement`. The same-grid and decimation paths are unchanged since D1; the statistics report `importResample` for every path.
+// plan-inputs rasterizes the plan once: district ids (optionally clipped to the land side), the shoreline as a signed distance field
+// whose land side is found by probing the middle of the declared landscape edge, the roads with their nearest design height, width and
+// index through the exact distance transform (a plan without roads leaves the road distance infinite), and the corridor, runway and apron
+// polygons. The parsed plan and its polyline sets stay on the context for the constraint operators.
 import path from 'node:path';
 import { authoringHash, readAuthoringFile } from '../../../landscape_authoring/AuthoringFiles.mjs';
 import { readLandscapeFileManifest } from '../../../landscape_authoring/LandscapeFileIO.mjs';
 import { readTerrainFieldSource } from '../../terrain_fields/TerrainFieldsSource.mjs';
-import { decimateCover, decimateHeights, upsampleCover, upsampleFactor, upsampleHeights } from '../SynthesisWorkingGrid.mjs';
+import { decimateCover, decimateHeights, embedCover, embedHeights, embedPlacement, upsampleCover, upsampleFactor, upsampleHeights } from '../SynthesisWorkingGrid.mjs';
 import { createPolylineSet, exactDistanceTransform, polylineSide, rasterizePolylineSet, refineNearestSegments, segmentDistance } from './Distance.mjs';
 import { parseSynthesisPlan } from './Plan.mjs';
 import { rasterizePolygon } from './Polygons.mjs';
@@ -79,11 +82,33 @@ function upsampledOutputCover(context, source) {
     return cover;
 }
 
+// the embedded placement (AI 596 D5): the source covers an aligned sub-rectangle of the working grid at its spacing or finer by an integer
+// factor and is decimated with the declared filter into that rectangle (the cover by the aligned label); every sample outside is filled
+// from the fill parameters; the output-grid cover is placed the same way and kept as the native cover of the output
+function importEmbedded(context, source, params, common) {
+    const { memory, output, scope } = context, working = context.grid, placement = embedPlacement(source.grid, working);
+    const height = context.layers.create('height', Float32Array), cover = context.layers.create('cover', Uint8Array), scratch = scope.allocate('embed-block', Float32Array, placement.columns * placement.rows);
+    const statistics = embedHeights(source.grid, source.heights, working, height, { filter: params.filter, fillMode: params.fillMode, fillHeightMeters: params.fillHeightMeters, fillFadeMeters: params.fillFadeMeters, fillSmoothingMeters: params.fillSmoothingMeters, scratch });
+    scope.free('embed-block');
+    embedCover(source.grid, source.cover, working, cover, params.fillCoverClass);
+    let outputFactor = statistics.factor;
+    if (context.working.coarse) {
+        const outputCover = memory.allocate('source/cover-output', Uint8Array, output.columns * output.rows);
+        context.own('source/cover-output');
+        outputFactor = embedCover(source.grid, source.cover, output, outputCover, params.fillCoverClass).factor;
+        context.setNative({ grid: output, cover: outputCover, coverName: 'source/cover-output' });
+    } else context.setNative({ grid: output, cover, coverName: 'layer/cover' });
+    memory.free('source/heights', 'source/cover'); context.disown('source/heights'); context.disown('source/cover');
+    return { ...common, workingStride: statistics.factor, filter: statistics.factor > 1 ? params.filter : 'none', importResample: { factor: 1, filter: 'none', cover: 'none', target: context.working.coarse ? 'working' : 'output' },
+        importPlacement: { placement: 'embed', factor: statistics.factor, outputFactor, rectangle: { column: statistics.column, row: statistics.row, columns: statistics.columns, rows: statistics.rows }, filledSamples: statistics.filledSamples,
+            fill: { ...statistics.fill, coverClass: params.fillCoverClass }, target: context.working.coarse ? 'working' : 'output' } };
+}
+
 async function importHeights(context) {
     const { params } = context.operator, { memory, output, scope } = context;
     const source = params.source === 'landscape' ? await readLandscapeSource(context) : await readRawSource(context);
     for (const name of source.tracked ?? []) context.own(name);
-    const factor = sourceFactor(context, source.grid, 'source');
+    const factor = params.placement === 'embed' ? null : sourceFactor(context, source.grid, 'source');
     if (source.seaLevel !== undefined && source.seaLevel !== context.seaLevel) throw new Error(`[Synthesis] the landscape sea level ${source.seaLevel} differs from recipe.seaLevel ${context.seaLevel}`);
     if (source.sha256) context.recordInput('landscape', source.sha256);
     for (const entry of source.inputs ?? []) context.recordInput(entry.id, entry.sha256);
@@ -92,7 +117,8 @@ async function importHeights(context) {
     for (let i = 0; i < n; i++) { if (source.heights[i] < minimum) minimum = source.heights[i]; if (source.heights[i] > maximum) maximum = source.heights[i]; }
     context.checkpoint();
     const nativeGrid = { columns: source.grid.columns, rows: source.grid.rows, spacingX: source.grid.spacingX, spacingZ: source.grid.spacingZ };
-    const common = { source: params.source, revision: source.revision ?? null, nativeGrid, heightRangeMeters: [round6(minimum), round6(maximum)] };
+    const common = { source: params.source, placement: params.placement, revision: source.revision ?? null, nativeGrid, heightRangeMeters: [round6(minimum), round6(maximum)] };
+    if (factor === null) return importEmbedded(context, source, params, common);
     if (factor === 1) {
         // the source is the recipe grid: adopt it, or decimate it onto a coarser working grid (unchanged since D1)
         let stride = 1;
@@ -106,7 +132,7 @@ async function importHeights(context) {
             context.layers.adopt('height', source.heights, 'source/heights'); context.layers.adopt('cover', source.cover, 'source/cover');
             context.setNative({ grid: source.grid, cover: source.cover, coverName: 'source/cover' });
         }
-        return { ...common, workingStride: stride, filter: context.working.coarse ? params.filter : 'none', importResample: { factor: 1, filter: 'none', cover: 'none', target: context.working.coarse ? 'working' : 'output' } };
+        return { ...common, workingStride: stride, filter: context.working.coarse ? params.filter : 'none', importResample: { factor: 1, filter: 'none', cover: 'none', target: context.working.coarse ? 'working' : 'output' }, importPlacement: null };
     }
     // the source is coarser than the recipe grid by `factor`: the output cover is its nearest label and the heights reach the working grid by
     // upsampling (the working grid is the output grid or still finer than the source), by adoption (the working grid is the source grid) or
@@ -132,7 +158,7 @@ async function importHeights(context) {
         resample = { factor, filter: 'none', cover: 'nearest', target: 'output', workingStride: stride, decimation: params.filter };
     }
     context.setNative({ grid: output, cover: outputCover, coverName: 'source/cover-output' });
-    return { ...common, workingStride: resample.workingStride ?? 1, filter: resample.decimation ?? 'none', importResample: resample };
+    return { ...common, workingStride: resample.workingStride ?? 1, filter: resample.decimation ?? 'none', importResample: resample, importPlacement: null };
 }
 
 async function readPlanFiles(context) {
@@ -195,6 +221,12 @@ function rasterizeShoreline(context, plan, params) {
  */
 export function rasterizeRoadLayers(context, roads) {
     const { grid, scope, memory } = context, n = grid.columns * grid.rows, set = createPolylineSet(roads.map(road => road.points));
+    const layer = name => context.layers.has(name) ? context.layers.get(name) : context.layers.create(name, Float32Array);
+    if (!roads.length) {
+        // a plan without roads (AI 596 D5 surround): every sample is infinitely far from a road, no height, width or index
+        layer('roadDistance').fill(Infinity); layer('roadHeight').fill(0); layer('roadWidth').fill(0); layer('roadIndex').fill(-1);
+        return { set, featureSamples: 0 };
+    }
     const ya = new Float64Array(set.count), yb = new Float64Array(set.count), width = new Float64Array(roads.length), roadIndex = new Int32Array(roads.length);
     let k = 0;
     roads.forEach((road, l) => { width[l] = road.widthMeters; roadIndex[l] = road.index; for (let i = 0; i + 1 < road.points.length; i++, k++) { ya[k] = road.points[i][1]; yb[k] = road.points[i + 1][1]; } });
@@ -203,7 +235,6 @@ export function rasterizeRoadLayers(context, roads) {
     if (!written) throw new Error('[Synthesis] no plan road crosses the working grid');
     const edt = exactDistanceTransform(grid, feature, memory, `op/${context.operator.id}/road`);
     const segment = scope.allocate('road-segment', Int32Array, n), parameter = scope.allocate('road-parameter', Float32Array, n);
-    const layer = name => context.layers.has(name) ? context.layers.get(name) : context.layers.create(name, Float32Array);
     const distance = layer('roadDistance'), height = layer('roadHeight'), widthLayer = layer('roadWidth'), indexLayer = layer('roadIndex');
     refineNearestSegments(grid, set, edt.nearest, featureSegment, distance, segment, parameter);
     edt.release();

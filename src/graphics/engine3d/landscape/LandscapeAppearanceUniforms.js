@@ -7,11 +7,10 @@ import { LANDSCAPE_MATERIAL_BLEND, LANDSCAPE_MATERIAL_CLUMP_OCTAVES, LANDSCAPE_M
 import { LANDSCAPE_MATERIAL_SAMPLING } from './LandscapeMaterialSampling.js';
 import { LANDSCAPE_MACRO_VARIATION_OCTAVES } from './LandscapeMacroVariation.js';
 import { landscapeSurfaceLayerUniforms } from './LandscapeSurfaceLayers.js';
-import { assertLandscapeCoverageSlots, resolveLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
+import { assertLandscapeCoverageSlots, resolveLandscapeCoverageSlots, LANDSCAPE_SOIL_SLOTS } from './LandscapeCoverageSlots.js';
 import { landscapeTerrainUniformVectors, landscapeTerrainWarpDefines } from '../../shaders/materials/landscape/LandscapeShaderLoader.js';
 
-export { LANDSCAPE_MASK_SLOTS, LANDSCAPE_DETAIL_SLOTS_MAX, LANDSCAPE_COVERAGE_SLOTS_MAX } from './LandscapeCoverageSlots.js';
-export const LANDSCAPE_SOIL_SLOTS = 6;
+export { LANDSCAPE_MASK_SLOTS, LANDSCAPE_DETAIL_SLOTS_MAX, LANDSCAPE_COVERAGE_SLOTS_MAX, LANDSCAPE_SOIL_SLOTS } from './LandscapeCoverageSlots.js';
 const WARP_ARRAYS = Object.freeze({ uLandscapeWarpWaves: 4, uLandscapeWarpOffsets: 4, uLandscapeWarpSalts: 2 });
 const CLUMP_ARRAYS = Object.freeze(['uSoilClumps', 'uSoilClumpSalts', 'uClumpOctaves', 'uClumpSettings', 'uClumpConfidence']);
 const SAMPLING_ARRAYS = Object.freeze(['uSoilStochastic', 'uSoilStochasticSalts', 'uStochasticSettings']);

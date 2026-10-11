@@ -18,6 +18,7 @@ import { createLandscapeMaterialTiling, LANDSCAPE_MATERIAL_TILING } from './Land
 import { LANDSCAPE_MATERIAL_BLEND } from './LandscapeMaterialBlend.js';
 import { landscapeMicroUniformValues } from './LandscapeMicroDetail.js';
 import { landscapeMultiscaleFallback, landscapeSchemaMaterialTiers } from './LandscapeMultiscaleTiers.js';
+import { landscapeAppearanceSoilPalette } from './LandscapeSoilPalette.js';
 import { landscapeMaterialResponseValues } from './LandscapeMaterialResponse.js';
 import { LANDSCAPE_MATERIAL_CALIBRATION, landscapeMaterialCalibration } from './LandscapeMaterialCalibration.js';
 import { landscapeSoilTerrainRole } from './LandscapeTerrainAppearance.js';
@@ -46,6 +47,23 @@ export class LandscapeMaterialPages {
         this.microEnabled = true;
         this.calibrationSwitches = { albedo: true, normalLean: true };
         this.uploads = { maps: 0, bytes: 0, tiers: 0, splitTiers: 0, maxFramesPerTier: 0, lastTier: null };
+        // AI 596 D5: the far-field palette (soilPalette) changes with each coarse page bound and each calibration; its version lets a consumer skip unchanged palettes
+        this.paletteVersion = 0;
+        this.palette = null;
+    }
+
+    /**
+     * AI 596 D5: the palette the render-only surround draws with: each soil's mean linear albedo of its coarse (32 px) base-colour page under its albedo
+     * correction (brightness with the landscape-local calibration gain, hue, saturation, tint) and the mean roughness and occlusion of its coarse ORM
+     * page, ready once every material has its coarse page. Versioned by coarse arrivals and calibration; the same object is returned until it changes.
+     * @returns {{version:number,ready:boolean,soils:Record<string, number[]>,surface:Record<string, number[]>}}
+     */
+    soilPalette() {
+        if (this.palette?.version !== this.paletteVersion) {
+            const shading = { albedo: this.uniforms.uSoilAlbedo.value, roughness: this.uniforms.uSoilRoughness.value, range: this.uniforms.uSoilRange.value, scale: this.uniforms.uSoilScale.value };
+            this.palette = Object.freeze({ version: this.paletteVersion, ...landscapeAppearanceSoilPalette(this.materials, shading) });
+        }
+        return this.palette;
     }
 
     async initialize() {
@@ -83,6 +101,7 @@ export class LandscapeMaterialPages {
             this.uniforms.uSoilResponse.value[index].set(this.response.response[index * 4], this.response.response[index * 4 + 1], ...material.calibration.meanNormalSlope);
             this.uniforms.uSoilState.value[index].w = this.response.opposition[index];
         }
+        this.paletteVersion++;
     }
 
     /** @param {{albedo?:boolean,normalLean?:boolean}} switches landscape-local calibration parts for A/B evidence; omitted keys keep their state */
@@ -281,7 +300,7 @@ export class LandscapeMaterialPages {
             if (record.uploadFrames > 1) this.uploads.splitTiers++;
             this.uploads.maxFramesPerTier = Math.max(this.uploads.maxFramesPerTier, record.uploadFrames);
             this.uploads.lastTier = { soilId: record.material.definition.soilId, resolution: record.resolution, maps: record.maps, frames: record.uploadFrames };
-            if (record.resolution === 32 && !record.material.coarse) { record.material.coarse = record; this.bind(record.material, record); }
+            if (record.resolution === 32 && !record.material.coarse) { record.material.coarse = record; this.bind(record.material, record); this.paletteVersion++; }
             else this.beginTransition(record.material, record);
             return uploaded;
         }
@@ -344,5 +363,6 @@ export class LandscapeMaterialPages {
         for (const record of [...this.records.values()]) this.remove(record);
         this.transition = null;
         for (const material of this.materials) { material.current = material.coarse = null; material.refs.clear(); }
+        this.paletteVersion++;
     }
 }

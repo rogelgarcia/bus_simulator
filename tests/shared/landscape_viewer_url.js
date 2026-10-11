@@ -2,7 +2,7 @@
 // LANDSCAPE_TEST_SURFACE_CACHE=on|off adds landscapeSurfaceCache=<mode> to every landscape viewer address a suite opens, so each suite runs once with
 // the cache on and once off; unset, addresses are unchanged (the viewer default, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE since AI577 D7). An address that
 // already selects the cache keeps its own choice. The shipped budget of a run is the uncached profile, or with the cache on the cache's own profile for
-// the drawing buffer (landscapeSurfaceCacheBudgets; 512/448 MiB at 1920x1080 and below).
+// the drawing buffer (landscapeSurfaceCacheBudgets; 640/544 MiB at 1920x1080 and below since AI 596 D5, 512/448 before the surround share).
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../src/app/landscape/LandscapeResidencyBudget.js';
 import { LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, landscapeSurfaceCacheBudgets, landscapeSurfaceCacheCapacity } from '../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 

@@ -124,14 +124,52 @@ Diagnostics: `terrain-appearance` and the `dressing*` views. `snapshot()` report
 AI577 D6/D7: `landscapeSurfaceCache=off|on` (default on since D7), `landscapeSurfaceCacheSlots`,
 `landscapeSurfaceCacheWindow`, `landscapeSurfaceCacheAnisotropy` and `landscapeSurfaceCacheNear=on|off` select the
 runtime surface cache (LANDSCAPE_APPEARANCE_RUNTIME.md). With the cache on the shipped ledger is the cache profile
-of the display (`landscapeSurfaceCacheBudgets`: 512/448 MiB up to 1920×1080, 512/588 at 2560×1440, 512/950 at
-3840×2160) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
-512/256). A resize that changes the cache capacity rebuilds the cache 500 ms after the size settles; the hook
+of the display (`landscapeSurfaceCacheBudgets`: 640/544 MiB up to 1920×1080, 640/684 at 2560×1440, 640/1046 at
+3840×2160 since AI 596 D5, which added the render-only surround's 128/96 MiB share to every profile; 512/448, 588
+and 950 before) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
+640/352; 512/256 before AI 596 D5). A resize that changes the cache capacity rebuilds the cache 500 ms after the size settles; the hook
 `setSurfaceCacheCapacity` fixes the capacity for evidence. A view that cannot run the cache compiles the uncached program from the start and shows `Surface
 cache unavailable: <reason>`. Hooks: `setSurfaceCache`, `setSurfaceCacheNear`, `surfaceCacheLookup`. A reload
 of the same landscape at the same budget keeps the runtime and regenerates its pages. Inspection views are a
 separately compiled diagnostics variant that links in the background when first selected. Browser suites
 take `LANDSCAPE_TEST_SURFACE_CACHE=on|off`; every landscape suite passes in both modes.
+
+## AI 596 D5 far-field surround
+
+`landscapeSurround=auto|off|<manifest url>` (default `auto`) selects the render-only surround
+(LANDSCAPE_STREAMING.md "Far-field surround"): `auto` loads `surround/manifest.json` beside the loaded
+manifest when it exists (a pinned `manifest.<sha>.json` resolves to the same directory), `off` never loads
+one, and a URL loads that document (workstream R developed against a placeholder written into the cache
+root with `writeSynthesizedLandscape`; the placeholder and the candidate copy were deleted once the sidecar
+was published, `tests/artifacts/screens/landscape/ai596/d5/placeholder/write_placeholder_surround.mjs`
+regenerates one). The toolbar's **Surround**
+button toggles it (active while a surround is drawn) and the hook `setSurround('auto'|'off'|url)`
+resolves with `snapshot().surround` once applied. The surround loads last in `load()`, after the
+authoritative streams, and a load without one is unchanged. `snapshot().surround` reports `mode`,
+`status` (`loading`, `active`, `off`, `absent`, `stale`, `unbound`, `invalid`, `failed`), `present`,
+`reason`, `url`, `id`, `revision`, `binding` (the sidecar's landscape id, revision, manifest hash, extent
+and boundary hash), `bounds`, `grid`, `settled`, `pending`, `tiles`, `residentByLevel`, `excludedIds`,
+`straddlingIds` (the rendered tiles carrying the exclusion skirt), `targetErrorPixels` (3),
+`achievedErrorPixels`/`targetMet`/`degradationReason` (the stream's own planner metrics; the tile under
+the camera always projects an unmet error, so `targetMet` is informational), `triangles`, `share`
+(`kind: landscape-surround`, controlled CPU / estimated GPU bytes and lifetime peaks inside the shared
+ledger, its limits, denials), `programCompile`, `loadMs`, `skirtDepth`, `wallDepth` and `palette` (the
+soil palette the surround draws with, LANDSCAPE_STREAMING.md "Soil palette": `source` `catalog` or
+`appearance`, `version`, per soil `soils` (linear rgb), `srgb`, `response` and `surface` (roughness,
+occlusion)); `snapshot().water.extent` is `surround` while the sea plane spans the surround bounds and
+`landscape` otherwise. A surround that is stale, unbound, invalid or failed shows a notice with the
+reason; absent is silent. The surround follows the view's shaded/wire mode, LOD colours, chunk edges,
+lighting tier, material sampling and, through the palette, the loaded appearance's materials and
+calibration (`view.surroundPalette()`, fed each frame; the catalog colours until every coarse page is in
+or without an appearance), but not the inspection diagnostics or the appearance switches. Picking and selection
+never see it: `pickPoint` raycasts only the authoritative stream's rendered meshes and `select` beyond
+the landscape bounds is refused as before. The streaming strip appends `surround <tiles> tiles · CPU /
+GPU est.` with its state. Captures: `tools/landscape_review/capture.mjs --surround auto|off|<url>`
+(receipts carry `viewer.surround` and `snapshotSummary.surround`; settling waits for the surround);
+measurements: `LANDSCAPE_RESOLUTION_SURROUND=on|off|<url>` on the resolution harness (receipts carry the
+surround's residency per stop under `residency.surround`). Browser suite:
+`tests/headless/e2e/landscape_surround.pwtest.js` (served on 8002 by the suite itself,
+`LANDSCAPE_TEST_SURROUND=<url>` selects the sidecar, default the one beside the landscape).
 
 ## D4 appearance and sea-level reference
 
@@ -142,7 +180,7 @@ world scale/orientation. The appearance planner can refine flat root geometry's
 materials without requesting fine height meshes. Its raw source page tiers are
 32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
 
-The same 512 MiB CPU / 256 MiB estimated GPU ledger (128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; with the AI577 D6/D7 surface cache on, the default since D7, the display's cache profile: 512/448 MiB up to 1920×1080) covers both adapters. A base
+The same 640 MiB CPU / 352 MiB estimated GPU ledger (512/256 MiB in AI577 D4 – AI 596 D4, 128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; with the AI577 D6/D7 surface cache on, the default since D7, the display's cache profile: 640/544 MiB up to 1920×1080 since AI 596 D5, 512/448 before) covers both adapters and, since AI 596 D5, the render-only surround's share. A base
 appearance allowance and bounded view-demand credit protect planned material tiers
 before geometry admission. Delayed cover/halo work therefore cannot change their
 priority solely through completion order. Geometry and appearance share
@@ -179,8 +217,8 @@ Two module workers acquire, hash-check, decode and build bounded tile buffers.
 Root source data remains pinned for overview coverage and common border normals.
 Each worker owns one accounted root copy. Other source arrays, mesh/index arrays,
 queued jobs, staging copies and optional inspection buffers use the shared
-`LandscapeResidencyBudget`. Defaults are now 512 MiB controlled CPU buffers and
-256 MiB estimated GPU buffers (128/64 MiB in D3, 384/192 MiB in AI577 D2–D3), with one tile upload and at most 8 MiB of uploads
+`LandscapeResidencyBudget`. Defaults are now 640 MiB controlled CPU buffers and
+352 MiB estimated GPU buffers (512/256 MiB in AI577 D4 – AI 596 D4, 128/64 MiB in D3, 384/192 MiB in AI577 D2–D3), with one tile upload and at most 8 MiB of uploads
 per frame. No PBR pages or full-resolution masks are loaded in D3. Terrain colors
 come from the original cover palette and ordered semantic soil overrides.
 

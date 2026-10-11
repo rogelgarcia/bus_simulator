@@ -20,6 +20,10 @@ node tools/bake_landscape/terrain_synthesis/resolution_study/run.mjs
 node tools/bake.mjs --target landscape/synthesis/coastal-v3 --set "landscape/synthesis/coastal-v3:working=1953" --set "landscape/synthesis/coastal-v3:fields=none" --set "landscape/synthesis/coastal-v3:geology=none"
 node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish
 node tools/bake_landscape/terrain_synthesis/coastal_v3/run.mjs --publish
+node tools/bake.mjs --target landscape/synthesis/surround
+node tools/bake.mjs --target landscape/synthesis/surround --publish
+node tools/bake_landscape/terrain_synthesis/surround/run.mjs --publish --set "landscape/synthesis/surround:landscape=assets/public/landscape/coastal-city-v3"
+node tools/bake_landscape/terrain_synthesis/surround/plan/author.mjs
 ```
 
 Every leaf is Node only (`configurationPaths: []`), excluded from production `all` and from the
@@ -32,8 +36,8 @@ Every leaf is Node only (`configurationPaths: []`), excluded from production `al
 | Module | Role |
 | --- | --- |
 | `src/app/landscape/LandscapeSynthesisRecipe.js`, `LandscapeSynthesisOperators.js` | Pure recipe model: operator, selector and layer catalogs with typed parameters (units, ranges, defaults), strict validation, canonical JSON, identity hashing and per-operator seeds |
-| `SynthesisGraph.mjs`, `SynthesisWorkingGrid.mjs` | Executor: ordered operators over named float layers on the working grid, tracked memory, progress and cancellation, decimation to a coarser working grid and the final resample |
-| `operators/` | `Inputs` (import-heights: the source landscape on the recipe grid, or coarser by an integer factor and upsampled with the `resample` filter (Catmull-Rom with linearly continued edges, bilinear or nearest; the cover takes the nearest source label; reported as `importResample`), plan-inputs), `Landforms` (plateau with designed edges, hills, valley), `Warps` (warp, noise), `Constraints` (districts, roads, shoreline, points, runway, height cap), `EdgeProfiles`, `RoadProfiles` (network grade limiting), `Selectors`, `Distance` (exact EDT, polylines), `Polygons`, `Plan` |
+| `SynthesisGraph.mjs`, `SynthesisWorkingGrid.mjs` | Executor: ordered operators over named float layers on the working grid, tracked memory, progress and cancellation, decimation to a coarser working grid, the upsampling and embedded placements of a source landscape (`embedPlacement`, `embedHeights`, `embedCover`) and the final resample |
+| `operators/` | `Inputs` (import-heights: the source landscape on the recipe grid, or coarser by an integer factor and upsampled with the `resample` filter (Catmull-Rom with linearly continued edges, bilinear or nearest; the cover takes the nearest source label; reported as `importResample`), or, with `placement: embed` (D5), a landscape whose bounds are an aligned sub-rectangle of the recipe grid at its spacing or finer by an integer factor: decimated with the `filter` into that rectangle (the cover by the aligned label) while the grid outside is filled (`fillMode` `extend-edge` continues the nearest boundary sample outward, blurred along the boundary by `fillSmoothingMeters` and faded over `fillFadeMeters` toward `fillHeightMeters`, or `constant`; the cover outside is `fillCoverClass`; reported as `importPlacement`); plan-inputs, which accepts a plan without districts or roads (the road distance stays infinite)), `Landforms` (plateau with designed edges, hills, valley), `Warps` (warp, noise), `Constraints` (districts, roads, shoreline, points, runway, height cap), `EdgeProfiles`, `RoadProfiles` (network grade limiting), `Selectors`, `Distance` (exact EDT, polylines), `Polygons`, `Plan` |
 | `operators/LandCover.mjs` | `derive-land-cover` (output family, after `geology-channels`, requires `outputs.coverPolicy: 'derive'`): the natural cover of every sample from the final geology in a fixed precedence (planning classes copied exactly; water below sea level; sand where the deposit is beach or dune sand or the coastal zone is swash/berm/backshore/foredune; rock where the face mask, the slope, a thick talus or exposed hard bedrock on a steep slope say so; grass and scrub on alluvium valley floors; otherwise the source class, the forest/grass partition kept where the geology is neutral; an emerged-land class where the source held water), with the from→to transition matrix, per-class totals and the count each rule decided; a coarse working grid publishes it nearest-upsampled with the planning classes restored from the native cover |
 | `operators/Erosion.mjs` | `fluvial-erosion` (Braun & Willett 2013 implicit stream power over Priority-Flood routing with Quinn multiple-flow contributing areas, explicit hillslope diffusion, retain-target or constant uplift, hardness-scaled erodibility, drainage classes), `hydraulic-erosion` (Beyer 2015 droplets with a radius brush and a reported mass balance), `thermal-weathering` (Musgrave 1989 weathering, repose settling into talus and colluvium), `sediment-deposit` (transport-limited routing with ponds, fans and valley floors); every one moves the surface through the geology ledger `height = bedrock + regolith + depositThickness` |
 | `operators/Strata.mjs` | `strata` (dipping layered stack → `lithology` index and `hardness`), `terraces` (benches on hard strata above a slope threshold, with talus) |
@@ -47,8 +51,9 @@ Every leaf is Node only (`configurationPaths: []`), excluded from production `al
 | `relief_study/` | The D1 leaf: `ReliefStudy.mjs` (diagnosis, variants, summaries), `ReliefStudyJob.mjs`, `recipes/*.json` |
 | `fixture/` | The D2 gate leaf: `FixtureBase.mjs` (analytic base: seabed, sand ramp, coastal terrace, rising land, generated at any fixture spacing over 1 km or the 4 km city extent), `plan/` (districts, roads, shoreline, beach points in the v2 plan formats), `recipes/plateau-road-shoreline.json` (D2, 1.953125 m) plus the D3 derivations `-0977.json`, `-0488.json` and the reduced `city-extent-1953.json`, `city-extent-0977.json`, `SynthesisFixture.mjs` (declared gate targets, checks, receipt, review maps; the shared plan, measurement sets and constraint options), `FixtureJob.mjs` |
 | `resolution_study/` | The D3 leaf: `ResolutionMeasures.mjs` (bluff face run and crest curvature, berm crest width, gully width at a contributing-area class, ridge crest radius from a quadratic fit, landform agreement on shared vertices, fixed windows and points), `ResolutionStudy.mjs` (the three spacings, the standalone landscapes, bytes by kind, composites, the optional city-extent pair, receipt and Markdown), `ResolutionStudyJob.mjs` |
-| `recipes/` | Production recipes: `coastal-v3.json` (the D4 coastal terrain v3) and `terrain-fields-coastal-v3.json` (the v1 terrain-fields recipe with `workingLimitBytes` raised to 1792 MiB for the 4097² grid: the fields bake peaks at about 380 MiB of tracked arrays at 2049², four times that at 4097², under the 2 GiB ceiling the recipe reader allows) |
+| `recipes/` | Production recipes: `coastal-v3.json` (the D4 coastal terrain v3), `terrain-fields-coastal-v3.json` (the v1 terrain-fields recipe with `workingLimitBytes` raised to 1792 MiB for the 4097² grid: the fields bake peaks at about 380 MiB of tracked arrays at 2049², four times that at 4097², under the 2 GiB ceiling the recipe reader allows) and `coastal-v3-surround.json` (the D5 far-field surround: v3 embedded into the 32 km grid at 15.625 m) |
 | `coastal_v3/` | The D4 leaf: `CoastalV3.mjs` (the run, the targets and constraints evaluation, review images and profiles, the landscape write with references, fields and geology, the optional edit replay, receipt and Markdown), `CoastalV3Job.mjs`, `run.mjs` |
+| `surround/` | The D5 leaf: `Surround.mjs` (the run, the independent reference decimation and boundary hash of the v3 natives, the seam metrics, the 32 km maps with the extent outlined, the promontory and seam crops, the surround document under `<landscape>/surround/` with the `surround` provenance block, receipt and Markdown), `SurroundJob.mjs`, `run.mjs`, `plan/` (the surround plan: `far_shoreline.json` authored by `author.mjs` from the recipe's spur field and coves, empty `districts.json`, `roads.json` and `beach_points.json`) |
 
 ## Recipes
 
@@ -268,6 +273,76 @@ references, no appearance), fields `terrain-fields-8ae5a126ff397de346c5aea3` (34
 `geology-cf24152c9156cf1bc425da74` (682 files, 341 pages, determinism verified); 799,934,843 bytes on disk in 1,828 files
 (fields 382.8 MB, geology 275.4 MB, payloads 107.9 MB, source 32.9 MB, root 0.9 MB).
 
+## D5 far-field surround
+
+`node tools/bake.mjs --target landscape/synthesis/surround --publish` runs `recipes/coastal-v3-surround.json` on the 2049² grid at
+15.625 m over −14,000..18,000 m on both axes (32 × 32 km centred on the 4 km city extent, chunkIntervals 256, maxLevel 3, 85
+nodes) and installs the render-only surround document `coastal-city-v3-surround` under `assets/public/landscape/coastal-city-v3/surround/`
+(manifest-last, immutable content-addressed payloads, no references, appearance, fields or geology); without `--publish` the
+document is written under the output directory. `landscape=<directory>` names the v3 directory it continues (the canonical v2
+directory is refused), `recipe=` and `output=` the recipe and the evidence root (`tests/artifacts/screens/landscape/ai596/d5/surround/`).
+
+The recipe: `import-heights` with `placement: embed` reads v3 at its pinned revision `synthesis-7045f619de9de74a367bc3a8` (a stale
+or foreign v3 is refused at the import and, re-read, at publication), decimates its 4097² natives ×16 with the tent filter into
+columns 896..1152 / rows 896..1152 and fills the 4,132,352 samples outside: `extend-edge` continues the nearest boundary sample
+outward, blurred along the boundary by a Gaussian whose sigma reaches 150 m at the 300 m fade distance (so the continuation blurs
+instead of streaking), and faded toward the 18 m plain base (v3's land along its north and south edges is 12–25 m); the cover outside
+is forest (3). `plan-inputs` rasterizes the surround plan: no districts, no roads, and the far shoreline
+`surround/plan/far_shoreline.json`, which is the v3 design shoreline verbatim between (880, 4000) and (1048, 0) continued north and
+south to 100 m beyond the bounds by a C1 cubic Hermite base coast (gentle ±150–250 m meander through the knots in `plan/author.mjs`,
+starting in the design line's own end directions, the sea to the west). The headlands are spurs of the continued relief, not drawn
+domes: the recipe's `spurs` operator (an anisotropic ridged `landform-hills` field, 2/1/0.5 km octaves stretched 2.5× across the
+coast at bearing 270, ±320 m signed and `combine: max`, so its ridges rise from the plain and run into the sea; masked 60–200 m
+from the far shoreline, fading out 2.5–4 km inland and fading in 2–4.5 km from the city extent) is sampled on the base coast by
+`author.mjs` with the engine's own seed and resolved parameters, and where the field is high the coast is displaced seaward (a
+smoothstep of the relief over its amplitude from 0 to 0.2 reaching 1,000 m, blurred along the coast with a 180 m sigma and fading in
+over the same 2–4.5 km from the design line's ends), so every ridge of the field ends on a rounded promontory whose outline is the
+field's own contour; the recipe's two coves are written in as the arcs of their elliptical footprints traced to their crossings with
+that coast (a 2.5 %-of-width wobble vanishing at the crossings), on stretches the spurs leave undisplaced, so the shoreline constraint,
+the beach profile, the spurs and the coves agree on one coastline. Every operator that moves the surface is masked outside the extent
+with a 0–300 m smoothstep blend (a `polygon` selector on the 4 km rectangle, `edge` 0 → −300: exactly 0 on the extent and its
+boundary): the shelf (`coastal-beach`, `offshoreMode: replace`, the v3 Dean A 0.14 and 2° shelf continued to a −60 m floor, a 240 m
+beach band — the v3 berm 1.8 m at 30 m, a flat backshore — blending into the 18 m plain over 180 m (5°; v3's own coast rises 12 m
+within 200 m), reach 20 km; a 30 m blend because the seabed differs from v3's −30 m floor by at most 4.5 m), the v3 `hills` (the same
+recipe seed 596400 and operator id, the same octaves except the 44 m one below the 15.6 m grid, amplitude 37.5 so every kept octave
+keeps its meters; 60 → 500 m from the far shoreline, so the spur noses carry the hill texture), the `spurs`, the `ranges` (ridged
+12/6/3/1.5 km octaves weighted 1 / 0.45 / 0.2 / 0.08, ±1,800 m signed and `combine: max`, stretched 1.8× along bearing 160, so a few
+massifs rise from the plain with valleys between them; east of x ≈ 9,500 m and north-east of (5,500, 13,500) with a 5 km fade,
+300–1,500 m from the shore), the two coves (scoops 10–12 m), 24 fluvial iterations (retain-target 0.003) and one sediment pass
+(alluvium → grass), `constrain-shoreline` (land ≥ 0.3 m, sea ≤ −0.3 m against the far shoreline: 1,049 raised / 0 lowered samples,
+max 1.8 m), the 500 m cap with a 150 m soft shoulder, `geology-channels`, `derive-land-cover` (rock from 28° at this spacing, emerged
+land sand) and the no-op resample. The leaf recomputes the ×16 tent decimation from the v3 natives independently and fails when any
+embedded sample differs; the other metrics are reported, among them the NW-11 silhouette check: the skyline of the surface from 800 m
+above (−400, 2000) over compass azimuths 20–160° against the angle of the grid's far edge, with the massifs (runs ≥ 0.25° above that
+edge), their peaks, distances and the gaps between them (`skyline-nw11.png`). Re-authoring the far shoreline after changing the spur
+field or a cove: `node tools/bake_landscape/terrain_synthesis/surround/plan/author.mjs` (reports a cove center off the coast rule and
+the spur headlands it produced).
+
+Measured 2026-10-10 on the validated run (`surround.json`, `surround.md`; recipe sha `b809a4ced3f7…`, identity
+`synthesis-0ce24bcface8d1e704fc79e3`; the document under `tests/artifacts/screens/landscape/ai596/d5/surround/landscape/`,
+revision `synthesis-857ae85a2b611d24990fafdc`; not yet published — the sidecar installed on 2026-10-09 under
+`assets/public/landscape/coastal-city-v3/surround/` is the earlier dome-promontory recipe, revision `synthesis-3034994a218a819ca042438f`,
+and stays until the runtime measurements on it are done):
+
+| Measure | Value |
+| --- | --- |
+| Engine / peak tracked | 40.6 s (fluvial 24.4, geology 4.4, sediment 3.9, plan 1.2, spurs 1.1, ranges 1.1, hills 0.9) / 497 MB of 2 GiB (sediment); reference 0.8 s, render 8.9 s, document 2.6 s; 53.1 s in all |
+| Inside the extent vs v3 decimated | 66,049 samples, 0 height mismatches (max 0 m); cover 168 forest → rock (28° slope rule on the decimated escarpments) |
+| Step to the first outside sample, max / p90 / p50 (inside neighbour step max / p90) | north 3.99 / 0.48 / 0.11 m (3.11 / 1.66); south 4.51 / 0.30 / 0.08 (2.52 / 1.57); west 2.51 / 2.38 / 0.19 (0.46 / 0.45: the shelf below v3's −30 m floor); east 0.39 / 0.25 / 0.14 (2.71 / 1.54) |
+| Far shoreline at z 4000 / z 0 | crossing inside 880.8 / 1,047.0 m (design 880 / 1,048), first outside row 876.7 / 1,048.9 m, polyline 875.8 / 1,053.4 m |
+| Spur headlands (coast displaced ≥ 300 m) | 8: z 16,340 (604 m seaward), −13,300 (600), 8,020 (526), 11,500 (502), −8,920 (499), −10,540 (469), 12,920 (448), −3,400 (420); none within 2 km of the design line's ends |
+| NW-11 skyline (800 m over (−400, 2000), azimuth 20–160°) | 4 massifs: 33–33.5° (242 m at 18.4 km, +0.27°), 44–49° (385 m at 21.6 km, +0.67°), 60.5–80° (421 m at 16.9 km, +0.88°), 129–130.75° (387 m at 22.1 km, +0.32°); gaps 10.5°, 11.5°, 49°; skyline max −0.92°, far edge max −0.93° |
+| Land / sea | whole grid 53.2 % / 46.8 %; inside 73.4 % / 26.6 %; outside 52.9 % / 47.1 % |
+| Heights, needles | −60.0..428.6 m; 32 one-sample spikes > 2 m (max 7.2 m, within the 30° repose plane of a 15.6 m cell) |
+| Land cover (whole grid) | water 1,963,867, sand 20,250, grass 68,682 (alluvial floors 66,154), forest 2,130,768, rock 3,132 (slope 2,367), planning 5/6/7 unchanged 10,798 / 818 / 86 |
+| Document | 85 nodes (64 native), 118 files, 26.99 MB by manifest (native 20.16 MB, ancestors 6.61 MB, manifest 116,087 B), 18.5 MiB on disk; ancestor errors L0 101.3 m, L1 102.4 m, L2 97.2 m (the massifs at 125 / 62.5 / 31.25 m strides) |
+| `provenance.preparation.surround` | `{ landscapeId: 'coastal-city-v3', revision: 'synthesis-7045f619de9de74a367bc3a8', manifestSha256: '3846aed4c17a7125df21eab7f3b486eff82daa2e5e0f3fc0ab084dc02689e9ef', extent: { minX: 0, maxX: 4000, minZ: 0, maxZ: 4000 }, boundaryHash: '638288327f66421a4b4e4e9c598b5c7b2b665a63e4ec7a643b1c085d74d78508' }` (the boundary hash is the SHA-256 of the v3 native heights along the north row west → east, the south row west → east, the west column north → south and the east column north → south, float32 little-endian) |
+
+Review points left open: the spur noses are smooth ridge surfaces (the spur field's 500 m smallest octave; the hill texture reaches
+them from 60 m inland); the coast between spurs is the gently meandering base coast with a 16 m rise from the beach into the plain
+over 180 m; re-publishing leaves the previous surround payloads in `surround/payloads/` (content addressed, manifest-last) unless the
+directory is removed first.
+
 ## Tests
 
 `tests/node/unit/landscape_synthesis_recipe.test.js`, `landscape_synthesis_graph.test.js`,
@@ -283,6 +358,10 @@ derived and city-extent recipes, the leaf options, the sharpness measurements on
 `landscape_synthesis_upsample.test.js` (the upsampling import: filters, cover labels, the engine paths and the unchanged
 same-grid and decimation paths), `landscape_synthesis_landcover.test.js` (every `derive-land-cover` rule on synthetic layers, the
 transition matrix, the `derive` cover policy and the recipe rules), `landscape_synthesis_targets.test.js` (the target measures
-on synthetic profiles, the declared-targets evaluator and the `coastal-beach` shelf/replace extension) and
-`landscape_synthesis_framework.test.js` (leaf registration, the coastal-v3 recipe and the v3 fields recipe); run them together with
+on synthetic profiles, the declared-targets evaluator and the `coastal-beach` shelf/replace extension),
+`landscape_synthesis_embed.test.js` (the embedded placement: a 5² source in a 13² grid reproduced exactly and faded to the fill, the
+smoothed continuation, the ×2 decimation, the misalignment errors, the engine path on the output and a coarse working grid, the recipe
+rules and the plan without districts or roads) and
+`landscape_synthesis_framework.test.js` (leaf registration, the coastal-v3 recipe, the v3 fields recipe and the surround recipe with its
+committed far shoreline rebuilt from the recipe's promontories); run them together with
 `node --test tests/node/unit/landscape_synthesis_*.test.js tests/node/unit/landscape_review_poses.test.js`.

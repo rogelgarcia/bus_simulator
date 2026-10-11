@@ -115,7 +115,7 @@ test('Resolution study: the leaf is an always-run Node-only child of landscape/s
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/synthesis/resolution-study:city-extent=yes'])), /true, false or only/);
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/synthesis/resolution-study:fields=maybe'])), /bake or none/);
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/synthesis/resolution-study:recipes='])), /expects job\/id:option=value/);
-    assert.deepEqual(planBakes(bakeJobs, 'landscape/synthesis').map(job => job.id), ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture', 'landscape/synthesis/resolution-study', 'landscape/synthesis/coastal-v3', 'landscape/synthesis']);
+    assert.deepEqual(planBakes(bakeJobs, 'landscape/synthesis').map(job => job.id), ['landscape/synthesis/relief-study', 'landscape/synthesis/fixture', 'landscape/synthesis/resolution-study', 'landscape/synthesis/coastal-v3', 'landscape/synthesis/surround', 'landscape/synthesis']);
     assert.ok(planBakes(bakeJobs, 'all').every(job => !job.id.startsWith('landscape')));
     assert.ok(planBakes(bakeJobs, 'landscape').every(job => !job.id.startsWith('landscape/synthesis')));
     assert.deepEqual(FIXTURE_SPACINGS.map(spacing => `${RESOLUTION_LANDSCAPE_ID_PREFIX}${fixtureSpacingTag(spacing)}`), ['ai596-d3-fixture-1953', 'ai596-d3-fixture-0977', 'ai596-d3-fixture-0488']);

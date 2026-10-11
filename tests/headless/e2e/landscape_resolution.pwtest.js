@@ -6,7 +6,9 @@
 // under tests/artifacts/screens/landscape/ai596/d3/browser/<fixture>/ plus a cross-fixture comparison.md regenerated from every receipt present.
 // LANDSCAPE_RESOLUTION_FIXTURES selects other ids or saved landscape directories; LANDSCAPE_RESOLUTION_ARTIFACTS moves the receipts (a directory
 // relative to the repository root); LANDSCAPE_RESOLUTION_ROUTE=natural-world measures a 4 km coastal landscape along the natural-world review
-// poses instead of the bounds-scaled fixture poses (AI 596 D4, coastal terrain v3); LANDSCAPE_RESOLUTION_SETTLE_MS raises the settle limit.
+// poses instead of the bounds-scaled fixture poses (AI 596 D4, coastal terrain v3); LANDSCAPE_RESOLUTION_SETTLE_MS raises the settle limit;
+// LANDSCAPE_RESOLUTION_SURROUND=on|off|<manifest url> (AI 596 D5) selects the viewer's render-only surround (on = the sidecar published beside the
+// measured landscape) and the receipts then carry the surround's residency (its own ledger kind) beside the authoritative streams'.
 import { test, expect } from '@playwright/test';
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -45,6 +47,10 @@ const ROUTES = Object.freeze({
 });
 const ROUTE = ROUTES[process.env.LANDSCAPE_RESOLUTION_ROUTE ?? 'fixture'];
 if (!ROUTE) throw new Error(`LANDSCAPE_RESOLUTION_ROUTE must be one of ${Object.keys(ROUTES).join(', ')}; received ${process.env.LANDSCAPE_RESOLUTION_ROUTE}`);
+const SURROUND = process.env.LANDSCAPE_RESOLUTION_SURROUND ?? null;
+if (SURROUND !== null && SURROUND !== 'on' && SURROUND !== 'off' && !/^[^\s]+\.json$/.test(SURROUND)) throw new Error(`LANDSCAPE_RESOLUTION_SURROUND must be on, off or a manifest URL ending in .json; received ${SURROUND}`);
+const SURROUND_PARAMETER = SURROUND === null ? null : SURROUND === 'on' ? 'auto' : SURROUND;
+const viewerAddress = () => landscapeViewerUrl(`/screens/landscape_fabrication.html${SURROUND_PARAMETER ? `?landscapeSurround=${encodeURIComponent(SURROUND_PARAMETER)}` : ''}`);
 const POSE_FILE = path.join(root, ROUTE.poseFile);
 // top-down orthographic probe camera: 60 m of ground over 1056 px asks the planner for every level whose error exceeds 0.085 m, so the finest level
 // is resident on relief; the 0.3 m target offset keeps the look-at basis defined and tilts the rays by 0.001 rad
@@ -148,7 +154,8 @@ async function settled(page) {
     await page.waitForFunction(() => {
         const state = window.__landscapeTestHooks?.snapshot();
         if (state?.lastError) throw new Error(state.lastError);
-        return state?.ready && state.loadTiming.firstCoveredFrameAtMs !== null && state.streaming.settled && state.appearance?.settled && state.planning.ready && state.planning.settled;
+        const surroundSettled = !state?.surround || (state.surround.settled && (state.surround.pending ?? 0) === 0);
+        return state?.ready && state.loadTiming.firstCoveredFrameAtMs !== null && state.streaming.settled && state.appearance?.settled && state.planning.ready && state.planning.settled && surroundSettled;
     }, null, { timeout: settleTimeoutMs });
     return page.evaluate(() => ({ state: window.__landscapeTestHooks.snapshot(), atMs: performance.now(), timeOrigin: performance.timeOrigin }));
 }
@@ -212,11 +219,12 @@ async function measureStop(page, stop) {
         } else hooks.setCamera(stop.view);
         const cameraAppliedAtMs = performance.now();
         let state, stable = 0;
+        const surroundSettled = () => !state.surround || (state.surround.settled && (state.surround.pending ?? 0) === 0);
         do {
             for (let index = 0; index < 6; index++) await wait();
             state = hooks.snapshot();
             if (state.lastError) throw new Error(state.lastError);
-            stable = state.streaming.settled && state.appearance.settled && state.planning.settled ? stable + 1 : 0;
+            stable = state.streaming.settled && state.appearance.settled && state.planning.settled && surroundSettled() ? stable + 1 : 0;
             if (performance.now() - began > settleTimeoutMs) throw new Error(`detail did not settle at ${stop.id} within ${settleTimeoutMs} ms`);
         } while (stable < 2);
         const settledAtMs = performance.now();
@@ -237,12 +245,16 @@ function levelHistogram(ids, manifest) {
 }
 
 function residency(state, manifest) {
-    const { streaming, budget } = state;
+    const { streaming, budget, surround } = state;
     return { residentLeaves: streaming.residentLeafIds.length, leafLevels: levelHistogram(streaming.residentLeafIds, manifest), residentLeafIds: streaming.residentLeafIds,
         residentSources: streaming.residentSourceIds.length, desiredLeaves: streaming.desiredLeafIds.length, sourceBytes: state.sourceBytes, geometryBytes: streaming.geometryBytes,
         vertices: streaming.vertices, triangles: streaming.triangles, cpuBytes: budget.cpuBytes, gpuBytes: budget.gpuBytes, peakCpuBytes: budget.peakCpuBytes, peakGpuBytes: budget.peakGpuBytes,
         appearanceCpuBytes: state.appearance.cpuBytes, appearanceGpuBytes: state.appearance.gpuBytes, rendererMemory: state.renderer.memory,
-        targetMet: streaming.targetMet, achievedErrorPixels: streaming.achievedErrorPixels, degradationReason: streaming.degradationReason, appearanceDegradation: state.appearance.degradationReason };
+        targetMet: streaming.targetMet, achievedErrorPixels: streaming.achievedErrorPixels, degradationReason: streaming.degradationReason, appearanceDegradation: state.appearance.degradationReason,
+        // AI 596 D5: the render-only surround's own tiles and ledger share (kind landscape-surround), inside the shared cpu/gpu totals above
+        surround: surround ? { status: surround.status, tiles: surround.tiles, leafLevels: surround.residentByLevel, cpuBytes: surround.share.cpuBytes, gpuBytes: surround.share.gpuBytes, peakCpuBytes: surround.share.peakCpuBytes,
+            peakGpuBytes: surround.share.peakGpuBytes, shareLimits: surround.share.limits, denied: surround.share.denied, triangles: surround.triangles ?? 0, targetMet: surround.targetMet ?? null,
+            achievedErrorPixels: surround.achievedErrorPixels ?? null, degradationReason: surround.degradationReason ?? null } : null };
 }
 
 function summarizeMeasurement(measured) {
@@ -460,7 +472,7 @@ for (const fixture of fixtures) {
                 totalPayloadBytes: manifest.chunks.reduce((sum, chunk) => sum + chunk.channels.height.byteLength + chunk.channels.landCover.byteLength, 0),
                 appearanceSidecar: appearanceAbsent ? 'absent' : 'present', fieldsSidecar: (await exists(path.join(fixture.directory, 'fields/manifest.json'))) ? 'present' : 'absent' },
             conditions: { baseURL, browserVersion: browser.version(), hardware: { platform: os.platform(), release: os.release(), arch: os.arch(), cpuModel: os.cpus()[0]?.model, logicalCpus: os.cpus().length, ramBytes: os.totalmem() },
-                viewport: { ...viewport, dpr: 1 }, profile: landscapeShippedBudgetMiB(), surfaceCache: landscapeEffectiveSurfaceCache(), warmupFrames, sampleFrames, settleTimeoutMs,
+                viewport: { ...viewport, dpr: 1 }, profile: landscapeShippedBudgetMiB(), surfaceCache: landscapeEffectiveSurfaceCache(), surround: SURROUND ?? 'viewer default', warmupFrames, sampleFrames, settleTimeoutMs,
                 statistics: 'median, nearest-rank p95, max over the 120-frame sampled window per stop; route totals pool the equal-size windows', route: ROUTE.id, stops: ROUTE.stops, poseFile: relative(POSE_FILE), probePatch: ROUTE.probePatch, probeCamera: PROBE_CAMERA },
             route: [], probes: { status: 'not measured', reason: 'not reached' } };
         const server = await serve(fixture.directory, baseURL);
@@ -474,8 +486,12 @@ for (const fixture of fixtures) {
             expect(served.revision).toBe(manifest.revision);
             report.server = { servedManifestId: served.id, servedRevision: served.revision, servedSha256: createHash('sha256').update(servedText).digest('hex') };
             expect(report.server.servedSha256, 'the served manifest is the fixture file byte for byte').toBe(report.fixture.manifestSha256);
-            await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
+            await page.goto(viewerAddress());
             const boot = await settled(page);
+            if (SURROUND !== null && SURROUND !== 'off') expect(boot.state.surround?.status, `the surround ${SURROUND} is drawn: ${boot.state.surround?.reason}`).toBe('active');
+            report.surround = boot.state.surround ? { mode: boot.state.surround.mode, status: boot.state.surround.status, reason: boot.state.surround.reason ?? null, url: boot.state.surround.url ?? null, id: boot.state.surround.id ?? null,
+                revision: boot.state.surround.revision ?? null, binding: boot.state.surround.binding ?? null, bounds: boot.state.surround.bounds ?? null, grid: boot.state.surround.grid ?? null, loadMs: boot.state.surround.loadMs ?? null,
+                programCompile: boot.state.surround.programCompile ?? null, shareLimits: boot.state.surround.share?.limits ?? null, waterExtent: boot.state.water?.extent ?? null, waterBounds: boot.state.water?.bounds ?? null } : null;
             assertBounded(boot.state, manifest, expectedAppearanceErrors);
             expect(boot.state.budget.limits).toEqual({ cpuBytes: report.conditions.profile.cpuMiB * MiB, gpuBytes: report.conditions.profile.gpuMiB * MiB });
             // the settled startup may hold natives: from the viewer's 4 km home camera a 1 km fixture's root error still projects above 1.5 px; the gate
@@ -546,7 +562,8 @@ for (const fixture of fixtures) {
             try { await page.evaluate(() => window.__landscapeTestHooks?.dispose()); } catch (error) { errors.push(`cleanup: ${error.message}`); }
             try {
                 const disposed = await page.evaluate(() => window.__landscapeTestHooks?.snapshot());
-                report.end = { disposed: disposed?.disposed ?? null, cpuBytes: disposed?.budget.cpuBytes ?? null, gpuBytes: disposed?.budget.gpuBytes ?? null, peakCpuBytes: disposed?.budget.peakCpuBytes ?? null, peakGpuBytes: disposed?.budget.peakGpuBytes ?? null, rendererMemory: disposed?.renderer.memory ?? null };
+                report.end = { disposed: disposed?.disposed ?? null, cpuBytes: disposed?.budget.cpuBytes ?? null, gpuBytes: disposed?.budget.gpuBytes ?? null, peakCpuBytes: disposed?.budget.peakCpuBytes ?? null, peakGpuBytes: disposed?.budget.peakGpuBytes ?? null, rendererMemory: disposed?.renderer.memory ?? null,
+                    surroundEntries: disposed?.budget.entries.filter(entry => entry.kind === 'landscape-surround').length ?? null, surroundPeakCpuBytes: Math.max(0, ...report.route.map(stop => stop.residency.surround?.peakCpuBytes ?? 0)), surroundPeakGpuBytes: Math.max(0, ...report.route.map(stop => stop.residency.surround?.peakGpuBytes ?? 0)) };
                 await network.flush();
                 await writeFile(path.join(artifacts, 'network.json'), JSON.stringify({ records: network.records, disposed, errors }, null, 2));
                 await writeFile(path.join(artifacts, 'report.json'), JSON.stringify(report, null, 2));

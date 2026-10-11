@@ -32,9 +32,13 @@ Before anything is written, every file of the bundle must authenticate:
 - every other file through a `{url, sha256, byteLength}` record in a manifest,
   sidecar or `PROVENANCE.json` (this covers the retained source archive);
 - current pointers (`manifest.json`, `appearance/manifest.json`,
-  `appearance/multiscale.json`, `fields/manifest.json`, `geology/manifest.json`),
-  binding aliases and `PROVENANCE.json` by schema; `manifest.json` must validate as
-  a landscape manifest.
+  `appearance/multiscale.json`, `fields/manifest.json`, `geology/manifest.json`,
+  `surround/manifest.json`), binding aliases and `PROVENANCE.json` by schema;
+  `manifest.json` must validate as a landscape manifest, and so must the AI 596 D5
+  far-field surround `surround/manifest.json` (its own saved landscape: payloads and
+  `surround/manifest.<sha256>.json` snapshot content addressed), whose
+  `provenance.preparation.surround` must name the terrain manifest's id, revision
+  and current `manifest.json` SHA-256 (a surround of another terrain revision fails).
 
 Links, devices, transient authoring state (`authoring.lock`, `*.partial`,
 `authoring-interrupted-*.json`), unreadable JSON, dangling or mismatched records
@@ -50,8 +54,8 @@ With `--publish`, installation runs under the landscape authoring lock:
    the run stops before writing, so local authored revisions are never lost.
 2. Immutable files are written first (identical existing files are accepted, a
    different existing file is refused), then binding aliases.
-3. Current pointers switch last: appearance, multiscale, field and geology sidecars,
-   then the terrain `manifest.json`. A failed switch restores the previous pointers.
+3. Current pointers switch last: appearance, multiscale, field, geology and surround
+   sidecars, then the terrain `manifest.json`. A failed switch restores the previous pointers.
 4. The installed directory is re-verified with the same rules.
 
 Reruns and resumed partial installs converge to the same authenticated result.
