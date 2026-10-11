@@ -11,7 +11,11 @@ menu registers it as shortcut **8**. It renders the canonical prepared manifest 
 reports `Landscape cache missing|stale|incomplete|invalid` with the install/generate
 action (snapshot `cache`), and the landscape server still serves the page while
 answering cache requests with 404 guidance. The optional `landscape`
-query parameter selects a different compatible manifest for inspection/testing.
+query parameter selects a different compatible manifest for inspection/testing;
+coastal terrain v3 (AI 596 D4, the landscape the city spec pins) opens this way with
+`?landscape=/assets/public/landscape/coastal-city-v3/manifest.json`, or at the default
+address when the server runs with `LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3`,
+and its far-field surround loads with it (`landscapeSurround=auto`, below).
 Models, view planning and the residency ledger belong to `src/app/landscape/`.
 The reusable Three.js/worker adapter lives under
 `src/graphics/engine3d/landscape/`; the screen composes that adapter with its camera
@@ -21,8 +25,21 @@ It does not create a city, game simulation, or flat placeholder ground.
 ## Navigation
 
 The perspective camera defaults to **55°**, matching `src/app/core/GameEngine.js`.
-Its 0.1-meter near plane matches the game; the 25,000-meter far plane accommodates
-the coastal landscape. Initial overview coverage is preserved. Overview, Top and
+Its near plane starts at the game's 0.1 meters and follows the height above the
+authoritative ground under the camera (AI 596 D6, `LandscapeCameraDepth`):
+clamp(height × 0.002, 0.1 m, 8 m) — 0.1 m up to 50 m above ground, 2 m at 1 km, 8 m
+from 4 km — with the projection rebuilt only when the value moves by more than 10 %;
+the ground comes from the rendered or overview chunk under the camera (the last
+sample stands in while the camera is outside the landscape, sea level before the
+first). The reason is the 24-bit depth buffer: its smallest step at view distance d
+is ≈ d² / (near × 2²⁴), i.e. ≈ 15 m at 5 km and ≈ 60 m at 10 km with near 0.1 m,
+which let the sea-level reference plane z-fight the surround's coastal land 2–20 m
+above it during the flyover's final climb (D6 flyover edge checks: 195 of 2,101
+frames, up to 0.39 % of a frame); with near 2 m (1 km up) the step at 5 km is
+≈ 0.75 m, with 8 m ≈ 0.19 m (`landscapeDepthStep`). At eye height nothing changes
+(near stays 0.1 m below 50 m above ground; NW-01/NW-03 captures are pixel-identical).
+The 25,000-meter far plane accommodates the coastal landscape and its surround.
+Initial overview coverage is preserved. Overview, Top and
 Beach approach remain available, as do orthographic projection/span/zoom, saved
 bookmarks and source reload without moving the camera.
 

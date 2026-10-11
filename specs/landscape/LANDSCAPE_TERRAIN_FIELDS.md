@@ -2,6 +2,8 @@
 
 Status: AI577 D5 data contract (landscape-terrain-fields v1), bake, runtime streaming and shader
 integration (`landscape-terrain-visibility-v1`, LANDSCAPE_APPEARANCE_RUNTIME.md) are complete and tested.
+Since AI 596 D4 the leaf also bakes coastal terrain v3 (4097² at 0.9765625 m, 341 pages) under the raised
+working limit of its own recipe ("Global analysis first" and "Bake validation and publication" below).
 
 Terrain fields are derived, unmeasured visual inputs computed offline from one exact terrain revision:
 wetness, flow, deposition, rock exposure, sky view, signed shore distance, convexity, slope, eight
@@ -16,11 +18,14 @@ the whole grid, and only then slices pages. Parameters live in the tracked recip
 `tools/bake_landscape/terrain_fields/recipe-v1.json`, embedded in provenance with its SHA-256.
 
 The full-grid assembly (`TerrainFieldsSource.mjs`) bounds the native grids the leaf can bake: the coast
-peaks at about 380 MiB of tracked arrays at 2049² under the recipe's 768 MiB limit, so a 4097² grid
-(0.9765625 m over 4 km) needs about four times that, roughly 1.5 GB, and 8193² sixteen times. The
-geology preparation reads the same full grid under its 512 MiB limit. Finer native grids therefore need
-a streamed, tiled assembly of both bakes before their leaves can run on them: an AI 596 D4 prerequisite
-recorded here, not implemented in D3 (the 1 km D3 fixtures bake unchanged).
+peaks at about 380 MiB of tracked arrays at 2049² under the v1 recipe's 768 MiB limit, so a 4097² grid
+(0.9765625 m over 4 km) needs about four times that and 8193² sixteen times. AI 596 D3 recorded a
+streamed, tiled assembly as the general answer; D4 instead raised the limit for the one production grid:
+`tools/bake_landscape/terrain_synthesis/recipes/terrain-fields-coastal-v3.json` is the v1 recipe with
+`workingLimitBytes` 1,879,048,192 (1,792 MiB, under the 2 GiB the recipe reader allows), and the geology
+preparation reads the same grid under a 1.5 GiB limit (`terrain_synthesis/coastal_v3/CoastalV3.mjs`;
+its 512 MiB default holds the 85-node coast and the 1 km fixtures). The streamed assembly stays the
+prerequisite for anything finer than 4097²; the 1 km D3 fixtures bake unchanged.
 
 | Field | Algorithm (recipe v1) | Normalization |
 | --- | --- | --- |
@@ -149,6 +154,18 @@ Coastal publication `terrain-fields-5dbdfc766dca6cce908bd7b4` (sidecar 80,704 by
 27 unique natural-soil pages (1,783,323 bytes). The global stage takes about 11 s, the whole leaf about
 26 s, with a 380 MiB tracked working-array peak under the 768 MiB declared limit. Rebuilds are byte
 identical.
+
+Coastal terrain v3 publication (AI 596 D4, baked inside the synthesis write of `landscape/synthesis/coastal-v3`
+and re-runnable through `landscape/terrain-fields` on the v3 directory; receipt
+`tests/artifacts/screens/landscape/ai596/d4/v3/coastal-v3.md`, statistics in the published sidecar):
+`terrain-fields-8ae5a126ff397de346c5aea3` binds terrain `synthesis-7045f619de9de74a367bc3a8` (sidecar 260,174
+bytes under the 1 MiB limit of D3): 341 field pages of 1,089,936 bytes (371,668,176 bytes, every page unique)
+and 172 natural-soil pages (161 unique, 10,633,889 bytes) for 2,991,592 planning samples (inferred sand
+17,132, loam 1,127,093, forest 1,624,678, rock 222,689; 64 speckle samples); depressions fill 1,911,391
+samples in 1,080 flats to at most 9.70 m (0 undrained); the sea-level polyline has 4,882 segments. The fields
+stage took 103.4 s (106.3 s with its write in the receipt's timing table), deterministic second run included,
+under the 1,792 MiB recipe limit. The v2 publication above is unchanged; the geology sidecar of the same
+revision is specified in `LANDSCAPE_TERRAIN_SYNTHESIS.md` and handed over in `LANDSCAPE_AI596_HANDOFF.md`.
 
 ## Runtime
 

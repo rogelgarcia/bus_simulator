@@ -318,11 +318,12 @@ edge), their peaks, distances and the gaps between them (`skyline-nw11.png`). Re
 field or a cove: `node tools/bake_landscape/terrain_synthesis/surround/plan/author.mjs` (reports a cove center off the coast rule and
 the spur headlands it produced).
 
-Measured 2026-10-10 on the validated run (`surround.json`, `surround.md`; recipe sha `b809a4ced3f7…`, identity
-`synthesis-0ce24bcface8d1e704fc79e3`; the document under `tests/artifacts/screens/landscape/ai596/d5/surround/landscape/`,
-revision `synthesis-857ae85a2b611d24990fafdc`; not yet published — the sidecar installed on 2026-10-09 under
-`assets/public/landscape/coastal-city-v3/surround/` is the earlier dome-promontory recipe, revision `synthesis-3034994a218a819ca042438f`,
-and stays until the runtime measurements on it are done):
+Measured 2026-10-10 on the published run (`surround.json`, `surround.md`; recipe sha `b809a4ced3f7…`, identity
+`synthesis-0ce24bcface8d1e704fc79e3`): the sidecar under `assets/public/landscape/coastal-city-v3/surround/` is revision
+`synthesis-857ae85a2b611d24990fafdc` (snapshot `manifest.245cc76309c269195cca5a51c1ccaf51494daa09cb8ca20f8768ba0abfc951fb.json`,
+published 2026-10-10, replacing the earlier dome-promontory revision `synthesis-3034994a218a819ca042438f` installed on
+2026-10-09; the D5 runtime timings in `LANDSCAPE_PERFORMANCE.md` were taken on that earlier revision, which has the same grid
+and node count, and the D6 tables re-time the published one):
 
 | Measure | Value |
 | --- | --- |

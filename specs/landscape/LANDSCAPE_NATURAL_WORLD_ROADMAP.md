@@ -10,6 +10,10 @@ changes; this page keeps the shared vocabulary, the review poses and the status 
 
 ### Terrain data (coastal-city terrain v2)
 
+These are the v2 measurements that motivated AI 596. Coastal terrain v3 (AI 596 D4, 2026-10-09) superseded
+them; the measured v3 state is recorded in [LANDSCAPE_TERRAIN_SYNTHESIS.md](LANDSCAPE_TERRAIN_SYNTHESIS.md)
+and handed over in [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md).
+
 - The terrain matches its plan numerically: the high city plateau is 48.6–49.2 m, the low city
   17.3–19.0 m, the airport 19.3–21.5 m and the beach arrival 2.6 m (`districts.json` percentiles).
   The heights are not wrong relative to the v2 plan; the plan itself was deliberately lowered
@@ -89,7 +93,7 @@ therefore structural: add the missing layers rather than refine the textures fur
 
 | Layer | Content | Authority | Owner |
 | --- | --- | --- | --- |
-| L0 Landform and geology | Authoritative height at a finer native spacing; geology channels: bedrock surface, regolith depth, deposit type and thickness (talus, colluvium, alluvium, beach and dune sand), lithology/strata index, erosion wear, deposition, flow/drainage, face mask (slopes a heightfield cannot represent), coastal zone class, wave exposure | Authoritative terrain revision plus versioned derived channels | AI 596 |
+| L0 Landform and geology | Authoritative height at a finer native spacing; geology channels: bedrock surface, regolith depth, deposit type and thickness (talus, colluvium, alluvium, beach and dune sand), lithology/strata index, erosion wear, deposition, flow/drainage, face mask (slopes a heightfield cannot represent), coastal zone class, wave exposure | Authoritative terrain revision plus versioned derived channels | AI 596 — delivered 2026-10-09 as `coastal-city-v3` (0.9765625 m, `assets/public/landscape/coastal-city-v3/`) with the `landscape-geology` v1 sidecar `geology/`; contract [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md) §3 |
 | L1 Water | Ocean surface to the horizon, shoaling and breaking shore waves, foam, swash and wet beach, optional inland water | Presentation; sea level stays authoritative | AI 597 |
 | L2 Surface | Substrate (what the ground is made of) + cover (what grows or lies on it) with fractional cover, wetness, disturbance and worn paths; strata-aware rock faces | Derived appearance; semantic soil queries unchanged | AI 598 |
 | L3 Rock geometry | Cliff and bluff faces, outcrops, boulders, talus and scree, shore platform | Derived content layer | AI 602 |
@@ -97,7 +101,7 @@ therefore structural: add the missing layers rather than refine the textures fur
 | L5 Ground vegetation | Grass species and heights, sedges, forbs and flowers, ferns, moss cushions, low shrubs, dune grass | Derived content layer | AI 603 |
 | L6 Natural clutter | Pebbles, stones, litter, twigs and branches, logs, stumps, roots, beach wrack (driftwood, seaweed, shells) | Derived content layer | AI 603 |
 | L7 Light and atmosphere | Sun shadows for terrain and instances, ambient occlusion, clouds and cloud shadows, mist, lighting presets | Presentation | AI 600 |
-| L8 Far field | Land and sea beyond the 4 km extent to the horizon | Presentation only, never authoritative | AI 596 (land), AI 597 (sea) |
+| L8 Far field | Land and sea beyond the 4 km extent to the horizon | Presentation only, never authoritative | AI 596 (land) — delivered 2026-10-10 as the render-only surround `coastal-city-v3/surround/` (32 × 32 km at 15.625 m, bound to the v3 revision; [LANDSCAPE_STREAMING.md](LANDSCAPE_STREAMING.md) "Far-field surround"); AI 597 (sea, over the surround's bounds and seabed) |
 
 L3–L6 share one placement and rendering framework (AI 599). Substrate decides what can grow and what
 lies loose; cover and clutter decide what is seen at 2 m; rocks and trees decide what is seen at 10–500 m.
@@ -180,7 +184,7 @@ Reference comparisons ship as single `[reference | before | after]` composite im
 
 | Gap | Prompt |
 | --- | --- |
-| G1 Soft relief, no sharp landforms, high city and beach-to-centre rise not legible, beach not a profile, planar seabed, coarse native spacing, world edge on land | AI 596 `TOOLS` procedural terrain synthesis and coastal relief |
+| G1 Soft relief, no sharp landforms, high city and beach-to-centre rise not legible, beach not a profile, planar seabed, coarse native spacing, world edge on land | AI 596 `TOOLS` procedural terrain synthesis and coastal relief — **delivered** by D1–D5 (2026-10-09/10): coastal terrain v3 at 0.9765625 m with the 80 m high city, eroded hills and drainage, the bluff sector, berm beaches and foredunes, Dean bathymetry with bar and reef, 44 of 44 targets and constraints, the geology sidecar and the far-field surround; D6 acceptance delivered 2026-10-11 (regressions, flyover, performance, handoff) |
 | G2 Flat water without waves, foam, breaking or swash; sea ends at the boundary | AI 597 `MATERIAL` animated ocean, shore waves and foam |
 | G3 One material per soil class; no substrate/cover layering, small-area mixing, strata, litter, moss, scree or worn paths | AI 598 `MATERIAL` layered substrate and ground-cover surfaces |
 | G4 No placement, streaming or instanced rendering framework for natural content | AI 599 `TOOLS` procedural ecosystem scatter engine |
@@ -206,9 +210,30 @@ AI 597 and AI 598 can run in parallel after AI 596. AI 599 can start on the curr
 synthetic fixtures, but its final acceptance uses the AI 596 terrain. AI 604 can run at any time and
 feeds AI 601's palette.
 
+What AI 597–604 consume from AI 596 (the contract, with encodings, samplers and receipt numbers, is
+[LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md)):
+
+- the terrain: `assets/public/landscape/coastal-city-v3/` (revision `synthesis-7045f619de9de74a367bc3a8`,
+  4097² at 0.9765625 m, 341 nodes, pinned by the city spec; v2 stays the default directory of the viewer,
+  server and suites);
+- the geology sidecar `geology/` (`landscape-geology` v1, `src/app/landscape/LandscapeGeology.js`, GLSL
+  mirror `chunks/landscape/geology.glsl`): bedrock offset, regolith, deposit thickness, wear, deposition,
+  flow, wave exposure, face mask; deposit type, lithology, drainage, coastal zone;
+- the derived natural land cover and its rules (`derive-land-cover`), the terrain fields `fields/` and the
+  appearance re-baked for the v3 grid;
+- bathymetry for AI 597 (Dean A 0.137 to −8 m, 1.98° shelf to −30 m, bar −2.21 m at 111 m, reef off the
+  bluff, the surround's −60 m shelf); drainage classes and the fields' fill depths for inland water, mist
+  and wet habitats (no inland water surface is published);
+- the render-only surround `surround/` (bound to the v3 revision and boundary hash; the water extent spans
+  its bounds while it is active) for AI 597 and AI 600 — nothing is ever placed on it;
+- the review poses `tools/landscape_review/poses/natural-world-v1.json` with the capture and composite
+  tools, the leaves and recipes under `tools/bake_landscape/terrain_synthesis/`, the edit replay order of
+  [LANDSCAPE_EDITING.md](LANDSCAPE_EDITING.md) and the raised budgets (640/352 and 640/544 MiB with the
+  128/96 MiB surround share).
+
 | Prompt | Status |
 | --- | --- |
-| AI 596 | in progress: D1 relief study delivered 2026-10-09 ([LANDSCAPE_TERRAIN_SYNTHESIS.md](LANDSCAPE_TERRAIN_SYNTHESIS.md)); variant decision pending |
+| AI 596 | D1–D5 delivered 2026-10-09/10 (variant B decided 2026-10-09; `coastal-city-v3` published and pinned, geology sidecar, far-field surround; [LANDSCAPE_TERRAIN_SYNTHESIS.md](LANDSCAPE_TERRAIN_SYNTHESIS.md)); D6 integrated acceptance delivered 2026-10-11 (regressions, flyover and performance tables under `tests/artifacts/screens/landscape/ai596/d6/`; prompt closed as DONE); consumer handoff [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md) |
 | AI 597 | pending |
 | AI 598 | pending |
 | AI 599 | pending |

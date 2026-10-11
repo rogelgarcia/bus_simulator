@@ -31,6 +31,7 @@ import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY, LANDSCAPE_SU
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { createLandscapeSurround } from '../../engine3d/landscape/LandscapeSurround.js';
 import { LANDSCAPE_SURROUND, landscapeSurroundOption, landscapeSurroundUrl, landscapeSurroundWaterBounds } from '../../engine3d/landscape/LandscapeSurroundModel.js';
+import { landscapeCameraNear, landscapeCameraNearChanged } from '../../engine3d/landscape/LandscapeCameraDepth.js';
 
 const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 
@@ -147,6 +148,7 @@ export class LandscapeView {
         this.disposed = false;
         this.cacheAvailability = null;
         this.frameIndex = 0;
+        this.cameraGround = null;
         this.peakUploadedBytes = 0;
         this.loadSequence = 0;
         this.abort = new AbortController();
@@ -1154,6 +1156,15 @@ export class LandscapeView {
             this.lastFrame = now;
             this.controls.update(Math.min(rawDt, .1));
             if (this.camera.isOrthographicCamera) this.camera.fov = 2 * Math.atan(this.orthoHeight / this.camera.zoom / (2 * this.camera.position.distanceTo(this.controls.target))) * 180 / Math.PI;
+            // AI 596 D6: the perspective near plane follows the height above the authoritative ground under the camera (LandscapeCameraDepth), the
+            // last ground sample standing in while the camera is outside the landscape and sea level before the first; rebuilt only past the threshold
+            if (this.camera.isPerspectiveCamera && this.loaded && !this.reloading) {
+                const { x, y, z } = this.camera.position;
+                const ground = sampleLandscapeChunk(this.loaded.manifest, this.stream?.renderedChunkAt(x, z) ?? this.loaded.chunk, x, z);
+                if (ground.status === 'ready') this.cameraGround = ground.height;
+                const near = landscapeCameraNear(y - (this.cameraGround ?? this.loaded.manifest.coordinates.seaLevel));
+                if (landscapeCameraNearChanged(this.camera.near, near)) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
+            }
             if (!this.reloading) {
                 this.appearance?.prepare(this.camera, this.canvas.height);
                 this.stream?.update(rawDt, this.camera, this.canvas.height);

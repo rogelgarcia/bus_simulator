@@ -1,6 +1,9 @@
 // Measures identical coastal routes under hard residency profiles; never allocates a full native mesh.
+// LANDSCAPE_PERFORMANCE_SOURCE (AI 596 D6) names the saved landscape directory the server on E2E_BASE_URL serves (relative to the repository
+// or absolute; default the coastal v2 cache): the manifest and appearance manifest are read from it on disk. The served address stays the
+// viewer's canonical cache prefix, because `LANDSCAPE_DIRECTORY=<directory> node tools/landscape_server/run.mjs` serves any directory there.
 import { test, expect } from '@playwright/test';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,10 +11,18 @@ import { estimateLandscapeMeshBuffers } from '../../../src/graphics/engine3d/lan
 import { landscapeShippedBudgetMiB, landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'ai576/d7'}/performance`);
-const sourcePath = '/assets/public/landscape/coastal-city/manifest.json';
-const sourceText = await readFile(path.resolve(`.${sourcePath}`), 'utf8');
+const servedPrefix = '/assets/public/landscape/coastal-city/';
+const sourcePath = `${servedPrefix}manifest.json`;
+const sourceDirectory = path.resolve(process.env.LANDSCAPE_PERFORMANCE_SOURCE || 'assets/public/landscape/coastal-city');
+await access(path.join(sourceDirectory, 'manifest.json')).catch(() => { throw new Error(`LANDSCAPE_PERFORMANCE_SOURCE ${sourceDirectory} holds no manifest.json; name the saved landscape directory the server serves`); });
+const sourceText = await readFile(path.join(sourceDirectory, 'manifest.json'), 'utf8');
 const manifest = JSON.parse(sourceText);
-const appearance = JSON.parse(await readFile(path.resolve('assets/public/landscape/coastal-city/appearance/manifest.json'), 'utf8'));
+const appearance = JSON.parse(await readFile(path.join(sourceDirectory, 'appearance/manifest.json'), 'utf8'));
+// The root-only settled startup and the root-only route end are the retained coastal v2's measured behaviour at the home pose (root error 1.81 m);
+// a synthesized landscape's finer hierarchy settles a coarse set there (coastal v3: root error 12.76 m, 22 leaves with four natives), so another
+// source is gated like the AI 596 D3/D4 harness instead: no native height payload requested before the first covered frame, the boot and end
+// residency and the cold/warm end comparison recorded in the receipt.
+const coastalDefault = sourceDirectory === path.resolve('assets/public/landscape/coastal-city');
 const MiB = 1024 * 1024;
 // standard: the shipped profile of the run's surface cache mode (LANDSCAPE_TEST_SURFACE_CACHE; the reduced profiles keep the cache off by its budget policy)
 const profiles = [{ id: 'standard', ...landscapeShippedBudgetMiB() },
@@ -53,13 +64,20 @@ function unpack(values, columns) {
     return records;
 }
 
+// AI 596 D5/D6: the render-only surround (a second stream beside the authoritative one) settles like the other streams; absent or off it reports settled
+const surroundSettled = state => !state?.surround || (state.surround.settled && (state.surround.pending ?? 0) === 0);
+
 function compact(state) {
-    const { streaming, appearance: surface, budget } = state;
+    const { streaming, appearance: surface, budget, surround } = state;
     return { revision: state.revision, camera: state.camera, canvas: state.canvas, frameIndex: state.frameIndex, loadTiming: state.loadTiming,
         budget: { cpuBytes: budget.cpuBytes, gpuBytes: budget.gpuBytes, peakCpuBytes: budget.peakCpuBytes, peakGpuBytes: budget.peakGpuBytes, limits: budget.limits, denied: budget.denied },
         sourceBytes: state.sourceBytes, renderer: state.renderer, peakUploadedBytesPerFrame: state.peakUploadedBytesPerFrame,
         streaming: { ...streaming, budget: undefined }, appearance: surface,
         planning: { ready: state.planning.ready, cpuBytes: state.planning.cpuBytes, gpuBytes: state.planning.gpuBytes, errors: state.planning.errors },
+        surround: surround ? { mode: surround.mode, status: surround.status, reason: surround.reason ?? null, revision: surround.revision ?? null, settled: surround.settled, pending: surround.pending ?? 0,
+            tiles: surround.tiles, residentByLevel: surround.residentByLevel, triangles: surround.triangles ?? 0, targetMet: surround.targetMet ?? null, degradationReason: surround.degradationReason ?? null,
+            loadMs: surround.loadMs ?? null, programCompile: surround.programCompile ?? null, share: surround.share ? { cpuBytes: surround.share.cpuBytes, gpuBytes: surround.share.gpuBytes,
+                peakCpuBytes: surround.share.peakCpuBytes, peakGpuBytes: surround.share.peakGpuBytes, limits: surround.share.limits, denied: surround.share.denied } : null } : null,
         mode: state.mode, helpers: state.helpers, water: state.water };
 }
 
@@ -85,9 +103,10 @@ async function settled(page) {
     await page.waitForFunction(() => {
         const state = window.__landscapeTestHooks?.snapshot();
         if (state?.lastError) throw new Error(state.lastError);
-        return state?.ready && state.loadTiming.firstCoveredFrameAtMs !== null && state.streaming.settled && state.appearance?.settled && state.planning.ready && state.planning.settled;
+        const surroundSettled = !state?.surround || (state.surround.settled && (state.surround.pending ?? 0) === 0);
+        return state?.ready && state.loadTiming.firstCoveredFrameAtMs !== null && state.streaming.settled && state.appearance?.settled && state.planning.ready && state.planning.settled && surroundSettled;
     }, null, { timeout: 60000 });
-    return page.evaluate(() => ({ state: window.__landscapeTestHooks.snapshot(), atMs: performance.now() }));
+    return page.evaluate(() => ({ state: window.__landscapeTestHooks.snapshot(), atMs: performance.now(), timeOrigin: performance.timeOrigin }));
 }
 
 function networkRecorder(page, baseURL) {
@@ -99,10 +118,10 @@ function networkRecorder(page, baseURL) {
         if (id) record.chunkIds.push(id); identities.set(key, record);
     };
     for (const chunk of manifest.chunks) { add(chunk.channels.height, 'height', chunk.id); add(chunk.channels.landCover, 'cover', chunk.id); }
-    for (const material of appearance.materials) for (const tier of material.tiers) for (const channel of Object.values(tier.channels)) add(channel, 'material', null, '/assets/public/landscape/coastal-city/appearance/manifest.json');
+    for (const material of appearance.materials) for (const tier of material.tiers) for (const channel of Object.values(tier.channels)) add(channel, 'material', null, `${servedPrefix}appearance/manifest.json`);
     page.on('request', request => {
         const url = new URL(request.url());
-        if (!url.pathname.startsWith('/assets/public/landscape/coastal-city/')) return;
+        if (!url.pathname.startsWith(servedPrefix)) return;
         const identity = identities.get(url.pathname);
         const record = { phase, path: url.pathname, kind: identity?.kind ?? (url.pathname.includes('/source/') ? 'reference' : 'metadata'),
             chunkIds: identity?.chunkIds ?? [], declaredPayloadBytes: identity?.byteLength ?? 0, status: 'pending' };
@@ -114,7 +133,7 @@ function networkRecorder(page, baseURL) {
             try {
                 const response = await request.response();
                 Object.assign(record, { status: response.status(), cacheControl: response.headers()['cache-control'] ?? null,
-                    fromServiceWorker: response.fromServiceWorker(), sizes: await request.sizes() });
+                    fromServiceWorker: response.fromServiceWorker(), sizes: await request.sizes(), startedAtEpochMs: request.timing().startTime });
             } catch (error) { record.measurementError = error.message; }
         })();
         jobs.add(job); job.finally(() => jobs.delete(job));
@@ -151,11 +170,12 @@ async function measureStop(page, stop) {
         } else hooks.setCamera(stop.view);
         const cameraAppliedAtMs = performance.now();
         let state, stable = 0;
+        const surroundSettled = () => !state.surround || (state.surround.settled && (state.surround.pending ?? 0) === 0);
         do {
             for (let index = 0; index < 6; index++) await wait();
             state = hooks.snapshot();
             if (state.lastError) throw new Error(state.lastError);
-            stable = state.streaming.settled && state.appearance.settled && state.planning.settled ? stable + 1 : 0;
+            stable = state.streaming.settled && state.appearance.settled && state.planning.settled && surroundSettled() ? stable + 1 : 0;
             if (performance.now() - began > 60000) throw new Error(`Benchmark detail did not settle at ${stop.id}`);
         } while (stable < 2);
         const settledAtMs = performance.now();
@@ -202,7 +222,7 @@ function comparisonMarkdown(report) {
 }
 
 test('Landscape D7: repeatable cold and warm coastal routes stay bounded under shipped, historical and constrained budgets', async ({ browser }, testInfo) => {
-    test.setTimeout(18 * 60 * 1000);
+    test.setTimeout((coastalDefault ? 18 : 30) * 60 * 1000);
     const baseURL = String(testInfo.project.use.baseURL);
     expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
     await mkdir(artifacts, { recursive: true });
@@ -218,7 +238,8 @@ test('Landscape D7: repeatable cold and warm coastal routes stay bounded under s
     expect(reference.adapterNativeGeometryBytes).toBeGreaterThan(Math.max(...profiles.slice(1).map(profile => profile.gpuMiB)) * MiB);
     const report = { format: 'landscape-performance-report', schemaVersion: 1, complete: false, createdAt: new Date().toISOString(),
         browserVersion: browser.version(), hardware: { platform: os.platform(), release: os.release(), arch: os.arch(), cpuModel: os.cpus()[0]?.model, logicalCpus: os.cpus().length, ramBytes: os.totalmem() },
-        dataset: { id: manifest.id, revision: manifest.revision, manifestSha256: createHash('sha256').update(sourceText).digest('hex'), sourceSha256: manifest.provenance.sourceSha256,
+        dataset: { id: manifest.id, revision: manifest.revision, manifestSha256: createHash('sha256').update(sourceText).digest('hex'), sourceSha256: manifest.provenance.sourceSha256 ?? null,
+            sourceDirectory: path.relative(process.cwd(), sourceDirectory).split(path.sep).join('/'), servedPrefix, provenanceKind: manifest.provenance.kind ?? null,
             columns: manifest.grid.columns, rows: manifest.grid.rows, spacingMeters: manifest.grid.spacingX, nativeTileCount: native.length },
         viewport: { ...viewport, dpr: 1 }, profiles, route, warmupFrames, sampleFrames, reference, runs: [], captureBytes: 0 };
     try {
@@ -240,11 +261,19 @@ test('Landscape D7: repeatable cold and warm coastal routes stay bounded under s
                     }
                     const boot = await settled(page); assertBounded(boot.state);
                     expect(boot.state.budget.limits).toEqual({ cpuBytes: profile.cpuMiB * MiB, gpuBytes: profile.gpuMiB * MiB });
-                    expect(boot.state.streaming.residentLeafIds).toEqual([manifest.overviewId]);
-                    expect(boot.state.streaming.residentSourceIds.filter(id => id.startsWith(`l${manifest.grid.maxLevel}/`))).toHaveLength(0);
+                    const nativeSourcesAtSettle = boot.state.streaming.residentSourceIds.filter(id => id.startsWith(`l${manifest.grid.maxLevel}/`)).length;
+                    if (coastalDefault) {
+                        expect(boot.state.streaming.residentLeafIds).toEqual([manifest.overviewId]);
+                        expect(nativeSourcesAtSettle).toBe(0);
+                    }
                     await network.flush();
-                    const startupNetwork = networkTotals(network.records.filter(record => record.phase === `${cacheState}/startup`));
+                    const startupRecords = network.records.filter(record => record.phase === `${cacheState}/startup`);
+                    const startupNetwork = networkTotals(startupRecords);
                     expect(startupNetwork.nativeHeightPayloads).toBeLessThan(native.length);
+                    // the AI 596 D3/D4 startup gate: no native height payload requested before the first covered frame (request timing against the page clock)
+                    const firstFrameEpochMs = boot.timeOrigin + boot.state.loadTiming.firstCoveredFrameAtMs;
+                    const nativeBeforeFirstFrame = startupRecords.filter(record => record.kind === 'height' && record.chunkIds.some(id => id.startsWith(`l${manifest.grid.maxLevel}/`)) && record.startedAtEpochMs !== undefined && record.startedAtEpochMs < firstFrameEpochMs);
+                    if (!coastalDefault) expect(nativeBeforeFirstFrame, 'no native height payload is requested before the first covered frame').toHaveLength(0);
                     expect(boot.state.sourceBytes).toBeLessThan(reference.nativeChannelBytes);
                     const metadata = await page.evaluate(() => window.__landscapeTestHooks.performanceMetadata());
                     expect(metadata.viewport).toEqual({ ...viewport, dpr: 1 }); report.metadata ??= metadata;
@@ -276,10 +305,16 @@ test('Landscape D7: repeatable cold and warm coastal routes stay bounded under s
                         expect(byId[closeId].state.streaming.desiredLeafIds.length).toBeGreaterThanOrEqual(byId[wide].state.streaming.desiredLeafIds.length);
                     }
                     const end = await page.evaluate(() => window.__landscapeTestHooks.snapshot()); assertBounded(end);
-                    expect(end.streaming.residentLeafIds).toEqual([manifest.overviewId]);
-                    if (previousEnd) {
-                        expect(end.budget.cpuBytes).toBe(previousEnd.budget.cpuBytes); expect(end.budget.gpuBytes).toBe(previousEnd.budget.gpuBytes);
-                        expect(end.renderer.memory).toEqual(previousEnd.renderer.memory);
+                    run.endComparison = { residentLeafIds: end.streaming.residentLeafIds, rootOnly: end.streaming.residentLeafIds.length === 1 && end.streaming.residentLeafIds[0] === manifest.overviewId,
+                        bootResidentLeafIds: boot.state.streaming.residentLeafIds, nativeSourcesAtSettle, nativeHeightPayloadsBeforeFirstFrame: nativeBeforeFirstFrame.length,
+                        previousEnd: previousEnd ? { cpuBytesEqual: end.budget.cpuBytes === previousEnd.budget.cpuBytes, gpuBytesEqual: end.budget.gpuBytes === previousEnd.budget.gpuBytes,
+                            rendererMemoryEqual: JSON.stringify(end.renderer.memory) === JSON.stringify(previousEnd.renderer.memory), cpuBytes: [previousEnd.budget.cpuBytes, end.budget.cpuBytes], gpuBytes: [previousEnd.budget.gpuBytes, end.budget.gpuBytes] } : null };
+                    if (coastalDefault) {
+                        expect(end.streaming.residentLeafIds).toEqual([manifest.overviewId]);
+                        if (previousEnd) {
+                            expect(end.budget.cpuBytes).toBe(previousEnd.budget.cpuBytes); expect(end.budget.gpuBytes).toBe(previousEnd.budget.gpuBytes);
+                            expect(end.renderer.memory).toEqual(previousEnd.renderer.memory);
+                        }
                     }
                     previousEnd = end; run.end = compact(end);
                     run.frameMs = statistics(allFrames.map(frame => frame.intervalMs)); run.fps = 1000 / run.frameMs.mean;

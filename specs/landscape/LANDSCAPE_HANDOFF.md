@@ -24,8 +24,9 @@ global terrain fields, the game's calibrated daylight with sky, haze and water o
 terrain-driven natural appearance, and a runtime surface cache that is on by default. See
 [LANDSCAPE_AI577_SURFACES.md](LANDSCAPE_AI577_SURFACES.md) for the outcome, quality profiles, canonical data and
 recipes, reproduction commands, benchmarks and limitations. The shipped budget is the display's surface-cache
-profile (512 MiB CPU / 448 MiB GPU up to 1920×1080) or 512/256 MiB with the cache off; the budget table below
-keeps the historical values for reference.
+profile (640 MiB CPU / 544 MiB GPU up to 1920×1080 since AI 596 D5, 512/448 before) or 640/352 MiB with the cache off
+(512/256 before); the D5 raise is exactly the render-only surround's 128/96 MiB share, so the authoritative streams keep
+their earlier room. The budget table below keeps the historical values for reference.
 
 ## Source and fidelity
 
@@ -94,14 +95,14 @@ Hierarchy preparation authenticates **current saved native chunks**, preserving 
 
 | Resource/operation | Declared default or ceiling |
 | --- | --- |
-| Combined terrain controlled CPU buffers/reservations | 512 MiB (128 MiB until AI577 D2, 384 MiB in D2–D3) |
-| Combined estimated terrain GPU buffers/reservations | 256 MiB (64 MiB until AI577 D2, 192 MiB in D2–D3) |
+| Combined terrain controlled CPU buffers/reservations | 640 MiB since AI 596 D5, including the render-only surround's 128 MiB share (512 MiB in AI577 D4 – AI 596 D4, 128 MiB until AI577 D2, 384 MiB in D2–D3) |
+| Combined estimated terrain GPU buffers/reservations | 352 MiB since AI 596 D5, including the surround's 96 MiB share (256 MiB in AI577 D4 – AI 596 D4, 64 MiB until AI577 D2, 192 MiB in D2–D3); 544 MiB with the surface cache on at 1920×1080 (684 at 2560×1440, 1046 at 3840×2160) |
 | Background jobs | Two geometry workers plus one appearance worker |
 | Per-frame upload allowance | One geometry tile and 8 MiB shared upload bytes |
 | Geometry quality goal | 1.5 pixels, subject to source/detail availability and hard budgets |
 | Exact point/area selection | At most four native chunks and 2 MiB decoded input |
 | Persistent edit/validation working buffers | 8 MiB, sequential units independent of footprint size |
-| Smoothing | Explicit radius of 1–8 native samples per axis; clamped source-edge halo |
+| Smoothing | Explicit radius of 1–8 native samples per axis (1–16 below 1.5 m spacing since AI 596 D3, so the reach stays 15.625 m on coastal v3); clamped source-edge halo |
 | Native footprint/corridor reports | 8,192 probes, 256 supplied constraints, one decoded native chunk and 8 MiB binary admission |
 | Input/schema bounds | 1 MiB terrain manifests; 64 KiB batches/context; 64 operations per batch; 128 polygon vertices; 256 named regions |
 
@@ -164,6 +165,30 @@ lap/temporal/edit captures per cache mode).
 coastal terrain v3) instead of the canonical current revision, so the strict pin is valid at the start; it refuses the canonical
 material-only revision (`materials-bfcf20f7…`) and every edited, prepared and reverted revision, while the pinned city keeps sampling
 its original. All numbers in "Integrated correctness and performance evidence" are unchanged.
+
+## AI 596 handoff: channels later prompts consume
+
+AI 596 (procedural terrain synthesis and coastal relief; D1–D5 delivered 2026-10-09/10, D6 acceptance in progress) replaced
+the soft v2 relief with **coastal terrain v3** (`coastal-city-v3`, 4097² at 0.9765625 m, revision
+`synthesis-7045f619de9de74a367bc3a8`, the landscape the city spec pins), published the **geology sidecar** (`landscape-geology`
+v1: bedrock offset, regolith, deposit thickness, wear, deposition, flow, wave exposure, face mask; deposit type, lithology,
+drainage, coastal zone), derived the natural land cover from it, re-baked the terrain fields and the appearance for the new
+grid, and added the **render-only far-field surround** (`coastal-city-v3-surround`) with the raised 640/352 and 640/544 MiB
+profiles. v2 stays immutable as the viewer, server and suite default.
+
+The full handoff is the separate page [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md). It is kept apart from this
+foundation handoff because it is a per-consumer contract (AI 597 ocean, 598 surfaces, 599 scatter engine, 600 atmosphere, 601
+forests, 602 rocks and cliffs, 603 ground vegetation and clutter, 604 species) with channel encodings, samplers, derivation
+rules and receipt numbers that those prompts link directly, and it changes with every regeneration of v3, while this page
+records the AI 576/577 foundation. Its sections: 1 what exists and where; 2 what each consumer takes; 3 the geology sidecar
+(layout, field channels, categorical layers, lithology unwrapping, samplers and the GLSL mirror); 4 derived natural land
+cover; 5 coastal zone classes and the geometry targets met; 6 bathymetry; 7 hydrology; 8 the terrain fields on v3; 9 the
+far-field surround (binding, bounds, the water-extent contract for AI 597); 10 review poses and capture tools; 11 leaves,
+recipes, regeneration and the edit replay order; 12 budgets; 13 known limitations and open items.
+
+Everything else on this page describes the AI 576/577 foundation and remains valid on v3: the public API, the editing loop
+(verified on a copy of v3, 13 of 13 checks, `tests/artifacts/screens/landscape/ai596/d4/editing/edit-gate.md`), the bounded
+reports, the city binding (re-pinned to v3) and the gameplay adapters that remain future work below.
 
 ## Remaining integration work
 

@@ -4,13 +4,24 @@ This contract adds D3 hierarchy selection and bounded residency to the landscape
 model. Elevation and semantic source data remain authoritative on disk. A render
 partition is a temporary view of that data, never a saved terrain edit.
 
+Status: AI 596 D5 shipped the render-only far-field surround and the raised
+profiles (640/352 MiB with the surface cache off, 640/544 MiB with it on at
+1920 × 1080; "Resource admission and ownership" and "Far-field surround" below).
+Coastal terrain v3 (341 nodes, 0.9765625 m) is the pinned production landscape;
+the 85-node v2 remains the default directory of the viewer, server and suites.
+The measured tables of this page are kept as recorded, each with its conditions;
+the D6 same-condition tables are in `LANDSCAPE_PERFORMANCE.md`.
+
 ## Prepared hierarchy
 
 `chunk-hierarchy-v1` declares a complete quadtree with direct parent identities.
 The coastal dataset contains 85 nodes: 1 overview, 4 level-1 tiles, 16 level-2
 tiles and 64 native tiles. Every tile has 257 by 257 samples. The native spacing
 is 1.953125 meters; coarser levels select aligned native samples without changing
-their float32 bits or categorical class IDs.
+their float32 bits or categorical class IDs. Coastal terrain v3 (`coastal-city-v3`,
+AI 596 D4, the landscape the city spec pins) is the same contract one level deeper:
+341 nodes, 256 natives of 250 m at 0.9765625 m, measured errors from the synthesis
+writer (`LANDSCAPE_HIERARCHY.md`).
 
 The registered `landscape/hierarchy` bake leaf reads the current canonical native
 payloads, including saved edits. It preserves the retained ZIP, soil overrides,
@@ -260,7 +271,8 @@ The plane keeps every authoritative rule (never picked, never queried, never con
 
 **AI 597 interface.** The animated ocean must cover every surround sample below sea level out to the
 surround bounds and must not intersect surround land; the surround's seabed continues the Dean/shelf
-profile to a −30…−60 m floor; the water reference's extent is the surround's bounds; and the sidecar's
+profile from v3's −30 m shelf floor inside the extent to a −60 m floor outside it (the two differ by at
+most 4.5 m at the boundary, blended over 30 m); the water reference's extent is the surround's bounds; and the sidecar's
 `surround` block tells the ocean which landscape revision it continues (a stale block means the ocean's
 far field is stale too).
 

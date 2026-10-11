@@ -21,8 +21,10 @@ const viewport = { width: 1920, height: 1080 }, MiB = 1024 * 1024;
 const NOISE = { meanBytes: .25, outlierBytes: 16, outlierFraction: .0005 };
 // capacity limits are explicit by design (mask and fine-page slots); budget, request or failure reasons are not acceptable in a healthy run
 const CAPACITY_REASONS = [null, 'appearance-mask-capacity', 'surface-detail-capacity', 'surface-detail-native-capacity'];
-// the shared PBR availability probe of PbrAssetsRuntime asks for raw PBR files that the landscape server deliberately does not serve
-const PBR_PROBES = ['/assets/public/pbr/_manifest.json', '/assets/public/pbr/red_brick/basecolor.jpg'];
+// the shared PBR availability probe of PbrAssetsRuntime asks for raw PBR files that the landscape server deliberately does not serve; since AI 596 D5 the
+// viewer's default landscapeSurround=auto asks for the far-field surround sidecar beside the landscape, which coastal v2 does not publish (the 404 is
+// the designed 'absent' answer of auto mode, LandscapeSurround.js)
+const EXPECTED_404_PROBES = ['/assets/public/pbr/_manifest.json', '/assets/public/pbr/red_brick/basecolor.jpg', '/assets/public/landscape/coastal-city/surround/manifest.json'];
 // AI577 D6 cache-final temporal report (512/448 MiB, cache off / on): popping ratio of the four D4 paths
 const D6_POP_RATIO = { dolly: [1.007, 1.010], fov: [1.527, 1.534], ortho: [1.179, 1.218], pan: [1.008, 1.011] };
 const LOCAL_POP_LIMIT = 1.35;
@@ -74,7 +76,7 @@ function watch(page, log) {
     page.on('console', message => {
         if (!['error', 'warning'].includes(message.type())) return;
         const url = message.location()?.url ?? '';
-        if (message.type() === 'error' && /status of 404/.test(message.text()) && PBR_PROBES.some(probe => url.endsWith(probe))) { log.probes.push(url); return; }
+        if (message.type() === 'error' && /status of 404/.test(message.text()) && EXPECTED_404_PROBES.some(probe => url.endsWith(probe))) { log.probes.push(url); return; }
         (message.type() === 'error' ? log.errors : log.warnings).push(`${message.text()} @ ${url}`);
     });
     page.on('requestfailed', request => { if (!/ERR_ABORTED/.test(request.failure()?.errorText ?? '')) log.failedRequests.push(`${request.url()}: ${request.failure()?.errorText}`); });

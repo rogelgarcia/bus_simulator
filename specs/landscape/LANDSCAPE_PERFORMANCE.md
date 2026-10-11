@@ -1,6 +1,6 @@
 # Landscape performance measurements
 
-Status: D7 verified. The final benchmark passed on 2026-10-03, including both cold/warm routes under both hard budgets and zero controlled allocations after disposal. All browser contexts were closed. The measured results below come from the completed receipt, not screenshot FPS labels.
+Status: AI 596 D6 writes the same-condition tables (coastal v2 at the current shipped profile against coastal v3 with the surround, cold and warm loads, both surface-cache modes, residency) with their conditions under `tests/artifacts/screens/landscape/ai596/d6/performance/`; this page quotes nothing from them until they exist, and the v2 numbers below are the historical AI 576 D7 baseline, not a same-condition v2 row. D7 verified: the final benchmark passed on 2026-10-03, including both cold/warm routes under both hard budgets and zero controlled allocations after disposal. All browser contexts were closed. The measured results below come from the completed receipt, not screenshot FPS labels.
 
 ## Repeatable run
 
@@ -196,6 +196,11 @@ ledger kind inside the shared totals; "GPU ms" is the renderer pass (both terrai
 | on at 640/544, share 128/96 (shipped since D5) | 12,789 (surround decided 9.0 s later in the background, its program compile 8.9 s) | 569.7 / 543.9 | 19 (L2 15, L3 4: the four natives under the camera) at NW-10/NW-03/NW-01, 16 at NW-08 and the probe camera, 108.0 / 70.1 (127.8 / 80.6); share denials 682 → 7,815 | 52 / 52 / 61 / 49 | overview, NW-08, ortho, return | 6.99 / 8.69 | 1.90 / 2.90 | 6,792,872 / 56 | 1,262 (7.8) | 6,613 / 8,498 / 8,629 / 8,086 |
 | off at 640/544 | 9,083 | 535.3 / 542.1 | — | 73 / 64 / 61 / 67 | overview, NW-03, NW-08, ortho, return | 6.20 / 8.71 | 1.70 / 2.80 | 6,327,982 / 57 | 1,419 (5.9) | 8,087 / 10,716 / 8,924 / 10,612 |
 | on at 640/544, the published sidecar (`coastal-city-v3-surround` `synthesis-3034994a218a819ca042438f`, served from its cache-root copy) | 15,202 (includes the surround's 11.2 s background load and compile, which the harness waits for) | 565.6 / 543.9 | 19 (L2 15, L3 4; L1 1, L2 10, L3 8 at NW-08 and NW-01), 108.0 / 70.1 (128.0 / 80.6); share denials 1,370 → 18,093 | 52 / 52 / 61 / 49 | overview, NW-08, ortho, return | 6.65 / 8.18 | 2.20 / 3.40 | 7,192,232 / 59 | 1,229 (7.3) | 5,896 / 8,595 / 8,895 / 8,095 |
+
+The last row measured the surround revision published at the time (`synthesis-3034994a218a819ca042438f`). The refined
+revision published later on 2026-10-10 (`synthesis-857ae85a2b611d24990fafdc`, snapshot `manifest.245cc763…json`, the one
+the cache holds) has the same grid and node count and was not re-timed in D5 (another session held the GPU during the
+re-run window), so its residency figures carry over and its timing is re-measured by the D6 tables.
 
 Reading: at the pre-D5 512/448 MiB profile the surround (the overview, one level-1 and twelve level-2 tiles, 49 MiB of GPU) took
 its room from the authoritative stream, which sat at the 448 MiB GPU ceiling at every ground stop and lost 15 to 20 leaves per stop

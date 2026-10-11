@@ -148,8 +148,18 @@ runs the D3 resolution study (the fixture recipe at 1.953125, 0.9765625 and 0.48
 saved landscapes and measured for size, cost, relief and feature sharpness, receipt and composites under
 `tests/artifacts/screens/landscape/ai596/d3/resolution/`; `--publish` writes the landscapes as
 `assets/public/landscape/ai596-d3-fixture-<tag>/`, gitignored, and `--set "landscape/synthesis/resolution-study:city-extent=true"`
-adds the 4 × 4 km pair `ai596-d3-fixture-4km-<tag>`). All are Node only, excluded from `all` and the
-`landscape` import parent.
+adds the 4 × 4 km pair `ai596-d3-fixture-4km-<tag>`); `node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish`
+synthesizes coastal terrain v3 from `terrain_synthesis/recipes/coastal-v3.json` (4097² at 0.9765625 m from the v2 base),
+evaluates the 44 declared targets and hard constraints and writes the landscape with its references, terrain fields and
+geology sidecar into `assets/public/landscape/coastal-city-v3/` (receipt `tests/artifacts/screens/landscape/ai596/d4/v3/`;
+options `working=1953` for a 1.953125 m working-grid iteration, `fields=none`, `geology=none|publish`,
+`replay-edits=<previous landscape>`); and `node tools/bake.mjs --target landscape/synthesis/surround --publish` writes the
+render-only far-field surround `surround/` bound to the installed v3 (receipt `.../d5/surround/`; option
+`landscape=<v3 directory>`). All are Node only, excluded from `all` and the `landscape` import parent. Captures of a
+published landscape at the versioned review poses: `node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city-v3 --output <dir> [--select NW-10,NW-11] [--surround auto|off]`
+and `python tools/landscape_review/composite.py --output out.png reference=… before=… after=…`
+([tools/landscape_review/README.md](../landscape_review/README.md)); the server serves v3 at the canonical address with
+`LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3 node tools/landscape_server/run.mjs`.
 
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
 `node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current
