@@ -252,7 +252,7 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
     };
     const base = roomAt({ width: 1920, height: 1080 }), qhd = roomAt({ width: 2560, height: 1440 }), uhd = roomAt({ width: 3840, height: 2160 });
     // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile); AI 597 D1: 608/748/1110 with the ocean's 64 MiB share
-    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [608, 748, 1110]);
+    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [624, 764, 1126]);
     assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [688, 688, 688]);
     assert.ok(Math.abs(uhd.cacheMiB - 674.1) < .1 && Math.abs(qhd.cacheMiB - 312.2) < .1 && Math.abs(base.cacheMiB - 172.3) < .1, `${base.cacheMiB} / ${qhd.cacheMiB} / ${uhd.cacheMiB} MiB`);
     for (const value of [qhd, uhd]) assert.ok(value.room >= base.room && value.room - base.room < MIB, 'the streams keep the reference room');
@@ -571,9 +571,9 @@ test('Surface cache default (AI577 D7): a view runs the cache unless it selects 
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOcean=animated'), '/screens/landscape_fabrication.html?landscapeOcean=animated&landscapeOceanTime=12.5', 'an address that selects its surface keeps it');
         delete process.env.LANDSCAPE_TEST_OCEAN;
         delete process.env.LANDSCAPE_TEST_OCEAN_TIME;
-        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 688, gpuMiB: 608 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 688, gpuMiB: 748 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 688, gpuMiB: 1110 });
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 688, gpuMiB: 624 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 688, gpuMiB: 764 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 688, gpuMiB: 1126 });
         process.env.LANDSCAPE_TEST_SURFACE_CACHE = 'off';
         assert.equal(landscapeEffectiveSurfaceCache(), 'off');
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off&landscapeOceanTime=30');

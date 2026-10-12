@@ -56,15 +56,25 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     // and diffusion, the folding band (1 - Jacobian; the moderate sea's finest cascade reaches 0.64 at its rarest crests) of the whitecaps, the coverage threshold and softness against the world-space pattern
     // wavelengths (coarse to fine, the last the bubble scale) and the foam albedo
     foam: Object.freeze({ texels: 1024, bytesPerTexel: 8, stepSeconds: 1 / 30, preRollSeconds: 12, maxStepsPerFrame: 4,
-        decaySeconds: Object.freeze({ water: 6, deposit: 25, whitecap: 4 }), sources: Object.freeze({ breaker: .6, whitecap: .15, shoreline: .3, deposit: .6 }),
+        decaySeconds: Object.freeze({ water: 6, deposit: 25, whitecap: 4 }), sources: Object.freeze({ breaker: .6, whitecap: .15, shoreline: .3 }),
         driftMetersPerSecond: .3, diffusion: .15, folding: Object.freeze({ threshold: .55, span: .25 }), coverage: Object.freeze({ threshold: .22, softness: .3 }),
         patternMeters: Object.freeze([9.6, 2.4, .6, .15]), albedo: .85 }),
+    // AI 597 D4 swash sheet (LandscapeOceanSwash.js, ocean_swash.*): the native beach samples within the band (shore distance from seaMeters in
+    // the water to landMeters inland, heights from minHeightMeters below sea level to maxHeightMeters above) drawn as a sheet lifted liftMeters
+    // over the sand; the run-up is Stockdon's R2 of the sea state's swell at the local beach slope (capped at maxSlopeDegrees), the sand dries
+    // over dryingSeconds, the last cyclesRemembered waves set the wet line and the wrack line, the front foam is a band frontFoamMeters wide
+    // along the beach behind the sheet's edge, the sheet carries sheetFoamShare of the shoreline's foam supply (the D3 state's sand channel)
+    // thinning seaward and the backwash leaves depositShare of it dying over depositSeconds; the water sheet reflects with filmMeanSquareSlope
+    // under rippleShare of the finest cascade's slopes; sandAlbedo is the representative albedo of the calibrated wet ratio; estimateBytes the
+    // resources estimate
+    swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 1.5, sheetFoamShare: .3, depositShare: .5, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
     // the share of the shared ledger the view holds for its lifetime once the budget is at least the shipped profile (one standing reservation,
     // so the streams, which expand into free room within a frame, can never deny a rebuilt ocean): the spectral atlases, the per-cascade displacement and slope textures with
     // their mips, the bathymetry fields of the extent (its shore channels and travel time since D2) and the surround and the clipmap geometry
     // (medium quality 32.5 MiB GPU, high 52 MiB GPU / 36 MiB CPU); the AI 597 foam and swash state (D3, D4) reserves inside the same share.
-    // LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share (32 / 64 MiB in D1, 48 / 64 MiB in D2)
-    budgets: Object.freeze({ cpuBytes: 48 * MiB, gpuBytes: 64 * MiB }),
+    // LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share (32 / 64 MiB in D1, 48 / 64 MiB in D2, 48 / 80 MiB
+    // in D4 with the swash sheet's native beach band)
+    budgets: Object.freeze({ cpuBytes: 48 * MiB, gpuBytes: 80 * MiB }),
     statuses: Object.freeze(['off', 'loading', 'active', 'unavailable', 'failed']),
     // the bathymetry fields: the extent at the level-2 hierarchy spacing (4 x the native spacing: 3.906 m on coastal v3), the surround at its
     // level-1 spacing (62.5 m), both rasterized on the CPU from the saved chunks (LandscapeOceanField.js); the extent carries the shore-wave
@@ -230,7 +240,7 @@ export function landscapeOceanFoamSchedule({ time, lastTime, remainder = 0 }) {
  * Conservative byte estimate of the ocean's resources for a quality preset: the spectral atlases (h0 and the two FFT ping-pong textures, RGBA32F,
  * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (the extent
  * as the RGBA16F shore channels and the RG32F travel time with its float depth raster, the surround as RGBA16F depth; the CPU rasters are the
- * texture data), the clipmap geometry (position attribute and index per ring) and the D3 foam state (RG16F ping-pong over the extent).
+ * texture data), the clipmap geometry (position attribute and index per ring), the D3 foam state (RG16F ping-pong over the extent) and the D4 swash sheet's band (a conservative estimate).
  * @param {string} quality @param {{extentTexels?:number,surroundTexels?:number}} [fields]
  * @returns {Readonly<{cpuBytes:number,gpuBytes:number,parts:Readonly<Record<string,Readonly<{cpuBytes:number,gpuBytes:number}>>>}>}
  */
@@ -245,7 +255,8 @@ export function landscapeOceanResources(quality, { extentTexels = LANDSCAPE_OCEA
         cascades: Object.freeze({ cpuBytes: 0, gpuBytes: cascades * 2 * mipped }),
         fields: Object.freeze({ cpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel + surroundTexels * surroundTexels * 4, gpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel + surroundTexels * surroundTexels * LANDSCAPE_OCEAN.fields.surroundBytesPerTexel }),
         geometry: Object.freeze({ cpuBytes: geometryBytes, gpuBytes: geometryBytes }),
-        foam: Object.freeze({ cpuBytes: 0, gpuBytes: LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.bytesPerTexel })
+        foam: Object.freeze({ cpuBytes: 0, gpuBytes: LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.bytesPerTexel }),
+        swash: Object.freeze({ cpuBytes: LANDSCAPE_OCEAN.swash.estimateBytes, gpuBytes: LANDSCAPE_OCEAN.swash.estimateBytes })
     });
     const total = Object.values(parts).reduce((sum, part) => ({ cpuBytes: sum.cpuBytes + part.cpuBytes, gpuBytes: sum.gpuBytes + part.gpuBytes }), { cpuBytes: 0, gpuBytes: 0 });
     return Object.freeze({ ...total, parts });

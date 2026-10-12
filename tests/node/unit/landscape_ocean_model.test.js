@@ -59,7 +59,7 @@ test('Ocean rings: the clipmap doubles until it covers the far plane and snaps t
     for (const quality of LANDSCAPE_OCEAN.qualities) {
         const resources = landscapeOceanResources(quality);
         assert.ok(resources.gpuBytes > 0 && resources.gpuBytes <= LANDSCAPE_OCEAN.budgets.gpuBytes && resources.cpuBytes <= LANDSCAPE_OCEAN.budgets.cpuBytes, `${quality} fits its share`);
-        assert.deepEqual(Object.keys(resources.parts), ['spectra', 'cascades', 'fields', 'geometry', 'foam']);
+        assert.deepEqual(Object.keys(resources.parts), ['spectra', 'cascades', 'fields', 'geometry', 'foam', 'swash']);
     }
 });
 
@@ -88,12 +88,13 @@ test('Ocean ledger: the share is one standing reservation of the ocean kind, its
     assert.throws(() => ledger.reserve('c', { cpuBytes: 1, gpuBytes: 1 }), /share is disposed/);
     assert.throws(() => createLandscapeOceanLedger(new LandscapeResidencyBudget({ cpuBytes: 8 * MiB, gpuBytes: 8 * MiB })), /cannot fit the shared ledger: cpu-budget/);
     // the shipped profiles hold the share beside what the streams had before AI 597 (640/352 and 640/544 MiB)
-    assert.deepEqual([LANDSCAPE_OCEAN.budgets.cpuBytes / MiB, LANDSCAPE_OCEAN.budgets.gpuBytes / MiB], [48, 64]);
+    assert.deepEqual([LANDSCAPE_OCEAN.budgets.cpuBytes / MiB, LANDSCAPE_OCEAN.budgets.gpuBytes / MiB], [48, 80]);
 });
 
 test('Ocean lighting uniform: the glint switch joins the lighting layout and defaults to the terrain glint', () => {
     assert.equal(LANDSCAPE_LIGHTING.uniforms.uLandscapeOcean, 1); assert.equal(LANDSCAPE_LIGHTING.uniformVectors, 13);
     assert.deepEqual(landscapeOceanUniformValue(undefined), [0, 0, 0, 0]); assert.deepEqual(landscapeOceanUniformValue({ animated: true }), [1, 0, 0, 0]);
+    assert.deepEqual(landscapeOceanUniformValue({ animated: true, swash: true }), [1, 1, 0, 0]); assert.throws(() => landscapeOceanUniformValue({ animated: true, swash: 1 }), /swash flag/);
     assert.throws(() => landscapeOceanUniformValue({ animated: 'yes' }), /boolean animated flag/);
     const values = landscapeLightingUniformValues({ seaLevel: 0, waterLevel: 0, sunDirection: landscapeSunDirection(45, 55), sunIrradiance: [1, 1, 1], skyCoefficients: new Array(33).fill(0), calibration: [1, 1, 1], ocean: { animated: true } });
     assert.deepEqual(Array.from(values.uLandscapeOcean), [1, 0, 0, 0]);

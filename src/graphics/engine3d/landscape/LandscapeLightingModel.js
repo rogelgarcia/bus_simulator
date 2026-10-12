@@ -70,13 +70,15 @@ export function landscapeResponseUniformValue(response) {
 
 /**
  * uLandscapeOcean of a lighting state (AI 597): x is 1 while the animated ocean surface draws the sun glint of its own wavy facets, so the terrain's
- * flat-surface glint of submerged fragments is skipped; y, z, w are reserved for the swash and caustic terms of later deliverables (0).
- * @param {{animated?:boolean}|undefined} ocean @returns {number[]}
+ * flat-surface glint of submerged fragments is skipped; y is 1 while the D4 swash sheet draws the wet beach, so the terrain skips its static
+ * coastal wetting (the sheet carries the calibrated wet surface in time); z, w are reserved for the caustic terms of later deliverables (0).
+ * @param {{animated?:boolean,swash?:boolean}|undefined} ocean @returns {number[]}
  */
 export function landscapeOceanUniformValue(ocean) {
     if (ocean === undefined) return [0, 0, 0, 0];
     if (!ocean || typeof ocean !== 'object' || typeof ocean.animated !== 'boolean') throw new Error('[Landscape] The lighting ocean state needs a boolean animated flag');
-    return [ocean.animated ? 1 : 0, 0, 0, 0];
+    if (ocean.swash !== undefined && typeof ocean.swash !== 'boolean') throw new Error('[Landscape] The lighting ocean swash flag must be boolean');
+    return [ocean.animated ? 1 : 0, ocean.swash ? 1 : 0, 0, 0];
 }
 
 export const LANDSCAPE_ATMOSPHERE = Object.freeze({

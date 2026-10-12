@@ -888,7 +888,8 @@ vec3 terrainRadiance(vec3 albedo, vec3 n, vec3 geometricNormal, float roughness,
     float submerged = smoothstep(-band, band, depth);
     vec3 radiance = vec3(0.0);
     if (submerged < 1.0) {
-        LandscapeWetSurface wet = landscapeCoastalWetSurface(albedo, n, geometricNormal, roughness, response, world.y - uLandscapeSun.w, reach);
+        // AI 597 D4: while the swash sheet draws the wet beach in time, the static coastal wetting is left to it (uLandscapeOcean.y)
+        LandscapeWetSurface wet = landscapeCoastalWetSurface(albedo, n, geometricNormal, roughness, response, world.y - uLandscapeSun.w, reach * (1.0 - uLandscapeOcean.y));
         vec3 dry = landscapeReflectedRadiance(wet.albedo, wet.normal, v, wet.roughness, metalness, ao, skyVisibility, wet.response * uLandscapeResponse.x,
             landscapeAirLight(world, wet.normal, v, wet.roughness, geometricNormal, groundAlbedo));
         LandscapeHaze haze = landscapeAerialPerspective(origin, world);

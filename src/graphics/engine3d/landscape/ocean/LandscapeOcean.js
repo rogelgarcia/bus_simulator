@@ -16,7 +16,8 @@ import { landscapeOceanSeaStateShapes, landscapeOceanSignificantWaveHeight } fro
 import { loadLandscapeOceanField } from './LandscapeOceanField.js';
 import { LANDSCAPE_OCEAN_COAST, landscapeOceanCoastBeachMask, landscapeOceanCoastZoneBreaking, loadLandscapeOceanCoast } from './LandscapeOceanCoast.js';
 import { createLandscapeOceanFoam } from './LandscapeOceanFoam.js';
-import { computeLandscapeOceanShore, landscapeOceanShoreFill } from './LandscapeOceanShore.js';
+import { createLandscapeOceanSwash, loadLandscapeOceanSwashBand } from './LandscapeOceanSwash.js';
+import { computeLandscapeOceanShore, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand } from './LandscapeOceanShore.js';
 import { createLandscapeOceanSimulation } from './LandscapeOceanSimulation.js';
 import { createLandscapeOceanSurface } from './LandscapeOceanSurface.js';
 
@@ -91,13 +92,16 @@ function filledExposure(coast, texels) {
 /**
  * Marches the shore wave of a sea state over the extent (yielding to the frame loop), fills the land side of its travel time and counts the
  * breaking texels per coastal zone.
- * @param {{depth:Float32Array,texels:number,texelMeters:number,rock:Uint8Array,zone:Uint8Array,seaState:string,quality:string,signal?:AbortSignal}} options
+ * @param {{depth:Float32Array,texels:number,texelMeters:number,rock:Uint8Array,zone:Uint8Array,seaState:string,quality:string,signal?:AbortSignal,shoreDistance?:Float32Array|null}} options
  */
-async function marchShore({ depth, texels, texelMeters, rock, zone, seaState, quality, signal }) {
+async function marchShore({ depth, texels, texelMeters, rock, zone, seaState, quality, signal, shoreDistance = null }) {
     const inputs = landscapeOceanShoreInputs(seaState), heightMeters = landscapeOceanSignificantWaveHeight(seaState, quality).continuousMeters;
-    const result = await computeLandscapeOceanShore({ depth, texels, texelMeters, periodSeconds: inputs.periodSeconds, heightMeters, headingDegrees: inputs.headingDegrees, deepDepthMeters: inputs.deepDepthMeters, gamma: inputs.gamma, rock, crestMask: landscapeOceanCoastBeachMask(zone) },
+    const result = await computeLandscapeOceanShore({ depth, texels, texelMeters, periodSeconds: inputs.periodSeconds, heightMeters, headingDegrees: inputs.headingDegrees, deepDepthMeters: inputs.deepDepthMeters, gamma: inputs.gamma, rock, crestMask: landscapeOceanCoastBeachMask(zone), shoreDistance },
         { yieldEvery: SHORE_YIELD_TEXELS, onYield: () => signal?.throwIfAborted() });
     const filledTexels = landscapeOceanShoreFill(result.travelTime, texels, SHORE_LAND_SENTINEL);
+    // the land side smooths into a continuous field for the foam pass, whose supply pulse reads it at the sand texel (the breadth-first copy forms
+    // Manhattan-nearest arcs; the D4 swash sheet itself reads its arrival at the nearest waterline texel along the shore distance)
+    landscapeOceanShoreSmoothLand(result.travelTime, depth, texels, LANDSCAPE_OCEAN.swash.landSmoothingPasses);
     return { ...result, inputs, heightMeters, filledTexels, zoneBreaking: landscapeOceanCoastZoneBreaking(result.breaking, zone) };
 }
 
@@ -122,7 +126,12 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         if (Math.abs(field.layout.texelMetersX - field.layout.texelMetersZ) > 1e-6 * field.layout.texelMetersX) throw new Error('[LandscapeOcean] The shore wave needs square field texels');
         const coast = await loadLandscapeOceanCoast({ manifest, manifestUrl, layout: field.layout, signal });
         signal?.throwIfAborted();
-        const shore = await marchShore({ depth: field.depth, texels, texelMeters: field.layout.texelMetersX, rock: coast.rock, zone: coast.zone, seaState: seaStateId, quality: qualityId, signal });
+        // the D4 swash band (the native beach chunks) loads beside the shore march; it needs the shore distance the march computes first
+        const shoreDistance = landscapeOceanShoreDistance(field.depth, texels, field.layout.texelMetersX);
+        const [shore, band] = await Promise.all([
+            marchShore({ depth: field.depth, texels, texelMeters: field.layout.texelMetersX, rock: coast.rock, zone: coast.zone, seaState: seaStateId, quality: qualityId, signal, shoreDistance }),
+            loadLandscapeOceanSwashBand({ manifest, manifestUrl, layout: field.layout, shoreDistance, signal }).catch(error => { if (error.name === 'AbortError') throw error; return { error: error.message }; })
+        ]);
         signal?.throwIfAborted();
         const fieldKey = `ocean/field/${crypto.randomUUID()}`, linear = renderer.extensions.has('OES_texture_float_linear');
         const extent = createExtentTextures({ depth: field.depth, shoreDistance: shore.shoreDistance, waveHeight: shore.waveHeight, travelTime: shore.travelTime, exposure: filledExposure(coast, texels), rock: coast.rock, zone: coast.zone }, texels, field.layout.bounds, linear);
@@ -142,10 +151,20 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         resources.push(foam);
         foam.advance(clock.time);
         surface.setFoam(foam.texture);
-        await surface.ready(camera, signal);
+        // the D4 swash sheet over the band's native beach samples (a landscape without a beach band, or a band that failed to load, leaves it off)
+        let swash = null, swashState = { status: 'off', reason: null };
+        if (band.error) swashState = { status: 'failed', reason: band.error };
+        else if (!band.chunks.length) swashState = { status: 'off', reason: 'no beach sample inside the swash band' };
+        else {
+            try {
+                swash = createLandscapeOceanSwash({ renderer, scene, ledger, uniforms: surface.uniforms, cascades: surface.cascades.length, lightingTier, reflection: surface.snapshot().reflection !== 'sky-harmonics', band, seaState: seaStateId, quality: qualityId });
+                resources.push(swash);
+            } catch (error) { if (error.name === 'AbortError') throw error; swashState = { status: 'failed', reason: error.message }; }
+        }
+        await Promise.all([surface.ready(camera, signal), swash ? swash.ready(camera, signal) : Promise.resolve()]);
         signal?.throwIfAborted();
         const coastState = { status: coast.status, reason: coast.reason, stale: coast.stale, staleChunks: coast.staleChunks, revision: coast.revision, pages: coast.pages, milliseconds: coast.milliseconds, ...coast.statistics };
-        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, extent, field, coast: coastState, shore, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
+        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, swash, swashState, extent, field, coast: coastState, shore, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
         if (surround) await ocean.setSurround(surround);
         return ocean;
     } catch (error) {
@@ -158,7 +177,7 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
 function createInertOcean({ status, reason, seaState, quality, clock, loadMs }) {
     if (!LANDSCAPE_OCEAN.statuses.includes(status) || status === 'active') throw new Error(`[LandscapeOcean] ${status} is not an inert ocean status`);
     const snapshot = () => ({ recipe: LANDSCAPE_OCEAN.id, status, present: false, reason, seaState: { id: seaState, label: LANDSCAPE_OCEAN_SEA_STATES[seaState].label }, quality: { id: quality, label: LANDSCAPE_OCEAN_QUALITIES[quality].label },
-        clock: clock.snapshot(), share: { kind: LANDSCAPE_OCEAN.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_OCEAN.budgets, denied: 0, entries: 0 }, fields: null, shore: null, foam: null, simulation: null, surface: null, loadMs, drawnLastFrame: false });
+        clock: clock.snapshot(), share: { kind: LANDSCAPE_OCEAN.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_OCEAN.budgets, denied: 0, entries: 0 }, fields: null, shore: null, foam: null, swash: null, simulation: null, surface: null, loadMs, drawnLastFrame: false });
     return Object.freeze({ status, reason, clock, update() {}, setSurround() { return Promise.resolve(null); }, setVisible() {}, setLightingTier() {}, setSeaState() { return Promise.resolve(null); }, setClock(options) { applyClock(clock, options); return clock.snapshot(); }, snapshot, dispose() {} });
 }
 
@@ -176,7 +195,7 @@ function describeShore(shore, seaState) {
         omega: inputs.omega, groupPeriodSeconds: inputs.groupPeriodSeconds, statistics: shore.statistics, zoneBreaking: shore.zoneBreaking, milliseconds: shore.milliseconds, filledLandTexels: shore.filledTexels };
 }
 
-function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, extent, field, coast, shore, seaState, quality, loadMs, release, signal }) {
+function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, swash, swashState, extent, field, coast, shore, seaState, quality, loadMs, release, signal }) {
     let disposed = false, seaStateId = seaState, surroundField = null, surroundState = { status: 'none', id: null, revision: null, texels: 0, statistics: null, milliseconds: null };
     let surroundSequence = 0, surroundApplied = 0, shoreSequence = 0, shoreApplied = 0, shoreState = describeShore(shore, seaState);
     const waveHeight = () => { const hs = landscapeOceanSignificantWaveHeight(seaStateId, quality), shapes = landscapeOceanSeaStateShapes(seaStateId); return { hs, shapes }; };
@@ -215,8 +234,10 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam
             surroundState = { status: 'active', id: manifest.id, revision: manifest.revision, texels, statistics: loaded.statistics, milliseconds: loaded.milliseconds, bounds: { ...loaded.layout.bounds }, texelMeters: loaded.layout.texelMetersX };
             return surroundState;
         },
-        setVisible(value) { surface.setVisible(value); },
-        setLightingTier(tier) { surface.setLightingTier(tier); },
+        setVisible(value) { surface.setVisible(value); swash?.setVisible(value); },
+        setLightingTier(tier) { surface.setLightingTier(tier); swash?.setLightingTier(tier); },
+        /** Whether the swash sheet draws the wet beach (the view hands the terrain's static wetting to it). */
+        get swashActive() { return !disposed && swash !== null; },
         /** Verification read-back of a cascade's textures with their statistics (LandscapeOceanSimulation.readback). @param {number} index */
         readback(index) { return simulation.readback(index); },
         /** Verification read-back of the foam state with its statistics per coastal zone (LandscapeOceanFoam.readback). */
@@ -231,6 +252,7 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam
         async setSeaState(id) {
             seaStateId = landscapeOceanSeaState(id);
             simulation.setSeaState(seaStateId);
+            swash?.setSeaState(seaStateId);
             const sequence = ++shoreSequence, state = seaStateId;
             let next;
             try { next = await marchShore({ depth: extent.depth, texels: field.layout.texels, texelMeters: field.layout.texelMetersX, rock: extent.rock(), zone: extent.zone, seaState: state, quality, signal }); }
@@ -255,7 +277,7 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam
                 quality: { id: quality, label: LANDSCAPE_OCEAN_QUALITIES[quality].label, ...LANDSCAPE_OCEAN_QUALITIES[quality] },
                 clock: clock.snapshot(), landscape: { id: landscape.manifest.id, revision: landscape.manifest.revision },
                 fields: { extent: { texels: field.layout.texels, texelMeters: field.layout.texelMetersX, level: field.layout.level, chunks: field.layout.chunkIds.length, statistics: field.statistics, milliseconds: field.milliseconds, gpuBytes: extent.gpuBytes, cpuBytes: extent.cpuBytes, linearFiltering: extent.linear, bounds: { ...field.layout.bounds } }, surround: surroundState },
-                shore: { ...shoreState, settled: shoreApplied === shoreSequence, coast }, foam: foam.snapshot(),
+                shore: { ...shoreState, settled: shoreApplied === shoreSequence, coast }, foam: foam.snapshot(), swash: swash ? swash.snapshot() : swashState,
                 simulation: simulation.snapshot(), surface: surface.snapshot(), share: ledger.shareSnapshot(), estimate: { cpuBytes: estimate.cpuBytes, gpuBytes: estimate.gpuBytes }, loadMs, drawnLastFrame: surface.snapshot().drawnLastFrame };
         },
         dispose() {

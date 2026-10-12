@@ -373,7 +373,8 @@ export class LandscapeView {
             if (this.surround?.status === 'active') ocean.setSurround(this.surround).catch(error => { if (error.name !== 'AbortError' && !this.disposed) this.panel.notice(`Ocean far field failed: ${error.message}`); });
             ocean.setVisible(this.waterVisible);
             this.water?.setSurfaceDrawn(false);
-            this.lighting.setOceanSurface(true);
+            // D4: while the swash sheet draws the wet beach, the terrain leaves its static coastal wetting to it
+            this.lighting.setOceanSurface(true, ocean.swashActive === true);
             this.panel.active('ocean', true);
         } else this.panel.notice(`Ocean not drawn (${ocean.status}): ${ocean.reason}`);
         return ocean;

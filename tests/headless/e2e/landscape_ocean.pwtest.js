@@ -144,12 +144,12 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         expect(ocean.drawnLastFrame).toBe(true);
         expect(boot.water).toMatchObject({ visible: true, surfaceDrawn: false, drawnLastFrame: false, opticalBody: true, seaLevel: 0 });
         expect(boot.lighting.water).toMatchObject({ opticalLevel: 0, animatedSurface: true, terrainGlint: false });
-        expect(boot.lighting.uniforms.ocean).toEqual([1, 0, 0, 0]);
+        expect(boot.lighting.uniforms.ocean).toEqual([1, 1, 0, 0]);
         // residency: the share is one standing reservation of the ocean kind in the shared ledger; the ocean's own entries live inside it and match the model's estimate
         const entries = oceanEntries(boot);
         expect(entries.length).toBe(1);
         expect([entries[0].cpuBytes, entries[0].gpuBytes]).toEqual([LANDSCAPE_OCEAN.budgets.cpuBytes, LANDSCAPE_OCEAN.budgets.gpuBytes]);
-        expect(ocean.share.entries).toBe(5);
+        expect(ocean.share.entries).toBe(6);
         const estimate = landscapeOceanResources(ocean.quality.id);
         expect(ocean.share.kind).toBe(LANDSCAPE_OCEAN.kind);
         expect(ocean.share.gpuBytes).toBeGreaterThan(0);
@@ -292,7 +292,7 @@ test('Landscape AI 597 D2: the shore wave refracts toward the beach, breaks on t
         // the extent field carries the shore channels (RGBA16F) and the travel time (RG32F) with its float depth and zone rasters on the CPU
         const texels = LANDSCAPE_OCEAN.fields.texels;
         expect(ocean.fields.extent).toMatchObject({ gpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel, cpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel, linearFiltering: true });
-        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 5 : 4);
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 6 : 5);
         expect(ocean.share.cpuBytes).toBeLessThanOrEqual(LANDSCAPE_OCEAN.budgets.cpuBytes);
         // the coast classes come from the geology sidecar: every level-2 page, the rock platform and bluff toe, the exposure of the bar, surf and swash
         const shore = shoreOf(boot);
@@ -432,7 +432,7 @@ test('Landscape AI 597 D3: foam gathers on the breaking crests, the bars, the re
         expect(ocean.foam.steps).toBeGreaterThanOrEqual(ocean.foam.lastPreRollSteps);
         expect(ocean.foam.gpuBytes).toBe(foam.texels * foam.texels * foam.bytesPerTexel);
         expect(ocean.surface.foam).toMatchObject({ active: true, coverageThreshold: foam.coverage.threshold, albedo: foam.albedo });
-        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 5 : 4);
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 6 : 5);
         // moderate: foam on the surf, the bar and the reef edges, the shoreline, none on the open sea; the sand keeps a deposit along the swash
         const moderate = await foamReadback();
         evidence.moderate = moderate;
@@ -496,6 +496,130 @@ test('Landscape AI 597 D3: foam gathers on the breaking crests, the bars, the re
         expect(errors).toEqual([]);
     } finally {
         await writeFile(path.join(foamArtifacts, 'foam-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
+        await context.close();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(() => resolve(undefined)));
+    }
+});
+
+// AI 597 D4: the swash sheet over the native beach band, the terrain's static wetting handed to it, the wet line moving with the clock, picking
+// and queries unchanged, deterministic time-stepped captures. Evidence under d4/suite.
+test('Landscape AI 597 D4: the swash sheet covers the native beach band, moves its wet line with the clock, leaves picking to the terrain and repeats at the fixed time', async ({ browser }, testInfo) => {
+    test.setTimeout(15 * 60 * 1000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
+    test.skip(!(await exists(path.join(landscapeDirectory, 'manifest.json'))), `${landscapeDirectory} is not installed`);
+    const swashArtifacts = path.resolve(root, 'tests/artifacts/screens/landscape/ai597/d4/suite');
+    await mkdir(swashArtifacts, { recursive: true });
+    const landscape = JSON.parse(await readFile(path.join(landscapeDirectory, 'manifest.json'), 'utf8'));
+    const server = await serve(landscapeDirectory, baseURL);
+    const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 });
+    const page = await context.newPage(), errors = [], evidence = {};
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /shader|webgl|program|THREE/i.test(message.text())) errors.push(message.text()); });
+    // NW-12 stands a metre over the swash of the swim beach looking north along the break (the sheet fills the lower frame); NW-03 stands on the
+    // bluff-toe sand looking along the bluff with the waterline 39 m away (the beach and its swash run along the right of the frame to the horizon)
+    const beachPoses = { 'NW-12': pose(1152, 1, 1800, 0, -6), 'NW-03': pose(1228, 1.1 + 1.7, 2600, 20, -4) };
+    const regions = { 'NW-12': { left: .05, top: .5, width: .6, height: .45 }, 'NW-03': { left: .76, top: .42, width: .24, height: .09 } };
+    const regionOf = (canvas, r) => ({ left: Math.floor(canvas.width * r.left), top: Math.floor(canvas.height * r.top), width: Math.floor(canvas.width * r.width), height: Math.floor(canvas.height * r.height) });
+    try {
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeOceanTime=${FIXED_TIME}`));
+        const boot = await settled(page);
+        const ocean = boot.ocean;
+        expect(ocean.status, `ocean: ${ocean.reason}`).toBe('active');
+        // the sheet: the native chunks the band touches, its geometry within the share, drawn with the ocean, the terrain's static wetting handed over
+        const { swash } = LANDSCAPE_OCEAN;
+        expect(ocean.swash.status, `swash: ${ocean.swash.reason}`).toBe('active');
+        expect(ocean.swash.recipe).toBe('landscape-ocean-swash-v1');
+        expect(ocean.swash.chunks).toBeGreaterThan(10);
+        expect(ocean.swash.chunks).toBe(ocean.swash.candidates);
+        expect(ocean.swash.triangles).toBeGreaterThan(100000);
+        expect(ocean.swash.bytes).toBeLessThan(swash.estimateBytes);
+        expect(ocean.swash.band).toEqual({ landMeters: swash.landMeters, seaMeters: swash.seaMeters, maxHeightMeters: swash.maxHeightMeters, minHeightMeters: swash.minHeightMeters });
+        expect(ocean.swash.runup).toMatchObject({ periodSeconds: landscapeOceanShoreInputs('moderate').periodSeconds, dryingSeconds: swash.dryingSeconds, cyclesRemembered: swash.cyclesRemembered });
+        expect(ocean.swash.runup.heightMeters).toBeCloseTo(ocean.seaState.significantWaveHeightMeters, 9);
+        expect(ocean.swash.programCompile).toMatchObject({ pending: false, timedOut: false });
+        expect(ocean.swash.drawCalls).toBe(ocean.swash.chunks);
+        expect(ocean.swash.drawnLastFrame).toBe(true);
+        expect(boot.lighting.uniforms.ocean).toEqual([1, 1, 0, 0]);
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 6 : 5);
+        expect(ocean.share.gpuBytes).toBeLessThanOrEqual(LANDSCAPE_OCEAN.budgets.gpuBytes);
+        evidence.boot = { swash: ocean.swash, lighting: boot.lighting.uniforms.ocean, share: ocean.share };
+        // the swash of the swim beach: determinism at the fixed time, motion of the wet line and the sheet with the clock, the time restored repeating the frame
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), beachPoses['NW-12']);
+        await settled(page);
+        await page.waitForTimeout(1500);
+        const canvasSize = (await snapshot(page)).canvas, beachRegion = regionOf(canvasSize, regions['NW-12']);
+        await readFrame(page, 'beach-first', beachRegion);
+        await frames(page, 3);
+        await readFrame(page, 'beach-second', beachRegion);
+        const same = await compareFrames(page, 'beach-first', 'beach-second');
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ clock: { step: 2 } }));
+        await frames(page, 2);
+        await readFrame(page, 'beach-stepped', beachRegion);
+        const stepped = await compareFrames(page, 'beach-first', 'beach-stepped');
+        await page.evaluate(time => window.__landscapeTestHooks.setOcean({ clock: { time } }), FIXED_TIME);
+        await frames(page, 2);
+        await readFrame(page, 'beach-restored', beachRegion);
+        const restored = await compareFrames(page, 'beach-first', 'beach-restored');
+        evidence.determinism = { same, stepped, restored, region: beachRegion };
+        expect(same.mean, `same time: ${JSON.stringify(same)}`).toBeLessThan(1);
+        expect(restored.mean, `restored: ${JSON.stringify(restored)}`).toBeLessThan(1);
+        expect(stepped.mean, `stepped: ${JSON.stringify(stepped)}`).toBeGreaterThan(5 * Math.max(same.mean, restored.mean, .1));
+        await page.screenshot({ path: path.join(swashArtifacts, 'NW-12-swash-30s.png') });
+        // picking stays the terrain's: a pick through the sheet on the wet beach returns the sand, the same point the flat inspection surface (no sheet) returns
+        const pickAt = () => page.evaluate(() => window.__landscapeTestHooks.pickPoint(innerWidth * .3, innerHeight * .8));
+        const pickedThroughSheet = await pickAt();
+        expect(pickedThroughSheet).not.toBeNull();
+        expect(pickedThroughSheet.y).toBeGreaterThan(-swash.minHeightMeters);
+        expect(pickedThroughSheet.y).toBeLessThan(swash.maxHeightMeters);
+        // the swash verification view draws on the beach and returns to the shading
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(10));
+        await frames(page, 2);
+        const debugFrame = await readFrame(page, 'beach-debug', beachRegion);
+        expect(debugFrame.nonzero).toBeGreaterThan(0);
+        await page.screenshot({ path: path.join(swashArtifacts, 'NW-12-swash-debug10.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(0));
+        await frames(page, 2);
+        await readFrame(page, 'beach-shaded', beachRegion);
+        expect((await compareFrames(page, 'beach-first', 'beach-shaded')).mean).toBeLessThan(1);
+        // the bluff-toe beach too, half a swell period later: the wet line moved
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), beachPoses['NW-03']);
+        await settled(page);
+        await page.waitForTimeout(1000);
+        await page.screenshot({ path: path.join(swashArtifacts, 'NW-03-swash-30s.png') });
+        const bluffRegion = regionOf(canvasSize, regions['NW-03']);
+        await readFrame(page, 'bluff-first', bluffRegion);
+        await page.evaluate(step => window.__landscapeTestHooks.setOcean({ clock: { step } }), landscapeOceanShoreInputs('moderate').periodSeconds / 2);
+        await frames(page, 2);
+        await readFrame(page, 'bluff-half', bluffRegion);
+        const half = await compareFrames(page, 'bluff-first', 'bluff-half');
+        evidence.halfCycle = { ...half, region: bluffRegion };
+        expect(half.mean).toBeGreaterThan(.5);
+        await page.screenshot({ path: path.join(swashArtifacts, 'NW-03-swash-half-period.png') });
+        // the flat inspection surface drops the sheet with the ocean and gives the terrain its static wetting back; the pick is the same point
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), beachPoses['NW-12']);
+        await settled(page);
+        const flat = await page.evaluate(() => window.__landscapeTestHooks.setOcean({ surface: 'flat' }));
+        expect(flat.status).toBe('off');
+        await frames(page, 2);
+        const flatState = await snapshot(page);
+        expect(flatState.lighting.uniforms.ocean).toEqual([0, 0, 0, 0]);
+        expect(flatState.ocean.share.entries).toBe(0);
+        const pickedWithoutSheet = await pickAt();
+        evidence.pick = { throughSheet: pickedThroughSheet, withoutSheet: pickedWithoutSheet };
+        expect(pickedWithoutSheet).not.toBeNull();
+        for (const axis of ['x', 'y', 'z']) expect(pickedThroughSheet[axis]).toBeCloseTo(pickedWithoutSheet[axis], 6);
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ surface: 'animated' }));
+        const again = await settled(page);
+        expect(again.ocean.swash.status).toBe('active');
+        expect(again.lighting.uniforms.ocean).toEqual([1, 1, 0, 0]);
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        const disposed = await snapshot(page);
+        expect(oceanEntries(disposed)).toEqual([]);
+        expect(errors).toEqual([]);
+    } finally {
+        await writeFile(path.join(swashArtifacts, 'swash-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
         await context.close();
         server.closeAllConnections();
         await new Promise(resolve => server.close(() => resolve(undefined)));

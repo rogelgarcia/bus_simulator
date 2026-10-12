@@ -31,7 +31,7 @@ const OVERLAY_SELECTOR = '.landscape-ui, #ui-perf-bar';
 const USAGE = `Usage: node tools/landscape_review/capture.mjs --landscape <saved landscape directory> --output <directory>
        [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]
        [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>] [--ocean animated|flat] [--sea-state calm|moderate|rough] [--ocean-time <seconds>]
-       [--ocean-debug <0-9>]`;
+       [--ocean-debug <0-10>]`;
 
 /** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number,oceanDebug?:number}} CaptureOptions */
 
@@ -78,7 +78,7 @@ export function parseCaptureOptions(args) {
     const oceanTime = Number(values['ocean-time']);
     if (!Number.isFinite(oceanTime) || oceanTime < 0) fail(`--ocean-time must be a nonnegative number of seconds; received ${values['ocean-time']}`);
     const oceanDebug = Number(values['ocean-debug']);
-    if (!Number.isInteger(oceanDebug) || oceanDebug < 0 || oceanDebug > 9) fail(`--ocean-debug must be an integer verification view from 0 to 9; received ${values['ocean-debug']}`);
+    if (!Number.isInteger(oceanDebug) || oceanDebug < 0 || oceanDebug > 10) fail(`--ocean-debug must be an integer verification view from 0 to 10; received ${values['ocean-debug']}`);
     return Object.freeze({ landscapeDirectory, outputDirectory: path.resolve(values.output), posesFile: path.resolve(/** @type {string} */ (values.poses)), select: select && Object.freeze(select),
         label: values.label ?? path.basename(landscapeDirectory), water: parseSwitch(/** @type {string} */ (values.water), 'water'), planning: parseSwitch(/** @type {string} */ (values.planning), 'planning'),
         width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height'),

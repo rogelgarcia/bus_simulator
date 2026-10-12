@@ -59,6 +59,7 @@ export class LandscapeLighting {
         this.waterVisible = true;
         // AI 597: true while the animated ocean draws the sea surface (its facets carry the sun glint the terrain's flat surface otherwise adds)
         this.oceanSurface = false;
+        this.swashSheet = false;
         // AI577 D5c switches of the natural-ground response, terrain-reflected light and terrain-field visibility (all enabled when shipped)
         this.response = { ...LANDSCAPE_LIGHTING.response };
         this.sky = null;
@@ -90,7 +91,7 @@ export class LandscapeLighting {
     state() {
         const base = { seaLevel: this.seaLevel, sunDirection: this.sunDirection, sunIrradiance: this.sunIrradiance, skyCoefficients: this.skyCoefficients() };
         this.calibration = this.horizonRadiance ? landscapeHazeCalibration(base, this.horizonRadiance, this.tier) : null;
-        this.current = { ...base, calibration: this.calibration?.calibration ?? [1, 1, 1], waterLevel: this.waterVisible ? this.seaLevel : LANDSCAPE_WATER_LEVEL_DISABLED, response: { ...this.response }, ocean: { animated: this.oceanSurface } };
+        this.current = { ...base, calibration: this.calibration?.calibration ?? [1, 1, 1], waterLevel: this.waterVisible ? this.seaLevel : LANDSCAPE_WATER_LEVEL_DISABLED, response: { ...this.response }, ocean: { animated: this.oceanSurface, swash: this.swashSheet === true } };
         return this.current;
     }
 
@@ -176,10 +177,14 @@ export class LandscapeLighting {
         this.update();
     }
 
-    /** @param {boolean} animated AI 597: whether the animated ocean draws the sea surface (the terrain then leaves the sun glint to it) */
-    setOceanSurface(animated) {
-        landscapeOceanUniformValue({ animated });
+    /**
+     * @param {boolean} animated AI 597: whether the animated ocean draws the sea surface (the terrain then leaves the sun glint to it)
+     * @param {boolean} [swash] D4: whether the swash sheet draws the wet beach (the terrain then leaves its static coastal wetting to it)
+     */
+    setOceanSurface(animated, swash = false) {
+        landscapeOceanUniformValue({ animated, swash });
         this.oceanSurface = animated;
+        this.swashSheet = swash;
         this.update();
     }
 

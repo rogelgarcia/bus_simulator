@@ -38,7 +38,7 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
     // above that reserve keeps the cache off. (D6 also capped them at 3/8 of the GPU limit, which bound no admitted target at 512/448 MiB and would
     // hold a 3840x2160 target to 24 of its 44 layers.)
     // AI 597 D1: 416 MiB, the D5 reserve plus the ocean's 64 MiB share
-    streamReserveGpuBytes: 416 * 1024 * 1024,
+    streamReserveGpuBytes: 432 * 1024 * 1024,
     // an atlas the budget shrinks below this many slots (or the target, if smaller) is not used: it would truncate most views' demand to coarse
     // rings, below the uncached frame's quality
     minimumSlots: 1024,
@@ -69,8 +69,8 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
  * their own bytes (landscapeSurfaceCacheBudgets).
  */
 // AI 597 D1: 672 / 608 MiB, the D5 profile plus the animated ocean's 32 / 64 MiB share (the cache ceiling stays 192 MiB); D2: 688 / 608 MiB, the
-// ocean share grew to 48 / 64 MiB
-export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 608 * 1024 * 1024 });
+// ocean share grew to 48 / 64 MiB; D4: 688 / 624 MiB, the share grew to 48 / 80 MiB with the swash sheet
+export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 624 * 1024 * 1024 });
 
 /**
  * Surface cache mode of a landscape view that does not choose one (AI577 D7 decision: on). `landscapeSurfaceCache=on|off` (the view's surfaceCache

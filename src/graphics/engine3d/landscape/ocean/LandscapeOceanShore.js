@@ -176,6 +176,36 @@ export function landscapeOceanShoreFill(values, texels, sentinel = LANDSCAPE_OCE
 }
 
 /**
+ * Smooths the land side of a filled raster in place: every land texel (depth <= 0) takes the mean of itself and its four neighbours over the
+ * given passes while the water texels keep their values, so the shoreline values copied inland breadth first (Manhattan-nearest arcs) become a
+ * continuous field for the AI 597 D3 foam pass on the sand (the D4 swash sheet reads its arrival at the nearest waterline texel instead).
+ * Returns the number of texels smoothed per pass.
+ * @param {Float32Array} values @param {ArrayLike<number>} depth @param {number} texels @param {number} [passes]
+ */
+export function landscapeOceanShoreSmoothLand(values, depth, texels, passes = 2) {
+    if (!(values instanceof Float32Array) || values.length !== texels * texels || depth.length !== values.length) throw new Error('[LandscapeOceanShore] smoothing needs a texels x texels raster with its depth');
+    if (!Number.isInteger(passes) || passes < 1) throw new Error('[LandscapeOceanShore] passes must be a positive integer; received ' + String(passes));
+    const scratch = new Float32Array(values.length);
+    let smoothed = 0;
+    for (let pass = 0; pass < passes; pass++) {
+        scratch.set(values);
+        smoothed = 0;
+        for (let r = 0; r < texels; r++) for (let c = 0; c < texels; c++) {
+            const i = r * texels + c;
+            if (depth[i] > 0) continue;
+            let sum = scratch[i], count = 1;
+            if (c > 0) { sum += scratch[i - 1]; count++; }
+            if (c + 1 < texels) { sum += scratch[i + 1]; count++; }
+            if (r > 0) { sum += scratch[i - texels]; count++; }
+            if (r + 1 < texels) { sum += scratch[i + texels]; count++; }
+            values[i] = sum / count;
+            smoothed++;
+        }
+    }
+    return smoothed;
+}
+
+/**
  * The wavenumber, phase speed and group velocity of a period over a depth: w^2 = g k tanh(k h) inverted for k (the GPU side carries the same
  * iteration). In the dimensionless form y tanh y = x^2 with y = k h and x = w sqrt(h / g), y lies between max(x, x^2) and (x^2 + sqrt(x^4 + 4 x^2)) / 2
  * (tanh y <= min(1, y) and tanh y >= y / (1 + y)); Guo's 2002 closed form starts the Newton iteration and the bracket guards every step.

@@ -87,6 +87,37 @@
         "R09"
       ],
       "notes": "30 m over the open sea 800 m west of the swim beach looking east over the 7-18 m handover band: no visible seam between the spectral swell and the shore train, no doubled amplitude."
+    },
+    {
+      "id": "OS-06",
+      "intent": "Swash close-up from the berm (run-up, backwash, wet line, front foam)",
+      "x": 1172,
+      "z": 1800,
+      "altitudeMeters": 3,
+      "headingDegrees": 270,
+      "pitchDegrees": -10,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08",
+        "R09"
+      ],
+      "notes": "Four metres over the berm of the swim beach on coastal v3 (row Z 1800: swash x 1096-1144), looking west down the foreshore: the AI 597 D4 review of the water sheet running up and back, the wet sand darkening behind it and drying with a lag, the foam at the front and the foam the backwash leaves."
+    },
+    {
+      "id": "OS-07",
+      "intent": "Wet line from above (the swash band along the beach)",
+      "x": 1125,
+      "z": 1800,
+      "altitudeMeters": 70,
+      "headingDegrees": 180,
+      "pitchDegrees": -80,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08"
+      ],
+      "notes": "Seventy metres over the swash zone of the swim beach looking almost straight down: the wet band, the sheet front and the wrack line along the beach, their variation along the shore with the train. Heading 180 keeps the sun's mirror point (azimuth 45, elevation 55: the view ray 35 degrees from nadir toward +x+z) out of the frame; heading 0 looks straight at the sun's reflection on the wet beach."
     }
   ]
 }

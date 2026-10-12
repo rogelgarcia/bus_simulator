@@ -5,7 +5,8 @@
 // AI 597 D1: 672 / 416 MiB, the D5 profile plus the animated ocean's 32 / 64 MiB share (LANDSCAPE_OCEAN.budgets), which the view holds in the
 // ledger as one reservation while the ocean draws (createLandscapeReservedShare), so a rebuilt ocean can never be denied by the streams.
 // AI 597 D2: 688 / 416 MiB, the ocean share grew to 48 / 64 MiB (the extent field carries the shore-wave channels and the travel time)
-export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 416 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
+// AI 597 D4: 688 / 432 MiB, the ocean share grew to 48 / 80 MiB (the swash sheet's native beach band)
+export const LANDSCAPE_STREAMING_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 432 * 1024 * 1024, ioConcurrency: 2, uploadsPerFrame: 1, uploadBytesPerFrame: 8 * 1024 * 1024 });
 
 function bytes(value, label) {
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`[LandscapeResidency] ${label} must be a nonnegative safe byte count`);

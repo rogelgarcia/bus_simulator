@@ -1,7 +1,7 @@
 // Verifies the AI 597 D2 shore model: the exact signed shore distance, the phase-speed inversion, the fast-marching travel time against a plane wave, refraction and depth-limited breaking on a planar beach, reef shadowing, rock platforms, the sentinel fill and the yielding driver.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_OCEAN_SHORE, computeLandscapeOceanShore, landscapeOceanPhaseSpeed, landscapeOceanShoreDistance, landscapeOceanShoreFill,
+import { LANDSCAPE_OCEAN_SHORE, computeLandscapeOceanShore, landscapeOceanPhaseSpeed, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand,
     landscapeOceanShoreWaves } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanShore.js';
 import { LANDSCAPE_OCEAN } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 
@@ -193,4 +193,20 @@ test('Shore waves: the yielding driver repeats the synchronous result bit for bi
     assert.deepEqual(result.statistics, sync.statistics);
     assert.ok(result.milliseconds >= 0);
     await assert.rejects(() => computeLandscapeOceanShore(input, { yieldEvery: 0 }), /yieldEvery must be a positive integer/);
+});
+
+test('Shore smoothing: the land side of a filled raster blends into a continuous field while the water keeps its values', () => {
+    const texels = 8, depth = new Float32Array(64), values = new Float32Array(64);
+    for (let r = 0; r < texels; r++) for (let c = 0; c < texels; c++) { depth[r * texels + c] = c < 4 ? 1 : -1; values[r * texels + c] = c < 4 ? 10 + r : (r < 4 ? 10 : 17); }
+    const water = Float32Array.from(values);
+    const smoothed = landscapeOceanShoreSmoothLand(values, depth, texels, 2);
+    assert.equal(smoothed, 32);
+    for (let i = 0; i < 64; i++) if (depth[i] > 0) assert.equal(values[i], water[i]);
+    // the step between the two land blocks (10 and 17) is now a ramp
+    const column = c => Array.from({ length: texels }, (_, r) => values[r * texels + c]);
+    const ramp = column(6);
+    for (let r = 1; r < texels; r++) assert.ok(ramp[r] >= ramp[r - 1] - 1e-6, 'monotone ramp');
+    assert.ok(ramp[3] > 10 && ramp[4] < 17);
+    assert.throws(() => landscapeOceanShoreSmoothLand(values, depth, texels, 0), /passes/);
+    assert.throws(() => landscapeOceanShoreSmoothLand(new Float32Array(3), depth, texels), /raster/);
 });

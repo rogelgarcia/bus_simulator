@@ -127,12 +127,12 @@ queries.
 
 ### D4. Swash and wet beach
 
-- [ ] **Run-up.** Animate run-up and backwash for each wave group across the foreshore, as a time-varying
+- [x] **Run-up.** Animate run-up and backwash for each wave group across the foreshore, as a time-varying
   thin water sheet with transparency and a foam edge.
-- [ ] **Wet sand.** Sand darkens under the swash and dries with a visible lag. This replaces the static
+- [x] **Wet sand.** Sand darkens under the swash and dries with a visible lag. This replaces the static
   wet band from AI 577 D5 while keeping its calibrated wet/dry albedo and the glossy swash film. The
   wrack line and debris inputs follow the maximum run-up.
-- [ ] **Gate.**
+- [x] **Gate.**
   - The wet line moves plausibly at NW-01 and NW-03.
   - Terrain queries and picking are unchanged.
   - Time-stepped captures are deterministic.
@@ -365,6 +365,60 @@ sea shows the instantaneous folding); whitecap streaks follow the folding of 4 m
 individual crest breaks; the sand deposit is state only until D4; the eye-level swash is still a mirror (D4).
 
 **Artifacts.** `tests/artifacts/screens/landscape/ai597/d3/` (README.md).
+
+### D4. Swash and wet beach — delivered 2026-10-12
+
+**Summary.** The run-up, the backwash and the wet beach are a thin sheet drawn over the sand the terrain renders
+(`ocean/LandscapeOceanSwashBand.js` pure, `ocean/LandscapeOceanSwash.js` runtime, `ocean_swash.vert/frag.glsl`, chunk
+`ocean_swash.glsl`, constants `LANDSCAPE_OCEAN.swash`; spec §2d). The band is the native beach samples (`manifest.grid.maxLevel`:
+the coarser levels differ from them by 3 cm on average and 1.8 m at the bluff steps) between 6 m into the water and 100 m inland,
+1.5 m below to 2.5 m above sea level: 29 chunks, 344 669 vertices as 16-bit integers (grid column, height in millimetres, grid
+row), 665 348 triangles, 6.06 MB loaded beside the shore march in 0.3–0.4 s, one premultiplied mesh per chunk lifted 3 cm plus
+2 mm per metre of distance, drawn before the rings, never picked. Each sand fragment follows its nearest waterline texel's crest
+arrival (read along the gradient of the exact shore distance, 2 m past the waterline and averaged along the shore), the swash
+cycle `u = fract(lag / period)` runs the front up to Stockdon's R2 run-up of the sea state's swell at the foreshore slope (capped
+at 14°, scaled by the train's group envelope, longshore variation and exposure) and back; the sand is under the film while the
+front is above it, wet afterwards with the drying lag `e^(−t / 60 s)` from the last of eight remembered cycles, saturated below
+the 0.85 m tidal and capillary reach, with the wrack line at the highest remembered run-up; everything analytic in the clock.
+The terrain hands its static AI577 D5 wetting to the sheet while it draws (`uLandscapeOcean.y`, `LandscapeLighting.setOceanSurface(animated, swash)`,
+`landscapeCoastalWetSurface(..., reach × (1 − uLandscapeOcean.y))`). The sheet composes in linear light over the sand's representative
+radiance and reaches the terrain's display-encoded pixel as a display ratio (the Lekner–Dorf darkening of the calibrated wet
+surface, 0.6 of the albedo, the alpha) plus a display increment (the Fresnel sky along the reflection, the Cox–Munk glitter: the
+water sheet near a mirror under the finest cascade's ripples at half amplitude, saturated sand at the calibrated wet roughness and
+0.6 gloss); the foam at the leading edge is a 1.5 m band along the beach, the sheet carries 0.3 of the shoreline's foam supply
+thinning seaward and the backwash leaves 0.5 of it dying over 10 s, all through the D3 lace. The D3 state's sand channel became
+that supply (the water foam at the texel's nearest waterline, refreshed per crest; its D3 deposit rate saturated the band), the
+D3 rings fade out within 4 m inland of the still-water line so a crest no longer washes over the beach as a water surface, and
+the shared shading helpers moved to `chunks/landscape/ocean_shading.glsl`. Residency: the band reserves 6.1 MiB in the ocean share
+(estimate 8 MiB); the share is 48 / 80 MiB and the shipped GPU profiles grew by 16 MiB (432 / 624 MiB, 764 and 1126 MiB at QHD and
+UHD; `LandscapeResidencyBudget`, `LandscapeSurfaceCacheLayout`, the streaming and performance specs, the pins). Debug view 10 shows
+the sheet's wetness, film and front foam; the review poses OS-06 (the swash from the berm) and OS-07 (the wet line from above,
+heading 180 so the frame looks away from the sun's mirror point) joined `poses/ocean-shore-v1.json`.
+
+**Evidence.** Suite `tests/headless/e2e/landscape_ocean.pwtest.js` D4 test (run 3: 4 / 4 after the oldest-cycle fade; run 2: 4 / 4; run 1 failed only the D1 test's lighting pin `[1, 0, 0, 0]`, now `[1, 1, 0, 0]`; `d4/suite/swash-suite.json`): the sheet
+active over the native band with its geometry inside the share, drawn with the ocean, the lighting uniform `[1, 1, 0, 0]`, six
+share entries with the surround; at NW-12 identical pixels at the fixed time, different after a 2 s step, identical when restored;
+the pick through the sheet returns the terrain, the same point the flat surface returns; debug view 10 draws and returns; at NW-03
+the wet line differs half a period later; the flat switch drops the sheet and gives the terrain its static wetting back
+(`[0, 0, 0, 0]`), the animated switch restores both; disposal to zero. Clips of 90 frames (NW-12 mean frame difference median 0.39 / max 3.37 (2 flagged frames at the start: the leading edge leaving the camera's near field at its fastest, the per-frame difference decaying 3.37 → 1.07 over 14 frames with no isolated jump); OS-06 mean frame difference median 0.27 / max 0.31, no spikes; NW-01 mean frame difference median 0.04 / max 0.07, no spikes; NW-03 mean frame difference median 0.28 / max 0.33, no spikes). Captures (`d4/animated/` NW-12,
+NW-01, NW-03, NW-10; `d4/shore_poses/` OS-06, OS-07; `d4/debug10/`) and composites `[reference | D3 | D4]` against the user's
+references (`d4/composites/`; R08–R10 still missing on disk). The look iterations (`d4/first..eighth/`, `d4/probe_terms/`) record
+the tuning: the BFS fill's Manhattan arcs on the front, the 1 cm height staircase, the deposit blanket, the sun's mirror point in the
+OS-07 frame, the display-space composition and the front band width. Regressions: `landscape_surround` 1 passed (self-served v3), `landscape_lighting` 6 passed and `landscape_surface_cache` 6 passed on the v2 default server; `landscape_acceptance` 4 passed on run 2 (run 1 1 passed, 3 failed: 17 per-entry console warnings of the PBR catalog skipping a sibling branch's `tree_ai_*` materials of unknown classes in the shared assets folder, now one info line). Unit tests
+`landscape_ocean_swash.test.js` (3), `landscape_ocean_shore.test.js` (the land-side smoothing), `landscape_ocean_model.test.js`
+(share, parts, lighting value); the landscape unit set 623 passed (`d4/unit-run1.log`).
+
+**Measurements.** Paired GPU frame time animated (D4: cascades + shore train + foam + swash sheet) vs flat
+(`d4/perf/measure_ocean.json`, ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11), 1920 × 1080, cache on, 30 warm-up + 120 sampled frames, medians): NW-12 12.3 vs 6.6 ms (p95 14.9; D3 9.0 vs 5.6), OS-06 11.6 vs 6.5 (p95 14.4), OS-07 11.4 vs 5.7 (p95 14.9), NW-10 13.6 vs 6.5 (D3 12.9 vs 5.4), NW-11 15.4 vs 12.7 (D3 14.6 vs 12.6), NW-09 13.5 vs 6.4 (D3 13.1 vs 6.5); the flat reference itself rose by about 1 ms at NW-12 and NW-10 against the D3 measurement, so the machine was not in the same state: the sheet's own share at the shore poses is the animated rise above D3 less that, about 2 ms at NW-12 where the sheet covers the lower half of the frame (the dry part of the 100 m band still pays the arrival and run-up samples before it discards); D7 sizes the presets. The sheet's program links in 16–330 ms in parallel with the surface's.
+
+**Limitations.** Stockdon's statistical R2 per wave, no hydrodynamic bore, infiltration or backwash–bore interaction, one front per
+train period; the foreshore slope, the arrival and the foam supply come from the 3.9 m extent field; the rings stay over the
+shallow sand seaward of the still-water line, where their LOD steps show as faint angular reflection patches over the bright
+bottom (D5's water colour covers the shallows); a pose looking at the sun's mirror point sees the wet beach as glare (the physics
+of a wet mirror); the prompt's NW-01 and NW-03 see the swash only at the horizon, so the wet-line motion is shown at NW-12, OS-06
+and OS-07 and measured at NW-12 and NW-03.
+
+**Artifacts.** `tests/artifacts/screens/landscape/ai597/d4/` (README.md).
 
 ## On completion
 

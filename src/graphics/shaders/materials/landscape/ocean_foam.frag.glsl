@@ -3,16 +3,19 @@
 // (e^(-dt / tau)), advects the residual water foam shoreward along the train with a slow drift (semi-Lagrangian) while diffusing it a little
 // into its neighbours, and adds the sources of the step: the breaker band at the bore front of the shore train (where it breaks), whitecaps
 // where the spectral surface folds (a point sample of the full-resolution Jacobian, so the texel accumulates foam in proportion to how often
-// it folds), the shoreline line where each crest reaches the waterline, and the deposit on the sand within the run-up band when a crest arrives
-// (the land side of the shore field carries the shoreline's travel time, so the phase is defined there). Every source is a rate per second
-// capped so a texel saturates at 1. The raster is the extent field's (uOceanFieldBounds), the chunks give the train and the folding.
+// it folds), the shoreline line where each crest reaches the waterline, and, on the sand, the foam supply the swash can leave: the water foam
+// at the texel's nearest waterline (along the shore distance's gradient), refreshed as each crest arrives there (the land side of the shore
+// field carries the waterline's travel time) and fading with the deposit decay; the AI 597 D4 sheet places the foam it draws from that supply
+// with its own run-up cycles. Every water source is a rate per second capped so a texel saturates at 1. The raster is the extent field's (uOceanFieldBounds), the chunks give the train and the folding.
 #include <shaderlib:landscape/ocean_sampling>
 #include <shaderlib:landscape/ocean_shore>
 uniform sampler2D uOceanFoamPrevious;
 // x step seconds, y water decay (per step factor), z deposit decay (per step factor), w reserved
 uniform vec4 uOceanFoamStep;
-// x breaker source rate (per second at bore 1), y whitecap source rate, z shoreline source rate, w deposit source rate
+// x breaker source rate (per second at bore 1), y whitecap source rate, z shoreline source rate, w unused
 uniform vec4 uOceanFoamSources;
+// the swash band's reach inland (m): the sand that keeps a supply
+uniform float uOceanFoamBand;
 // x drift (m/s) of the residual foam along the train, y diffusion share per step, z folding threshold (1 - Jacobian) where whitecaps start, w folding span to full
 uniform vec4 uOceanFoamFlow;
 varying vec2 vOceanUv;
@@ -44,11 +47,17 @@ void main() {
         float source = uOceanFoamSources.x * breaker + uOceanFoamSources.y * whitecap * headroom + uOceanFoamSources.z * shoreline;
         water = min(water + source * dt, 1.0);
     } else {
-        // the sand within the run-up band: a crest arriving at the waterline deposits foam that lingers (the phase comes from the filled travel time)
+        // the sand of the swash band: the supply is the water foam at this texel's nearest waterline (two metres past it along the shore distance's
+        // gradient), taken as each crest arrives there (the phase comes from the filled travel time) and fading with the deposit decay between
+        float inland = -field.y;
+        vec2 gradient = vec2(texture(uOceanField, vOceanUv + vec2(texel.x, 0.0)).y - texture(uOceanField, vOceanUv - vec2(texel.x, 0.0)).y,
+            texture(uOceanField, vOceanUv + vec2(0.0, texel.y)).y - texture(uOceanField, vOceanUv - vec2(0.0, texel.y)).y);
+        vec2 foot = vOceanUv + (length(gradient) > 1.0e-6 ? normalize(gradient) * (inland + 2.0) * uOceanFieldBounds.zw : vec2(0.0));
+        float supply = texture(uOceanFoamPrevious, foot).r;
         vec2 shore = texture(uOceanShoreField, vOceanUv).xy;
-        float band = 1.0 - smoothstep(0.0, 8.0, -field.y);
+        float band = 1.0 - smoothstep(0.6 * uOceanFoamBand, uOceanFoamBand, inland);
         float arrival = max(cos(uOceanShoreWave.x * (uOceanTime - shore.x) - 0.5), 0.0);
-        deposit = min(deposit + uOceanFoamSources.w * band * arrival * dt, 1.0);
+        deposit = max(deposit, supply * band * arrival);
         water = 0.0;
     }
     gl_FragColor = vec4(water, deposit, 0.0, 1.0);

@@ -20,7 +20,7 @@ const PROGRAM_COMPILE_WAIT_MS = 30000;
 const BASE_SLOPE_SHARE = .5;
 // reflections that dip below the horizon resolve to the sea's own upwelling colour over this band of the reflection elevation (sine)
 const REFLECTION_HORIZON_BAND = .12;
-const DEBUG_VIEWS = 9;
+const DEBUG_VIEWS = 10;
 
 /**
  * Builds the shared ring grid: vertices at integer indices -cells/2..cells/2 (x in position.x, z in position.y), quads split along the

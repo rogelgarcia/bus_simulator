@@ -36,7 +36,8 @@ export function createLandscapeOceanFoam({ renderer, ledger, uniforms, cascades,
     const material = new THREE.ShaderMaterial({ vertexShader: payload.vertexSource, fragmentShader: payload.fragmentSource, depthTest: false, depthWrite: false, toneMapped: false,
         uniforms: { ...uniforms, uOceanTime: { value: 0 }, uOceanFoamPrevious: { value: previous.texture },
             uOceanFoamStep: { value: new THREE.Vector4(foam.stepSeconds, decay(foam.decaySeconds.water), decay(foam.decaySeconds.deposit), decay(foam.decaySeconds.whitecap)) },
-            uOceanFoamSources: { value: new THREE.Vector4(foam.sources.breaker, foam.sources.whitecap, foam.sources.shoreline, foam.sources.deposit) },
+            uOceanFoamSources: { value: new THREE.Vector4(foam.sources.breaker, foam.sources.whitecap, foam.sources.shoreline, 0) },
+            uOceanFoamBand: { value: LANDSCAPE_OCEAN.swash.landMeters },
             uOceanFoamFlow: { value: new THREE.Vector4(foam.driftMetersPerSecond, foam.diffusion, foam.folding.threshold, foam.folding.span) } } });
     attachShaderMetadata(material, payload);
     const scene = new THREE.Scene(), camera = new THREE.Camera(), quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
