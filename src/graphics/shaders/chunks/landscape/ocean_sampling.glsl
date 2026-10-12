@@ -118,6 +118,23 @@ vec3 oceanDisplacement(vec2 xz, float cell) {
     return displacement;
 }
 
+// the folding (the minimum cascade Jacobian under the depth fades) at a plane position from the full-resolution derivatives: a point sample,
+// no mip filtering (the AI 597 D3 foam state samples it per texel so a texel accumulates foam as often as it folds)
+float oceanFoldingAt(vec2 xz) {
+    vec4 factors = oceanAmplitudeFactors(xz);
+    float folding = 1.0 - (1.0 - textureLod(uOceanDerivatives0, xz * uOceanCascadeInfo[0].x, 0.0).z) * factors.x;
+#if LANDSCAPE_OCEAN_CASCADES > 1
+    folding = min(folding, 1.0 - (1.0 - textureLod(uOceanDerivatives1, xz * uOceanCascadeInfo[1].x, 0.0).z) * factors.y);
+#endif
+#if LANDSCAPE_OCEAN_CASCADES > 2
+    folding = min(folding, 1.0 - (1.0 - textureLod(uOceanDerivatives2, xz * uOceanCascadeInfo[2].x, 0.0).z) * factors.z);
+#endif
+#if LANDSCAPE_OCEAN_CASCADES > 3
+    folding = min(folding, 1.0 - (1.0 - textureLod(uOceanDerivatives3, xz * uOceanCascadeInfo[3].x, 0.0).z) * factors.w);
+#endif
+    return folding;
+}
+
 struct OceanSurfaceSample {
     vec2 slope;      // sum of the filtered cascade slopes
     float variance;  // filtered-out slope variance (LEAN), summed over cascades

@@ -8,15 +8,16 @@ import { landscapeLightingDefines, LANDSCAPE_LIGHTING } from '../../../engine3d/
 import { LANDSCAPE_OCEAN_MAX_CASCADES } from '../../../engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 const PASS_VERTEX = 'materials/landscape/ocean_pass.vert.glsl';
-const [spectrumInit, spectrumTime, fft, fftFinal, derivatives, surface] = await Promise.all([
+const [spectrumInit, spectrumTime, fft, fftFinal, derivatives, foam, surface] = await Promise.all([
     loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_spectrum_init.frag.glsl' }),
     loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_spectrum_time.frag.glsl' }),
     loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_fft.frag.glsl' }),
     loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_fft_final.frag.glsl' }),
     loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_derivatives.frag.glsl' }),
+    loadShaderSourceSet({ vertexPath: PASS_VERTEX, fragmentPath: 'materials/landscape/ocean_foam.frag.glsl' }),
     loadShaderSourceSet({ vertexPath: 'materials/landscape/ocean_surface.vert.glsl', fragmentPath: 'materials/landscape/ocean_surface.frag.glsl' })
 ]);
-const SOURCES = Object.freeze({ 'spectrum-init': spectrumInit, 'spectrum-time': spectrumTime, fft, 'fft-final': fftFinal, derivatives, surface });
+const SOURCES = Object.freeze({ 'spectrum-init': spectrumInit, 'spectrum-time': spectrumTime, fft, 'fft-final': fftFinal, derivatives, foam, surface });
 
 /** @param {number} cascades @returns {string} the parenthesized cascade count define */
 function cascadeDefine(cascades) {
@@ -25,9 +26,9 @@ function cascadeDefine(cascades) {
 }
 
 /**
- * @param {'spectrum-init'|'spectrum-time'|'fft'|'fft-final'|'derivatives'|'surface'} kind
+ * @param {'spectrum-init'|'spectrum-time'|'fft'|'fft-final'|'derivatives'|'foam'|'surface'} kind
  * @param {{cascades:number,lightingTier?:string,reflection?:boolean}} options the surface compiles the lighting tier and samples the prefiltered sky
- *   reflection when reflection is true (the sky harmonics otherwise); the passes take only the cascade count
+ *   reflection when reflection is true (the sky harmonics otherwise); the passes (the D3 foam state among them) take only the cascade count
  * @returns {any} the shader payload (vertexSource, fragmentSource, defines, variantKey)
  */
 export function createLandscapeOceanShaderPayload(kind, { cascades, lightingTier = LANDSCAPE_LIGHTING.defaultTier, reflection = false }) {

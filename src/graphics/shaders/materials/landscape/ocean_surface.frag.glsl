@@ -13,7 +13,7 @@ uniform mat3 uLandscapeSkyReflectionRotation;
 // elevation below which the sea reflects itself, w: texels per radian of the prefiltered sky map (its mips blur the removed variance)
 uniform vec4 uOceanOptics;
 // verification views (0 shaded): 1 normal, 2 reflectance, 3 reflected sky, 4 glint, 5 slope variance, 6 reflection elevation, 7 depth fades,
-// 8 shore wave (weight, crest sharpening, bore strength)
+// 8 shore wave (weight, crest sharpening, bore strength), 9 foam (density, coverage, sand deposit)
 uniform int uOceanDebug;
 varying vec3 vOceanWorld;
 varying vec2 vOceanPlane;
@@ -24,6 +24,7 @@ varying vec2 vOceanPlane;
 #include <shaderlib:landscape/water_optics>
 #include <shaderlib:landscape/ocean_sampling>
 #include <shaderlib:landscape/ocean_shore>
+#include <shaderlib:landscape/ocean_foam>
 
 // sky radiance along a direction, blurred by the mip of the angular spread beyond the map's own GGX lobe
 vec3 oceanSkyRadiance(vec3 direction, float lod) {
@@ -93,19 +94,28 @@ void main() {
         vec3 upwelling = landscapeWaterColumn(1.0e4, 1.0e4, 0.0).inscatter;
         vec3 sky = mix(upwelling, above, smoothstep(-uOceanOptics.z, 0.25 * uOceanOptics.z, reflection.y));
         vec3 sun = uLandscapeSun.xyz;
-        vec3 glint = oceanGlint(sun, v, n, meanSquareSlope, f0 * f0) * landscapeSunVisibility(vOceanWorld, n, sun);
+        float visibility = landscapeSunVisibility(vOceanWorld, n, sun);
+        vec3 glint = oceanGlint(sun, v, n, meanSquareSlope, f0 * f0) * visibility;
         LandscapeHaze haze = landscapeAerialPerspective(origin, vOceanWorld);
         // the reference's display-space blend: the tone-mapped reflected sky (with this pixel's share of the air light) scaled by the reflectance, plus the
         // tone-mapped glint on top; scaling the radiance before the tone curve would brighten dim reflections by the curve's slope
         vec3 radiance = oceanDisplay(sky * haze.transmittance + haze.inscatter) * reflectance + oceanDisplay(glint * haze.transmittance);
+        // the AI 597 D3 foam: a diffuse layer by its coverage (the state raster plus this fragment's breaker front and folding, through the
+        // world-space pattern), opaque where it covers
+        float foamDensity = uOceanFoamLook.x > 0.5 ? oceanFoamDensity(vOceanPlane, shore.phase, shore.breaking, surface.folding) : 0.0;
+        float coverage = uOceanFoamLook.x > 0.5 ? oceanFoamCoverage(foamDensity, oceanFoamPattern(vOceanPlane, length(fwidth(vOceanPlane)))) : 0.0;
+        vec3 foamRadiance = oceanFoamRadiance(n, vOceanWorld, sun, landscapeSkyIrradiance(n), visibility);
+        radiance = mix(radiance, oceanDisplay(foamRadiance * haze.transmittance + haze.inscatter), coverage);
+        float alpha = mix(reflectance, 1.0, coverage);
         if (uOceanDebug > 0) {
             vec3 view = uOceanDebug == 1 ? n * 0.5 + 0.5 : uOceanDebug == 2 ? vec3(reflectance) : uOceanDebug == 3 ? oceanDisplay(sky) : uOceanDebug == 4 ? oceanDisplay(glint)
                 : uOceanDebug == 5 ? vec3(surface.variance * 20.0) : uOceanDebug == 6 ? vec3(reflection.y * 0.5 + 0.5) : uOceanDebug == 7 ? vec3(oceanAmplitudeFactors(vOceanPlane).xyz)
-                : vec3(oceanShoreAt(vOceanPlane).weight, oceanShoreAt(vOceanPlane).steep, shore.breaking);
+                : uOceanDebug == 8 ? vec3(oceanShoreAt(vOceanPlane).weight, oceanShoreAt(vOceanPlane).steep, shore.breaking)
+                : vec3(min(foamDensity, 1.0), coverage, oceanInside(vOceanPlane, uOceanFieldBounds) ? texture(uOceanFoam, (vOceanPlane - uOceanFieldBounds.xy) * uOceanFieldBounds.zw).g : 0.0);
             gl_FragColor = vec4(view, 1.0);
             return;
         }
-        gl_FragColor = vec4(radiance, reflectance);
+        gl_FragColor = vec4(radiance, alpha);
     } else {
         vec3 down = -n;
         float cosine = clamp(dot(down, v), 0.0, 1.0), internal = landscapeWaterFresnel(cosine, LANDSCAPE_WATER_IOR, 1.0);

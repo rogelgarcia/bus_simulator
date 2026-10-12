@@ -10,11 +10,12 @@
 import { LANDSCAPE_GEOLOGY_CATEGORIES, LANDSCAPE_GEOLOGY_CHANNELS, LandscapeGeologyBindingError, landscapeGeologyStaleness, loadLandscapeGeology, loadLandscapeGeologyPage } from '../../../../app/landscape/index.js';
 import { LANDSCAPE_OCEAN } from './LandscapeOceanModel.js';
 
-export const LANDSCAPE_OCEAN_COAST = Object.freeze({ format: 'landscape-ocean-coast-v1', undefinedExposure: -1, channels: Object.freeze({ r: 'shore exposure (0 sheltered .. 1 open)', g: 'rock (1 platform or bluff toe)' }) });
-
 const ZONE_CATEGORY = LANDSCAPE_GEOLOGY_CATEGORIES.find(category => category.name === 'coastalZone');
 const EXPOSURE_CHANNEL = LANDSCAPE_GEOLOGY_CHANNELS.find(channel => channel.name === 'waveExposure');
 if (!ZONE_CATEGORY?.labels || !EXPOSURE_CHANNEL) throw new Error('[LandscapeOceanCoast] The geology model lacks the coastal zone category or the wave exposure channel');
+
+export const LANDSCAPE_OCEAN_COAST = Object.freeze({ format: 'landscape-ocean-coast-v1', undefinedExposure: -1, channels: Object.freeze({ r: 'shore exposure (0 sheltered .. 1 open)', g: 'rock (1 platform or bluff toe)' }),
+    zoneLabels: /** @type {ReadonlyArray<string>} */ (ZONE_CATEGORY.labels) });
 const COMPONENTS = 'rgba';
 
 /** @param {ReadonlyArray<string>} names @returns {Set<number>} the zone labels of the names (unknown names throw: the model and the geology must agree) */

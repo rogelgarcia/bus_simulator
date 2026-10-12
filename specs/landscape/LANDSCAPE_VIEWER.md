@@ -216,7 +216,8 @@ surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|me
 switches animated and flat, the test hook `setOcean({surface, seaState, quality, clock})` drives it and
 `snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share; since D2 `shore`:
 the shore wave's inputs, statistics, breaking per coastal zone and coast classes, settled once a sea-state switch has
-marched it again), `setOceanDebug(0..8)` selects a verification view of the surface (8 the shore wave).
+marched it again; since D3 `foam`: the foam state's steps, pre-roll and resets, with the `oceanFoamReadback()` hook returning its
+per-zone statistics), `setOceanDebug(0..9)` selects a verification view of the surface (8 the shore wave, 9 the foam).
 The water toggle hides both surfaces and the optical water body; the ocean is never pickable and the
 water reference keeps the optical body while its plane is hidden (`snapshot().water.surfaceDrawn`).
 Planning urban/road/runway classes display natural ground, inferred from terrain

@@ -1,7 +1,7 @@
 # Landscape ocean (AI 597)
 
-Status: D1 (spectral ocean surface) and D2 (depth-aware shore waves) delivered 2026-10-12 on `codex/landscape`; D3–D7
-pending (foam, swash, water light, inland water, acceptance). This page is the canonical contract of the animated sea of the landscape
+Status: D1 (spectral ocean surface), D2 (depth-aware shore waves) and D3 (foam lifecycle) delivered 2026-10-12 on
+`codex/landscape`; D4–D7 pending (swash, water light, inland water, acceptance). This page is the canonical contract of the animated sea of the landscape
 viewer: what it is, how it is encoded and driven, how it integrates with the AI577 water optics and the AI 596 terrain,
 and what it costs. Every number is copied from a receipt under `tests/artifacts/screens/landscape/ai597/` (paths given).
 
@@ -110,7 +110,39 @@ included), the open-sea zone 0 / 0 / 4.6 % (its shoals above 5 m), the platform 
 only); the march takes 165–190 ms plus the 51 ms distance transform and the 8–21 ms fill, yielding to the frame loop
 every 65 536 texels.
 
-## 3. Runtime (D1, D2)
+## 2c. Foam model (D3)
+
+Foam is a lifecycle state over the extent plus an instantaneous term per fragment (`ocean/LandscapeOceanFoam.js`,
+`materials/landscape/ocean_foam.frag.glsl`, `chunks/landscape/ocean_foam.glsl`, constants `LANDSCAPE_OCEAN.foam`):
+
+- **State** a ping-pong RG16F raster at the extent field's resolution (1024², 3.906 m on coastal v3; 8 MiB in the share):
+  `r` the foam density on the water, `g` the foam deposited on the sand by the backwash (the AI 597 D4 swash sheet reads it;
+  nothing draws it in D3). One full-screen pass advances it by a fixed step of 1/30 s, sharing the surface's uniforms so it
+  reads the same fields, train and cascades.
+- **Step** both channels decay (`e^(−dt/τ)`, τ 6 s on the water, 25 s on the sand); the water channel is advected against a
+  0.3 m/s shoreward drift along the train (semi-Lagrangian) and blended 15 % with its four neighbours; the sources of the step,
+  rates per second capped so a texel saturates at 1: the **breaker band** at the bore front of the shore train (`bore ×
+  cos⁴(φ + 0.6)`, rate 0.6), **whitecaps** where the spectral surface folds (`smoothstep(0.55, 0.8, 1 − J)` of a point sample of
+  the full-resolution minimum cascade Jacobian under the depth fades, `oceanFoldingAt`, rate 0.15, filling a texel to half at
+  most so a streak stays lacy), the **shoreline line** where each crest reaches the last 6 m of water (rate 0.3), and on the sand
+  within 8 m of the waterline the **deposit** when a crest arrives (rate 0.6; the land side of the shore field carries the
+  shoreline's travel time, so the phase is defined there).
+- **Schedule** (`landscapeOceanFoamSchedule`, pure): the clock's time is split into fixed steps with a carried remainder; a time
+  the steps cannot reach within 4 steps (no last time, a time before the last one, a jump such as `setClock`, a long frame)
+  restarts the state from zero 12 s earlier and steps up to it (360 steps, 1.9 ms of GPU submission), so the state at a fixed
+  time is the same function of that time on every run; a sea-state switch restarts it the same way.
+- **Drawing** the fragment's density is the state (bilinear) plus its own breaker front (`0.9 × bore × cos⁶(φ + 0.6)`) and
+  folding (`0.6 × smoothstep` of its full-resolution folding); the coverage is `smoothstep(edge, edge + 0.3, density)` with
+  `edge = 0.22 + 0.9 (1 − pattern)` against a world-space procedural pattern (value noise at 9.6 and 2.4 m for the patches, ridged
+  noise at 2.4 and 0.6 m for the lace, a 0.15 m bubble octave that fades with the pixel footprint: no texture, no tiling, the
+  same pattern on every device). Foam is a Lambertian layer (albedo 0.85) under the sun irradiance with the terrain's sun
+  visibility and the sky irradiance of the facet, hazed like the water, composed over the water's radiance by its coverage, and
+  it raises the fragment's alpha to opaque. Debug view 9 shows the density, the coverage and the sand deposit.
+- **Numbers** (`tests/artifacts/screens/landscape/ai597/d3/foam_statistics.json`, the state's covered fraction per coastal zone at
+  30 s, calm / moderate / rough): offshore 0 / 0 / 6.9 %, reef 0 / 5.3 / 45.5 %, bar 0 / 17 / 56 %, surf 0 / 56 / 58 %, swash
+  15.6 / 37.9 / 38.5 % (the calm sea's 0.34 m swell foams only on the swash line); whole extent 0.2 / 1.8 / 4.3 %.
+
+## 3. Runtime (D1, D2, D3)
 
 | Part | Where | What |
 | --- | --- | --- |
@@ -123,8 +155,10 @@ every 65 536 texels.
 | Shore march (D2) | `ocean/LandscapeOceanShore.js`, `LandscapeOcean.js` `marchShore` | after the extent field and the coast load, `computeLandscapeOceanShore` marches the sea state's swell over the depth raster in slices of 65 536 accepted texels that yield to the frame loop (the ocean reports `active` once it is done, 0.9 s on coastal v3 with the 240 ms field raster), fills the land side of the travel time and counts the breaking texels per coastal zone; a sea-state switch (`setSeaState`, awaited by the view's `setOcean`) re-initializes the spectrum at once and marches the shore again in the background, swapping the travel time and the wave height into the textures when done (`snapshot().ocean.settled` and `.shore.settled` wait for it; a superseded march is dropped) |
 | Coast (D2) | `ocean/LandscapeOceanCoast.js` | loads `geology/manifest.json` beside the landscape manifest through the bounded geology loaders (the sidecar is bound to the landscape, its level-2 pages hashed), samples the coastal zone label and the wave exposure nearest at the field's texel centres (16 pages, 5 419 rock and 41 027 exposure texels on v3), reports staleness against the terrain revision; a missing or unbound sidecar yields the neutral coast with the reason in `snapshot().ocean.shore.coast` |
 | Shore pass (D2) | `chunks/landscape/ocean_shore.glsl` in both surface programs | the vertex program adds the train's displacement to the cascade sum inside the CDLOD morph (odd vertices take the mean of their even neighbours at the coarser cell, like the cascades, so the rings stay watertight); the fragment program adds its analytic slope to the filtered cascade slopes and its unresolved mean square slope to the LEAN roughness; `uOceanTime` carries the clock each frame (`surface.update(camera, time)`), `setShore` the train's angular frequency and group period; a facet tilted away from a grazing view bends its normal toward the eye instead of switching to the underwater branch (the D1 branch painted the backs of steep crests as the sea's underside); debug view 8 shows the weight, the crest sharpening and the bore strength |
+| Foam state (D3) | `ocean/LandscapeOceanFoam.js`, `ocean_foam.frag.glsl` | created after the surface with its uniform set, pre-rolled at the clock's time before the ocean reports active; every frame `advance(time)` runs the schedule's fixed steps (one full-screen pass of the 1024² RG16F raster each, ping-pong) before the rings are placed and hands the current target to the surface; a sea-state switch resets it; `foamReadback()` returns the rasters with their means, covered fractions and deposit per coastal zone (`oceanFoamReadback` hook); `snapshot().ocean.foam` records the steps, the last pre-roll, the resets and the submission time |
+| Foam drawing (D3) | `chunks/landscape/ocean_foam.glsl` in the surface fragment program | the density of the fragment (state plus its own front and folding), the pattern, the coverage and the Lambertian foam radiance composed over the water's radiance with the alpha raised to opaque; `uOceanFoam` is the state texture, `uOceanFoamLook` (active, threshold, softness, albedo), `uOceanFoamPattern` and `uOceanFoamFold` the constants; debug view 9 |
 
-## 4. Evidence (D1, D2)
+## 4. Evidence (D1, D2, D3)
 
 - Captures (fixed time 30 s, `tools/landscape_review/capture.mjs --ocean animated|flat --ocean-time 30`):
   `tests/artifacts/screens/landscape/ai597/d1/animated/` and `d1/flat/` (NW-09, NW-10, NW-11, NW-12), composites under
@@ -144,7 +178,14 @@ every 65 536 texels.
   state, surf determinism at NW-12, debug view, the deterministic march, disposal), clips `d2/clips/`, the paired GPU measurement
   `d2/perf/` and the regression logs `d2/regressions/`; unit tests `landscape_ocean_shore.test.js`, `landscape_ocean_coast.test.js`.
 
-## 5. Known limitations after D2
+- D3 (`tests/artifacts/screens/landscape/ai597/d3/`, README.md there): gate captures `d3/animated/` (NW-12, NW-01, NW-10), the shore poses
+  `d3/shore_poses/` (OS-01, OS-02, OS-04), the foam verification view `d3/debug9/`, composites `d3/composites/`, the per-zone foam
+  statistics `d3/foam_statistics.json` (`foam_statistics.mjs`, the viewer's read-back per sea state), the suite receipt
+  `d3/suite/foam-suite.json` (the D3 test of `landscape_ocean.pwtest.js`: state, pre-roll, per-zone foam across the sea states,
+  determinism, debug view, disposal), clips `d3/clips/` (no popping), the periodicity receipts of the foam band, the paired GPU
+  measurement `d3/perf/` and the regression logs `d3/regressions/`; unit test `landscape_ocean_model.test.js` (the schedule).
+
+## 5. Known limitations after D3
 
 - The shore wave is one monochromatic train (the swell period at the sea state's Hs): the wind sea's shorter waves fade
   below their own shoaling depth without breaking; the group envelope rides with the phase speed (sets do not travel at
@@ -154,7 +195,11 @@ every 65 536 texels.
 - The rock surge (uncapped height, 0.4 reflected, no bore) is exercised on synthetic rasters only: every `platform` and
   `bluff-toe` texel of coastal v3 lies 0.4–10 m above sea level, so the sea never reaches rock there.
 - At the waterline a crest can wash a few metres over low sand as a displaced water surface above the beach until D4
-  shapes the swash; without foam (D3) the breaking fronts read as dark faces.
+  shapes the swash; the foam deposited on the sand by the backwash is computed (the state's second channel) but drawn only by
+  the D4 swash sheet, since the terrain program has no sampler or uniform left for it.
+- Foam is an opaque Lambertian layer: no translucency, no shadow cast by the crest onto it, and its persistence outside the
+  extent is nil (the far-field sea shows the instantaneous folding only); whitecap streaks follow the folding of 4 m texels, so
+  they are patches rather than individual crest breaks.
 - The train stops at the landscape extent: the surround's coast keeps the D1 depth fade only.
 - No foam, swash or wet-sand lag (D3, D4); the AI577 static wet band is unchanged.
 - The sky reflection is the prefiltered calibrated sky only (no terrain reflection, D5); the water colour and refraction

@@ -49,6 +49,16 @@ export const LANDSCAPE_OCEAN = Object.freeze({
         beachZones: Object.freeze(['surf', 'swash']), sidecar: 'geology/manifest.json' }),
     // world-space envelope of the swell cascade (wave groups): 1 +- amplitude at the wavelength, in meters, so the patch never repeats exactly
     envelope: Object.freeze({ amplitude: .35, wavelengthMeters: 1500 }),
+    // AI 597 D3 foam lifecycle (LandscapeOceanFoam.js, ocean_foam.frag.glsl, ocean_foam.glsl): a ping-pong state raster over the extent (RG16F:
+    // water foam density, sand deposit; bytesPerTexel counts both targets) stepped at stepSeconds; a time the fixed steps cannot reach within
+    // maxStepsPerFrame restarts the state from zero preRollSeconds earlier (landscapeOceanFoamSchedule), so a fixed capture time repeats exactly;
+    // decay times per channel, source rates per second (breaker band, whitecaps, shoreline line, sand deposit), the residual foam's shoreward drift
+    // and diffusion, the folding band (1 - Jacobian; the moderate sea's finest cascade reaches 0.64 at its rarest crests) of the whitecaps, the coverage threshold and softness against the world-space pattern
+    // wavelengths (coarse to fine, the last the bubble scale) and the foam albedo
+    foam: Object.freeze({ texels: 1024, bytesPerTexel: 8, stepSeconds: 1 / 30, preRollSeconds: 12, maxStepsPerFrame: 4,
+        decaySeconds: Object.freeze({ water: 6, deposit: 25, whitecap: 4 }), sources: Object.freeze({ breaker: .6, whitecap: .15, shoreline: .3, deposit: .6 }),
+        driftMetersPerSecond: .3, diffusion: .15, folding: Object.freeze({ threshold: .55, span: .25 }), coverage: Object.freeze({ threshold: .22, softness: .3 }),
+        patternMeters: Object.freeze([9.6, 2.4, .6, .15]), albedo: .85 }),
     // the share of the shared ledger the view holds for its lifetime once the budget is at least the shipped profile (one standing reservation,
     // so the streams, which expand into free room within a frame, can never deny a rebuilt ocean): the spectral atlases, the per-cascade displacement and slope textures with
     // their mips, the bathymetry fields of the extent (its shore channels and travel time since D2) and the surround and the clipmap geometry
@@ -196,10 +206,31 @@ export function landscapeOceanShoreInputs(seaState) {
 }
 
 /**
+ * The fixed steps that bring the foam state from its last time to a time: incremental steps on the fixed grid (the carried remainder keeps the
+ * grid exact) when the time lies at most maxStepsPerFrame steps ahead, else a restart from zero preRollSeconds before the time (no last time,
+ * a time before the last one, a jump or a long frame), so the state at a fixed time is the same function of that time on every run.
+ * @param {{time:number,lastTime:number|null,remainder?:number}} state
+ * @returns {Readonly<{reset:boolean,steps:number,startTime:number,remainder:number}>} steps run at startTime + k x stepSeconds for k = 1..steps
+ */
+export function landscapeOceanFoamSchedule({ time, lastTime, remainder = 0 }) {
+    const { stepSeconds, preRollSeconds, maxStepsPerFrame } = LANDSCAPE_OCEAN.foam;
+    finite(time, 'the foam time');
+    if (lastTime !== null) {
+        finite(lastTime, 'the last foam time');
+        if (time >= lastTime) {
+            const elapsed = time - lastTime + remainder, steps = Math.floor(elapsed / stepSeconds + 1e-9);
+            if (steps <= maxStepsPerFrame) return Object.freeze({ reset: false, steps, startTime: lastTime - remainder, remainder: elapsed - steps * stepSeconds });
+        }
+    }
+    const steps = Math.round(preRollSeconds / stepSeconds);
+    return Object.freeze({ reset: true, steps, startTime: time - steps * stepSeconds, remainder: 0 });
+}
+
+/**
  * Conservative byte estimate of the ocean's resources for a quality preset: the spectral atlases (h0 and the two FFT ping-pong textures, RGBA32F,
  * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (the extent
  * as the RGBA16F shore channels and the RG32F travel time with its float depth raster, the surround as RGBA16F depth; the CPU rasters are the
- * texture data) and the clipmap geometry (position attribute and index per ring).
+ * texture data), the clipmap geometry (position attribute and index per ring) and the D3 foam state (RG16F ping-pong over the extent).
  * @param {string} quality @param {{extentTexels?:number,surroundTexels?:number}} [fields]
  * @returns {Readonly<{cpuBytes:number,gpuBytes:number,parts:Readonly<Record<string,Readonly<{cpuBytes:number,gpuBytes:number}>>>}>}
  */
@@ -213,7 +244,8 @@ export function landscapeOceanResources(quality, { extentTexels = LANDSCAPE_OCEA
         spectra: Object.freeze({ cpuBytes: 0, gpuBytes: 3 * atlasBytes + stages * texels * 16 }),
         cascades: Object.freeze({ cpuBytes: 0, gpuBytes: cascades * 2 * mipped }),
         fields: Object.freeze({ cpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel + surroundTexels * surroundTexels * 4, gpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel + surroundTexels * surroundTexels * LANDSCAPE_OCEAN.fields.surroundBytesPerTexel }),
-        geometry: Object.freeze({ cpuBytes: geometryBytes, gpuBytes: geometryBytes })
+        geometry: Object.freeze({ cpuBytes: geometryBytes, gpuBytes: geometryBytes }),
+        foam: Object.freeze({ cpuBytes: 0, gpuBytes: LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.texels * LANDSCAPE_OCEAN.foam.bytesPerTexel })
     });
     const total = Object.values(parts).reduce((sum, part) => ({ cpuBytes: sum.cpuBytes + part.cpuBytes, gpuBytes: sum.gpuBytes + part.gpuBytes }), { cpuBytes: 0, gpuBytes: 0 });
     return Object.freeze({ ...total, parts });

@@ -76,6 +76,7 @@ window.__landscapeTestHooks = Object.freeze({
     // AI 597 verification: the RGBA bytes of a region of the next rendered frame, read inside that frame (in-page use: hash or difference it there)
     readFrame: region => view.readFrame(region),
     oceanReadback: index => { const result = view.ocean?.readback?.(index) ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
+    oceanFoamReadback: () => { const result = view.ocean?.foamReadback?.() ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),

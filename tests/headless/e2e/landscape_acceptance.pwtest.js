@@ -26,8 +26,10 @@ const CAPACITY_REASONS = [null, 'appearance-mask-capacity', 'surface-detail-capa
 // the designed 'absent' answer of auto mode, LandscapeSurround.js); since AI 597 D2 the animated ocean asks for the geology sidecar beside the
 // landscape for its coast classes, which coastal v2 does not publish either (the neutral coast, LandscapeOceanCoast.js)
 const EXPECTED_404_PROBES = ['/assets/public/pbr/_manifest.json', '/assets/public/pbr/red_brick/basecolor.jpg', '/assets/public/landscape/coastal-city/surround/manifest.json', '/assets/public/landscape/coastal-city/geology/manifest.json'];
-// AI577 D6 cache-final temporal report (512/448 MiB, cache off / on): popping ratio of the four D4 paths
-const D6_POP_RATIO = { dolly: [1.007, 1.010], fov: [1.527, 1.534], ortho: [1.179, 1.218], pan: [1.008, 1.011] };
+// AI577 D6 cache-final temporal report (512/448 MiB, cache off / on): popping ratio of the four D4 paths; since AI 597 D3 the orthographic zoom over
+// the surf sees the foam's contrast at its wide end (a smooth gradient of the frame difference from 13.6 to 5.5, not a pop: the local ratio stays
+// 1.05), so its global ratio is pinned to the animated sea's measurement (2.221, ai597/d3/regressions/acceptance.log; 1.179-1.218 with the flat plane)
+const D6_POP_RATIO = { dolly: [1.007, 1.010], fov: [1.527, 1.534], ortho: [2.221], pan: [1.008, 1.011] };
 const LOCAL_POP_LIMIT = 1.35;
 const anchor = { x: 1071.2890625, z: 914.0625 };
 const beach = { x: 1015, z: 860 };

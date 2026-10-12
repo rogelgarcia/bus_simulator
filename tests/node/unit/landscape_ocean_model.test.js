@@ -1,7 +1,7 @@
 // Verifies the AI 597 ocean contract: presets, cascade band partition, clipmap rings, the deterministic clock, the residency share, the spectral math and its FFT table, and the bathymetry raster.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_MAX_CASCADES, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanClock, createLandscapeOceanLedger, landscapeOceanCascades, landscapeOceanCascadeFade, landscapeOceanShoreInputs, landscapeOceanQuality,
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_MAX_CASCADES, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanClock, createLandscapeOceanLedger, landscapeOceanCascades, landscapeOceanCascadeFade, landscapeOceanShoreInputs, landscapeOceanFoamSchedule, landscapeOceanQuality,
     landscapeOceanResources, landscapeOceanRingOrigin, landscapeOceanRings, landscapeOceanSeaState, landscapeOceanSurface } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 import { landscapeOceanButterfly, landscapeOceanDispersion, landscapeOceanEvolvedTexel, landscapeOceanGaussian, landscapeOceanHash, landscapeOceanInitialTexel, landscapeOceanInverseFftRow, landscapeOceanJonswap,
     landscapeOceanLogGamma, landscapeOceanSeaStateShapes, landscapeOceanSignificantWaveHeight, landscapeOceanSpreading, landscapeOceanTma, landscapeOceanWaveSpectrum } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanSpectrum.js';
@@ -59,7 +59,7 @@ test('Ocean rings: the clipmap doubles until it covers the far plane and snaps t
     for (const quality of LANDSCAPE_OCEAN.qualities) {
         const resources = landscapeOceanResources(quality);
         assert.ok(resources.gpuBytes > 0 && resources.gpuBytes <= LANDSCAPE_OCEAN.budgets.gpuBytes && resources.cpuBytes <= LANDSCAPE_OCEAN.budgets.cpuBytes, `${quality} fits its share`);
-        assert.deepEqual(Object.keys(resources.parts), ['spectra', 'cascades', 'fields', 'geometry']);
+        assert.deepEqual(Object.keys(resources.parts), ['spectra', 'cascades', 'fields', 'geometry', 'foam']);
     }
 });
 
@@ -218,4 +218,25 @@ test('Ocean D2 model: per-cascade depth fades, the shore-wave inputs of a sea st
     assert.equal(estimate.parts.fields.gpuBytes, fields.texels ** 2 * 16 + fields.surroundTexels ** 2 * 8);
     assert.equal(estimate.parts.fields.cpuBytes, fields.texels ** 2 * 21 + fields.surroundTexels ** 2 * 4);
     assert.ok(LANDSCAPE_OCEAN.shore.rockZones.includes('platform') && LANDSCAPE_OCEAN.shore.exposureZones.includes('surf'));
+});
+
+test('Ocean D3 foam schedule: fixed steps on the grid with a carried remainder, a restart with the pre-roll for an unreachable time', () => {
+    const { stepSeconds, preRollSeconds, maxStepsPerFrame, texels, bytesPerTexel } = LANDSCAPE_OCEAN.foam;
+    // no last time: the state restarts preRollSeconds before the time and steps up to it exactly
+    const first = landscapeOceanFoamSchedule({ time: 30, lastTime: null });
+    assert.equal(first.reset, true); assert.equal(first.steps, Math.round(preRollSeconds / stepSeconds)); close(first.startTime + first.steps * stepSeconds, 30, 1e-9); assert.equal(first.remainder, 0);
+    // a frame of 1.5 steps runs one step and carries half a step; the next frame of 0.6 steps then runs one more (1.1 carried -> 1 step + 0.1)
+    const second = landscapeOceanFoamSchedule({ time: 30 + 1.5 * stepSeconds, lastTime: 30 });
+    assert.deepEqual([second.reset, second.steps], [false, 1]); close(second.remainder, .5 * stepSeconds, 1e-12); close(second.startTime, 30, 1e-12);
+    const third = landscapeOceanFoamSchedule({ time: 30 + 2.1 * stepSeconds, lastTime: 30 + 1.5 * stepSeconds, remainder: second.remainder });
+    assert.deepEqual([third.reset, third.steps], [false, 1]); close(third.remainder, .1 * stepSeconds, 1e-12); close(third.startTime, 30 + stepSeconds, 1e-12);
+    // a jump beyond maxStepsPerFrame, a time before the last one, or the same time: restart / restart / no step
+    assert.equal(landscapeOceanFoamSchedule({ time: 31, lastTime: 30 }).reset, true);
+    assert.equal(landscapeOceanFoamSchedule({ time: 29, lastTime: 30 }).reset, true);
+    assert.deepEqual([landscapeOceanFoamSchedule({ time: 30, lastTime: 30 }).reset, landscapeOceanFoamSchedule({ time: 30, lastTime: 30 }).steps], [false, 0]);
+    assert.equal(landscapeOceanFoamSchedule({ time: 30 + maxStepsPerFrame * stepSeconds, lastTime: 30 }).steps, maxStepsPerFrame);
+    assert.throws(() => landscapeOceanFoamSchedule({ time: NaN, lastTime: null }), /foam time/);
+    // the foam state's bytes join the resources estimate (two RG16F targets over the extent raster)
+    assert.equal(landscapeOceanResources('medium').parts.foam.gpuBytes, texels * texels * bytesPerTexel);
+    assert.equal(bytesPerTexel, 8);
 });

@@ -179,9 +179,10 @@ python tools/landscape_review/periodicity.py --image <capture.png> --region left
 It detrends every row of the region's luminance, averages the normalized autocorrelation over the rows and reports the
 strongest correlation beyond the minimum lag; above the threshold the sea counts as repeating (exit code 1).
 
-`--ocean-debug <0-8>` replaces the shading by one of the ocean surface's verification views after the settle (see
+`--ocean-debug <0-9>` replaces the shading by one of the ocean surface's verification views after the settle (see
 `ocean_surface.frag.glsl`; 7 the per-cascade depth fades, 8 the AI 597 D2 shore wave: red its depth weight, green its
-crest sharpening, blue its bore strength) and records it in the receipt's `viewer.oceanDebug`.
+crest sharpening, blue its bore strength; 9 the D3 foam: red its density, green its coverage, blue the sand deposit) and
+records it in the receipt's `viewer.oceanDebug`.
 
 The AI 597 D2 shore poses live in `poses/ocean-shore-v1.json` (`OS-01` surf-zone oblique, `OS-02` crest lines from
 above, `OS-03` the bluff sector shore, `OS-04` the reef shadow, `OS-05` the open-sea handover); capture them with

@@ -122,13 +122,15 @@ struct OceanShoreSlope {
     vec2 slope;      // d elevation / d x, d elevation / d z of the resolved train
     float variance;  // mean square slope of the unresolved train (for the LEAN roughness)
     float breaking;  // bore strength
+    float phase;     // the train's phase (the AI 597 D3 foam front rides it)
 };
 
 // the slope of the train at a fragment's plane position for a pixel footprint, with the mean square slope it no longer resolves
 OceanShoreSlope oceanShoreSlopeAt(vec2 xz, float footprint) {
-    OceanShoreSlope result = OceanShoreSlope(vec2(0.0), 0.0, 0.0);
+    OceanShoreSlope result = OceanShoreSlope(vec2(0.0), 0.0, 0.0, 0.0);
     OceanShoreWave wave = oceanShoreAt(xz);
     if (wave.amplitude <= 0.0) return result;
+    result.phase = wave.phase;
     float resolved = oceanShoreResolved(wave, footprint);
     float derivative = oceanShoreProfileDerivative(wave.phase, wave);
     float steepness = wave.amplitude * uOceanShoreWave.x * wave.slowness;

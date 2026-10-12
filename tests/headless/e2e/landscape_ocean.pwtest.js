@@ -149,7 +149,7 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         const entries = oceanEntries(boot);
         expect(entries.length).toBe(1);
         expect([entries[0].cpuBytes, entries[0].gpuBytes]).toEqual([LANDSCAPE_OCEAN.budgets.cpuBytes, LANDSCAPE_OCEAN.budgets.gpuBytes]);
-        expect(ocean.share.entries).toBe(4);
+        expect(ocean.share.entries).toBe(5);
         const estimate = landscapeOceanResources(ocean.quality.id);
         expect(ocean.share.kind).toBe(LANDSCAPE_OCEAN.kind);
         expect(ocean.share.gpuBytes).toBeGreaterThan(0);
@@ -292,7 +292,7 @@ test('Landscape AI 597 D2: the shore wave refracts toward the beach, breaks on t
         // the extent field carries the shore channels (RGBA16F) and the travel time (RG32F) with its float depth and zone rasters on the CPU
         const texels = LANDSCAPE_OCEAN.fields.texels;
         expect(ocean.fields.extent).toMatchObject({ gpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel, cpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel, linearFiltering: true });
-        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 4 : 3);
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 5 : 4);
         expect(ocean.share.cpuBytes).toBeLessThanOrEqual(LANDSCAPE_OCEAN.budgets.cpuBytes);
         // the coast classes come from the geology sidecar: every level-2 page, the rock platform and bluff toe, the exposure of the bar, surf and swash
         const shore = shoreOf(boot);
@@ -397,6 +397,105 @@ test('Landscape AI 597 D2: the shore wave refracts toward the beach, breaks on t
         expect(errors).toEqual([]);
     } finally {
         await writeFile(path.join(shoreArtifacts, 'shore-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
+        await context.close();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(() => resolve(undefined)));
+    }
+});
+
+// AI 597 D3: the foam lifecycle state over the extent (pre-rolled to the fixed time), its per-zone statistics across the sea states, its
+// determinism and the foam verification view. Evidence beside the D2 receipt under d3/suite.
+test('Landscape AI 597 D3: foam gathers on the breaking crests, the bars, the reef edges and the shoreline with the sea state, repeats at the fixed time and draws', async ({ browser }, testInfo) => {
+    test.setTimeout(15 * 60 * 1000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
+    test.skip(!(await exists(path.join(landscapeDirectory, 'manifest.json'))), `${landscapeDirectory} is not installed`);
+    const foamArtifacts = path.resolve(root, 'tests/artifacts/screens/landscape/ai597/d3/suite');
+    await mkdir(foamArtifacts, { recursive: true });
+    const landscape = JSON.parse(await readFile(path.join(landscapeDirectory, 'manifest.json'), 'utf8'));
+    const server = await serve(landscapeDirectory, baseURL);
+    const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 });
+    const page = await context.newPage(), errors = [], evidence = {};
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /shader|webgl|program|THREE/i.test(message.text())) errors.push(message.text()); });
+    const foamReadback = () => page.evaluate(() => { const r = window.__landscapeTestHooks.oceanFoamReadback(); return r.statistics; });
+    const foamSignature = () => page.evaluate(() => { const r = window.__landscapeTestHooks.oceanFoamReadback(); return { mean: r.statistics.mean, max: r.statistics.max, covered: r.statistics.coveredFraction, depositMean: r.statistics.depositMean, surf: r.statistics.zones.surf?.mean ?? null }; });
+    try {
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeOceanTime=${FIXED_TIME}`));
+        const boot = await settled(page);
+        const ocean = boot.ocean;
+        expect(ocean.status, `ocean: ${ocean.reason}`).toBe('active');
+        // the state raster at the extent resolution, pre-rolled from zero to the fixed time in fixed steps, reserved in the share
+        const { foam } = LANDSCAPE_OCEAN;
+        expect(ocean.foam).toMatchObject({ recipe: 'landscape-ocean-foam-v1', texels: foam.texels, stepSeconds: foam.stepSeconds, preRollSeconds: foam.preRollSeconds, lastTime: FIXED_TIME, resets: 1 });
+        expect(ocean.foam.lastPreRollSteps).toBe(Math.round(foam.preRollSeconds / foam.stepSeconds));
+        expect(ocean.foam.steps).toBeGreaterThanOrEqual(ocean.foam.lastPreRollSteps);
+        expect(ocean.foam.gpuBytes).toBe(foam.texels * foam.texels * foam.bytesPerTexel);
+        expect(ocean.surface.foam).toMatchObject({ active: true, coverageThreshold: foam.coverage.threshold, albedo: foam.albedo });
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 5 : 4);
+        // moderate: foam on the surf, the bar and the reef edges, the shoreline, none on the open sea; the sand keeps a deposit along the swash
+        const moderate = await foamReadback();
+        evidence.moderate = moderate;
+        expect(moderate.zones.surf.coveredFraction, `surf ${JSON.stringify(moderate.zones.surf)}`).toBeGreaterThan(.3);
+        expect(moderate.zones.bar.coveredFraction).toBeGreaterThan(.05);
+        expect(moderate.zones.swash.coveredFraction).toBeGreaterThan(.1);
+        expect(moderate.zones.offshore.coveredFraction).toBeLessThan(.01);
+        expect(moderate.zones.surf.coveredFraction).toBeGreaterThan(moderate.zones.reef.coveredFraction);
+        expect(moderate.zones.swash.depositMean).toBeGreaterThan(0);
+        expect(moderate.max).toBeLessThanOrEqual(1);
+        // determinism: the same fixed time restores the same state (a half-second step changes it, the time restored repeats it)
+        const first = await foamSignature();
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ clock: { step: .5 } }));
+        await frames(page, 2);
+        const stepped = await foamSignature();
+        await page.evaluate(time => window.__landscapeTestHooks.setOcean({ clock: { time } }), FIXED_TIME);
+        await frames(page, 2);
+        const restored = await foamSignature();
+        evidence.determinism = { first, stepped, restored, snapshot: (await snapshot(page)).ocean.foam };
+        expect(restored).toEqual(first);
+        expect(stepped.mean === first.mean && stepped.surf === first.surf).toBe(false);
+        expect((await snapshot(page)).ocean.foam.resets).toBeGreaterThanOrEqual(2);
+        // the foam verification view draws at the surf and returns to the shading
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), POSES['NW-12']);
+        await settled(page);
+        await page.waitForTimeout(1000);
+        await page.screenshot({ path: path.join(foamArtifacts, 'NW-12-foam-30s.png') });
+        const canvasSize = (await snapshot(page)).canvas, surfRegion = { left: Math.floor(canvasSize.width / 2), top: Math.floor(canvasSize.height * .38), width: canvasSize.width - Math.floor(canvasSize.width / 2), height: Math.floor(canvasSize.height * .22) };
+        await readFrame(page, 'foam-shaded', surfRegion);
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(9));
+        await frames(page, 2);
+        const debugFrame = await readFrame(page, 'foam-debug', surfRegion);
+        expect(debugFrame.nonzero).toBeGreaterThan(0);
+        await page.screenshot({ path: path.join(foamArtifacts, 'NW-12-foam-debug9.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(0));
+        await frames(page, 2);
+        await readFrame(page, 'foam-shaded-again', surfRegion);
+        expect((await compareFrames(page, 'foam-shaded', 'foam-shaded-again')).mean).toBeLessThan(1);
+        // rough: whitecaps on the open sea and more foam everywhere; calm: next to none beyond the shoreline
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ seaState: 'rough' }));
+        await settled(page);
+        const rough = await foamReadback();
+        evidence.rough = rough;
+        expect(rough.zones.offshore.coveredFraction).toBeGreaterThan(.02);
+        expect(rough.zones.offshore.coveredFraction).toBeGreaterThan(moderate.zones.offshore.coveredFraction);
+        expect(rough.zones.reef.coveredFraction).toBeGreaterThan(moderate.zones.reef.coveredFraction);
+        expect(rough.coveredFraction).toBeGreaterThan(moderate.coveredFraction);
+        await page.screenshot({ path: path.join(foamArtifacts, 'NW-12-foam-rough.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ seaState: 'calm' }));
+        await settled(page);
+        const calm = await foamReadback();
+        evidence.calm = calm;
+        expect(calm.zones.offshore.coveredFraction).toBeLessThan(.001);
+        expect(calm.zones.surf.coveredFraction).toBeLessThan(.05);
+        expect(calm.zones.swash.coveredFraction).toBeLessThan(moderate.zones.swash.coveredFraction);
+        expect(calm.coveredFraction).toBeLessThan(moderate.coveredFraction);
+        await page.screenshot({ path: path.join(foamArtifacts, 'NW-12-foam-calm.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        const disposed = await snapshot(page);
+        expect(oceanEntries(disposed)).toEqual([]);
+        expect(errors).toEqual([]);
+    } finally {
+        await writeFile(path.join(foamArtifacts, 'foam-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
         await context.close();
         server.closeAllConnections();
         await new Promise(resolve => server.close(() => resolve(undefined)));

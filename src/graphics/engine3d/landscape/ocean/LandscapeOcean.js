@@ -14,7 +14,8 @@ import * as THREE from 'three';
 import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_SEA_STATES, LANDSCAPE_OCEAN_QUALITIES, createLandscapeOceanClock, landscapeOceanQuality, landscapeOceanResources, landscapeOceanSeaState, landscapeOceanShoreInputs } from './LandscapeOceanModel.js';
 import { landscapeOceanSeaStateShapes, landscapeOceanSignificantWaveHeight } from './LandscapeOceanSpectrum.js';
 import { loadLandscapeOceanField } from './LandscapeOceanField.js';
-import { landscapeOceanCoastBeachMask, landscapeOceanCoastZoneBreaking, loadLandscapeOceanCoast } from './LandscapeOceanCoast.js';
+import { LANDSCAPE_OCEAN_COAST, landscapeOceanCoastBeachMask, landscapeOceanCoastZoneBreaking, loadLandscapeOceanCoast } from './LandscapeOceanCoast.js';
+import { createLandscapeOceanFoam } from './LandscapeOceanFoam.js';
 import { computeLandscapeOceanShore, landscapeOceanShoreFill } from './LandscapeOceanShore.js';
 import { createLandscapeOceanSimulation } from './LandscapeOceanSimulation.js';
 import { createLandscapeOceanSurface } from './LandscapeOceanSurface.js';
@@ -136,10 +137,15 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         surface.setShore({ omega: shore.inputs.omega, groupPeriodSeconds: shore.inputs.groupPeriodSeconds });
         surface.update(camera, clock.time);
         simulation.update(clock.time);
+        // the D3 foam state reads the surface's inputs and starts pre-rolled at the clock's time
+        const foam = createLandscapeOceanFoam({ renderer, ledger, uniforms: surface.uniforms, cascades: surface.cascades.length, texels: LANDSCAPE_OCEAN.foam.texels, zone: coast.zone, zoneLabels: LANDSCAPE_OCEAN_COAST.zoneLabels });
+        resources.push(foam);
+        foam.advance(clock.time);
+        surface.setFoam(foam.texture);
         await surface.ready(camera, signal);
         signal?.throwIfAborted();
         const coastState = { status: coast.status, reason: coast.reason, stale: coast.stale, staleChunks: coast.staleChunks, revision: coast.revision, pages: coast.pages, milliseconds: coast.milliseconds, ...coast.statistics };
-        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, extent, field, coast: coastState, shore, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
+        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, extent, field, coast: coastState, shore, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
         if (surround) await ocean.setSurround(surround);
         return ocean;
     } catch (error) {
@@ -152,7 +158,7 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
 function createInertOcean({ status, reason, seaState, quality, clock, loadMs }) {
     if (!LANDSCAPE_OCEAN.statuses.includes(status) || status === 'active') throw new Error(`[LandscapeOcean] ${status} is not an inert ocean status`);
     const snapshot = () => ({ recipe: LANDSCAPE_OCEAN.id, status, present: false, reason, seaState: { id: seaState, label: LANDSCAPE_OCEAN_SEA_STATES[seaState].label }, quality: { id: quality, label: LANDSCAPE_OCEAN_QUALITIES[quality].label },
-        clock: clock.snapshot(), share: { kind: LANDSCAPE_OCEAN.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_OCEAN.budgets, denied: 0, entries: 0 }, fields: null, shore: null, simulation: null, surface: null, loadMs, drawnLastFrame: false });
+        clock: clock.snapshot(), share: { kind: LANDSCAPE_OCEAN.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_OCEAN.budgets, denied: 0, entries: 0 }, fields: null, shore: null, foam: null, simulation: null, surface: null, loadMs, drawnLastFrame: false });
     return Object.freeze({ status, reason, clock, update() {}, setSurround() { return Promise.resolve(null); }, setVisible() {}, setLightingTier() {}, setSeaState() { return Promise.resolve(null); }, setClock(options) { applyClock(clock, options); return clock.snapshot(); }, snapshot, dispose() {} });
 }
 
@@ -170,18 +176,20 @@ function describeShore(shore, seaState) {
         omega: inputs.omega, groupPeriodSeconds: inputs.groupPeriodSeconds, statistics: shore.statistics, zoneBreaking: shore.zoneBreaking, milliseconds: shore.milliseconds, filledLandTexels: shore.filledTexels };
 }
 
-function createActiveOcean({ landscape, ledger, clock, simulation, surface, extent, field, coast, shore, seaState, quality, loadMs, release, signal }) {
+function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, extent, field, coast, shore, seaState, quality, loadMs, release, signal }) {
     let disposed = false, seaStateId = seaState, surroundField = null, surroundState = { status: 'none', id: null, revision: null, texels: 0, statistics: null, milliseconds: null };
     let surroundSequence = 0, surroundApplied = 0, shoreSequence = 0, shoreApplied = 0, shoreState = describeShore(shore, seaState);
     const waveHeight = () => { const hs = landscapeOceanSignificantWaveHeight(seaStateId, quality), shapes = landscapeOceanSeaStateShapes(seaStateId); return { hs, shapes }; };
     const dropSurround = () => { if (surroundField) { surroundField.dispose(); surroundField = null; } surface.setSurroundField(null); };
     return Object.freeze({
         status: 'active', reason: null, clock, ledger,
-        /** One frame: advances the clock (free mode), runs the simulation batch and places the rings at the clock's time. @param {{dt:number,camera:any}} frame */
+        /** One frame: advances the clock (free mode), runs the simulation batch, steps the foam state and places the rings at the clock's time. @param {{dt:number,camera:any}} frame */
         update({ dt, camera }) {
             if (disposed) return;
             clock.advance(dt);
             simulation.update(clock.time);
+            foam.advance(clock.time);
+            surface.setFoam(foam.texture);
             surface.update(camera, clock.time);
         },
         /**
@@ -211,6 +219,8 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, exte
         setLightingTier(tier) { surface.setLightingTier(tier); },
         /** Verification read-back of a cascade's textures with their statistics (LandscapeOceanSimulation.readback). @param {number} index */
         readback(index) { return simulation.readback(index); },
+        /** Verification read-back of the foam state with its statistics per coastal zone (LandscapeOceanFoam.readback). */
+        foamReadback() { return foam.readback(); },
         /** @param {number} mode verification view of the surface program (0 shaded) */
         setDebug(mode) { surface.setDebug(mode); },
         /**
@@ -228,6 +238,8 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, exte
             if (disposed || sequence !== shoreSequence) return shoreState;
             extent.writeShore(next.travelTime, next.waveHeight);
             surface.setShore({ omega: next.inputs.omega, groupPeriodSeconds: next.inputs.groupPeriodSeconds });
+            foam.reset(clock.time);
+            surface.setFoam(foam.texture);
             shoreState = describeShore(next, state);
             shoreApplied = sequence;
             return shoreState;
@@ -243,7 +255,7 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, exte
                 quality: { id: quality, label: LANDSCAPE_OCEAN_QUALITIES[quality].label, ...LANDSCAPE_OCEAN_QUALITIES[quality] },
                 clock: clock.snapshot(), landscape: { id: landscape.manifest.id, revision: landscape.manifest.revision },
                 fields: { extent: { texels: field.layout.texels, texelMeters: field.layout.texelMetersX, level: field.layout.level, chunks: field.layout.chunkIds.length, statistics: field.statistics, milliseconds: field.milliseconds, gpuBytes: extent.gpuBytes, cpuBytes: extent.cpuBytes, linearFiltering: extent.linear, bounds: { ...field.layout.bounds } }, surround: surroundState },
-                shore: { ...shoreState, settled: shoreApplied === shoreSequence, coast },
+                shore: { ...shoreState, settled: shoreApplied === shoreSequence, coast }, foam: foam.snapshot(),
                 simulation: simulation.snapshot(), surface: surface.snapshot(), share: ledger.shareSnapshot(), estimate: { cpuBytes: estimate.cpuBytes, gpuBytes: estimate.gpuBytes }, loadMs, drawnLastFrame: surface.snapshot().drawnLastFrame };
         },
         dispose() {

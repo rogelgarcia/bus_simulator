@@ -20,7 +20,7 @@ const PROGRAM_COMPILE_WAIT_MS = 30000;
 const BASE_SLOPE_SHARE = .5;
 // reflections that dip below the horizon resolve to the sea's own upwelling colour over this band of the reflection elevation (sine)
 const REFLECTION_HORIZON_BAND = .12;
-const DEBUG_VIEWS = 8;
+const DEBUG_VIEWS = 9;
 
 /**
  * Builds the shared ring grid: vertices at integer indices -cells/2..cells/2 (x in position.x, z in position.y), quads split along the
@@ -59,7 +59,7 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
     const environment = lighting.reflectionEnvironment();
     const reference = landscapeWaterSurfaceRoughness();
     const cascadeInfo = cascades.map(cascade => { const fade = landscapeOceanCascadeFade(cascade); return new THREE.Vector4(1 / cascade.lengthMeters, cascade.texelMeters, fade.zeroMeters, fade.fullMeters); });
-    const handover = landscapeOceanCascadeFade(cascades[0]), shore = LANDSCAPE_OCEAN.shore;
+    const handover = landscapeOceanCascadeFade(cascades[0]), shore = LANDSCAPE_OCEAN.shore, foam = LANDSCAPE_OCEAN.foam;
     const shared = { ...lighting.uniforms, ...(environment ? { uLandscapeSkyReflection: { value: environment.texture }, uLandscapeSkyReflectionRotation: { value: environment.rotation } } : {}),
         uOceanCascadeInfo: { value: cascadeInfo }, uOceanField: { value: fields.extent.texture }, uOceanFieldBounds: { value: fields.extent.bounds },
         uOceanFarField: { value: fields.surround?.texture ?? fields.extent.texture }, uOceanFarFieldBounds: { value: fields.surround?.bounds ?? new THREE.Vector4(0, 0, 0, 0) }, uOceanFarFieldActive: { value: fields.surround ? 1 : 0 },
@@ -68,6 +68,8 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
         uOceanShoreMix: { value: new THREE.Vector4(handover.zeroMeters, handover.fullMeters, shore.orbital, shore.rockReflection) },
         uOceanShoreShape: { value: new THREE.Vector4(shore.groupAmplitude, shore.longshoreAmplitude, 0, shore.sharpening) },
         uOceanShoreExposure: { value: new THREE.Vector4(shore.exposureFloor, shore.exposureRamp.fullMeters, shore.exposureRamp.zeroMeters, LANDSCAPE_OCEAN.texelsPerWavelength) }, uOceanTime: { value: 0 },
+        uOceanFoam: { value: fields.extent.texture }, uOceanFoamLook: { value: new THREE.Vector4(0, foam.coverage.threshold, foam.coverage.softness, foam.albedo) },
+        uOceanFoamPattern: { value: new THREE.Vector4(foam.patternMeters[0], foam.patternMeters[1], foam.patternMeters[2], foam.patternMeters[3]) }, uOceanFoamFold: { value: new THREE.Vector2(foam.folding.threshold, foam.folding.span) },
         uOceanOptics: { value: new THREE.Vector4(reference.meanSquareSlope * BASE_SLOPE_SHARE, preset.lean ? 1 : 0, REFLECTION_HORIZON_BAND, LANDSCAPE_SKY_REFLECTION.width / (2 * Math.PI)) },
         uOceanMorph: { value: new THREE.Vector2(LANDSCAPE_OCEAN.morph.start, LANDSCAPE_OCEAN.morph.end) }, uOceanLevel: { value: seaLevel }, uOceanDebug: { value: 0 } };
     simulation.displacement.forEach((texture, index) => { shared[`uOceanDisplacement${index}`] = { value: texture }; });
@@ -123,6 +125,10 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
     };
     return Object.freeze({
         rings, cascades,
+        /** The shared uniform set (fields, train, cascades, time): the D3 foam pass reads the same inputs through it. */
+        uniforms: shared,
+        /** @param {any} texture the foam state to draw (the current ping-pong target each frame), or null to draw none */
+        setFoam(texture) { shared.uOceanFoam.value = texture ?? fields.extent.texture; shared.uOceanFoamLook.value.x = texture ? 1 : 0; },
         /** Links the surface program (in parallel where supported) and shows the rings; resolves once linked, rejects with AbortError on the signal. @param {any} camera @param {AbortSignal} [signal] */
         ready: (camera, signal) => link(camera, signal),
         /** Positions the rings under the camera for this frame and passes the simulation time to the shore wave. @param {any} camera @param {number} [time] */
@@ -158,6 +164,7 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
             return { material: 'landscape-ocean-surface-v1', rings: rings.length, cells: preset.ringCells, baseCellMeters: preset.baseCellMeters, farMeters: rings[rings.length - 1].halfExtentMeters, trianglesPerRing: grid.triangles,
                 triangles: grid.triangles * rings.length, drawCalls: ready && visible ? rings.length : 0, geometryBytes: grid.bytes, lean: preset.lean, baseMeanSquareSlope: shared.uOceanOptics.value.x, lightingTier: tier,
                 reflection: environment ? environment.model : 'sky-harmonics', programCompile: { ...programCompile }, ready, visible, drawnLastFrame: renderInfo !== null && drawnFrame === renderInfo.frame, morph: { ...LANDSCAPE_OCEAN.morph },
+                foam: { active: shared.uOceanFoamLook.value.x > 0, coverageThreshold: shared.uOceanFoamLook.value.y, softness: shared.uOceanFoamLook.value.z, albedo: shared.uOceanFoamLook.value.w },
                 cascadeFades: cascadeInfo.map(info => ({ zeroMeters: info.z, fullMeters: info.w })), shore: shoreState ? { active: true, ...shoreState, handover: { ...handover }, time: shared.uOceanTime.value } : { active: false, handover: { ...handover }, time: shared.uOceanTime.value } };
         },
         dispose() {
