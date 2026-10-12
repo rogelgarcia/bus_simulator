@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Every long line of the Bradbury block's trim is perfectly straight and flat: the cornice nose, the dentil course, the
@@ -89,3 +91,9 @@ Shared rules (every step):
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary (2026-10-12, approved by the owner; the group AI 605-610 is complete)
+- New wear feature `hand_set` (`wear/features/hand_set.py`, `wear_hand_set`, 0 shows the originals): geometry copies of 124 pieces (crown, band 4-5 with its brackets, impost course, sills) whose long lines undulate as hand-set, settled blocks -- per AI 607 block a sha256-drawn settle (<=3 mm), roll (<=2.5 mm), nose pitch about the wall (<=0.006 rad) and plan yaw (<=0.004 rad), plus three long settlement waves per course (<=4 mm); blended over 8 cm at joints, faded at facade ends, all downward or about the wall (no gaps); long edges cut every 0.127 m first; 254,455 vertices, at most 14 mm of movement.
+- Pieces AI 609 also chipped exist in four combinations (`wear_combo`, `controls.COMBO`, `apply_combos`); all eight states of the two features and the group switch show each piece exactly once.
+- Revert: `wear_hand_set=0` against step 5 on pose 12, mean 0.007, max 4 levels; render time unchanged.
+- Evidence: `tests/artifacts/screens/bradbury_weathering/610/v1/` (raking crops along Broadway's crown and band, sheets, composite); README "The weathering-realism group".

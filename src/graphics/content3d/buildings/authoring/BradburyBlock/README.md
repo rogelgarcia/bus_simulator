@@ -7949,3 +7949,21 @@ Revert checked: `wear_pane_glass=0` against step 3 on poses 04 and 12, max 1 lev
   copies and show the originals.
 Revert checked: `wear_upper_chips=0 edge_worn_upper=0` against step 4 on poses 12 and the window close-up, max 1 level.
 Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/609/v1/`.
+
+**AI 610, hand-set lines.** A new feature, `wear/features/hand_set.py` (`wear_hand_set`, default 1; 0 or the group
+switch off shows the originals, the straight lines of before): the long runs of trim as geometry copies whose lines
+undulate as hand-set, settled blocks do -- the owner's choice of geometry copies over a texture, since the waves show
+in silhouettes. Courses move as wholes (the crown with its frieze and dentils; the band 4-5 with its mouldings, field,
+dentils and brackets; the impost course; each sill on its own), in AI 607's blocks (0.76 m, three to a sill), each
+block's set its own sha256 draw: settled by up to 3 mm, one end lower by up to 2.5 mm, its nose dropped about the wall
+line by up to 0.006 rad, turned in plan by up to 0.004 rad with its back held at the wall; over each course three long
+settlement waves (3.7, 7.3, 11.9 m x a draw) up to 4 mm. Everything moves down or about the wall, so nothing opens
+above or behind a course; neighbouring blocks blend over 8 cm (no kinks, no gaps); within 0.6 m of a facade's end it
+fades out; a sill moves only in front of the wall. Each copy first has its long level edges cut every 0.127 m (the
+n-gons left triangulated, BEAUTY). 124 pieces, 254,455 vertices, at most 14 mm of movement. A piece AI 609 also chipped
+exists in four combinations -- original, chipped, uneven, chipped and uneven -- each with `wear_combo`
+("upper_chips=1,hand_set=0" ...), put by `controls.organise` in `WEAR_COMBO_<combo>` and rendered only in its state
+(`controls.apply_combos`); checked: in all eight states of the two features and the group switch, every one of the 124
+pieces renders exactly once. Revert checked: `wear_hand_set=0` against step 5 on pose 12, mean 0.007, max 4 levels (at
+4 of a million pixels). Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/610/v1/`
+(`raking_crown_crop2x.png`, `raking_band_crop2x.png`: along Broadway's crown and band, where the lines read best).

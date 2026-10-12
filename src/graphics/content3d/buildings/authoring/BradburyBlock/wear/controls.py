@@ -30,7 +30,21 @@ def parse_realism(args, scene=None, default=1.0):
 
 # the group's features that add geometry (worn copies in WEAR_GEO_<name>, originals in WEAR_ORIG_<name>): with the group
 # off their copies hide and the originals show, whatever their strength
-REALISM_GEO = ("upper_chips",)
+REALISM_GEO = ("upper_chips", "hand_set")
+
+
+def _feature_on(scene, f):
+    on = float(scene.get("wear", 0.0)) > 0.0 and float(scene.get("wear_" + f, 0.0)) > 0.0
+    if f in REALISM_GEO: on = on and float(scene.get(REALISM, 0.0)) > 0.0
+    return on
+
+
+def apply_combos(scene):
+    import bpy
+    for c in bpy.data.collections:
+        if c.library is not None or not c.name.startswith(COMBO): continue
+        want = dict(kv.split("=") for kv in c.name[len(COMBO):].split(","))
+        c.hide_render = not all(_feature_on(scene, f) == (v == "1") for f, v in want.items())
 
 
 def apply_realism(scene, value, log=print):
@@ -42,9 +56,14 @@ def apply_realism(scene, value, log=print):
             if c.library is not None: continue
             if c.name == GEO + f: c.hide_render = not on
             elif c.name == ORIG + f: c.hide_render = on
+    apply_combos(scene)
     log(f"weathering group (AI 605-610): {'on' if value >= 1.0 else 'off' if value <= 0.0 else value}")
 SOURCES = "WEAR_SOURCES"
 SRC, GEO, ORIG = "WEAR_SRC_", "WEAR_GEO_", "WEAR_ORIG_"
+# An object two geometry features both replace (AI 610's uneven copy of a piece AI 609 also chipped) exists in every
+# combination of their states; each carries wear_combo, e.g. "upper_chips=1,hand_set=0", and is rendered only while
+# every feature it names is on (1) or off (0) as it says. organise() puts each combination in WEAR_COMBO_<combo>.
+COMBO = "WEAR_COMBO_"
 
 
 def read_manifest(path=paths.MANIFEST):
@@ -90,20 +109,24 @@ def organise(parent, log=print):
         if c is None:
             c = bpy.data.collections.new(name); under.children.link(c)
         return c
-    n_src = n_geo = n_orig = 0
+    n_src = n_geo = n_orig = n_combo = 0
+    for o in objs:
+        c = o.get("wear_combo")
+        if c:
+            child(COMBO + c).objects.link(o); parent.objects.unlink(o); n_combo += 1
     for o in objs:
         f = o.get("wear_marker")
         if f:
             child(SRC + f, under=child(SOURCES)).objects.link(o); parent.objects.unlink(o); n_src += 1
     for o in objs:
         f = o.get("wear_geometry")
-        if not f: continue
+        if not f or o.get("wear_combo"): continue
         child(GEO + f).objects.link(o); parent.objects.unlink(o); n_geo += 1
         rep = o.get("wear_replaces")
         if rep and rep in by_name and by_name[rep].name in parent.objects:
             child(ORIG + f).objects.link(by_name[rep]); parent.objects.unlink(by_name[rep]); n_orig += 1
     log(f"wear-only objects: {n_src} source marker(s) in {SOURCES}, {n_geo} geometry object(s), {n_orig} original(s) "
-        f"they replace")
+        f"they replace, {n_combo} in combinations of two features")
     return n_src, n_geo, n_orig
 
 
@@ -141,4 +164,5 @@ def apply(scene, mode, strengths, log=print):
         elif c.name.startswith(ORIG):
             f = c.name[len(ORIG):]
             c.hide_render = mode != "off" and strengths.get(f, 0.0) > 0.0
+    apply_combos(scene)
     log(f"wear {mode}: " + (", ".join(f"{k} {v:g}" for k, v in strengths.items()) or "no features"))
