@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # AI 575: the Bradbury capital's carving — continue from the finished corner leaf
 
 # Problem
@@ -210,3 +212,13 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. After this prompt was recorded (2026-10-04, d1fefadc), the capital moved from sculpting
+the carving leaf by leaf in an editing copy (`ornaments/capital_edit.py` -> `capital_edit.blend`) to a "stage 2"
+capital of low-poly carved blocks with a PBR texture atlas (`ornaments/capital_stage2/`): kept with the plain stage-1
+capital in one file (9d88d6de, `capital.blend`, switched by `portal_lib.CAPITAL_STAGE` and `use_capital_stage.py`) and
+put into production in the portal and on every column, its sides carved per placement (1d9296ed). The editing copy
+and its trial files were removed in the cleanup; the carving trials' renders and the owner's annotated notes remain in
+`tests/artifacts/screens/bradbury_fix/portal_project/ornaments/corner_v*/`. If sculpted 3D detail (inner leaves,
+C-scrolls, fleuron) is wanted later, a new prompt should start from the stage-2 capital.
