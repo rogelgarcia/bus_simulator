@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The Bradbury block has a Blender render scene of its own (`src/graphics/content3d/buildings/authoring/BradburyBlock/build_scene.py`
