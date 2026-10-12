@@ -1,3 +1,19 @@
+# DONE
+
+Implemented 2026-10-12.
+
+- Added an opt-in U-shaped road and circular grass plot to the bus lab, with 18 m and 30 m radius choices and overview/inside/outside camera presets.
+- Used the actual final sidewalk contours for a filtered world-space boundary shared by blades, transitions, litter, soil and far canopy, retaining the same outline within rendering cells.
+- Added complementary ground clipping and OFF restoration while preserving the bus, original straight fields, camera controls, prepared assets and cached external shadows.
+- Kept the experiment in the lab and documented its controls and shared boundary utility without changing gameplay's road or sloped-base exclusion behavior.
+- Verified both radii, all six LODs, blend materials, moving near-to-far views, GPU/CPU coverage agreement, complete complementary ground coverage and radius-selector reloads.
+
+Access: open `debug_tools/grass_debug_v2.html` and choose **Curved layout → Road radius → 18 m bend / 30 m bend**, or use `?curve=18` / `?curve=30`. **Straight reference only** restores the original layout. Curve choices use the latest baked strategy.
+
+Validation: **31 Node tests and 7 browser tests passed**. Browser suites: `grass_curved_boundary.pwtest.js` (2), `grass_debug_v2_grass.pwtest.js` (2), `grass_gameplay_modes.pwtest.js` (1), `grass_slab_exclusion.pwtest.js` (2). Node suites: curve layout, grass settings, transition selection and material shader hook registry. Both GPU contour comparisons had zero missing pixels and zero CPU/GPU classification mismatches; 253 / 255 actual curved hardscape segments were checked within 3.32 / 4.49 cm respectively. `git diff --check` passed.
+
+Evidence: `tests/artifacts/screens/grass/ai613_curved_bus_lab/`, including `radius-18-curve.png`, `radius-30-curve.png`, inner/outer close-ups, all LODs, OFF and 5/18/25/35/45 m camera-distance captures, plus boundary and movement JSON reports. These generated files remain gitignored. No curved-layout before image exists in the previous straight-only scene, and no performance improvement is claimed.
+
 # Problem
 
 Grass fields look jagged along curved roads instead of following the road's curve. The current bus lab primarily demonstrates straight roadside fields, so it needs a curved layout where grass boundaries can be inspected and adjusted before a later gameplay rollout.

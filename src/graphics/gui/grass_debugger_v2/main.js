@@ -20,6 +20,9 @@ const grassButtons = [...document.querySelectorAll('[data-grass-mode]')];
 const landButtons = [...document.querySelectorAll('[data-land-surface]')];
 const grassCounts = document.getElementById('grass-counts');
 const fadeSelect = document.getElementById('grass-fade');
+const curveRadius = document.getElementById('curve-radius');
+const curveCameras = [...document.querySelectorAll('[data-curve-camera]')];
+curveRadius.value = new URLSearchParams(location.search).get('curve') || 'off';
 const view = new GrassDebugV2View({ canvas, perfBar, onBenchmarkChange: updateBenchmarkPanel,
     onGrassChange: updateGrassPanel, onProgress: message => { loading.textContent = message; } });
 let copyFeedbackTimer;
@@ -30,6 +33,8 @@ function updateBenchmarkPanel(state) {
     for (const button of grassButtons) button.disabled = state.active;
     for (const button of landButtons) button.disabled = state.active;
     fadeSelect.disabled = state.active;
+    curveRadius.disabled = state.active;
+    for (const button of curveCameras) button.disabled = state.active || !view.grass?.curve;
     benchmarkButton.textContent = state.active ? (['running', 'holding'].includes(state.phase) ? `Stop · ${Math.floor(state.progress * 100)}%` : 'Stop') : 'Run';
     benchmarkStatus.hidden = !state.active && state.phase !== 'cancelled';
     benchmarkStatus.textContent = { warmup: 'Preparing…', running: 'Measuring…', holding: 'Measuring final stop…', settling: 'Collecting GPU results…', cancelled: `Cancelled · ${state.message}` }[state.phase] ?? '';
@@ -64,8 +69,9 @@ function updateGrassPanel() {
         else link.removeAttribute('aria-current');
     }
     for (const button of grassButtons) button.setAttribute('aria-pressed', String(button.dataset.grassMode === grass.mode));
-    grassCounts.textContent = `${grass.triangles.toLocaleString('en-US')} triangles\n`
+    grassCounts.textContent = `${(grass.triangles + (grass.curve?.mode === 'OFF' ? 0 : grass.curve?.field.triangles ?? 0)).toLocaleString('en-US')} triangles\n`
         + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
+    if (grass.curve) grassCounts.textContent += '\nCurve: ' + grass.curve.field.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
     fadeSelect.value = grass.field.fadeStyle;
     fadeSelect.querySelector('[value="canopy"]').disabled = grass.strategy !== 'baked';
     fadeSelect.disabled = !view.ready || view.benchmark.active;
@@ -104,6 +110,8 @@ const readiness = (async () => {
     view.ready = true;
     busButton.disabled = overviewButton.disabled = grassCameraButton.disabled = copyButton.disabled = false;
     benchmarkButton.disabled = false;
+    curveRadius.disabled = false;
+    for (const button of curveCameras) button.disabled = !view.grass.curve;
     for (const button of grassButtons) button.disabled = false;
     for (const button of landButtons) button.disabled = false;
     updateGrassPanel();
@@ -147,6 +155,13 @@ window.__grassDebugV2 = Object.freeze({
 busButton.addEventListener('click', () => view.setCamera('bus'));
 overviewButton.addEventListener('click', () => view.setCamera('overview'));
 grassCameraButton.addEventListener('click', () => view.setCamera('grass'));
+for (const button of curveCameras) button.addEventListener('click', () => view.setCamera(button.dataset.curveCamera));
+curveRadius.addEventListener('change', () => {
+    const url = new URL(location.href);
+    if (curveRadius.value === 'off') url.searchParams.delete('curve');
+    else { url.searchParams.set('curve', curveRadius.value); url.searchParams.set('grass', 'baked'); }
+    location.assign(url.href);
+});
 for (const button of grassButtons) button.addEventListener('click', () => {
     if (view.setGrassMode(button.dataset.grassMode)) updateGrassPanel();
 });

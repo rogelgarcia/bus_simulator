@@ -54,8 +54,12 @@ export async function createGrassDebugV2Land(renderer, terrain) {
     ground.position.set(terrain.centerX, 0, terrain.centerZ);
     ground.receiveShadow = true;
     let patchGeometry = null, grassVisible = false;
+    const boundaryEnabled = { value: 0 };
     return Object.freeze({
         ground, materials: Object.freeze(materials),
+        setGrassBoundary(boundary) {
+            for (const material of Object.values(materials)) boundary.bind(material, { inverse: true, enabled: boundaryEnabled });
+        },
         setGrassPatches(patches) {
             // Preserve the terrain UVs, but avoid shading a second floor beneath the grass.
             const xs = [...new Set([-terrain.width / 2, ...patches.flatMap(p => [p.minX - terrain.centerX, p.maxX - terrain.centerX]), terrain.width / 2])].sort((a, b) => a - b);
@@ -79,6 +83,7 @@ export async function createGrassDebugV2Land(renderer, terrain) {
         },
         setGrassVisible(value) {
             grassVisible = value;
+            boundaryEnabled.value = value ? 1 : 0;
             ground.geometry = value && patchGeometry ? patchGeometry : geometry;
         },
         dispose() { geometry.dispose(); patchGeometry?.dispose(); },

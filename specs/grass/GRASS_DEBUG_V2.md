@@ -11,6 +11,50 @@ retains its isolated scene and comparison controls.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
 
+## Curved boundary experiment (AI 613, 2026-10-12)
+
+In the bus lab, **Curved layout → Road radius** selects an **18 m bend** or
+**30 m bend**. The selection reloads the scene with the latest baked grass.
+Direct entry points are `debug_tools/grass_debug_v2.html?curve=18` and
+`debug_tools/grass_debug_v2.html?curve=30`. **Straight reference only** removes
+the experiment; the default URL and `?grass=current` comparison retain the
+original scene. The curved layout is not added to gameplay.
+
+The experiment places a U-shaped two-way road at X=105, Z=45 m, with a circular
+grass plot around both the inside and outside of the bend. Twelve arc control
+segments use the existing road engine's rounded connections, sidewalks and
+curbs. The original bus, trees, 30 rectangular fields, camera presets and
+benchmark route remain available. **Curve overview**, **Inside edge** and
+**Outside edge** provide repeatable inspection cameras; ordinary camera controls
+continue to work. Global grass LOD, blend and ground controls affect both areas.
+
+The shared `GrassBoundaryMask` rasterizes the road builder's final
+`sidewalkOuterBoundaryLoops` and the plot outline into a 4096² single-channel
+mask, with linear filtering and no mipmaps. Its texels span about 1.66 cm at
+18 m and 2.25 cm at 30 m. These final contours include the outer sidewalk edge;
+the mask does not infer an edge from road width or snap it to selection cells.
+One-metre cells still select rendering detail, while fragments inside each cell
+follow the continuous filtered contour. LOD0–4 blades, blend copies, litter,
+soil and LOD5 canopy share the same world-space mask and 0.5 threshold. There
+are no rectangular field walls or perimeter leaf strips in this continuous plot.
+Natural blade shape remains visible along the edge.
+
+Surrounding ground uses the exact inverse threshold, preserving full coverage
+without drawing a second floor underneath the grass. OFF disables that ground
+cutout and hides the curved grass. All three ground substrates use this contract.
+The curve borrows the existing prepared grass assets, adds its own field batches
+and mask, and participates in the same cached external shadows. It does not bake
+new assets, duplicate grass self-shadows or reinstate the removed edge-blend option.
+
+Validation: `grass_curve_layout.test.js` checks both road layouts and their
+separation from the reference fields. `grass_curved_boundary.pwtest.js` checks
+actual hardscape contours to within two mask texels, all six LODs, blend copies,
+instance capacity, near-to-far camera movement, OFF ground restoration and GPU
+mask agreement with CPU samples. A complementary ground/grass render also checks
+for uncovered pixels. Overview, inner/outer edge, forced LOD and moving-distance
+captures are stored under `tests/artifacts/screens/grass/ai613_curved_bus_lab/`.
+Existing bus-lab, gameplay mode and sloped-base regressions remain required.
+
 ## Latest baked bus grass (2026-10-12)
 
 The bus scene defaults to **Auto** with the `detailed` appearance shared with

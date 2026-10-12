@@ -9,6 +9,7 @@ import { GrassDebugV2CameraInput } from './GrassDebugV2CameraInput.js';
 import { GrassDebugV2Benchmark } from './GrassDebugV2Benchmark.js';
 import { createGrassDebugV2DistanceGrass } from './GrassDebugV2DistanceGrass.js';
 import { createGrassDebugV2OverviewPose } from './GrassDebugV2CameraPresets.js';
+import { readGrassCurveRadius } from './GrassDebugV2CurveLayout.js';
 
 export class GrassDebugV2View {
     /** @param {{canvas: HTMLCanvasElement, perfBar: object, onBenchmarkChange?: Function, onGrassChange?: Function, onProgress?: Function}} options */
@@ -41,7 +42,7 @@ export class GrassDebugV2View {
 
     async start() {
         const [content] = await Promise.all([
-            createGrassDebugV2Scene(this.scene, this.renderer),
+            createGrassDebugV2Scene(this.scene, this.renderer, { curveRadius: readGrassCurveRadius(location.search) }),
             this.lighting.loadEnvironment()
         ]);
         this.content = content;
@@ -68,7 +69,7 @@ export class GrassDebugV2View {
         }
         content.land.setSurface('gravelly_sand');
         this.grass = await createGrassDebugV2DistanceGrass({ renderer: this.renderer, scene: this.scene, camera: this.camera,
-            lighting: this.lighting, road: content.road, bus: content.bus, land: content.land,
+            lighting: this.lighting, road: content.road, bus: content.bus, land: content.land, curve: content.curve,
             strategy: new URLSearchParams(location.search).get('grass') || 'baked', onProgress: this._onProgress });
         await this.renderer.compileAsync(this.scene, this.camera);
         this.keyboard = new GrassDebugV2CameraInput(this.controls);
@@ -83,13 +84,20 @@ export class GrassDebugV2View {
             getLand: () => this.content.land.getSnapshot(),
             onChange: this._onBenchmarkChange
         });
+        if (content.curve) this.setCamera('curve');
         this.renderer.setAnimationLoop(this._onFrame);
     }
 
-    /** @param {'bus'|'overview'|'grass'} id */
+    /** @param {'bus'|'overview'|'grass'|'curve'|'curve-inner'|'curve-outer'} id */
     setCamera(id) {
-        if (!['bus', 'overview', 'grass'].includes(id)) throw new Error(`Unknown Grass Debug camera: ${id}`);
+        if (!['bus', 'overview', 'grass', 'curve', 'curve-inner', 'curve-outer'].includes(id)) throw new Error(`Unknown Grass Debug camera: ${id}`);
         if (this.benchmark?.active) return;
+        if (id.startsWith('curve')) {
+            if (!this.grass.curve) throw new Error('Choose a curve radius before using its camera.');
+            this.controls.setLookAt(this.grass.curve.getCameraPose(id));
+            this.grass.update(this.camera.position, performance.now(), true);
+            return;
+        }
         this.controls.setLookAt(id === 'grass' ? this.grass.getCameraPose() : id === 'bus' ? this.busPose : createGrassDebugV2OverviewPose());
         this.grass.update(this.camera.position, performance.now(), true);
     }
@@ -194,6 +202,7 @@ export class GrassDebugV2View {
         const geometries = new Set();
         const materials = new Set([
             ...Object.values(this.content?.road?.materials ?? {}),
+            ...Object.values(this.content?.curve?.road?.materials ?? {}),
             ...Object.values(this.content?.land?.materials ?? {})
         ]);
         const textures = new Set();

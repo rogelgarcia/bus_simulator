@@ -255,7 +255,7 @@ export class City {
         }
         const roadHardscapeMargin = Math.max(0, this.generatorConfig.road?.curb?.thickness ?? 0)
             + Math.max(0, this.generatorConfig.road?.sidewalk?.extraWidth ?? 0);
-        this.grassCoverage = { size, roadPolygons, roadMargin: roadHardscapeMargin, buildingFootprints, slabFootprints: [] };
+        this.grassCoverage = { size, roadPolygons, roadMargin: roadHardscapeMargin, roadBoundaryLoops: this.roads.sidewalkOuterBoundaryLoops, buildingFootprints, slabFootprints: [] };
         this.grass = null;
 
         this.world = createCityWorld({

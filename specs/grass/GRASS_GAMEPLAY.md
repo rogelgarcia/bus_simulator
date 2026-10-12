@@ -21,6 +21,11 @@ batching, transitions and selection. The bus lab imports compatibility re-export
 and retains both its default baked strategy and the previous `?grass=current`
 comparison. Gameplay imports no lab scene, diagnostic UI or authoring assets.
 
+Gameplay and the [bus lab's curved layout experiment](GRASS_DEBUG_V2.md#curved-boundary-experiment-ai-613-2026-10-12)
+share `GrassBoundaryMask` for filtered vector-contour coverage. The gameplay
+adapter combines the city's final road contours with building and slab exclusions.
+The lab's experimental road layout and controls remain isolated from gameplay.
+
 The authenticated `assets/public/grass/gameplay/` package contains the central
 2 m LOD0–2 source tile, exact reduced individual blades for LOD3/4, paired prepared
 canopy/litter maps and their mip chains. It preserves `canopy-palette-17`, shaded
@@ -32,12 +37,23 @@ substitution with the old grass renderer.
 
 ## Coverage, camera and lighting
 
-Gameplay uses the current flat city's authored surface height. A conservative
-coverage mask removes road and junction polygons expanded by curb/sidewalk width,
-building footprints and reservations. Every leaf, transition, litter and far
-canopy fragment uses that same mask. Sampling is capped at 4096², and the mask
-adds one texel of clearance. Non-flat terrain remains outside the current city's
-supported terrain contract.
+Gameplay uses the current flat city's authored surface height. Road exclusion
+comes from the road builder's final `sidewalkOuterBoundaryLoops`, including
+curved sidewalk edges and junction corners. All road loops are filled together
+with even-odd winding so enclosed grass islands remain available. When roads
+have no sidewalk contour, the adapter uses the authored asphalt polygons and
+their hardscape margin. Building footprints and reservations remain separate
+exclusion groups so overlapping obstacles cannot cancel each other.
+
+The mask retains antialiased coverage and uses linear filtering without mipmaps;
+the 0.5 contour follows the hardscape within each one-metre rendering cell.
+Every blade, transition, litter, near canopy and distant canopy fragment uses
+the same world-space mask. CPU coverage queries use matching bilinear sampling
+and the same threshold; batch culling conservatively includes partial cells.
+Sampling remains capped at 4096² (about 14.65 cm texels for the 600 m city),
+with filtered contours between texels instead of square nearest-neighbour steps.
+Final sidewalk contours receive no additional grass setback. Non-flat terrain
+remains outside the current city's supported terrain contract.
 
 Building and bus-start foundation slabs additionally supply the final slab plan's
 `foot` contour, after placement, apron merging and sidewalk clipping. This is the
@@ -84,3 +100,11 @@ and compares rendered grass with and without cached external shadows.
 The existing bus-lab regression continues to cover all six shared LODs.
 Generated captures and measurements live under
 `tests/artifacts/screens/grass/ai611_game_migration/`.
+
+`grass_gameplay_curves.pwtest.js` validates 18 m / 30 m contours with enclosed
+grass islands, overlapping slab exclusions, and actual city sidewalk curves.
+It captures matching close and overhead game views before and after, plus
+unobstructed transition and far views with camera-window shifts. Evidence is gitignored under
+`tests/artifacts/screens/grass/gameplay_curved_boundaries/`. The bus-lab curved
+boundary suite, gameplay mode lifecycle and sloped-base suites verify the shared
+mask and retained exclusions together.

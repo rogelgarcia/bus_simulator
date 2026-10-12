@@ -24,7 +24,7 @@ test('gameplay grass starts outside building and bus slab slopes at every detail
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     if (phase === 'before') await page.route('**/GrassCoverageMask.js', async route => {
         const response = await route.fetch();
-        await route.fulfill({ response, body: (await response.text()).replace('slabFootprints.forEach(loop => draw([loop], 0));', '') });
+        await route.fulfill({ response, body: (await response.text()).replace('...slabFootprints.map(loop => ({ loops: [loop], margin: texel }))', '') });
     });
     await page.goto('/?pose=civic_center_curve_front&coreTests=0');
     await page.waitForFunction(() => !!window.__busSim?.engine.context.city?.grass, null, { timeout: 90_000 });

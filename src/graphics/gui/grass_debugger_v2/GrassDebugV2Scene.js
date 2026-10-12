@@ -10,6 +10,7 @@ import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { ASPHALT_NOISE_DEFAULTS } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { createGrassDebugV2Land } from './GrassDebugV2Land.js';
+import { createGrassCurveLayout } from './GrassDebugV2CurveLayout.js';
 import dirtDefinition from '../../../../assets/public/pbr/gravelly_sand/pbr.material.config.js';
 
 export const GRASS_V2_TERRAIN = Object.freeze({
@@ -26,11 +27,11 @@ const TREE_PLACEMENTS = Object.freeze([
     [-115, 58, 12], [108, -50, 14], [-150, -145, 11], [152, 130, 13]
 ]);
 
-function createRoad() {
+function createRoad(segment = null) {
     const map = {
         ...BIG_CITY_SPEC_SOURCE,
         roadNetwork: { seed: 'grass-debug-v2' },
-        roadSegments: [{
+        roadSegments: segment ? [segment] : [{
             id: 'grass-v2-road', kind: 'polyline', tag: 'grass_v2_straight',
             lanesF: 1, lanesB: 1, rendered: true,
             points: [
@@ -74,9 +75,15 @@ async function createTrees() {
     return trees;
 }
 
-export async function createGrassDebugV2Scene(scene, renderer) {
+export async function createGrassDebugV2Scene(scene, renderer, { curveRadius = null } = {}) {
     const road = createRoad();
     scene.add(road.group);
+    const curve = curveRadius === null ? null : { layout: createGrassCurveLayout(curveRadius) };
+    if (curve) {
+        curve.road = createRoad(curve.layout.segment);
+        curve.road.group.name = 'GrassV2CurvedRoad';
+        scene.add(curve.road.group);
+    }
     const bus = createBus(BUS_CATALOG.find(entry => entry.id === 'city'));
     bus.name = 'GrassV2CityBus';
     bus.position.set(-ROAD_DEFAULTS.laneWidth / 2, ROAD_DEFAULTS.surfaceY, 0);
@@ -88,5 +95,5 @@ export async function createGrassDebugV2Scene(scene, renderer) {
     if (bounds.getSize(new THREE.Vector3()).z < 10) throw new Error('The full city bus model did not load.');
     bus.position.y += ROAD_DEFAULTS.surfaceY - bounds.min.y;
     scene.add(land.ground, trees);
-    return { ground: land.ground, land, road, bus, trees };
+    return { ground: land.ground, land, road, bus, trees, curve };
 }

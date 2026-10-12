@@ -24,6 +24,21 @@
             <button type="button" id="copy-camera" title="Copy camera X Y Z and yaw pitch roll (degrees)" aria-live="polite">Copy</button>
         </div>
     </section>
+    <section class="grass-v2-section" aria-labelledby="curve-heading">
+        <h2 class="ui-section-label is-tight" id="curve-heading">Curved layout</h2>
+        <label class="grass-v2-fade">Road radius
+            <select id="curve-radius" aria-label="Curve radius" disabled>
+                <option value="off">Straight reference only</option>
+                <option value="18">18 m bend</option>
+                <option value="30">30 m bend</option>
+            </select>
+        </label>
+        <div class="grass-v2-controls">
+            <button type="button" data-curve-camera="curve" disabled>Curve overview</button>
+            <button type="button" data-curve-camera="curve-inner" disabled>Inside edge</button>
+            <button type="button" data-curve-camera="curve-outer" disabled>Outside edge</button>
+        </div>
+    </section>
     <section class="grass-v2-section" aria-labelledby="grass-heading">
         <h2 class="ui-section-label is-tight" id="grass-heading">Grass</h2>
         <div class="grass-v2-modes grass-v2-lods" role="group" aria-label="Grass detail">
@@ -69,12 +84,12 @@
 <script type="importmap">
 {
     "imports": {
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=canopy-palette-17",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js?v=roadside-flight-smooth-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js?v=roadside-flight-smooth-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=bus-baked-grass-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js?v=land-catalog-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js?v=roadside-flight-smooth-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=curved-boundary-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js?v=curved-boundary-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js?v=canopy-seam-2",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2FloorMaterial.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2FloorMaterial.js?v=transition-lighting-1",
         "../src/graphics/shaders/core/MaterialShaderHookRegistry.js": "../src/graphics/shaders/core/MaterialShaderHookRegistry.js?v=transition-blend-startup-1",
@@ -84,6 +99,6 @@
     }
 }
 </script>
-<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=canopy-palette-17"></script>
+<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=curved-boundary-1"></script>
 </body>
 </html>
