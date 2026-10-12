@@ -170,9 +170,10 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   shore exposure like the train itself.
 - **Cycle** `u = fract(lag / period)` runs the sheet's front up to `R sin(π u)` and back; the sand at a height z is under the sheet
   while the front is above it, and wet afterwards with the drying lag `e^(−t / 60 s)` from the last of the eight remembered cycles
-  whose run-up passed z; below the tidal and capillary reach (0.85 m) the sand stays saturated (the D5 static band's core); the
-  wrack line lies at the highest remembered run-up. Everything is analytic in the clock, so a fixed time repeats exactly and a
-  sea-state switch only changes the inputs.
+  whose run-up passed z (the oldest fades out over its last period, so the memory window never drops a wave at once); below the
+  tidal and capillary reach (0.85 m) the sand stays saturated (the D5 static band's core); the wrack line lies at the highest
+  remembered run-up. Everything is analytic in the clock, so a fixed time repeats exactly and a sea-state switch only changes the
+  inputs.
 - **Foam** the leading edge is a band 1.5 m wide along the beach (the sheet's depth over the foreshore slope; a share of the run-up
   turned into 18 m of white on a 1:30 beach); behind it the sheet carries 0.3 of the shoreline's supply thinning seaward, and the
   backwash leaves 0.5 of it dying over 10 s, most where each run-up stalled. The supply is the D3 state's sand channel (§2c); all
