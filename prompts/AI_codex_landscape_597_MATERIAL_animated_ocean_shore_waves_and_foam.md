@@ -244,14 +244,6 @@ user's coast photos and beach-video frames (`tests/artifacts/screens/landscape/r
 **Artifacts.** `tests/artifacts/screens/landscape/ai597/d1/` (README.md: captures `animated/`, `flat/`, composites, periodicity receipts,
 clips with `clip.mp4`, suite receipt `suite/ocean-suite.json`, `perf/measure_ocean*.json`).
 
-## On completion
-
-- Mark the first line DONE only after D1–D7 pass.
-- Rename to `prompts/AI_DONE_codex_landscape_597_MATERIAL_animated_ocean_shore_waves_and_foam_DONE.md`.
-- Keep it in `prompts/`; do not archive automatically.
-- Add a one-line summary per completed change, focused validation results, before/after performance
-  tables with conditions, and artifact paths. Update the roadmap status table.
-
 ### D2. Depth-aware shore waves — delivered 2026-10-12
 
 **Summary.** Inside the landscape extent the sea state's swell becomes one coherent shore train marched over the bathymetry on
@@ -317,3 +309,11 @@ surround's coast keeps the depth fade only); the sea-state recompute re-reads th
 
 **Artifacts.** `tests/artifacts/screens/landscape/ai597/d2/` (README.md: captures, composites, debug views, `shore/statistics.json`,
 `suite/shore-suite.json`, clips, `perf/`, `regressions/`).
+
+## On completion
+
+- Mark the first line DONE only after D1–D7 pass.
+- Rename to `prompts/AI_DONE_codex_landscape_597_MATERIAL_animated_ocean_shore_waves_and_foam_DONE.md`.
+- Keep it in `prompts/`; do not archive automatically.
+- Add a one-line summary per completed change, focused validation results, before/after performance
+  tables with conditions, and artifact paths. Update the roadmap status table.
