@@ -24,8 +24,8 @@ test('Bus scene uses distance grass, cached lighting, and complete terrain in OF
     await mkdir(output, { recursive: true });
     const initial = await page.evaluate(() => window.__grassDebugV2.getSnapshot());
     expect(initial.grass).toMatchObject({ mode: 'AUTO', system: 'distance-lod', strategy: 'baked', patches: 8640, fieldCount: 30, columnsPerSide: 3, rowsPerSide: 5, gapMeters: 1,
-        appearance: { paletteRevision: 'lod-alignment-13', canopyRootShade: .32, projectedCanopyBlend: true, canopyFiltering: { size: 1024, preparedMipContrast: 4.9, coarseMipGain: 1.58, cavityPower: .65, colorRange: 3 } },
-        field: { fieldSize: 8, fieldDepth: 36, fadeStyle: 'dissolve', edgeStrips: true, lod3CardsPerSquareMeter: 0, lod4CardsPerSquareMeter: 0, cardBase: null },
+        appearance: { paletteRevision: 'canopy-palette-17', canopyRootShade: .32, projectedCanopyBlend: true, canopyFiltering: { size: 1024, preparedMipContrast: 4.9, coarseMipGain: 1, cavityPower: .72, colorRange: 3, highlightShoulder: 60 } },
+        field: { fieldSize: 8, fieldDepth: 36, fadeStyle: 'canopy', edgeStrips: true, lod3CardsPerSquareMeter: 0, lod4CardsPerSquareMeter: 0, cardBase: null },
         cards: null, selection: { distances: [.6, .8, 20, 30, 40], transitionFraction: .3, intervalMs: 50, movementThreshold: .2 } });
     await expect(page.locator('#grass-ranges')).toContainText('0.6 / 0.8 / 20 / 30 / 40');
     await expect(page.locator('[data-grass-strategy="baked"]')).toHaveAttribute('aria-current', 'page');

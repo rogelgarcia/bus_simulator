@@ -28,7 +28,7 @@ test('bus LOD bands stay smooth through cached and freshly rebuilt selections', 
         view.renderer.setAnimationLoop(null);
         const { GrassDebugV2TransitionSelection } = await import('/src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionSelection.js');
         const state = selection.getSnapshot();
-        window.__blendTest.reference = new GrassDebugV2TransitionSelection({ cells: fields.cells, distances: state.distances, transitionFraction: state.transitionFraction });
+        window.__blendTest.reference = new GrassDebugV2TransitionSelection({ cells: fields.cells, distances: state.distances, transitionFraction: state.transitionFraction, canopyTransitionFraction: state.canopyTransitionFraction });
         window.__blendTest.state = state;
         return state;
     });

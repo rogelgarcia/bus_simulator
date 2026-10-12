@@ -9,18 +9,29 @@ It does not instantiate the v1 grass system or integrate grass into gameplay.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
 
-## Latest baked bus grass (2026-10-10)
+## Latest baked bus grass (2026-10-12)
 
 The bus scene defaults to **Auto** with the `detailed` appearance shared with
 the [baked lighting lab](GRASS_BAKED_LIGHTING_LAB.md). The 30 roadside fields,
 camera controls, terrain cutouts and benchmark route are retained.
 
-- Horizontal switches are **0.6 / 0.8 / 20 / 30 / 40 m**, with the lab's 30%
-  transition bands and 50 ms / 0.2 m selection cache.
+- Horizontal switches are **0.6 / 0.8 / 20 / 30 / 40 m**, with 30% transition
+  bands except the final **31.5–40 m** canopy handoff. Selection remains cached
+  at 50 ms / 0.2 m.
 - LOD0–2 use prepared blade colors; LOD3/4 use the same reduced individual
   blades as the lab. Their floor uses the denser, shaded grass-and-litter bake.
 - LOD5 uses the detailed paired 1K maps, corrected mip brightness and contrast,
-  shaded perimeter roots, and the shared projected dissolve at the final seam.
+  shaded perimeter roots, and the shared continuous color handoff at the final seam.
+  "Continuous canopy" is the baked default; the old "Opaque dissolve" is still
+  available. See the [v14 handoff contract](GRASS_BAKED_LIGHTING_LAB.md#continuous-terminal-handoff-v14-2026-10-11)
+  for its one additional texture lookup, finer UV frequency and prepared calibration.
+- The [v16 mip correction](GRASS_BAKED_LIGHTING_LAB.md#stable-mip-brightness-v16-2026-10-12)
+  applies the far color compensation uniformly, avoiding the camera-following
+  brightness band that was also visible in forced LOD5. It adds no runtime shader work.
+- The [v17 palette correction](GRASS_BAKED_LIGHTING_LAB.md#bounded-canopy-highlights-v17-2026-10-12)
+  bounds pale LOD5 highlights during texture preparation and aligns its color with
+  LOD4 at bus and elevated views. The shared view helper includes a small grazing
+  tip-visibility correction. Geometry, texture count and transition ranges are unchanged.
 - Baked grass does not cast a second live self-shadow. The bus and trees still
   cast into the scene map and the external visibility cache. Temporary standard
   `ShadowMaterial` receivers capture visibility over the actual canopy geometry;

@@ -33,6 +33,11 @@ All shader entry points in `src/graphics/shaders/` must be loaded through loader
 
 Loaders should call `createShaderPayload(...)` from `src/graphics/shaders/core/ShaderLoader.js`.
 
+`loadShaderSourceSet` propagates each root program's URL query to its nested
+`shaderlib` chunk fetches. A revisioned program therefore cannot silently reuse
+unrevisioned include text from the browser or source cache. Unrevisioned programs
+retain unrevisioned chunk paths. Cycle detection still uses the chunk identity.
+
 Recommended conventions for new loader modules:
 
 - Keep one loader file per shader domain usage in `src/graphics/shaders/<domain>/<ShaderName>Loader.js`.

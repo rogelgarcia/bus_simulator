@@ -2,13 +2,13 @@
 // @ts-check
 import * as THREE from 'three';
 import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js?v=card-distribution-1';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=card-distribution-1';
-import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=opaque-dissolve-1';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=canopy-palette-17';
+import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=canopy-palette-17';
 import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=card-distribution-1';
 import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 import { createGrassDebugV2CanopyShadows } from './GrassDebugV2CanopyShadows.js?v=canopy-cached-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
-import { createGrassDebugV2BakedLightingAssets } from './GrassDebugV2BakedLightingAssets.js';
+import { createGrassDebugV2BakedLightingAssets } from './GrassDebugV2BakedLightingAssets.js?v=canopy-palette-17';
 
 /** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera,lighting:object,road:object,bus:THREE.Object3D,land:object,strategy?:'baked'|'current',onProgress?:Function}} options */
 export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera, lighting, road, bus, land, strategy = 'baked', onProgress = () => {} }) {
@@ -46,7 +46,7 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
         fields.setLod3Representation(representation(near)); fields.setEdgeStrips(true);
         if (useBaked) fields.group.traverse(mesh => { if (mesh.isMesh) mesh.castShadow = false; });
         const selection = new GrassDebugV2TransitionSelection({ cells: fields.cells,
-            ...(useBaked ? { distances: [.6, .8, 20, 30, 40], transitionFraction: .3 } : {}) });
+            ...(useBaked ? { distances: [.6, .8, 20, 30, 40], transitionFraction: .3, canopyTransitionFraction: .85 } : {}) });
         const settings = selection.getSnapshot();
         fields.configureBlend(settings.transitionBands, settings.bridgeEnabled);
         if (!useBaked) {

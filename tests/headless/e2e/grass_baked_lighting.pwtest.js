@@ -10,7 +10,7 @@ test('baked grass preserves the reference path and renders every level', async (
     const errors = [], performance = [];
     page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
     page.on('console', message => { if (message.type() === 'error') { errors.push(message.text()); console.error(message.text().slice(0, 1600)); } });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__bakedTest = { renderer, scene, camera, sets, assets, bakedAssets };\nconst api = Object.freeze') });
     });

@@ -5,3 +5,6 @@ varying vec2 vGrassTransitionCoverage;
 #ifdef GRASS_PROJECTED_CANOPY_BLEND
 varying vec3 vGrassTransitionCanopyRay;
 #endif
+#ifdef GRASS_CANOPY_COLOR_HANDOFF
+varying vec2 vGrassTransitionCellOrigin;
+#endif

@@ -8,7 +8,7 @@ test('flat canopy retains detail at bus distance', async ({ page }) => {
     test.setTimeout(240000); await mkdir(output, { recursive: true });
     const errors = [], rows = [], appearances = {}, costs = {};
     page.on('pageerror', error => errors.push(error.message));
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__canopyDetail = { renderer, camera, sets, bakedAssets };\nconst api = Object.freeze') });
     });

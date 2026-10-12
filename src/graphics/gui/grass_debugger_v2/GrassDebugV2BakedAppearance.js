@@ -1,7 +1,7 @@
 // Direction-independent leaf color, root occlusion and linear color mipmaps for the isolated lab.
 // @ts-check
 import * as THREE from 'three';
-import { grassBakedAppearanceShader } from '../../shaders/materials/grass/GrassBakedAppearanceShaderLoader.js';
+import { grassBakedAppearanceShader } from '../../shaders/materials/grass/GrassBakedAppearanceShaderLoader.js?v=canopy-palette-17';
 import { grassViewCardsShader } from '../../shaders/materials/grass/GrassViewCardsShaderLoader.js';
 import { grassPlateCoverageShader } from '../../shaders/materials/grass/GrassPlateShaderLoader.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';

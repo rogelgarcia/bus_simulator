@@ -233,3 +233,17 @@ test('Grass transitions: direct-canopy comparison bypasses LOD4 with identical c
     assert.equal(selection.update(origin, 2).levels[2], 4);
     assert.throws(() => selection.setSettings({ bridgeEnabled: 1 }), RangeError);
 });
+
+test('Grass transitions: terminal coverage can span LOD4 without moving other thresholds', () => {
+    const selection = new GrassDebugV2TransitionSelection({ cells: [28, 30, 33, 38, 44].map(x => cell(x)),
+        distances: [.6, .8, 20, 30, 40], transitionFraction: .3, canopyTransitionFraction: .85 });
+    const state = selection.getSnapshot(), result = selection.update(origin, 0);
+    assert.deepEqual(state.transitionBands.slice(3), [{ from: 3, to: 4, start: 27, end: 30 }, { from: 4, to: 5, start: 31.5, end: 40 }]);
+    assert(result.renderMasks[2] & 16); assert(result.renderMasks[2] & 32);
+    assert.equal(result.renderMasks[4], 32);
+    selection.setSettings({ transitionFraction: 0 });
+    assert.equal(selection.getSnapshot().transitionBands[4].start, 40);
+    selection.setSettings({ transitionFraction: .3, canopyTransitionFraction: null });
+    assert.equal(selection.getSnapshot().transitionBands[4].start, 37);
+    for (const canopyTransitionFraction of [-1, 2, NaN]) assert.throws(() => selection.setSettings({ canopyTransitionFraction }), RangeError);
+});

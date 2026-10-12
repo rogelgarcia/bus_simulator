@@ -8,7 +8,7 @@ export const TRANSITION_LEVELS = Object.freeze(['LOD0', 'LOD1', 'LOD2', 'LOD3', 
 const GEOMETRY_SUPPORT_METERS = 1.4;
 
 /** @typedef {{centerX:number, centerZ:number, edge?:number, minX?:number, maxX?:number, minZ?:number, maxZ?:number}} TransitionCell */
-/** @typedef {{distances?:readonly number[], scale?:number, movementThreshold?:number, intervalMs?:number, sideLeafDistance?:number, transitionFraction?:number, transitionMode?:'blend'|'patches', bridgeEnabled?:boolean}} TransitionSettings */
+/** @typedef {{distances?:readonly number[], scale?:number, movementThreshold?:number, intervalMs?:number, sideLeafDistance?:number, transitionFraction?:number, canopyTransitionFraction?:number|null, transitionMode?:'blend'|'patches', bridgeEnabled?:boolean}} TransitionSettings */
 
 /** @param {number} value @param {string} name @param {boolean} allowZero */
 function assertPositive(value, name, allowZero = false) {
@@ -30,22 +30,25 @@ function validateSettings(options) {
     const intervalMs = options.intervalMs ?? 50;
     const sideLeafDistance = options.sideLeafDistance ?? 35;
     const transitionFraction = options.transitionFraction ?? .5;
+    const canopyTransitionFraction = options.canopyTransitionFraction ?? null;
     const transitionMode = options.transitionMode ?? 'blend';
     const bridgeEnabled = options.bridgeEnabled ?? true;
     if (typeof bridgeEnabled !== 'boolean') throw new RangeError('Bridge selection must be boolean.');
     if (!['blend', 'patches'].includes(transitionMode)) throw new RangeError('Unknown grass transition mode.');
     if (!Number.isFinite(transitionFraction) || transitionFraction < 0 || transitionFraction > 1)
         throw new RangeError('Transition fraction must be between zero and one.');
+    if (canopyTransitionFraction !== null && (!Number.isFinite(canopyTransitionFraction) || canopyTransitionFraction < 0 || canopyTransitionFraction > 1))
+        throw new RangeError('Canopy transition fraction must be between zero and one.');
     assertPositive(scale, 'scale');
     assertPositive(movementThreshold, 'movementThreshold', true);
     assertPositive(intervalMs, 'intervalMs', true);
     assertPositive(sideLeafDistance, 'sideLeafDistance', true);
-    return { distances: Array.from(distances), scale, movementThreshold, intervalMs, sideLeafDistance, transitionFraction, transitionMode, bridgeEnabled };
+    return { distances: Array.from(distances), scale, movementThreshold, intervalMs, sideLeafDistance, transitionFraction, canopyTransitionFraction, transitionMode, bridgeEnabled };
 }
 
-function transitionBands({ distances, scale, transitionFraction, bridgeEnabled }) {
+function transitionBands({ distances, scale, transitionFraction, canopyTransitionFraction, bridgeEnabled }) {
     const bands = distances.map((end, i) => ({ from: i, to: i + 1,
-        start: (end - (end - (i ? distances[i - 1] : 0)) * transitionFraction) * scale, end: end * scale }));
+        start: (end - (end - (i ? distances[i - 1] : 0)) * (i === 4 && transitionFraction > 0 ? canopyTransitionFraction ?? transitionFraction : transitionFraction)) * scale, end: end * scale }));
     // Both material slots share the same range when comparing the previous direct
     // LOD3→canopy path. The unused LOD4 has no render candidates or geometry work.
     if (!bridgeEnabled) bands[4] = { ...bands[3], to: 5 };
@@ -250,6 +253,7 @@ export class GrassDebugV2TransitionSelection {
             intervalMs: this.#settings.intervalMs,
             sideLeafDistance: this.#settings.sideLeafDistance,
             transitionFraction: this.#settings.transitionFraction,
+            canopyTransitionFraction: this.#settings.canopyTransitionFraction,
             transitionMode: this.#settings.transitionMode,
             bridgeEnabled: this.#settings.bridgeEnabled,
             blendGuardMeters: this.#guardMeters,

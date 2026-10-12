@@ -5,6 +5,108 @@ The current detailed appearance includes the shared
 LOD5 vertex elevation calibration, closer prepared blade colors, and stable
 placement/UV variation. Earlier appearance presets retain their previous assets.
 
+## Bounded canopy highlights (v17, 2026-10-12)
+
+At `-2.4 6.883 7.66 180 -19.206 0`, forced LOD5 exposed pale highlights
+that were not present in LOD4. Mean color alone did not describe the mismatch.
+The detailed texture preparation now applies the same hue-preserving highlight
+shoulder to every mip: decoded linear luminance above 60/255 approaches 120/255
+smoothly. Dark texels retain the existing cavity treatment. This happens once
+on the CPU, without extra texture storage or per-fragment highlight work.
+
+The common material RGB multiplier is 1.52944 / 1.515536 / 1.36433. The existing
+view-color helper adds a scalar tip-visibility correction from 1.35 to 1 over
+elevations 0.04–0.13. This inexpensive arithmetic is shared by canopy vertices
+and the terminal handoff fragments; there are no added texture samples, lights,
+draws or geometry. LOD0–4, ranges and handoff widths are unchanged.
+
+The shader loader propagates a program's revision query to nested includes.
+The changed import/source/include chain uses `canopy-palette-17`; this prevents
+old cached view-color helpers from mixing with the corrected maps.
+
+`grass_canopy_palette.pwtest.js` compares forced endpoints at the supplied pose,
+plus elevated and grazing views, including a 3818×1716 capture pass. It measures
+RGB, highlight percentiles and local contrast, rather than averages alone.
+At the reported pose the maximum sampled channel difference over 31–39 m fell
+from 13.1 to 2.5 / 255 (2.9 at the larger resolution). Flat texture patterns and
+geometric silhouettes are still different; this is a palette correction.
+
+The forward-motion regression checks bounded step-to-step brightness and
+LOD4/5 agreement through the handoff. It allows gradual view-dependent change
+to follow the blades: demanding a constant LOD5 brightness while LOD4 exposes
+more dark roots would itself create an endpoint mismatch. Texture preparation
+tests retain the constant-color mip check and also bound bright leaf values.
+
+## Stable mip brightness (v16, 2026-10-12)
+
+LOD5 alone exposed a moving brightness band at the reported bus pose
+`-2.4 6.883 -12.934 180 -19.206 0`. Its prepared maps previously multiplied
+mip levels 5 and above by 1.58. Trilinear filtering softened that step but still
+made a dark/bright band move over the ground as the camera advanced.
+
+Version 16 introduced equal gain at every mip. The former 1.58 distant
+compensation is folded into the existing material RGB multiplier, yielding
+1.3904 / 1.37776 / 1.2403. This keeps the distant palette and removes the level
+threshold without another shader instruction, texture fetch, allocation or draw.
+The existing cavity contrast, anisotropic filtering, elevation calibration and
+continuous handoff remain. `coarseMipGain` is now 1; `paletteRevision` and the
+full changed import chain use `canopy-color-16`.
+
+`grass_canopy_color_wave.pwtest.js` measures a fixed world patch while driving
+14 m through the supplied pose, including forced LOD5 and AUTO. The forced-LOD5
+brightness range fell from 11.62 to 2.49 / 255 in the recorded run. The test also
+checks spatial band contrast and preserved far brightness. The CPU test
+`grass_debug_v2_far_texture.test.js` verifies that a constant texture stays the
+same color through all mip levels. These checks do not imply removal of ordinary
+texture aliasing or every view-dependent shading change.
+
+## Continuous terminal handoff (v14, 2026-10-11)
+
+The detailed baked profile defaults to `canopy` ("Continuous canopy" in the bus
+scene). The historical lit profile retains `dissolve`. Earlier blade transitions
+retain opaque dissolve, while the final LOD4→5 band spans **31.5–40 m**. Switch
+distances remain 0.6 / 0.8 / 20 / 30 / 40 m. Selection exposes a separately
+validated `canopyTransitionFraction`; null retains the general band fraction.
+
+Within that final band, opaque LOD4 fragments mix their prepared color toward
+the existing LOD5 texture at the corresponding ray intersection with the actual
+canopy height (0.1 m). The texture transform and elevation calibration are shared
+GLSL helpers, so cell reflections, offsets, variant selection and derivatives
+match the underlying surface. Blades retain depth writes and do not dissolve into
+a changing pixel mask. The canopy surface fades over the litter with depth tests
+enabled and depth writes disabled. This avoids sorting transparent leaf layers.
+The common 0.07 m projected distance still controls both representations' weights;
+it is distinct from the actual 0.1 m surface used to align their texture samples.
+
+One additional color-map lookup is confined to terminal blade blend variants.
+There are no new lighting evaluations, normal maps, render targets, texture
+allocations or blade populations. The wider overlap can add canopy instances and
+draws. Runtime cost must be measured; it is not assumed free. Fully distant LOD5
+keeps its existing texture shader. Its UV frequency is 1.6×, with prepared linear
+RGB material gains 0.88 / 0.872 / 0.785 to compensate the brighter filtered mips.
+This reduces broad leaf shapes without changing source assets or texture size.
+The prepared cavity power is 0.72 (up from 0.65) to retain blade-scale contrast
+after the finer UV sampling, with the same mean-preserving mip preparation.
+
+`grass_canopy_handoff.pwtest.js` reproduces the three supplied camera poses,
+captures forced endpoints and AUTO, measures 1 cm camera translations, and
+isolates fade-only changes at a fixed camera. The latter compares large pixel
+jumps and RMS, not only mean absolute change: continuous small changes can have
+a higher mean than sparse but very large dissolve flashes. Optional hardware
+timing uses four counterbalanced rounds of 64 GPU queries per mode and pose,
+including soil-only. Artifacts belong under
+`tests/artifacts/screens/grass_debug_v2/canopy_handoff/`. Set
+`GRASS_HANDOFF_HARDWARE=1` for Windows D3D11; `GRASS_HANDOFF_PERF=1` enables timing.
+Ordinary blade aliasing and the flat far silhouette remain separate limitations.
+
+### Reload compatibility (2026-10-12)
+
+Bus and baked-lab entrypoints pin the changed canopy modules and shader sources
+to the `canopy-handoff-15` cache revision. The appearance remains v14. Changing
+only the entrypoint URL could reuse an older blend factory that rejects `canopy`.
+`grass_canopy_reload.pwtest.js` serves that old factory at its former URLs and
+checks baked startup, blend switching, the original lit path and lab startup.
+
 ## Static endpoint alignment (v13, 2026-10-11)
 
 The detailed profile now corrects the LOD5 texture before increasing transition

@@ -3,10 +3,10 @@
 import * as THREE from 'three';
 import { GrassDebugV2Lighting } from './GrassDebugV2Lighting.js';
 import { loadGrassDebugV2TransitionAssets } from './GrassDebugV2TransitionAssets.js';
-import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js';
-import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js';
+import { createGrassDebugV2TransitionFields } from './GrassDebugV2TransitionFields.js?v=canopy-palette-17';
+import { GrassDebugV2TransitionSelection } from './GrassDebugV2TransitionSelection.js?v=canopy-palette-17';
 import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js';
-import { createGrassDebugV2BakedLightingAssets } from './GrassDebugV2BakedLightingAssets.js';
+import { createGrassDebugV2BakedLightingAssets } from './GrassDebugV2BakedLightingAssets.js?v=canopy-palette-17';
 import { createGrassDebugV2CanopyShadows } from './GrassDebugV2CanopyShadows.js';
 import { createGrassDebugV2FreeCamera } from './GrassDebugV2FreeCamera.js';
 import { GRASS_FIELD_BUS_CAMERA, GRASS_FIELD_BUS_VIEWS } from './GrassDebugV2BusCamera.js';
@@ -58,7 +58,7 @@ export async function createGrassDebugV2BakedLightingScene() {
     const baked = createGrassDebugV2TransitionFields({ ...assets, ...bakedAssets, origins, fieldSize: 12, bridge: representation(bakedRepresentations[1]) });
     current.setLod3Representation(representation(currentCards[0])); baked.setLod3Representation(representation(bakedRepresentations[0]));
     const sets = { current, baked };
-    for (const fields of Object.values(sets)) { fields.setEdgeStrips(true); fields.setFadeStyle('dissolve'); scene.add(fields.group); }
+    for (const fields of Object.values(sets)) { fields.setEdgeStrips(true); scene.add(fields.group); }
     baked.group.traverse(mesh => { if (mesh.isMesh) mesh.castShadow = false; });
     const ground = surroundingGround(assets); scene.add(ground);
     const structure = new THREE.Group(), structureMaterial = new THREE.MeshStandardMaterial({ color: 0xbcc0a4, roughness: .85 });
@@ -88,7 +88,8 @@ export async function createGrassDebugV2BakedLightingScene() {
     const cachedVisibility = assets.canopy.shadowUniforms.grassCanopyShadowVisibility.value;
     const whiteVisibility = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat); whiteVisibility.needsUpdate = true;
     const selection = new GrassDebugV2TransitionSelection({ cells: current.cells,
-        ...(bakedAssets.blades ? { distances: [.6, .8, 20, 30, 40], transitionFraction: appearance === 'detailed' ? .3 : .1 } : {}) });
+        ...(bakedAssets.blades ? { distances: [.6, .8, 20, 30, 40], transitionFraction: appearance === 'detailed' ? .3 : .1,
+            canopyTransitionFraction: appearance === 'detailed' ? .85 : null } : {}) });
     const gpu = getOrCreateGpuFrameTimer(renderer), draw = { triangles: 0, calls: 0 };
     let strategy = 'split', lod = 'AUTO', pose = 'bus_19m_front', animating = false, frame = null, previous = performance.now(), drive = false, busy = false;
     let cpuMs = 0, lastTelemetry = 0, split = .5, externalShadows = true;

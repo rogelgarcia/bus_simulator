@@ -67,6 +67,7 @@ function updateGrassPanel() {
     grassCounts.textContent = `${grass.triangles.toLocaleString('en-US')} triangles\n`
         + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
     fadeSelect.value = grass.field.fadeStyle;
+    fadeSelect.querySelector('[value="canopy"]').disabled = grass.strategy !== 'baked';
     fadeSelect.disabled = !view.ready || view.benchmark.active;
     document.getElementById('grass-ranges').textContent = `${grass.strategy === 'baked' ? 'Baked grass' : 'Original lit grass'} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
     grassCounts.title = [

@@ -12,6 +12,17 @@ float grassCanopyFade = smoothstep(grassTransitionBlendStarts[4], grassTransitio
     grassTransitionCoverage.x = grassCanopyFade;
     #endif
 #endif
+#ifdef GRASS_CANOPY_COLOR_HANDOFF
+// Keep the nearest opaque blade and morph its color to the canopy. No changing
+// pixel mask, transparent leaf sorting or double coverage in the final handoff.
+if (grassCanopyFade >= 1.0) discard;
+grassTransitionCoverage.y = 0.0;
+#endif
+#ifdef GRASS_CANOPY_SURFACE_HANDOFF
+diffuseColor.a *= grassCanopyFade;
+if (diffuseColor.a <= 0.0) discard;
+grassTransitionCoverage.x = 1.0;
+#endif
 bool grassUseSampleCoverage = false;
 #ifdef GRASS_TRANSITION_SAMPLE_COVERAGE
     #if GRASS_TRANSITION_SAMPLE_COVERAGE == 2

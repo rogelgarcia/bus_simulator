@@ -10,7 +10,7 @@ test('card strip spacing and projection approach LOD2 at 20 metres', async ({ pa
     const errors = [], rows = [], appearances = {}, costs = {};
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__midrangeTest = { renderer, camera, sets, bakedAssets };\nconst api = Object.freeze') });
     });

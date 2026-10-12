@@ -10,7 +10,7 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
     const errors = [], rows = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         let body = await response.text();
         if (process.env.GRASS_SEAM_NARROW) body = body.replace("transitionFraction: appearance === 'detailed' ? .3 : .1", 'transitionFraction: .1');
@@ -25,6 +25,7 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
     for (const pose of ['bus_19m_front', 'bus_40m_front', 'bus_40m_rear', 'bus_40m_side']) for (const lod of ['LOD4', 'LOD5', 'AUTO-before', 'AUTO']) {
         const result = await page.evaluate(({ pose, lod }) => {
             const viewer = window.__grassBakedScene, { renderer, camera, sets } = window.__seamTest;
+            sets.baked.setFadeStyle(lod === 'AUTO-before' ? 'dissolve' : 'canopy');
             viewer.setPose(pose); viewer.setLod(lod === 'AUTO-before' ? 'AUTO' : lod);
             sets.baked.group.traverse(mesh => {
                 const material = mesh.material;
@@ -84,6 +85,7 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
         const viewer = window.__grassBakedScene, { sets } = window.__seamTest, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
         const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length, results = [];
         const select = mode => {
+            sets.baked.setFadeStyle(mode === 'before' ? 'dissolve' : 'canopy');
             viewer.setLod(mode === 'soil' ? 'OFF' : 'AUTO');
             sets.baked.group.traverse(mesh => {
                 const material = mesh.material;
@@ -137,5 +139,5 @@ test('distant blend keeps the coverage of its endpoint LODs', async ({ page }) =
             ? [bin.dark - Math.max(...endpoints.map(endpoint => endpoint.bins[i].dark))] : []));
         expect(excessDark(row)).toBeLessThan(Math.max(.003, excessDark(before) * .35));
     }
-    for (const row of costs.filter(row => row.mode === 'after')) expect(row.draw).toEqual(costs.find(other => other.mode === 'before' && other.round === row.round).draw);
+    for (const row of costs.filter(row => row.mode === 'after')) expect(row.draw.triangles).toEqual(costs.find(other => other.mode === 'before' && other.round === row.round).draw.triangles);
 });

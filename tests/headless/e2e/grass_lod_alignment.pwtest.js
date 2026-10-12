@@ -15,7 +15,7 @@ test('all grass LODs can be compared at identical angles and distances', async (
     }
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__alignment = { renderer, camera, sets };\nconst api = Object.freeze') });
     });

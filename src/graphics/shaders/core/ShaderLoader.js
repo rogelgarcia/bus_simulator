@@ -98,7 +98,7 @@ async function loadShaderText(relativePath) {
     return promise;
 }
 
-async function expandShaderLibIncludes(source, seen = new Set()) {
+async function expandShaderLibIncludes(source, seen = new Set(), revision = '') {
     const regex = /#include <shaderlib:([^>]+)>/g;
     let match;
     let cursor = 0;
@@ -116,8 +116,8 @@ async function expandShaderLibIncludes(source, seen = new Set()) {
             throw new Error(`Circular shader include detected for ${token}`);
         }
         seen.add(token);
-        const includeSource = await loadShaderText(`chunks/${token}`);
-        const expanded = await expandShaderLibIncludes(includeSource, seen);
+        const includeSource = await loadShaderText(`chunks/${token}${revision}`);
+        const expanded = await expandShaderLibIncludes(includeSource, seen, revision);
         output += before;
         output += expanded;
         seen.delete(token);
@@ -134,8 +134,9 @@ export async function loadShaderSourceSet({ vertexPath, fragmentPath }) {
     const rawVertex = await loadShaderText(vertexPath);
     const rawFragment = await loadShaderText(fragmentPath);
     const [vertexSource, fragmentSource] = await Promise.all([
-        expandShaderLibIncludes(rawVertex),
-        expandShaderLibIncludes(rawFragment)
+        // A versioned program must not reuse a stale unversioned include from browser cache.
+        expandShaderLibIncludes(rawVertex, new Set(), new URL(vertexPath, SHADER_ASSET_ROOT).search),
+        expandShaderLibIncludes(rawFragment, new Set(), new URL(fragmentPath, SHADER_ASSET_ROOT).search)
     ]);
     return {
         vertexPath: normalizeRelativePath(vertexPath),

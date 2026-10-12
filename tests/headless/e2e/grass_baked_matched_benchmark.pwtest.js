@@ -16,7 +16,7 @@ test('original bus grass and baked v10 share LOD distances during soil-relative 
         if (message.type() === 'error') errors.push(message.text());
         if (message.text().startsWith('Benchmark:')) console.log(message.text());
     });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__matchedBenchmark = { renderer, currentCards, assets, bakedAssets };\nconst api = Object.freeze') });
     });

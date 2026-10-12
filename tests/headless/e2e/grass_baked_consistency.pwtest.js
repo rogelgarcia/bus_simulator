@@ -31,7 +31,7 @@ test('prepared colors and coverage agree across adjacent LODs at bus height', as
     const rows = cached ? cached.rows.filter(row => row.version !== selected) : [], errors = [], appearance = cached ? { ...cached.appearance } : {};
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.route('**/GrassDebugV2BakedLightingScene.js', async route => {
+    await page.route('**/GrassDebugV2BakedLightingScene.js*', async route => {
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('const api = Object.freeze', 'window.__consistency = { renderer, camera, sets, bakedAssets };\nconst api = Object.freeze') });
     });

@@ -2,7 +2,7 @@
 // @ts-check
 import * as THREE from 'three';
 
-export const GRASS_FAR_TEXTURE_PROFILE = Object.freeze({ mipContrast: 4.9, coarseGain: 1.58, cavityPower: .65, colorRange: 3 });
+export const GRASS_FAR_TEXTURE_PROFILE = Object.freeze({ mipContrast: 4.9, coarseGain: 1, cavityPower: .72, colorRange: 3, highlightShoulder: 60 });
 
 /** Prepare the existing linear RGB canopy map, retaining the same dimensions and mip count.
  * @param {THREE.DataTexture} texture @param {number} maxAnisotropy */
@@ -26,14 +26,13 @@ export function prepareGrassDebugV2FarTexture(texture, maxAnisotropy) {
         const output = new Uint8Array(next.length), mean = [0, 0, 0];
         for (let i = 0; i < next.length; i += 4) for (let c = 0; c < 3; c++) mean[c] += next[i + c] / (w * h);
         const gain = 1 + (GRASS_FAR_TEXTURE_PROFILE.mipContrast - 1) * Math.min(1, level / 4);
-        // Coarser levels lose bright blade tips as they average into root cavities.
-        // Compensate in the prepared map, not with a camera-distance shader branch.
-        const coarseGain = level > 4 ? GRASS_FAR_TEXTURE_PROFILE.coarseGain : 1;
+        // Brightness compensation belongs to the material, equally for every mip.
+        // A gain step between levels makes a bright/dark band track the camera.
         const average = mean[0] * .2126 + mean[1] * .7152 + mean[2] * .0722;
         for (let i = 0; i < next.length; i += 4) {
             const luma = next[i] * .2126 + next[i + 1] * .7152 + next[i + 2] * .0722;
             const scale = luma > 0 ? Math.max(0, average + (luma - average) * gain) / luma : 0;
-            for (let c = 0; c < 3; c++) output[i + c] = Math.round(Math.min(255, next[i + c] * scale * coarseGain));
+            for (let c = 0; c < 3; c++) output[i + c] = Math.round(Math.min(255, next[i + c] * scale));
             output[i + 3] = 255;
         }
         mipmaps.push({ data: output, width, height });
@@ -51,7 +50,16 @@ export function prepareGrassDebugV2FarTexture(texture, maxAnisotropy) {
             }
         }
         const gain = before.map((value, c) => after[c] > 0 ? (value / after[c]) ** 2 / GRASS_FAR_TEXTURE_PROFILE.colorRange : 0);
-        for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) data[i + c] = Math.round(Math.min(255, shaped[i + c] * gain[c]));
+        // Compress pale tips during preparation, retaining the same hue and dark cavities.
+        // Applying the same shoulder to every level avoids a distance-dependent gain step.
+        const shoulder = GRASS_FAR_TEXTURE_PROFILE.highlightShoulder;
+        for (let i = 0; i < data.length; i += 4) {
+            const luma = (shaped[i] * gain[0] * .2126 + shaped[i + 1] * gain[1] * .7152
+                + shaped[i + 2] * gain[2] * .0722) * GRASS_FAR_TEXTURE_PROFILE.colorRange;
+            const excess = Math.max(0, luma - shoulder), limited = Math.min(luma, shoulder) + excess / (1 + excess / shoulder);
+            const scale = luma > 0 ? limited / luma : 1;
+            for (let c = 0; c < 3; c++) data[i + c] = Math.round(Math.min(255, shaped[i + c] * gain[c] * scale));
+        }
     }
     texture.magFilter = THREE.LinearFilter;
     texture.minFilter = THREE.LinearMipmapLinearFilter;

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { cloneMaterialShaderContract, registerMaterialShaderHook } from '../../shaders/core/MaterialShaderHookRegistry.js';
 import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 import { grassTransitionFieldUvShader, grassTransitionFieldCanopyShader } from '../../shaders/materials/grass/GrassTransitionFieldShaderLoader.js';
-import { createGrassTransitionBlendMaterials } from './GrassDebugV2TransitionBlend.js?v=opaque-dissolve-1';
+import { createGrassTransitionBlendMaterials } from './GrassDebugV2TransitionBlend.js?v=canopy-palette-17';
 import { createGrassTransitionChunks } from './GrassDebugV2TransitionChunks.js';
 import { grassTransitionCanopyProfile, createGrassTransitionCanopyGeometry } from './GrassDebugV2TransitionCanopy.js';
 
@@ -280,7 +280,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
     let lod3Representation = null, lod4Representation = bridge;
     let bridgeEnabled = true;
     let cardBaseEnabled = !!canopy.cardBase;
-    let fadeStyle = 'dissolve';
+    let fadeStyle = sources.LOD2.material.userData.grassCanopyHandoff ? 'canopy' : 'dissolve';
     const coverageMode = level => level === 2 ? (lod3Representation ? 2 : 0)
         : level === 3 ? (lod3Representation ? 1 : 0) + (bridgeEnabled ? 2 : 0) : level === 4 ? 1 : 0;
     function boundaryCards(entry, field) {
@@ -422,7 +422,7 @@ export function createGrassDebugV2TransitionFields({ sources, detail, canopy, br
             cardBaseEnabled = value; rebuild();
         },
         setFadeStyle(value) {
-            if (!['coverage', 'alpha', 'staggered', 'dissolve'].includes(value)) throw new Error('Invalid grass fade style.');
+            if (!['coverage', 'alpha', 'staggered', 'dissolve', 'canopy'].includes(value)) throw new Error('Invalid grass fade style.');
             if (value === fadeStyle) return;
             fadeStyle = value; rebuild();
         },
