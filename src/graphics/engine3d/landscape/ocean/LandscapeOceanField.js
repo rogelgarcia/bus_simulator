@@ -8,7 +8,9 @@
 // sea, negative over land); nothing here is authoritative (picking and queries keep the heightfield).
 import { loadLandscapeChunk } from '../../../../app/landscape/index.js';
 
-export const LANDSCAPE_OCEAN_FIELD = Object.freeze({ format: 'landscape-ocean-field-v1', channels: Object.freeze({ x: 'depth below sea level (m), negative over land' }), bytesPerTexel: 8 });
+export const LANDSCAPE_OCEAN_FIELD = Object.freeze({ format: 'landscape-ocean-field-v2', raster: Object.freeze({ x: 'depth below sea level (m), negative over land' }), bytesPerTexel: 4,
+    // the owner packs the extent raster with the AI 597 D2 shore channels (LandscapeOcean.js createExtentTextures) and the surround raster as depth only (createDepthTexture)
+    extent: Object.freeze({ field: 'RGBA16F depth, shore distance, wave height, exposure', shore: 'RG32F travel time, rock minus 8 over land' }), surround: Object.freeze({ field: 'RGBA16F depth' }) });
 
 /**
  * The layout of a field over a landscape document: its bounds, texel count per side and texel size, and the ids of the chunks of the level it reads.

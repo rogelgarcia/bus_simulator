@@ -5,7 +5,7 @@ model. Elevation and semantic source data remain authoritative on disk. A render
 partition is a temporary view of that data, never a saved terrain edit.
 
 Status: AI 596 D5 shipped the render-only far-field surround and the raised
-profiles (672/416 MiB with the surface cache off, 672/608 MiB with it on at
+profiles (688/416 MiB with the surface cache off, 688/608 MiB with it on at
 1920 × 1080; "Resource admission and ownership" and "Far-field surround" below).
 Coastal terrain v3 (341 nodes, 0.9765625 m) is the pinned production landscape;
 the 85-node v2 remains the default directory of the viewer, server and suites.
@@ -102,10 +102,10 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
-| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 672 MiB CPU / 608 MiB GPU up to 1920×1080 since AI 597 D1 (640 / 544, 684 and 1046 in AI 596 D5 – AI 597 D1), 748 at 2560×1440, 1110 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
+| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 688 MiB CPU / 608 MiB GPU up to 1920×1080 since AI 597 D2 (672 / 608 in AI 597 D1; 640 / 544, 684 and 1046 in AI 596 D5 – AI 597 D1), 748 at 2560×1440, 1110 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
 | Geometric screen error goal | 1.5 pixels (the render-only surround streams at 3 pixels) |
 
-URL budgets may not exceed the profile of the selected mode (surface cache off: 672/416 MiB; on: the display's cache profile, 672/608 MiB up to 1920×1080).
+URL budgets may not exceed the profile of the selected mode (surface cache off: 688/416 MiB; on: the display's cache profile, 688/608 MiB up to 1920×1080).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle

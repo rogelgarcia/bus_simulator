@@ -179,6 +179,25 @@ python tools/landscape_review/periodicity.py --image <capture.png> --region left
 It detrends every row of the region's luminance, averages the normalized autocorrelation over the rows and reports the
 strongest correlation beyond the minimum lag; above the threshold the sea counts as repeating (exit code 1).
 
+`--ocean-debug <0-8>` replaces the shading by one of the ocean surface's verification views after the settle (see
+`ocean_surface.frag.glsl`; 7 the per-cascade depth fades, 8 the AI 597 D2 shore wave: red its depth weight, green its
+crest sharpening, blue its bore strength) and records it in the receipt's `viewer.oceanDebug`.
+
+The AI 597 D2 shore poses live in `poses/ocean-shore-v1.json` (`OS-01` surf-zone oblique, `OS-02` crest lines from
+above, `OS-03` the bluff sector shore, `OS-04` the reef shadow, `OS-05` the open-sea handover); capture them with
+`--poses tools/landscape_review/poses/ocean-shore-v1.json`.
+
+`shore_statistics.mjs` tabulates the shore wave of a saved landscape offline, per sea state, from its level-2 chunks and
+its geology sidecar with the same pure modules the viewer runs (`LandscapeOceanShore.js`, `LandscapeOceanCoast.js`):
+
+```text
+node tools/landscape_review/shore_statistics.mjs --landscape <saved landscape directory> --output <json file> [--sea-states calm,moderate,rough]
+```
+
+It prints and writes the crest angle against the beach, the breaking-depth quantiles against `H / γ`, the deepest
+breaking texel and the breaking share of every coastal zone: the numbers the browser suite asserts
+(`snapshot().ocean.shore`), reproducible without a GPU.
+
 ## Tests
 
 `node --test tests/node/unit/landscape_review_poses.test.js` validates the pose file, the

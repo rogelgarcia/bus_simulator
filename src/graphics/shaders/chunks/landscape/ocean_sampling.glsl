@@ -1,10 +1,10 @@
 // AI 597 sampling of the animated ocean's cascades and bathymetry fields (landscape-ocean-v1), shared by the surface vertex and fragment programs.
 // Cascade c (compile-time count LANDSCAPE_OCEAN_CASCADES) is a periodic patch: its displacement texture (Dx, h, Dz) and its derivatives texture
-// (slope x, slope z, Jacobian, squared slope) wrap at the patch length. The spectral amplitude fades with the local depth (the beach and the far
-// coast never see the open sea's amplitude; the AI 597 D2 shoaling model replaces the band) read from the extent field inside the landscape bounds
-// and from the surround field beyond them while a surround is active; outside both there is no sea. The swell cascade carries a world-space
-// envelope (wave groups) so its patch never repeats exactly.
-uniform vec4 uOceanCascadeInfo[LANDSCAPE_OCEAN_CASCADES]; // 1 / patch length, texel meters, 0, 0
+// (slope x, slope z, Jacobian, squared slope) wrap at the patch length. Each cascade's amplitude fades with the local depth below the depth where
+// its longest wavelength shoals (the AI 597 D2 shore wave carries the swell cascade's energy from there to the shoreline; the beach and the far
+// coast never see the open sea's amplitude) read from the extent field inside the landscape bounds and from the surround field beyond them while a
+// surround is active; outside both there is no sea. The swell cascade carries a world-space envelope (wave groups) so its patch never repeats exactly.
+uniform vec4 uOceanCascadeInfo[LANDSCAPE_OCEAN_CASCADES]; // 1 / patch length, texel meters, depth fade zero (m), depth fade full (m)
 uniform sampler2D uOceanDisplacement0;
 uniform sampler2D uOceanDerivatives0;
 #if LANDSCAPE_OCEAN_CASCADES > 1
@@ -19,14 +19,15 @@ uniform sampler2D uOceanDerivatives2;
 uniform sampler2D uOceanDisplacement3;
 uniform sampler2D uOceanDerivatives3;
 #endif
-// extent field: x depth below sea level (m, negative over land); bounds: min x, min z, 1 / width, 1 / height
+// extent field: x depth below sea level (m, negative over land), y shore distance, z shore wave height, w shore exposure (ocean_shore);
+// bounds: min x, min z, 1 / width, 1 / height; the far field carries the depth only
 uniform sampler2D uOceanField;
 uniform vec4 uOceanFieldBounds;
 uniform sampler2D uOceanFarField;
 uniform vec4 uOceanFarFieldBounds;
 uniform float uOceanFarFieldActive;
-// depth fade zero, depth fade full (m), envelope amplitude, 1 / envelope wavelength
-uniform vec4 uOceanFade;
+// envelope amplitude, 1 / envelope wavelength
+uniform vec2 uOceanEnvelope;
 
 bool oceanInside(vec2 xz, vec4 bounds) {
     vec2 uv = (xz - bounds.xy) * bounds.zw;
@@ -63,15 +64,25 @@ float oceanValueNoise(vec2 p) {
 
 // the swell envelope: 1 +- amplitude of two value-noise octaves at the envelope wavelength
 float oceanEnvelope(vec2 xz) {
-    vec2 p = xz * uOceanFade.w;
+    vec2 p = xz * uOceanEnvelope.y;
     float noise = 0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.0 + vec2(17.3, 41.7));
-    return 1.0 + uOceanFade.z * (2.0 * noise - 1.0);
+    return 1.0 + uOceanEnvelope.x * (2.0 * noise - 1.0);
 }
 
-// per-cascade amplitude factors at a plane position (x cascade 0 with the envelope, y..w the finer cascades)
+// per-cascade amplitude factors at a plane position (x cascade 0 with the envelope, y..w the finer cascades), each cascade's own depth fade
 vec4 oceanAmplitudeFactors(vec2 xz) {
-    float fade = smoothstep(uOceanFade.x, uOceanFade.y, oceanDepth(xz));
-    return vec4(fade * oceanEnvelope(xz), fade, fade, fade);
+    float depth = oceanDepth(xz);
+    vec4 factors = vec4(smoothstep(uOceanCascadeInfo[0].z, uOceanCascadeInfo[0].w, depth) * oceanEnvelope(xz), 0.0, 0.0, 0.0);
+#if LANDSCAPE_OCEAN_CASCADES > 1
+    factors.y = smoothstep(uOceanCascadeInfo[1].z, uOceanCascadeInfo[1].w, depth);
+#endif
+#if LANDSCAPE_OCEAN_CASCADES > 2
+    factors.z = smoothstep(uOceanCascadeInfo[2].z, uOceanCascadeInfo[2].w, depth);
+#endif
+#if LANDSCAPE_OCEAN_CASCADES > 3
+    factors.w = smoothstep(uOceanCascadeInfo[3].z, uOceanCascadeInfo[3].w, depth);
+#endif
+    return factors;
 }
 
 vec3 oceanDisplacementSample(int cascade, vec2 xz, float cell) {

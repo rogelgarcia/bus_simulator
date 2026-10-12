@@ -30,9 +30,10 @@ const PLANNING_LAYERS = Object.freeze(['districts', 'roads', 'shoreline', 'point
 const OVERLAY_SELECTOR = '.landscape-ui, #ui-perf-bar';
 const USAGE = `Usage: node tools/landscape_review/capture.mjs --landscape <saved landscape directory> --output <directory>
        [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]
-       [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>] [--ocean animated|flat] [--sea-state calm|moderate|rough] [--ocean-time <seconds>]`;
+       [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>] [--ocean animated|flat] [--sea-state calm|moderate|rough] [--ocean-time <seconds>]
+       [--ocean-debug <0-8>]`;
 
-/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number}} CaptureOptions */
+/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number,oceanDebug?:number}} CaptureOptions */
 
 /** @param {string} message @returns {never} */
 function fail(message) { throw new Error(`[LandscapeReview] ${message}`); }
@@ -63,7 +64,8 @@ export function parseCaptureOptions(args) {
         label: { type: 'string' }, water: { type: 'string', default: 'on' }, planning: { type: 'string', default: 'off' },
         width: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.width) }, height: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.height) },
         'allow-missing-appearance': { type: 'string', default: 'off' }, surround: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surround },
-        ocean: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.ocean }, 'sea-state': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.seaState }, 'ocean-time': { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.oceanTime) } } });
+        ocean: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.ocean }, 'sea-state': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.seaState }, 'ocean-time': { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.oceanTime) },
+        'ocean-debug': { type: 'string', default: '0' } } });
     if (!values.landscape || !values.output) fail(`--landscape and --output are required\n${USAGE}`);
     const select = values.select === undefined ? null : values.select.split(',').map(id => id.trim()).filter(Boolean);
     if (select && !select.length) fail('--select needs at least one pose id');
@@ -75,10 +77,12 @@ export function parseCaptureOptions(args) {
     try { ocean = landscapeOceanSurface(values.ocean); seaState = landscapeOceanSeaState(values['sea-state']); } catch (error) { fail(/** @type {Error} */ (error).message.replace('[LandscapeOcean] landscapeOcean', '--ocean').replace('[LandscapeOcean] landscapeSeaState', '--sea-state')); }
     const oceanTime = Number(values['ocean-time']);
     if (!Number.isFinite(oceanTime) || oceanTime < 0) fail(`--ocean-time must be a nonnegative number of seconds; received ${values['ocean-time']}`);
+    const oceanDebug = Number(values['ocean-debug']);
+    if (!Number.isInteger(oceanDebug) || oceanDebug < 0 || oceanDebug > 8) fail(`--ocean-debug must be an integer verification view from 0 to 8; received ${values['ocean-debug']}`);
     return Object.freeze({ landscapeDirectory, outputDirectory: path.resolve(values.output), posesFile: path.resolve(/** @type {string} */ (values.poses)), select: select && Object.freeze(select),
         label: values.label ?? path.basename(landscapeDirectory), water: parseSwitch(/** @type {string} */ (values.water), 'water'), planning: parseSwitch(/** @type {string} */ (values.planning), 'planning'),
         width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height'),
-        allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance'), surround, ocean: /** @type {string} */ (ocean), seaState: /** @type {string} */ (seaState), oceanTime });
+        allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance'), surround, ocean: /** @type {string} */ (ocean), seaState: /** @type {string} */ (seaState), oceanTime, oceanDebug });
 }
 
 /** @param {readonly any[]} errors appearance errors as the viewer reports them ({message} records, or strings) */
@@ -162,7 +166,7 @@ function selectPoses(poses, select) {
 /** @param {CaptureOptions} options */
 export async function captureReviewPoses(options) {
     const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height, allowMissingAppearance, surround = REVIEW_CAPTURE_DEFAULTS.surround,
-        ocean = REVIEW_CAPTURE_DEFAULTS.ocean, seaState = REVIEW_CAPTURE_DEFAULTS.seaState, oceanTime = REVIEW_CAPTURE_DEFAULTS.oceanTime } = options;
+        ocean = REVIEW_CAPTURE_DEFAULTS.ocean, seaState = REVIEW_CAPTURE_DEFAULTS.seaState, oceanTime = REVIEW_CAPTURE_DEFAULTS.oceanTime, oceanDebug = 0 } = options;
     const poses = await loadReviewPoses(posesFile), selected = selectPoses(poses, select);
     const sampleGround = await createNativeGroundSampler(landscapeDirectory);
     const cameras = [];
@@ -208,6 +212,8 @@ export async function captureReviewPoses(options) {
             const poseStarted = Date.now();
             await page.evaluate(camera => window.__landscapeTestHooks.setCamera({ position: camera.position, target: camera.target, projection: camera.projection, fov: camera.fov, zoom: camera.zoom }), camera);
             const settle = await settleViewer(page, allowMissingAppearance);
+            // the ocean's verification view (ocean_surface.frag.glsl) replaces the shading after the settle, so the receipt still describes the settled scene
+            if (oceanDebug) await page.evaluate(mode => window.__landscapeTestHooks.setOceanDebug(mode), oceanDebug);
             await page.waitForTimeout(REVIEW_CAPTURE_DEFAULTS.tailMs);
             const view = await snapshot(page), fileName = `${pose.id}.png`, file = path.join(outputDirectory, fileName);
             const screenshotStarted = Date.now();
@@ -216,7 +222,7 @@ export async function captureReviewPoses(options) {
             const receipt = { format: REVIEW_CAPTURE_FORMAT, schemaVersion: 1, poseId: pose.id, label, landscapeDirectory: posix(landscapeDirectory), revision: loaded.revision,
                 poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) }, pose, camera, groundHeight: camera.groundHeight, file: fileName, settled: settle.settled, waitedMs: settle.waitedMs,
                 canvas: { width, height }, clip, snapshotSummary: summarize(view), timing: { settleMs: settle.waitedMs, tailMs: REVIEW_CAPTURE_DEFAULTS.tailMs, screenshotMs, totalMs },
-                viewer: { water, planning, width, height, allowMissingAppearance, surround, ocean, seaState, oceanTime }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
+                viewer: { water, planning, width, height, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
             await writeFile(path.join(outputDirectory, `${pose.id}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
             captures.push({ poseId: pose.id, file: fileName, receipt: `${pose.id}.json`, settled: settle.settled, groundHeight: camera.groundHeight, totalMs, appearanceErrors: settle.appearanceErrors });
             log(`${pose.id} ${settle.settled ? 'settled' : 'NOT settled'} in ${(settle.waitedMs / 1000).toFixed(1)} s, total ${(totalMs / 1000).toFixed(1)} s, ground ${camera.groundHeight === null ? 'outside' : `${camera.groundHeight.toFixed(2)} m`} -> ${shown(file)}`);
@@ -229,7 +235,7 @@ export async function captureReviewPoses(options) {
         await new Promise(resolve => server.close(() => resolve(undefined)));
     }
     const index = { format: REVIEW_CAPTURES_FORMAT, schemaVersion: 1, label, landscapeDirectory: posix(landscapeDirectory), revision: sampleGround.revision, poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) },
-        viewer: { width, height, water, planning, allowMissingAppearance, surround, ocean, seaState, oceanTime, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
+        viewer: { width, height, water, planning, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
     await writeFile(path.join(outputDirectory, 'captures.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;
 }

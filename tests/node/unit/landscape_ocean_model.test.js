@@ -1,7 +1,7 @@
 // Verifies the AI 597 ocean contract: presets, cascade band partition, clipmap rings, the deterministic clock, the residency share, the spectral math and its FFT table, and the bathymetry raster.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_MAX_CASCADES, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanClock, createLandscapeOceanLedger, landscapeOceanCascades, landscapeOceanQuality,
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_MAX_CASCADES, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanClock, createLandscapeOceanLedger, landscapeOceanCascades, landscapeOceanCascadeFade, landscapeOceanShoreInputs, landscapeOceanQuality,
     landscapeOceanResources, landscapeOceanRingOrigin, landscapeOceanRings, landscapeOceanSeaState, landscapeOceanSurface } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 import { landscapeOceanButterfly, landscapeOceanDispersion, landscapeOceanEvolvedTexel, landscapeOceanGaussian, landscapeOceanHash, landscapeOceanInitialTexel, landscapeOceanInverseFftRow, landscapeOceanJonswap,
     landscapeOceanLogGamma, landscapeOceanSeaStateShapes, landscapeOceanSignificantWaveHeight, landscapeOceanSpreading, landscapeOceanTma, landscapeOceanWaveSpectrum } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanSpectrum.js';
@@ -88,7 +88,7 @@ test('Ocean ledger: the share is one standing reservation of the ocean kind, its
     assert.throws(() => ledger.reserve('c', { cpuBytes: 1, gpuBytes: 1 }), /share is disposed/);
     assert.throws(() => createLandscapeOceanLedger(new LandscapeResidencyBudget({ cpuBytes: 8 * MiB, gpuBytes: 8 * MiB })), /cannot fit the shared ledger: cpu-budget/);
     // the shipped profiles hold the share beside what the streams had before AI 597 (640/352 and 640/544 MiB)
-    assert.deepEqual([LANDSCAPE_OCEAN.budgets.cpuBytes / MiB, LANDSCAPE_OCEAN.budgets.gpuBytes / MiB], [32, 64]);
+    assert.deepEqual([LANDSCAPE_OCEAN.budgets.cpuBytes / MiB, LANDSCAPE_OCEAN.budgets.gpuBytes / MiB], [48, 64]);
 });
 
 test('Ocean lighting uniform: the glint switch joins the lighting layout and defaults to the terrain glint', () => {
@@ -192,4 +192,30 @@ test('Ocean field: the depth raster is bilinear in the level chunks, seamless, a
     assert.throws(() => landscapeOceanFieldLayout(manifest, 3, 16), /no chunks at level 3/);
     chunks.delete('l1/c1/r1');
     assert.throws(() => rasterizeLandscapeOceanDepth(layout, manifest, chunks), /missing from the loaded set/);
+});
+
+test('Ocean D2 model: per-cascade depth fades, the shore-wave inputs of a sea state and the extent field bytes', () => {
+    const fade = LANDSCAPE_OCEAN.cascadeFade, medium = landscapeOceanCascades('medium');
+    const fades = medium.map(cascade => landscapeOceanCascadeFade(cascade));
+    // the swell cascade (unbounded band) fades over the deepest band, every finer cascade at a tenth of its longest wavelength, never below the floor
+    assert.deepEqual(fades[0], { zeroMeters: fade.maxFullMeters * fade.zeroShare, fullMeters: fade.maxFullMeters });
+    close(fades[1].fullMeters, medium[1].maxWavelengthMeters * fade.wavelengthShare, 1e-12); close(fades[1].zeroMeters, fades[1].fullMeters * fade.zeroShare, 1e-12);
+    close(fades[2].fullMeters, medium[2].maxWavelengthMeters * fade.wavelengthShare, 1e-12);
+    assert.equal(landscapeOceanCascadeFade(landscapeOceanCascades('high')[3]).fullMeters, fade.minFullMeters);
+    for (let i = 1; i < fades.length; i++) assert.ok(fades[i].fullMeters < fades[i - 1].zeroMeters, `cascade ${i} fades below cascade ${i - 1}`);
+    assert.throws(() => landscapeOceanCascadeFade({ maxWavelengthMeters: 0 }), /positive longest wavelength/);
+    // the shore wave carries the sea state's swell period and heading, McCowan's breaking index and starts at half the deep-water wavelength
+    const moderate = landscapeOceanShoreInputs('moderate'), swell = LANDSCAPE_OCEAN_SEA_STATES.moderate.swell;
+    assert.equal(moderate.periodSeconds, swell.periodSeconds); assert.equal(moderate.headingDegrees, swell.headingDegrees); assert.equal(moderate.gamma, LANDSCAPE_OCEAN.shore.gamma);
+    close(moderate.deepWavelengthMeters, LANDSCAPE_OCEAN.gravity * swell.periodSeconds ** 2 / (2 * Math.PI), 1e-9);
+    close(moderate.deepDepthMeters, LANDSCAPE_OCEAN.shore.deepDepthFactor * moderate.deepWavelengthMeters, 1e-9);
+    close(moderate.omega, 2 * Math.PI / swell.periodSeconds, 1e-12); close(moderate.groupPeriodSeconds, LANDSCAPE_OCEAN.shore.groupPeriods * swell.periodSeconds, 1e-12);
+    assert.ok(landscapeOceanShoreInputs('rough').deepDepthMeters > moderate.deepDepthMeters);
+    assert.throws(() => landscapeOceanShoreInputs('stormy'), /must be one of calm, moderate, rough/);
+    // the extent field: RGBA16F shore channels plus RG32F travel time on the GPU, with the float depth raster kept on the CPU; the surround depth only
+    const { fields } = LANDSCAPE_OCEAN, estimate = landscapeOceanResources('medium');
+    assert.equal(fields.extentGpuBytesPerTexel, 16); assert.equal(fields.extentCpuBytesPerTexel, 21); assert.equal(fields.surroundBytesPerTexel, 8);
+    assert.equal(estimate.parts.fields.gpuBytes, fields.texels ** 2 * 16 + fields.surroundTexels ** 2 * 8);
+    assert.equal(estimate.parts.fields.cpuBytes, fields.texels ** 2 * 21 + fields.surroundTexels ** 2 * 4);
+    assert.ok(LANDSCAPE_OCEAN.shore.rockZones.includes('platform') && LANDSCAPE_OCEAN.shore.exposureZones.includes('surf'));
 });

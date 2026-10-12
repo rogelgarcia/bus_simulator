@@ -68,8 +68,9 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
  * at 1920x1080; 512/448 MiB until AI 596 D5 added the surround's 128/96 MiB share to both, keeping the 192 MiB cache ceiling). Larger capacities add
  * their own bytes (landscapeSurfaceCacheBudgets).
  */
-// AI 597 D1: 672 / 608 MiB, the D5 profile plus the animated ocean's 32 / 64 MiB share (the cache ceiling stays 192 MiB)
-export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 672 * 1024 * 1024, gpuBytes: 608 * 1024 * 1024 });
+// AI 597 D1: 672 / 608 MiB, the D5 profile plus the animated ocean's 32 / 64 MiB share (the cache ceiling stays 192 MiB); D2: 688 / 608 MiB, the
+// ocean share grew to 48 / 64 MiB
+export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 608 * 1024 * 1024 });
 
 /**
  * Surface cache mode of a landscape view that does not choose one (AI577 D7 decision: on). `landscapeSurfaceCache=on|off` (the view's surfaceCache

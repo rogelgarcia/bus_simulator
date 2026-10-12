@@ -34,20 +34,33 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     texelsPerWavelength: 8,
     // ring vertices morph to the next ring's lattice over the outer part of the ring (fractions of its half extent, L-infinity distance)
     morph: Object.freeze({ start: .7, end: .95 }),
-    // the depth below which the spectral displacement fades to zero (the beach and the far coast never see the open sea's amplitude; AI 597 D2
-    // replaces this band with the shoaling model) and the depth band over which the fade runs
-    depthFade: Object.freeze({ zeroMeters: .3, fullMeters: 4 }),
+    // per-cascade depth fade (landscapeOceanCascadeFade): a cascade's spectral amplitude is full at and above wavelengthShare x its longest
+    // wavelength (clamped between the min and max depths) and gone at and below zeroShare x that depth; the shore wave (AI 597 D2) carries the
+    // swell cascade's energy from its fade to the shoreline, so the open sea's swell hands over once
+    cascadeFade: Object.freeze({ wavelengthShare: .1, minFullMeters: .4, maxFullMeters: 18, zeroShare: .4 }),
+    // AI 597 D2 shore waves (LandscapeOceanShore.js, ocean_shore.glsl): the sea state's swell period at its significant height, refracted by fast
+    // marching of the finite-depth phase speed from the depth of deepDepthFactor x the deep-water wavelength (the open-sea plane wave), shoaled by
+    // energy flux and broken where H exceeds gamma x depth (sand; rock surges uncapped with rockReflection of the train reflected), drawn as one
+    // train under a group envelope (groupPeriods swell periods, +- groupAmplitude), a longshore variation and a Stokes crest sharpening at breaking;
+    // the geology's shore exposure (exposureZones carry it, rockZones are rock) damps the train toward exposureFloor over the exposureRamp from the
+    // shoreline. orbital scales the Gerstner horizontal displacement of the train
+    shore: Object.freeze({ gamma: .78, deepDepthFactor: .5, groupPeriods: 7, groupAmplitude: .35, longshoreWavelengthMeters: 90, longshoreAmplitude: .25, orbital: .8, rockReflection: .4,
+        sharpening: .6, exposureFloor: .4, exposureRamp: Object.freeze({ fullMeters: 60, zeroMeters: 220 }), rockZones: Object.freeze(['platform', 'bluff-toe']), exposureZones: Object.freeze(['bar', 'surf', 'swash']),
+        beachZones: Object.freeze(['surf', 'swash']), sidecar: 'geology/manifest.json' }),
     // world-space envelope of the swell cascade (wave groups): 1 +- amplitude at the wavelength, in meters, so the patch never repeats exactly
     envelope: Object.freeze({ amplitude: .35, wavelengthMeters: 1500 }),
     // the share of the shared ledger the view holds for its lifetime once the budget is at least the shipped profile (one standing reservation,
     // so the streams, which expand into free room within a frame, can never deny a rebuilt ocean): the spectral atlases, the per-cascade displacement and slope textures with
-    // their mips, the bathymetry fields of the extent and the surround and the clipmap geometry (medium quality 24.5 MiB GPU); the AI 597 foam
-    // and swash state (D3, D4) reserves inside the same share. LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share
-    budgets: Object.freeze({ cpuBytes: 32 * MiB, gpuBytes: 64 * MiB }),
+    // their mips, the bathymetry fields of the extent (its shore channels and travel time since D2) and the surround and the clipmap geometry
+    // (medium quality 32.5 MiB GPU, high 52 MiB GPU / 36 MiB CPU); the AI 597 foam and swash state (D3, D4) reserves inside the same share.
+    // LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share (32 / 64 MiB in D1, 48 / 64 MiB in D2)
+    budgets: Object.freeze({ cpuBytes: 48 * MiB, gpuBytes: 64 * MiB }),
     statuses: Object.freeze(['off', 'loading', 'active', 'unavailable', 'failed']),
     // the bathymetry fields: the extent at the level-2 hierarchy spacing (4 x the native spacing: 3.906 m on coastal v3), the surround at its
-    // level-1 spacing (62.5 m), both rasterized on the CPU from the saved chunks (LandscapeOceanField.js)
-    fields: Object.freeze({ extentLevel: 2, surroundLevel: 1, texels: 1024, surroundTexels: 512 })
+    // level-1 spacing (62.5 m), both rasterized on the CPU from the saved chunks (LandscapeOceanField.js); the extent carries the shore-wave
+    // channels (RGBA16F depth, shore distance, wave height, exposure; RG32F travel time, rock) and keeps its float depth raster and the coast's
+    // zone labels for the sea-state recompute, the surround the depth only (RGBA16F)
+    fields: Object.freeze({ extentLevel: 2, surroundLevel: 1, texels: 1024, surroundTexels: 512, extentGpuBytesPerTexel: 8 + 8, extentCpuBytesPerTexel: 8 + 8 + 4 + 1, surroundBytesPerTexel: 8 })
 });
 
 /**
@@ -157,9 +170,36 @@ export function landscapeOceanRingOrigin(ring, cameraX, cameraZ) {
 }
 
 /**
+ * The depth fade of a cascade's spectral amplitude: zero at and below zeroMeters, full at and above fullMeters, from LANDSCAPE_OCEAN.cascadeFade
+ * of the cascade's longest wavelength (the coarsest cascade, whose band is unbounded, takes the maximum depth). The shore wave's weight is the
+ * complement of cascade 0's fade.
+ * @param {{maxWavelengthMeters:number}} cascade one of landscapeOceanCascades
+ * @returns {Readonly<{zeroMeters:number,fullMeters:number}>}
+ */
+export function landscapeOceanCascadeFade(cascade) {
+    if (!cascade || !(cascade.maxWavelengthMeters > 0)) throw new Error('[LandscapeOcean] A cascade with a positive longest wavelength is required');
+    const { wavelengthShare, minFullMeters, maxFullMeters, zeroShare } = LANDSCAPE_OCEAN.cascadeFade;
+    const fullMeters = Math.min(Math.max(cascade.maxWavelengthMeters * wavelengthShare, minFullMeters), maxFullMeters);
+    return Object.freeze({ zeroMeters: fullMeters * zeroShare, fullMeters });
+}
+
+/**
+ * The shore-wave inputs of a sea state (the train's period, heading and breaking index, the depth where the march starts) and its drawing
+ * constants; the significant height the train carries is the sea state's (the owner adds it from the spectrum).
+ * @param {string} seaState
+ */
+export function landscapeOceanShoreInputs(seaState) {
+    const state = LANDSCAPE_OCEAN_SEA_STATES[landscapeOceanSeaState(seaState)], shore = LANDSCAPE_OCEAN.shore;
+    const periodSeconds = state.swell.periodSeconds, deepWavelengthMeters = LANDSCAPE_OCEAN.gravity * periodSeconds * periodSeconds / (2 * Math.PI);
+    return Object.freeze({ periodSeconds, headingDegrees: state.swell.headingDegrees, gamma: shore.gamma, deepWavelengthMeters, deepDepthMeters: shore.deepDepthFactor * deepWavelengthMeters,
+        omega: 2 * Math.PI / periodSeconds, groupPeriodSeconds: shore.groupPeriods * periodSeconds });
+}
+
+/**
  * Conservative byte estimate of the ocean's resources for a quality preset: the spectral atlases (h0 and the two FFT ping-pong textures, RGBA32F,
- * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (RGBA16F,
- * the extent and the surround; their CPU rasters as float32) and the clipmap geometry (position attribute and index per ring).
+ * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (the extent
+ * as the RGBA16F shore channels and the RG32F travel time with its float depth raster, the surround as RGBA16F depth; the CPU rasters are the
+ * texture data) and the clipmap geometry (position attribute and index per ring).
  * @param {string} quality @param {{extentTexels?:number,surroundTexels?:number}} [fields]
  * @returns {Readonly<{cpuBytes:number,gpuBytes:number,parts:Readonly<Record<string,Readonly<{cpuBytes:number,gpuBytes:number}>>>}>}
  */
@@ -172,7 +212,7 @@ export function landscapeOceanResources(quality, { extentTexels = LANDSCAPE_OCEA
     const parts = Object.freeze({
         spectra: Object.freeze({ cpuBytes: 0, gpuBytes: 3 * atlasBytes + stages * texels * 16 }),
         cascades: Object.freeze({ cpuBytes: 0, gpuBytes: cascades * 2 * mipped }),
-        fields: Object.freeze({ cpuBytes: (extentTexels * extentTexels + surroundTexels * surroundTexels) * 4, gpuBytes: (extentTexels * extentTexels + surroundTexels * surroundTexels) * 8 }),
+        fields: Object.freeze({ cpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel + surroundTexels * surroundTexels * 4, gpuBytes: extentTexels * extentTexels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel + surroundTexels * surroundTexels * LANDSCAPE_OCEAN.fields.surroundBytesPerTexel }),
         geometry: Object.freeze({ cpuBytes: geometryBytes, gpuBytes: geometryBytes })
     });
     const total = Object.values(parts).reduce((sum, part) => ({ cpuBytes: sum.cpuBytes + part.cpuBytes, gpuBytes: sum.gpuBytes + part.gpuBytes }), { cpuBytes: 0, gpuBytes: 0 });

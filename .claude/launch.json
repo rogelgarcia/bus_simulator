@@ -16,6 +16,15 @@
         "tools/landscape_server/run.mjs"
       ],
       "port": 8002
+    },
+    {
+      "name": "landscape-server-v3",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.LANDSCAPE_DIRECTORY = 'assets/public/landscape/coastal-city-v3'; import('./tools/landscape_server/run.mjs');"
+      ],
+      "port": 8002
     }
   ]
 }

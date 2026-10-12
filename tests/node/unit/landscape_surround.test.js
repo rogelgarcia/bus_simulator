@@ -192,9 +192,9 @@ test('Surround budgets: the share is accounted inside the shipped profiles and l
     assert.equal(LANDSCAPE_SURFACE_CACHE.streamReserveGpuBytes, LANDSCAPE_STREAMING_BUDGETS.gpuBytes);
     assert.equal(LANDSCAPE_SURROUND.targetErrorPixels, 3); assert.equal(LANDSCAPE_SURROUND.skirtDepthMeters, 1.5); assert.equal(LANDSCAPE_SURROUND.workers, 1);
     // the recorded raises: AI 596 D5 512/256 -> 640/352 MiB uncached, 512/448 -> 640/544 MiB with the cache (share 128/96 MiB); AI 597 D1 adds the
-    // ocean's 32/64 MiB share: 672/416 and 672/608 MiB
-    assert.deepEqual([LANDSCAPE_STREAMING_BUDGETS.cpuBytes / MiB, LANDSCAPE_STREAMING_BUDGETS.gpuBytes / MiB], [672, 416]);
-    assert.deepEqual([LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes / MiB, LANDSCAPE_SURFACE_CACHE_BUDGETS.gpuBytes / MiB], [672, 608]);
+    // ocean's share (32/64 MiB in D1, 48/64 MiB since D2): 688/416 and 688/608 MiB
+    assert.deepEqual([LANDSCAPE_STREAMING_BUDGETS.cpuBytes / MiB, LANDSCAPE_STREAMING_BUDGETS.gpuBytes / MiB], [688, 416]);
+    assert.deepEqual([LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes / MiB, LANDSCAPE_SURFACE_CACHE_BUDGETS.gpuBytes / MiB], [688, 608]);
     assert.deepEqual([share.cpuBytes / MiB, share.gpuBytes / MiB], [128, 96]);
 });
 

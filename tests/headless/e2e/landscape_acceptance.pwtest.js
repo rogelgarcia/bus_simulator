@@ -23,8 +23,9 @@ const NOISE = { meanBytes: .25, outlierBytes: 16, outlierFraction: .0005 };
 const CAPACITY_REASONS = [null, 'appearance-mask-capacity', 'surface-detail-capacity', 'surface-detail-native-capacity'];
 // the shared PBR availability probe of PbrAssetsRuntime asks for raw PBR files that the landscape server deliberately does not serve; since AI 596 D5 the
 // viewer's default landscapeSurround=auto asks for the far-field surround sidecar beside the landscape, which coastal v2 does not publish (the 404 is
-// the designed 'absent' answer of auto mode, LandscapeSurround.js)
-const EXPECTED_404_PROBES = ['/assets/public/pbr/_manifest.json', '/assets/public/pbr/red_brick/basecolor.jpg', '/assets/public/landscape/coastal-city/surround/manifest.json'];
+// the designed 'absent' answer of auto mode, LandscapeSurround.js); since AI 597 D2 the animated ocean asks for the geology sidecar beside the
+// landscape for its coast classes, which coastal v2 does not publish either (the neutral coast, LandscapeOceanCoast.js)
+const EXPECTED_404_PROBES = ['/assets/public/pbr/_manifest.json', '/assets/public/pbr/red_brick/basecolor.jpg', '/assets/public/landscape/coastal-city/surround/manifest.json', '/assets/public/landscape/coastal-city/geology/manifest.json'];
 // AI577 D6 cache-final temporal report (512/448 MiB, cache off / on): popping ratio of the four D4 paths
 const D6_POP_RATIO = { dolly: [1.007, 1.010], fov: [1.527, 1.534], ortho: [1.179, 1.218], pan: [1.008, 1.011] };
 const LOCAL_POP_LIMIT = 1.35;

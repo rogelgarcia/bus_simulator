@@ -214,7 +214,9 @@ Since AI 597 D1 the drawn sea is the animated ocean ([LANDSCAPE_OCEAN.md](LANDSC
 surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|medium|high` and
 `landscapeOceanTime=<seconds>` (a fixed simulation clock for captures); the toolbar's *Ocean* button
 switches animated and flat, the test hook `setOcean({surface, seaState, quality, clock})` drives it and
-`snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share).
+`snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share; since D2 `shore`:
+the shore wave's inputs, statistics, breaking per coastal zone and coast classes, settled once a sea-state switch has
+marched it again), `setOceanDebug(0..8)` selects a verification view of the surface (8 the shore wave).
 The water toggle hides both surfaces and the optical water body; the ocean is never pickable and the
 water reference keeps the optical body while its plane is hidden (`snapshot().water.surfaceDrawn`).
 Planning urban/road/runway classes display natural ground, inferred from terrain

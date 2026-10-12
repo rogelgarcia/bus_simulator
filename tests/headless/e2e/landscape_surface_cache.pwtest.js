@@ -322,7 +322,7 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
         await page.close();
         // profiles without room for the minimum atlas above the streams' reserve (the uncached shipped 640/352 since AI 596 D5, the reduced 128/64 and
         // 48/24 MiB) report why, and the tiles compile the uncached program from the start (no variant switch, so no bootstrap frame while it links)
-        for (const [cpu, gpu] of [[672, 416], [128, 64], [48, 24]]) {
+        for (const [cpu, gpu] of [[688, 416], [128, 64], [48, 24]]) {
             const small = await context.newPage(), smallErrors = observeErrors(small);
             await small.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpu}&landscapeGpuMiB=${gpu}&landscapeSurfaceCache=on`));
             await small.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.appearance?.surfaceCache?.status === 'unavailable', null, { timeout: 120000 });

@@ -15,9 +15,9 @@ test('Appearance budget: ceilings are half of each total and profiles up to the 
         assert.equal(shared.snapshot().entries.length, 0);
         return value;
     };
-    // the shipped uncached profile is 672/416 MiB since AI 597 D1 (640/352 in AI 596 D5, 512/256 before), so its ceilings are 336/208 MiB
+    // the shipped uncached profile is 688/416 MiB since AI 597 D2 (672/416 in D1, 640/352 in AI 596 D5, 512/256 before), so its ceilings are 344/208 MiB
     assert.deepEqual(limits(undefined), { limits: { cpuBytes: LANDSCAPE_STREAMING_BUDGETS.cpuBytes / 2, gpuBytes: LANDSCAPE_STREAMING_BUDGETS.gpuBytes / 2 }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
-    assert.deepEqual(limits(undefined).limits, { cpuBytes: 336 * MIB, gpuBytes: 208 * MIB });
+    assert.deepEqual(limits(undefined).limits, { cpuBytes: 344 * MIB, gpuBytes: 208 * MIB });
     assert.deepEqual(limits({ cpuBytes: 512 * MIB, gpuBytes: 256 * MIB }), { limits: { cpuBytes: 256 * MIB, gpuBytes: 128 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
     assert.deepEqual(limits({ cpuBytes: 384 * MIB, gpuBytes: 192 * MIB }), { limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });
     assert.deepEqual(limits(HISTORICAL_PROFILE), { limits: { cpuBytes: 64 * MIB, gpuBytes: 32 * MIB }, reserved: { cpuBytes: 12 * MIB, gpuBytes: 8 * MIB } });

@@ -2,7 +2,9 @@
 // indices; the ring uniform places them in the world at the ring's cell. Vertices strictly inside the hole (the previous ring's extent) collapse to
 // the hole edge (degenerate triangles). Toward the ring's outer edge every vertex morphs to the next ring's lattice (CDLOD): odd vertices take the
 // mean of their even neighbours sampled at the coarser mip, even vertices the coarser mip itself, so the rings meet without cracks or popping.
+// The AI 597 D2 shore wave (an analytic train band-limited by the grid cell) morphs the same way, so the rings stay watertight through it.
 #include <shaderlib:landscape/ocean_sampling>
+#include <shaderlib:landscape/ocean_shore>
 uniform vec4 uOceanRing;   // origin x, origin z, cell meters, half extent meters
 uniform vec4 uOceanHole;   // min x, min z, max x, max z of the hole; disabled when max x <= min x
 uniform vec2 uOceanMorph;  // morph start and end as fractions of the half extent
@@ -24,13 +26,13 @@ void main() {
     }
     float morph = smoothstep(uOceanMorph.x, uOceanMorph.y, max(abs(index.x), abs(index.y)) * cell / uOceanRing.w);
     vec2 parity = mod(index, 2.0);
-    vec3 fine = oceanDisplacement(plane, cell);
+    vec3 fine = oceanDisplacement(plane, cell) + oceanShoreDisplacement(plane, cell);
     vec3 coarse;
     if (parity.x + parity.y > 0.5) {
         vec2 step = (parity.x > 0.5 ? vec2(1.0, parity.y) : vec2(0.0, 1.0)) * cell;
-        coarse = 0.5 * (oceanDisplacement(plane - step, 2.0 * cell) + oceanDisplacement(plane + step, 2.0 * cell));
+        coarse = 0.5 * (oceanDisplacement(plane - step, 2.0 * cell) + oceanShoreDisplacement(plane - step, 2.0 * cell) + oceanDisplacement(plane + step, 2.0 * cell) + oceanShoreDisplacement(plane + step, 2.0 * cell));
     } else {
-        coarse = oceanDisplacement(plane, 2.0 * cell);
+        coarse = oceanDisplacement(plane, 2.0 * cell) + oceanShoreDisplacement(plane, 2.0 * cell);
     }
     vec3 displacement = mix(fine, coarse, morph);
     vOceanPlane = plane;

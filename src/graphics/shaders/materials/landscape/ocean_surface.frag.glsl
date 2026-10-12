@@ -12,7 +12,8 @@ uniform mat3 uLandscapeSkyReflectionRotation;
 // x: base mean square slope (the unresolved Cox-Munk part), y: LEAN weight of the filtered slope variance, z: horizon band of the reflection
 // elevation below which the sea reflects itself, w: texels per radian of the prefiltered sky map (its mips blur the removed variance)
 uniform vec4 uOceanOptics;
-// verification views (0 shaded): 1 normal, 2 reflectance, 3 reflected sky, 4 glint, 5 slope variance, 6 reflection elevation, 7 depth fade
+// verification views (0 shaded): 1 normal, 2 reflectance, 3 reflected sky, 4 glint, 5 slope variance, 6 reflection elevation, 7 depth fades,
+// 8 shore wave (weight, crest sharpening, bore strength)
 uniform int uOceanDebug;
 varying vec3 vOceanWorld;
 varying vec2 vOceanPlane;
@@ -22,6 +23,7 @@ varying vec2 vOceanPlane;
 #include <shaderlib:landscape/atmosphere>
 #include <shaderlib:landscape/water_optics>
 #include <shaderlib:landscape/ocean_sampling>
+#include <shaderlib:landscape/ocean_shore>
 
 // sky radiance along a direction, blurred by the mip of the angular spread beyond the map's own GGX lobe
 vec3 oceanSkyRadiance(vec3 direction, float lod) {
@@ -65,11 +67,20 @@ void main() {
     float distance;
     landscapeViewRay(vOceanWorld, origin, v, distance);
     OceanSurfaceSample surface = oceanSurfaceAt(vOceanPlane);
+    // the AI 597 D2 shore wave tilts the facet with the cascades (its slope is analytic, so its own band limit follows the pixel footprint and
+    // the unresolved part joins the LEAN roughness)
+    OceanShoreSlope shore = oceanShoreSlopeAt(vOceanPlane, length(fwidth(vOceanPlane)));
+    surface.slope += shore.slope;
+    surface.variance += shore.variance;
     vec3 n = normalize(vec3(-surface.slope.x, 1.0, -surface.slope.y));
+    // a facet tilted away from a grazing view still faces the eye above the water (the crest in front would hide it; it never shows the sea's
+    // underside): bend the normal toward the view ray up to a small cosine instead of switching to the underwater branch
+    float facing = dot(n, v);
+    if (origin.y >= vOceanWorld.y - 0.02 && facing < 0.05) n = normalize(n + v * (0.05 - facing));
     float meanSquareSlope = uOceanOptics.x + uOceanOptics.y * surface.variance;
     float roughness = sqrt(sqrt(meanSquareSlope));
     float f0 = (LANDSCAPE_WATER_IOR - 1.0) / (LANDSCAPE_WATER_IOR + 1.0);
-    if (dot(n, v) >= 0.0 && origin.y >= vOceanWorld.y - 0.02) {
+    if (origin.y >= vOceanWorld.y - 0.02) {
         float cosine = max(dot(n, v), 1.0e-3);
         vec2 fab = landscapeDfg(cosine, roughness);
         float reflectance = f0 * f0 * fab.x + fab.y;
@@ -89,7 +100,8 @@ void main() {
         vec3 radiance = oceanDisplay(sky * haze.transmittance + haze.inscatter) * reflectance + oceanDisplay(glint * haze.transmittance);
         if (uOceanDebug > 0) {
             vec3 view = uOceanDebug == 1 ? n * 0.5 + 0.5 : uOceanDebug == 2 ? vec3(reflectance) : uOceanDebug == 3 ? oceanDisplay(sky) : uOceanDebug == 4 ? oceanDisplay(glint)
-                : uOceanDebug == 5 ? vec3(surface.variance * 20.0) : uOceanDebug == 6 ? vec3(reflection.y * 0.5 + 0.5) : vec3(oceanAmplitudeFactors(vOceanPlane).xyz);
+                : uOceanDebug == 5 ? vec3(surface.variance * 20.0) : uOceanDebug == 6 ? vec3(reflection.y * 0.5 + 0.5) : uOceanDebug == 7 ? vec3(oceanAmplitudeFactors(vOceanPlane).xyz)
+                : vec3(oceanShoreAt(vOceanPlane).weight, oceanShoreAt(vOceanPlane).steep, shore.breaking);
             gl_FragColor = vec4(view, 1.0);
             return;
         }

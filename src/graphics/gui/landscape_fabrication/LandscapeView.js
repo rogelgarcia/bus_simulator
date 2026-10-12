@@ -364,10 +364,13 @@ export class LandscapeView {
         if (!this.ensureOceanShare()) { this.panel.notice(`Ocean not drawn: ${this.oceanFailure}`); return null; }
         const clock = previousClock ? { mode: previousClock.mode, time: previousClock.time } : this.oceanOptions.time === null ? {} : { mode: 'fixed', time: this.oceanOptions.time };
         const ocean = await createLandscapeOcean({ landscape: loaded, ledger: this.oceanShare, renderer: this.renderer, scene: this.scene, camera: this.camera, lighting: this.lighting, lightingTier: this.lighting.tier,
-            seaState: this.oceanOptions.seaState, quality: this.oceanOptions.quality, clock, surround: this.surround?.status === 'active' ? this.surround : null, signal: this.loadAbort.signal });
+            seaState: this.oceanOptions.seaState, quality: this.oceanOptions.quality, clock, surround: null, signal: this.loadAbort.signal });
         if (this.disposed || sequence !== this.loadSequence || request !== this.oceanSequence || loaded !== this.loaded) { ocean.dispose(); return null; }
         this.ocean = ocean;
         if (ocean.status === 'active') {
+            // the far field binds after the ocean exists (a surround that became active while the ocean loaded would otherwise be missed; the
+            // ocean is unsettled until the field is in)
+            if (this.surround?.status === 'active') ocean.setSurround(this.surround).catch(error => { if (error.name !== 'AbortError' && !this.disposed) this.panel.notice(`Ocean far field failed: ${error.message}`); });
             ocean.setVisible(this.waterVisible);
             this.water?.setSurfaceDrawn(false);
             this.lighting.setOceanSurface(true);
@@ -377,8 +380,8 @@ export class LandscapeView {
     }
 
     /**
-     * AI 597 ocean controls: surface 'animated' | 'flat' and the quality preset rebuild the ocean, the sea-state preset re-initializes its spectrum,
-     * clock {mode, time, step} drives its deterministic clock. Resolves with the ocean snapshot once applied.
+     * AI 597 ocean controls: surface 'animated' | 'flat' and the quality preset rebuild the ocean, the sea-state preset re-initializes its spectrum
+     * and recomputes its shore wave (D2), clock {mode, time, step} drives its deterministic clock. Resolves with the ocean snapshot once applied.
      * @param {{surface?:string,seaState?:string,quality?:string,clock?:{mode?:string,time?:number,step?:number}}} [options]
      */
     async setOcean({ surface, seaState, quality, clock } = {}) {
@@ -386,7 +389,7 @@ export class LandscapeView {
             seaState: seaState === undefined ? this.oceanOptions.seaState : landscapeOceanSeaState(seaState) };
         const rebuild = next.surface !== this.oceanOptions.surface || next.quality !== this.oceanOptions.quality;
         Object.assign(this.oceanOptions, next);
-        if (seaState !== undefined) this.ocean?.setSeaState(next.seaState);
+        if (seaState !== undefined && this.ocean) await this.ocean.setSeaState(next.seaState);
         if (clock !== undefined) { if (this.ocean) this.ocean.setClock(clock); else if (clock.time !== undefined) this.oceanOptions.time = clock.time; }
         if (rebuild && this.loaded && this.stream && !this.reloading) {
             try { await this.loadOcean(this.loadSequence, this.loaded); }

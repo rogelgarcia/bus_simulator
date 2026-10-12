@@ -1,4 +1,4 @@
-// Verifies the AI 597 D1 animated ocean in the viewer on coastal terrain v3: the spectral sea loads beside the surround, draws instead of the flat
+// Verifies the AI 597 animated ocean in the viewer on coastal terrain v3. D1: the spectral sea loads beside the surround, draws instead of the flat
 // reference while the optical water body stays, its cascades carry the preset's wave heights, its clock is deterministic (identical captures at a
 // fixed time, different after a step), it never enters picking, the flat inspection surface restores the reference, hiding the water hides it, and
 // disposal returns every ocean byte. The suite serves the landscape itself on the verification port (like the surround suite).
@@ -8,7 +8,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
-import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanResources } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanResources, landscapeOceanShoreInputs } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 const root = path.resolve('.');
 const MiB = 1024 * 1024;
@@ -259,6 +259,144 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         expect(errors).toEqual([]);
     } finally {
         await writeFile(path.join(artifacts, 'ocean-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
+        await context.close();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(() => resolve(undefined)));
+    }
+});
+
+// AI 597 D2: the shore wave of the sea state over the extent's bathymetry and coast (its statistics come from the same pure modules the offline
+// tool tabulates: tools/landscape_review/shore_statistics.mjs), the per-sea-state breaking, the rock shore, the shore debug view and determinism
+// at the waterline. The evidence goes beside the D1 receipt under d2/suite.
+test('Landscape AI 597 D2: the shore wave refracts toward the beach, breaks on the bars and the foreshore with the sea state, surges on rock and repeats at the fixed time', async ({ browser }, testInfo) => {
+    test.setTimeout(15 * 60 * 1000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
+    test.skip(!(await exists(path.join(landscapeDirectory, 'manifest.json'))), `${landscapeDirectory} is not installed`);
+    const shoreArtifacts = path.resolve(root, 'tests/artifacts/screens/landscape/ai597/d2/suite');
+    await mkdir(shoreArtifacts, { recursive: true });
+    const landscape = JSON.parse(await readFile(path.join(landscapeDirectory, 'manifest.json'), 'utf8'));
+    const server = await serve(landscapeDirectory, baseURL);
+    const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 });
+    const page = await context.newPage(), errors = [], evidence = {};
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /shader|webgl|program|THREE/i.test(message.text())) errors.push(message.text()); });
+    const shoreOf = state => state.ocean.shore;
+    try {
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeOceanTime=${FIXED_TIME}`));
+        const boot = await settled(page);
+        expect(boot.revision).toBe(landscape.revision);
+        const ocean = boot.ocean;
+        expect(ocean.status, `ocean: ${ocean.reason}`).toBe('active');
+        expect(ocean.seaState.id).toBe('moderate');
+        // the extent field carries the shore channels (RGBA16F) and the travel time (RG32F) with its float depth and zone rasters on the CPU
+        const texels = LANDSCAPE_OCEAN.fields.texels;
+        expect(ocean.fields.extent).toMatchObject({ gpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentGpuBytesPerTexel, cpuBytes: texels * texels * LANDSCAPE_OCEAN.fields.extentCpuBytesPerTexel, linearFiltering: true });
+        expect(ocean.share.entries).toBe(boot.surround?.status === 'active' ? 4 : 3);
+        expect(ocean.share.cpuBytes).toBeLessThanOrEqual(LANDSCAPE_OCEAN.budgets.cpuBytes);
+        // the coast classes come from the geology sidecar: every level-2 page, the rock platform and bluff toe, the exposure of the bar, surf and swash
+        const shore = shoreOf(boot);
+        expect(shore.status).toBe('active');
+        expect(shore.settled).toBe(true);
+        expect(shore.coast).toMatchObject({ status: 'active', stale: false, pages: ocean.fields.extent.chunks });
+        expect(shore.coast.rockTexels).toBeGreaterThan(0);
+        expect(shore.coast.exposureTexels).toBeGreaterThan(0);
+        expect(shore.coast.zones.platform + shore.coast.zones['bluff-toe']).toBe(shore.coast.rockTexels);
+        // the train: the sea state's swell period, its significant height, McCowan's breaking index, the surface active at the clock's time
+        const inputs = landscapeOceanShoreInputs('moderate');
+        expect(shore).toMatchObject({ periodSeconds: inputs.periodSeconds, headingDegrees: inputs.headingDegrees, gamma: inputs.gamma });
+        expect(shore.heightMeters).toBeCloseTo(ocean.seaState.significantWaveHeightMeters, 9);
+        expect(ocean.surface.shore).toMatchObject({ active: true, omega: inputs.omega, groupPeriodSeconds: inputs.groupPeriodSeconds, time: FIXED_TIME });
+        expect(ocean.surface.cascadeFades[0]).toEqual(ocean.surface.shore.handover);
+        expect(shore.filledLandTexels).toBeGreaterThan(0);
+        // the gate: crests run roughly parallel to the beach (the propagation direction against the shore normal over the breaking texels)
+        const gate = state => {
+            const { statistics, zoneBreaking, heightMeters, gamma } = shoreOf(state);
+            expect(statistics.visited).toBeGreaterThan(statistics.water * .9);
+            expect(statistics.breakingTexels).toBeGreaterThan(0);
+            expect(statistics.crestAngle.meanDegrees, `crest angle ${JSON.stringify(statistics.crestAngle)}`).toBeLessThan(15);
+            expect(statistics.crestAngle.p90Degrees).toBeLessThan(30);
+            // breaking belongs to the sand: never on the rock platform or the bluff toe, never in the open sea, and more of the foreshore (surf and
+            // swash; the swash zone counts its dry texels too) breaks than of the bar and the open sea
+            expect(zoneBreaking.platform.breaking + zoneBreaking['bluff-toe'].breaking).toBe(0);
+            // a rough sea breaks on the shoals the offshore zone still holds (depths from 2 m), never as much as on the bar
+            expect(zoneBreaking.offshore.share).toBeLessThan(.1);
+            expect(zoneBreaking.offshore.share).toBeLessThanOrEqual(Math.max(zoneBreaking.bar.share, .01));
+            expect(zoneBreaking.swash.breaking).toBeGreaterThan(0);
+            expect(zoneBreaking.surf.share + zoneBreaking.swash.share).toBeGreaterThan(zoneBreaking.bar.share + zoneBreaking.offshore.share);
+            // the outer edge of the surf zone lies near the depth-limited break of the shoaled height: p90 of the breaking depths within 0.6-1.6 H / gamma
+            const outer = heightMeters / gamma;
+            expect(statistics.breakingDepth.p90, `breaking depth p90 ${statistics.breakingDepth.p90} vs H / gamma ${outer}`).toBeGreaterThan(.6 * outer);
+            expect(statistics.breakingDepth.p90).toBeLessThan(1.6 * outer);
+            return { heightMeters, statistics, zoneBreaking: Object.fromEntries(['offshore', 'reef', 'bar', 'surf', 'swash', 'platform', 'bluff-toe'].map(zone => [zone, zoneBreaking[zone]])) };
+        };
+        evidence.moderate = gate(boot);
+        // determinism at the waterline (NW-12 looks north along the break): the same fixed time repeats the surf, a half-second step moves it
+        const canvasSize = boot.canvas, surfRegion = { left: Math.floor(canvasSize.width / 2), top: Math.floor(canvasSize.height * .38), width: canvasSize.width - Math.floor(canvasSize.width / 2), height: Math.floor(canvasSize.height * .22) };
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), POSES['NW-12']);
+        await settled(page);
+        await page.waitForTimeout(1500);
+        await readFrame(page, 'surf-first', surfRegion);
+        await frames(page, 3);
+        await readFrame(page, 'surf-second', surfRegion);
+        const same = await compareFrames(page, 'surf-first', 'surf-second');
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ clock: { step: .5 } }));
+        await frames(page, 2);
+        await readFrame(page, 'surf-stepped', surfRegion);
+        const stepped = await compareFrames(page, 'surf-first', 'surf-stepped');
+        await page.evaluate(time => window.__landscapeTestHooks.setOcean({ clock: { time } }), FIXED_TIME);
+        await frames(page, 2);
+        await readFrame(page, 'surf-restored', surfRegion);
+        const restored = await compareFrames(page, 'surf-first', 'surf-restored');
+        evidence.determinism = { same, stepped, restored, region: surfRegion };
+        expect(same.mean, `same time: ${JSON.stringify(same)}`).toBeLessThan(1);
+        expect(restored.mean, `restored: ${JSON.stringify(restored)}`).toBeLessThan(1);
+        expect(stepped.mean, `stepped: ${JSON.stringify(stepped)}`).toBeGreaterThan(5 * Math.max(same.mean, restored.mean, .1));
+        await page.screenshot({ path: path.join(shoreArtifacts, 'NW-12-shore-30s.png') });
+        // the shore verification view draws (weight, crest sharpening, bore strength), the shaded view returns
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(8));
+        await frames(page, 2);
+        const debugFrame = await readFrame(page, 'surf-debug', surfRegion);
+        expect(debugFrame.nonzero).toBeGreaterThan(0);
+        await page.screenshot({ path: path.join(shoreArtifacts, 'NW-12-shore-debug8.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(0));
+        await frames(page, 2);
+        await readFrame(page, 'surf-shaded', surfRegion);
+        expect((await compareFrames(page, 'surf-first', 'surf-shaded')).mean).toBeLessThan(1);
+        // a sea-state switch marches the shore again: rough breaks deeper, on the reef and the bars; calm breaks only on the foreshore (never deeper than moderate)
+        const rough = await page.evaluate(() => window.__landscapeTestHooks.setOcean({ seaState: 'rough' }));
+        expect(rough.seaState.id).toBe('rough');
+        expect(rough.settled).toBe(true);
+        const roughState = await settled(page);
+        evidence.rough = gate(roughState);
+        expect(shoreOf(roughState).periodSeconds).toBe(landscapeOceanShoreInputs('rough').periodSeconds);
+        expect(roughState.ocean.surface.shore.omega).toBeCloseTo(landscapeOceanShoreInputs('rough').omega, 9);
+        expect(evidence.rough.heightMeters).toBeGreaterThan(evidence.moderate.heightMeters);
+        expect(evidence.rough.statistics.breakingDepth.p90).toBeGreaterThan(evidence.moderate.statistics.breakingDepth.p90);
+        expect(evidence.rough.zoneBreaking.bar.share).toBeGreaterThan(evidence.moderate.zoneBreaking.bar.share);
+        expect(evidence.rough.zoneBreaking.reef.share).toBeGreaterThan(evidence.moderate.zoneBreaking.reef.share);
+        await page.screenshot({ path: path.join(shoreArtifacts, 'NW-12-rough-30s.png') });
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ seaState: 'calm' }));
+        const calmState = await settled(page);
+        evidence.calm = gate(calmState);
+        expect(evidence.calm.heightMeters).toBeLessThan(evidence.moderate.heightMeters);
+        expect(evidence.calm.statistics.breakingDepth.p90).toBeLessThan(evidence.moderate.statistics.breakingDepth.p90);
+        expect(evidence.calm.zoneBreaking.bar.share).toBeLessThanOrEqual(evidence.moderate.zoneBreaking.bar.share);
+        expect(evidence.calm.zoneBreaking.reef.share).toBeLessThanOrEqual(evidence.moderate.zoneBreaking.reef.share);
+        expect(calmState.ocean.clock.time).toBe(FIXED_TIME);
+        await page.screenshot({ path: path.join(shoreArtifacts, 'NW-12-calm-30s.png') });
+        // back to moderate: the same statistics as the boot (the march is deterministic)
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ seaState: 'moderate' }));
+        const again = await settled(page);
+        expect(shoreOf(again).statistics).toEqual(shore.statistics);
+        expect(shoreOf(again).zoneBreaking).toEqual(shore.zoneBreaking);
+        // disposal returns every ocean byte
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        const disposed = await snapshot(page);
+        expect(oceanEntries(disposed)).toEqual([]);
+        expect(errors).toEqual([]);
+    } finally {
+        await writeFile(path.join(shoreArtifacts, 'shore-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
         await context.close();
         server.closeAllConnections();
         await new Promise(resolve => server.close(() => resolve(undefined)));

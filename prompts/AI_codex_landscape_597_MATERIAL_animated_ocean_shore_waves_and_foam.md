@@ -99,15 +99,15 @@ queries.
 
 ### D2. Depth-aware shore waves
 
-- [ ] **Wave behaviour near shore.** Use the bathymetry and shoreline distance:
+- [x] **Wave behaviour near shore.** Use the bathymetry and shoreline distance:
   - waves grow and shorten as they shoal;
   - crests turn towards the shore normal;
   - waves break where a declared depth-limited criterion is met, forming a surf zone over the bars and
     beach slope;
   - waves are damped over reefs and in the sheltered swim zone.
-- [ ] **Rocky shores.** At the bluff toe and wave-cut platform, waves wash, surge and retreat over rock
+- [x] **Rocky shores.** At the bluff toe and wave-cut platform, waves wash, surge and retreat over rock
   instead of breaking like a sand beach. Spray particles are optional.
-- [ ] **Gate.**
+- [x] **Gate.**
   - Crests run roughly parallel to the beach.
   - Breaking positions agree with the bars and foreshore slope across sea states.
   - Composites against R09 at NW-12 and R08 at NW-01.
@@ -251,3 +251,69 @@ clips with `clip.mp4`, suite receipt `suite/ocean-suite.json`, `perf/measure_oce
 - Keep it in `prompts/`; do not archive automatically.
 - Add a one-line summary per completed change, focused validation results, before/after performance
   tables with conditions, and artifact paths. Update the roadmap status table.
+
+### D2. Depth-aware shore waves — delivered 2026-10-12
+
+**Summary.** Inside the landscape extent the sea state's swell becomes one coherent shore train marched over the bathymetry on
+the CPU (`ocean/LandscapeOceanShore.js`: an exact signed Euclidean shore distance, the finite-depth phase speed per texel,
+fast-marching travel time from the open-sea plane wave so the crests turn toward the shore normal, the energy flux `H² cg`
+transported along the characteristic and capped at the depth-limited breaking height `γ h` = 0.78 h on sand, so bars and reefs
+shadow the water behind them and the capped texels are the surf zone; rock keeps its flux and surges) and drawn by the surface
+programs on top of the spectral cascades (`chunks/landscape/ocean_shore.glsl`: phase `ω (t − T)`, amplitude `H / 2` under a
+group envelope and a longshore variation, a Stokes crest that sharpens toward breaking, a front compressed into a bore on sand,
+a Gerstner orbital displacement that fades in the last metre, a reflected standing component on rock; band-limited like the
+cascades so it never aliases on the far rings or at grazing views). The coast comes from the geology sidecar
+(`ocean/LandscapeOceanCoast.js`: rock = platform ∪ bluff-toe, the `waveExposure` of the bar, surf and swash damps the train of
+a sheltered shore toward 0.4 over its last 60–220 m; a missing or unbound sidecar yields the neutral coast). The extent field
+carries the shore channels as RGBA16F (depth, shore distance, wave height, exposure) plus RG32F (travel time, rock − 8 over
+land; the land side of the travel time is filled from the shoreline so bilinear lookups never bleed), the cascades fade per
+cascade below a tenth of their longest wavelength (7.2–18 m, 2–5 m, 0.25–0.625 m at medium) and the train's weight is the
+complement of the swell cascade's fade, so the open sea hands over once. A sea-state switch marches the shore again in the
+background and swaps the channels in when done (`snapshot().ocean.settled`); the far-field surround now binds after the ocean
+exists (a surround that became active during the march was missed before). Residency: the share grew to 48 / 64 MiB
+(`LANDSCAPE_OCEAN.budgets`; 21 CPU and 16 GPU bytes per extent texel) and the shipped CPU profiles by the same 16 MiB (672 →
+688 MiB, `LANDSCAPE_STREAMING_BUDGETS` / `LANDSCAPE_SURFACE_CACHE_BUDGETS`, appearance ceilings 344 / 208 MiB). Two shading
+fixes landed with it: a facet tilted away from a grazing view bends its normal toward the eye instead of switching to the
+underwater branch (the D1 branch painted the backs of steep crests as the sea's underside), and reef shadows spread by the
+upwind-weighted flux instead of running grid-aligned corridors.
+
+**Spec and sources.** `specs/landscape/LANDSCAPE_OCEAN.md` §2b (shore model), §3 (runtime rows), §5 (limitations);
+`LANDSCAPE_VIEWER.md` (`snapshot().ocean.shore`, `setOceanDebug(0..8)`), `LANDSCAPE_STREAMING.md` / `LANDSCAPE_PERFORMANCE.md`
+(688 MiB CPU profiles), `LANDSCAPE_NATURAL_WORLD_ROADMAP.md` status; `src/graphics/engine3d/landscape/ocean/LandscapeOceanShore.js`,
+`LandscapeOceanCoast.js` (new), `LandscapeOcean.js` (shore march, textures, async sea state), `LandscapeOceanModel.js`
+(`cascadeFade`, `shore`, `landscapeOceanCascadeFade`, `landscapeOceanShoreInputs`, budgets), `LandscapeOceanSurface.js`
+(shore uniforms, `update(camera, time)`, `setShore`, debug view 8), shaders `chunks/landscape/ocean_shore.glsl` (new),
+`ocean_sampling.glsl`, `ocean_surface.vert/frag.glsl`; `LandscapeView.js` (awaited sea-state switch, far-field binding after
+the ocean); `LandscapeResidencyBudget.js`, `LandscapeSurfaceCacheLayout.js`; tools `tools/landscape_review/capture.mjs`
+(`--ocean-debug`), `poses/ocean-shore-v1.json` (OS-01..OS-05), `shore_statistics.mjs` (new), README; `.claude/launch.json`
+(`landscape-server-v3`).
+
+**Validation.** Unit: `tests/node/unit/landscape_ocean_shore.test.js` (EDT against brute force, land fill, phase-speed limits,
+plane-wave travel time, beach refraction 30° → mean crest angle < 12°, breaking depth ≈ H / γ for 0.5 / 1 / 2 m, reef shadow and
+rock surge, deepest-percent fallback, the yielding driver bit for bit, the beach crest mask), `landscape_ocean_coast.test.js`
+(north-first page sampling, zones, exposure, breaking per zone, beach mask, neutral coast), `landscape_ocean_model.test.js`
+(fades, shore inputs, field bytes, the 48 / 64 MiB share); all 618 landscape unit tests pass. Offline on coastal v3
+(`tools/landscape_review/shore_statistics.mjs`, `d2/shore/statistics.json`; calm / moderate / rough): crest angle on the beach
+mean 10.8 / 10.0 / 9.8° (p90 24 / 23 / 22°), breaking depth p90 0.65 / 2.03 / 4.57 m against H / γ 0.44 / 1.65 / 4.07 m, breaking
+share of the bar 0 / 3.5 / 53 %, the reef 0 / 7.6 / 43.5 %, the surf 0 / 49 / 52 %, the swash 29 / 44 / 44 % (dry texels included), the
+open-sea zone 0 / 0 / 4.6 % (its shoals above 5 m), the platform and the bluff toe 0 % (every rock texel of v3 is 0.4–10 m above sea level: the rock surge is verified on synthetic rasters only).
+Browser: `tests/headless/e2e/landscape_ocean.pwtest.js` D2 test on v3 with the surround (`d2/suite/shore-suite.json`, run 4 after three assertion rounds: 2 passed in 4.6 min; the browser numbers equal the offline ones exactly; surf determinism at NW-12 mean difference 0.016 at the same time, 1.39 after a 0.5 s step, 0.019 restored): the field bytes and
+linear filtering, the coast (16 pages, rock and exposure texels), the train's inputs, the gate statistics for moderate / rough /
+calm (crest angle < 15° mean and < 30° p90, no breaking on rock or offshore, swash denser than surf, p90 breaking depth within
+0.6–1.6 H / γ, rough deeper and more on the bar and reef than moderate, calm shallower), determinism of the surf at NW-12
+(same time / step / restored), debug view 8, the march repeating bit for bit after the switch back, disposal to zero; the D1 test
+still passes. Regressions: `landscape_surround` 1 / 1 (self-served v3), `landscape_surface_cache` 6 / 6 (the raised CPU profile pins), `landscape_lighting` 6 / 6 and `landscape_acceptance` 4 / 4 on the v2 default server (`d2/regressions/`, runs 3: the first runs failed on the ocean's program-link poll outliving a disposal during the longer D2 load (GL_INVALID_VALUE warnings; the poll now follows the current program and stops on the load abort) and on the geology sidecar probe's 404 on v2, whitelisted like the surround probe; the ocean suite ran six times while the D2 assertions and that fix settled, `d2/suite-run6.log` is the final 2 / 2). Captures (`d2/animated/` NW-12, NW-10, NW-09, NW-01; `d2/shore_poses/`
+OS-01..05; `d2/debug8/`) and composites against the user's coast references (`d2/composites/`: NW-12 and NW-01 as the gate's
+R09 / R08 substitutes, NW-10, OS-01, OS-03; R08–R10 are still missing on disk). Motion: static clips of 90 frames at 30 fps from the fixed time (`d2/clips/`, `clip.mp4` each): NW-12 over the surf (right half above the beach) mean frame difference median 0.22 / max 0.31, OS-01 over the sea band 1.05 / 1.18, no spikes (the train moves smoothly, no popping).
+
+**Measurements.** Paired GPU frame time animated vs flat (`d2/perf/measure_ocean.json`, RTX 3060, 1920 × 1080, cache on, 30 warm-up + 120 sampled frames, medians): NW-12 9.6 vs 7.3 ms (+2.3), NW-10 11.2 vs 5.0 ms (+6.2), NW-09 11.5 vs 9.5 ms (+1.9), the simulation batch 0.98 ms (D1: +3 to +6 ms, batch 1.1–1.65 ms); measured while another process's Blender render held the GPU at 98 % (every pose shows 515 ms stalls and NW-11 read 326 vs 55 ms with 337 / 167 ms frame intervals), so these are conditions, not budgets: D7 re-measures on an idle GPU. CPU: march 165–190 ms per sea state, distance transform 51 ms, land fill 8–21 ms, coast
+rasterization with the 16 geology pages ~0.3 s of fetches; the ocean reports active 0.9 s after the load on v3 (D1 0.6 s).
+Residency at medium: 30.8 MiB GPU / 21.4 MiB CPU in the share (D1 24.5 / 5.7).
+
+**Limitations.** One monochromatic train (the wind sea's short waves fade without breaking; the group envelope rides with the
+phase; no diffraction model; depth-limited breaking only); rock surge untested on v3 (no wet rock there); a crest can wash a
+few metres over low sand until D4; no foam, so the breaking fronts read as dark faces (D3); the train stops at the extent (the
+surround's coast keeps the depth fade only); the sea-state recompute re-reads the depth raster but not an edited terrain.
+
+**Artifacts.** `tests/artifacts/screens/landscape/ai597/d2/` (README.md: captures, composites, debug views, `shore/statistics.json`,
+`suite/shore-suite.json`, clips, `perf/`, `regressions/`).
