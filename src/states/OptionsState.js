@@ -7,7 +7,6 @@ import { saveOptionsDraft, clearSavedOptionsSettings } from '../graphics/gui/opt
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
-import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from '../graphics/visuals/city/SidewalkEdgeDirtStripVisuals.js';
 import { getResolvedShadowSettings } from '../graphics/lighting/ShadowSettings.js';
 import { getResolvedAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
@@ -73,11 +72,13 @@ export class OptionsState {
         const sunFlare = getResolvedSunFlareSettings();
         const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         const asphaltNoise = getResolvedAsphaltNoiseSettings();
+        const grass = this.engine.grassSettings;
         const vehicleMotionDebug = this.engine?.vehicleMotionDebugSettings ?? getResolvedVehicleMotionDebugSettings();
         const staticVisibility = getResolvedStaticVisibilitySettings({ includeUrlOverrides: false });
         const bakedLighting = this.engine?.bakedLightingSettings ?? getResolvedBakedLightingSettings();
 
         this._original = {
+            grass: { ...grass },
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             atmosphere: atmosphere && typeof atmosphere === 'object' ? JSON.parse(JSON.stringify(atmosphere)) : null,
             shadows: shadows && typeof shadows === 'object' ? JSON.parse(JSON.stringify(shadows)) : null,
@@ -103,6 +104,7 @@ export class OptionsState {
 
         this._ui = new OptionsUI({
             initialTab: 'lighting',
+            initialGrass: grass,
             initialLighting: lighting && typeof lighting === 'object'
                 ? {
                     exposure: lighting.exposure,
@@ -195,15 +197,6 @@ export class OptionsState {
                             strength: asphaltNoise.livedIn?.edgeDirt?.strength,
                             width: asphaltNoise.livedIn?.edgeDirt?.width,
                             scale: asphaltNoise.livedIn?.edgeDirt?.scale
-                        },
-                        sidewalkGrassEdgeStrip: {
-                            enabled: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.enabled,
-                            width: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.width,
-                            opacity: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.opacity,
-                            roughness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.roughness,
-                            metalness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.metalness,
-                            colorHex: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.colorHex,
-                            fadePower: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.fadePower
                         },
                         cracks: {
                             enabled: asphaltNoise.livedIn?.cracks?.enabled,
@@ -370,6 +363,7 @@ export class OptionsState {
         const staticVisibility = d?.staticVisibility ?? null;
         const bakedLighting = d?.bakedLighting ?? null;
 
+        if (d?.grass) this.engine.setGrassSettings(d.grass);
         if (shadows) this.engine?.setShadowSettings?.(shadows);
         if (antiAliasing) this.engine?.setAntiAliasingSettings?.(antiAliasing);
         if (ambientOcclusion) this.engine?.setAmbientOcclusionSettings?.(ambientOcclusion);
@@ -473,17 +467,6 @@ export class OptionsState {
                     seed: roadSeed,
                     maxWidth: 2.5
                 });
-            }
-
-            const sidewalkEdgeStrip = getSidewalkEdgeDirtStripConfig(asphaltNoise);
-            const stripMats = new Set();
-            if (city.materials.sidewalkEdgeDirt?.isMeshStandardMaterial) stripMats.add(city.materials.sidewalkEdgeDirt);
-            if (city.roads?.sidewalkEdgeDirt?.material?.isMeshStandardMaterial) stripMats.add(city.roads.sidewalkEdgeDirt.material);
-            for (const mat of stripMats) {
-                applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial(mat, { asphaltNoise });
-            }
-            if (city.roads?.sidewalkEdgeDirt?.isMesh) {
-                city.roads.sidewalkEdgeDirt.visible = sidewalkEdgeStrip.enabled;
             }
         }
 

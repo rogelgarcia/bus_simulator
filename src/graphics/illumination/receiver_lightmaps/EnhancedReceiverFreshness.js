@@ -12,12 +12,12 @@ const TEXTURE_SLOTS = ['map', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnes
 const TEXTURE_FIELDS = ['version', 'format', 'type', 'internalFormat', 'mapping', 'channel', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
     'generateMipmaps', 'anisotropy', 'flipY', 'premultiplyAlpha', 'unpackAlignment', 'colorSpace', 'rotation', 'matrixAutoUpdate'];
 const SEMANTICS = ['asphaltRoadBase', 'asphaltMarkingsNoiseBase', 'asphaltMarkingsNoiseConfig', 'asphaltEdgeWearConfig',
-    'sidewalkEdgeDirtStripConfig', 'roadSurfaceVariationConfig', 'materialVariationConfig', 'uvTilingConfig',
+    'roadSurfaceVariationConfig', 'materialVariationConfig', 'uvTilingConfig',
     'groundSubstrateBlendConfig', 'roadMarkingsAsphaltNoiseConfig', 'roadMarkingsOverlayConfig', 'roadMarkingsOverlayEnabled',
     'smartMaterialGroupShader', 'windowFakeDepth', 'grassCardShaderConfig', 'grassCardShaderSignature', 'grassCardShaderVersion',
     'grassLodShaderVersion', 'buildingWindowMergeSafeShader', 'windowGlass', 'buildingWindowGlass', 'buildingWindowGlassEnabled',
     'iblEnvMapIntensity', 'iblEnvMapIntensityScale', 'preserveShadowSide', 'isFoliage',
-    'asphaltMarkingsNoiseInjected', 'asphaltEdgeWearInjected', 'sidewalkEdgeDirtStripInjected'];
+    'asphaltMarkingsNoiseInjected', 'asphaltEdgeWearInjected'];
 
 /** @param {Map<string, any>} references
  * @param {{roots?: any[], ignoreVisibility?: Set<any>}} options */

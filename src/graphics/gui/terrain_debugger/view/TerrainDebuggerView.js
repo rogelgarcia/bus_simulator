@@ -3633,10 +3633,9 @@ export class TerrainDebuggerView {
         if (roads.asphaltEdgeWear) target.push(roads.asphaltEdgeWear);
         if (roads.curbBlocks) target.push(roads.curbBlocks);
         if (roads.sidewalk) target.push(roads.sidewalk);
-        if (roads.sidewalkEdgeDirt) target.push(roads.sidewalkEdgeDirt);
 
         if (!target.length) {
-            const includeByName = new Set(['Asphalt', 'AsphaltEdgeWear', 'CurbBlocks', 'Sidewalk', 'SidewalkGrassEdgeDirtStrip']);
+            const includeByName = new Set(['Asphalt', 'AsphaltEdgeWear', 'CurbBlocks', 'Sidewalk']);
             const group = roads.group;
             group?.traverse?.((child) => {
                 if (!child?.isMesh || !includeByName.has(String(child.name))) return;

@@ -91,7 +91,6 @@ try {
             ['asphalt_edge_wear', city.roads.asphaltEdgeWear],
             ['curbs', city.roads.curbBlocks],
             ['sidewalks', city.roads.sidewalk],
-            ['sidewalk_edge_dirt', city.roads.sidewalkEdgeDirt],
             ['markings_white', city.roads.markingsWhite],
             ['markings_yellow', city.roads.markingsYellow],
             ['crosswalks', city.roads.group.getObjectByName('Crosswalks')],

@@ -26,7 +26,6 @@ const PHYSICAL_MATERIAL_MODELS = new Set(['MeshPhysicalMaterial', 'MeshStandardM
 const SUPPORTED_ALPHA_MODES = new Set(['cutout', 'opaque', 'procedural_coverage']);
 const SUPPORTED_PROCEDURAL_ALPHA_ADAPTERS = new Set([
     'asphalt-edge-wear-v1',
-    'sidewalk-edge-dirt-strip-v1'
 ]);
 const UV_MAPPING = 300;
 const SUPPORTED_WRAP_MODES = new Set([1000, 1001, 1002]);

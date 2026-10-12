@@ -740,7 +740,6 @@ export class GrassDebuggerView {
                 includeSidewalks: true,
                 includeMarkings: true,
                 includeDebug: false,
-                suppressSidewalkEdgeDirtStrip: true
             }
         });
         if (roads?.group) {

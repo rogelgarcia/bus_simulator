@@ -11,7 +11,6 @@ import {
     buildRoadSidewalkMeshDataFromRoadEnginePrimitives,
     buildRoadSidewalkOuterBoundaryLoopsFromRoadEnginePrimitives
 } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
-import { buildRoadSidewalkEdgeDirtStripMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/wear/RoadSidewalkEdgeDirtStripBuilder.js';
 import { buildRoadMarkingsMeshDataFromRoadEngineDerived } from '../../../app/road_decoration/markings/RoadMarkingsBuilder.js';
 import { createRoadMarkingsMeshesFromData } from './RoadMarkingsMeshes.js';
 import { applyRoadSurfaceVariationToMeshStandardMaterial } from '../../assets3d/materials/RoadSurfaceVariationSystem.js';
@@ -20,7 +19,6 @@ import { getResolvedAsphaltNoiseSettings } from './AsphaltNoiseSettings.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from './AsphaltRoadVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from './AsphaltMarkingsNoiseVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from './AsphaltEdgeWearVisuals.js';
-import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from './SidewalkEdgeDirtStripVisuals.js';
 import { createRotatedTwoTapFbmGlsl, createValueNoise2Glsl, createValueNoiseHash12Glsl } from '../shared/noise/NoiseShaderChunks.js';
 
 const EPS = 1e-9;
@@ -52,7 +50,6 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
     const road = base.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95, metalness: 0.0 });
     const roadEdgeWear = base.roadEdgeWear ?? new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 1.0, metalness: 0.0, transparent: true, opacity: 1.0, depthWrite: false });
     const sidewalk = base.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8f8f8f, roughness: 1.0, metalness: 0.0 });
-    const sidewalkEdgeDirt = base.sidewalkEdgeDirt ?? new THREE.MeshStandardMaterial({ color: 0x4d473c, roughness: 1.0, metalness: 0.0, transparent: true, opacity: 0.45, depthWrite: false });
     const curb = base.curb ?? new THREE.MeshStandardMaterial({ color: 0x7a7a7a, roughness: 0.9, metalness: 0.0 });
     const laneWhite = base.laneWhite ?? new THREE.MeshStandardMaterial({ color: ROAD_MARKING_WHITE_TARGET_SUN_HEX, roughness: 0.55, metalness: 0.0 });
     const laneYellow = base.laneYellow ?? new THREE.MeshStandardMaterial({ color: ROAD_MARKING_YELLOW_TARGET_SUN_HEX, roughness: 0.55, metalness: 0.0 });
@@ -81,7 +78,7 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
     ensureDecalMaterial(laneWhite, { relativeTo: road, factor: -1, units: -16 });
     ensureDecalMaterial(laneYellow, { relativeTo: road, factor: -1, units: -16 });
 
-    if (!debugMode) return { road, roadEdgeWear, sidewalk, sidewalkEdgeDirt, curb, laneWhite, laneYellow };
+    if (!debugMode) return { road, roadEdgeWear, sidewalk, curb, laneWhite, laneYellow };
 
     const toBasic = (mat) => {
         const c = mat?.color?.getHex?.() ?? 0xffffff;
@@ -115,7 +112,6 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
         road: toBasic(road),
         roadEdgeWear: toDecalBasic(roadEdgeWear),
         sidewalk: toBasic(sidewalk),
-        sidewalkEdgeDirt: toDecalBasic(sidewalkEdgeDirt),
         curb: toBasic(curb),
         laneWhite: toDecalBasic(laneWhite),
         laneYellow: toDecalBasic(laneYellow)
@@ -878,7 +874,6 @@ export function createRoadEngineRoads({
     const roadSeed = map?.roadNetwork?.seed ?? null;
     const seedVec2 = hashStringToVec2(String(roadSeed ?? 'roads'));
     const asphaltNoise = opt.asphaltNoise ?? getResolvedAsphaltNoiseSettings();
-    const sidewalkEdgeStrip = getSidewalkEdgeDirtStripConfig(asphaltNoise);
     const edgeWearMaxWidth = 2.5;
 
     if (!debugMode) {
@@ -900,7 +895,6 @@ export function createRoadEngineRoads({
         if (mats.laneYellow?.color?.setHex) mats.laneYellow.color.setHex(markingsYellowColorHex);
         if (mats.laneWhite?.isMeshStandardMaterial) mats.laneWhite.roughness = markingsBaseRoughness;
         if (mats.laneYellow?.isMeshStandardMaterial) mats.laneYellow.roughness = markingsBaseRoughness;
-        applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial(mats.sidewalkEdgeDirt, { asphaltNoise });
 
         const markingsEnabled = markingsVisuals?.enabled !== false;
         if (markingsEnabled) {
@@ -941,7 +935,6 @@ export function createRoadEngineRoads({
     const includeMarkings = opt.includeMarkings !== false;
     const includeJunctions = opt.includeJunctions !== false;
     const includeDebug = opt.includeDebug !== false;
-    const suppressSidewalkEdgeDirtStrip = opt.suppressSidewalkEdgeDirtStrip === true;
     const markingsMode = (opt.markingsMode === 'baked') ? 'baked' : 'meshes';
 
     const laneWidth = Math.max(EPS, clampNumber(roadCfg?.laneWidth, 4.8));
@@ -1161,31 +1154,6 @@ export function createRoadEngineRoads({
         }
     }
 
-    let sidewalkEdgeDirtMesh = null;
-    if (!suppressSidewalkEdgeDirtStrip && !debugMode && sidewalkGeometryEnabled && sidewalkEdgeStrip.width > EPS) {
-        const stripData = buildRoadSidewalkEdgeDirtStripMeshDataFromRoadEnginePrimitives(asphaltPolys, {
-            surfaceY: asphaltY,
-            curbThickness,
-            sidewalkWidth,
-            stripWidth: sidewalkEdgeStrip.width,
-            lift: 0.0012,
-            boundaryEpsilon: 1e-4,
-            miterLimit: 4
-        });
-        if (stripData?.positions?.length) {
-            const stripGeo = new THREE.BufferGeometry();
-            stripGeo.setAttribute('position', new THREE.BufferAttribute(stripData.positions, 3));
-            stripGeo.setAttribute('uv', new THREE.BufferAttribute(stripData.uvs, 2));
-            stripGeo.computeVertexNormals();
-            stripGeo.computeBoundingSphere();
-            sidewalkEdgeDirtMesh = new THREE.Mesh(stripGeo, mats.sidewalkEdgeDirt);
-            sidewalkEdgeDirtMesh.name = 'SidewalkGrassEdgeDirtStrip';
-            sidewalkEdgeDirtMesh.visible = sidewalkEdgeStrip.enabled;
-            sidewalkEdgeDirtMesh.renderOrder = 1;
-            group.add(sidewalkEdgeDirtMesh);
-        }
-    }
-
     const markingsGroup = new THREE.Group();
     markingsGroup.name = 'Markings';
     group.add(markingsGroup);
@@ -1272,7 +1240,6 @@ export function createRoadEngineRoads({
         asphaltEdgeWear: asphaltEdgeWearMesh,
         curbBlocks: curbMesh,
         sidewalk: sidewalkMesh,
-        sidewalkEdgeDirt: sidewalkEdgeDirtMesh,
         sidewalkOuterBoundaryLoops,
         sidewalkBoundarySource,
         markingsWhite: markingsGroup.getObjectByName('MarkingsWhite') ?? null,

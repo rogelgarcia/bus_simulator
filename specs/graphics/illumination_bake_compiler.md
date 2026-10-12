@@ -116,9 +116,9 @@ semantics allow it; instances do not create independent geometry identity.
 Unsupported component types, topology, transform determinants, material models,
 texture formats, alpha modes, coverage operations, or channel semantics fail or
 are excluded only when the AI 528 channel profile explicitly says `exclude`.
-The V1 procedural-coverage adapters are restricted to
-`sidewalk-edge-dirt-strip-v1` and `asphalt-edge-wear-v1`; both preserve their
-declared metadata and are opaque for visibility because neither creates a
+The V1 procedural-coverage adapter is restricted to
+`asphalt-edge-wear-v1`; it preserves its
+declared metadata and is opaque for visibility because it does not create a
 silhouette hole. Any other procedural adapter fails closed.
 
 Texture color space, row origin, UV transform, wrap/filter, and `flipY` are

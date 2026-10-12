@@ -1,5 +1,6 @@
 // src/app/core/GameEngine.js
 import * as THREE from 'three';
+import { getResolvedGrassSettings, sanitizeGrassSettings } from '../grass/GrassSettings.js';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLConfig, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings, LIGHTING_LIMITS, sanitizeToneMappingMode } from '../../graphics/lighting/LightingSettings.js';
@@ -1230,6 +1231,15 @@ export class GameEngine {
 
     getIlluminationPipeline() {
         return this._illuminationPipeline;
+    }
+
+    get grassSettings() {
+        return { ...(this._grassSettings ?? getResolvedGrassSettings()) };
+    }
+
+    setGrassSettings(settings) {
+        this._grassSettings = sanitizeGrassSettings(settings);
+        this.context?.city?.grass?.setMode(this._grassSettings.mode);
     }
 
     get bakedLightingSettings() {

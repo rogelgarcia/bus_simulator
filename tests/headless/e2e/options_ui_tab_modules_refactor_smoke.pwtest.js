@@ -42,21 +42,21 @@ async function attachFailFastConsole({ page }) {
 }
 
 async function goToGameplay(page) {
-    await page.goto('/index.html?coreTests=0&debug=true');
-    await page.waitForSelector('#ui-welcome:not(.hidden)');
-    await page.keyboard.press('Enter');
-    await page.waitForSelector('#ui-select:not(.hidden)');
-    await page.keyboard.press('G');
+    await page.goto('/index.html?pose=civic_center_curve_front&coreTests=0&debug=true');
+    await page.waitForFunction(() => window.__busSim?.sm?.currentName === 'game_mode');
     await page.waitForSelector('#hud-game:not(.hidden)');
+    await expect(page.locator('.gameplay-loading')).toHaveCount(0, { timeout: 90_000 });
 }
 
 async function openOptions(page) {
+    await expect(page.locator('.gameplay-loading')).toHaveCount(0, { timeout: 90_000 });
+    await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('0');
-    await page.waitForSelector('#ui-options');
+    await expect(page.locator('#ui-options')).toBeVisible({ timeout: 10_000 });
 }
 
 async function clickTab(page, text) {
-    const btn = page.locator('.options-tab', { hasText: text });
+    const btn = page.locator('.options-tab', { hasText: new RegExp(`^${text}$`, 'i') });
     await expect(btn).toHaveCount(1);
     await page.evaluate((tabText) => {
         const tabs = Array.from(document.querySelectorAll('.options-tab'));
@@ -127,7 +127,7 @@ test('Gameplay: options tab modularization preserves tabs and save/cancel/reset 
     await openOptions(page);
 
     for (const tabText of ['Lighting', 'Graphics', 'Sun Bloom', 'Asphalt', 'Grass', 'Buildings', 'Debug']) {
-        await expect(page.locator('.options-tab', { hasText: tabText })).toHaveCount(1);
+        await expect(page.locator('.options-tab', { hasText: new RegExp(`^${tabText}$`, 'i') })).toHaveCount(1);
     }
 
     await clickTab(page, 'Lighting');
@@ -143,7 +143,8 @@ test('Gameplay: options tab modularization preserves tabs and save/cancel/reset 
     await expect(rowByLabel(page, 'Coarse scale')).toHaveCount(1);
 
     await clickTab(page, 'Grass');
-    await expect(rowByLabel(page, 'Sidewalk grass-edge dirt strip')).toHaveCount(1);
+    await expect(rowByLabel(page, 'Grass mode')).toHaveCount(1);
+    await expect(rowByLabel(page, 'Sidewalk grass-edge dirt strip')).toHaveCount(0);
 
     await clickTab(page, 'Buildings');
     await expect(rowByLabel(page, 'Reflective building windows')).toHaveCount(1);

@@ -15373,19 +15373,18 @@ async function runTests() {
                 roads.sidewalkOuterBoundaryLoops.length,
                 'Expected one stable source-loop id per returned loop.'
             );
-            assertTrue(roads.sidewalkEdgeDirt?.isMesh === true, 'Expected legacy sidewalk dirt strip by default.');
+            assertEqual(roads.sidewalkEdgeDirt, undefined, 'Removed dirt-strip feature must not create a mesh.');
 
             const suppressed = createRoadEngineRoads({
                 map,
                 config,
-                materials,
-                options: { suppressSidewalkEdgeDirtStrip: true }
+                materials
             });
-            assertEqual(suppressed.sidewalkEdgeDirt, null, 'Expected opt-in dirt-strip suppression to omit the mesh.');
+            assertEqual(suppressed.sidewalkEdgeDirt, undefined, 'Rebuild must not restore the retired strip.');
             assertEqual(
                 JSON.stringify(suppressed.sidewalkOuterBoundaryLoops),
                 JSON.stringify(roads.sidewalkOuterBoundaryLoops),
-                'Expected suppression to leave sidewalk boundary geometry unchanged.'
+                'Expected identical rebuilds to preserve sidewalk boundary geometry.'
             );
             assertEqual(
                 suppressed.sidewalkBoundarySource.id,

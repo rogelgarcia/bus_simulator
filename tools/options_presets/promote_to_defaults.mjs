@@ -134,7 +134,6 @@ function buildAsphaltNoiseDefaults(settings) {
     const color = s.color ?? {};
     const livedIn = s.livedIn ?? {};
     const edgeDirt = livedIn.edgeDirt ?? {};
-    const sidewalkGrassEdgeStrip = livedIn.sidewalkGrassEdgeStrip ?? {};
     const cracks = livedIn.cracks ?? {};
     const patches = livedIn.patches ?? {};
     const tireWear = livedIn.tireWear ?? {};
@@ -175,15 +174,6 @@ function buildAsphaltNoiseDefaults(settings) {
     lines.push(`            strength: ${formatNumber(edgeDirt.strength)},`);
     lines.push(`            width: ${formatNumber(edgeDirt.width)},`);
     lines.push(`            scale: ${formatNumber(edgeDirt.scale)}`);
-    lines.push('        }),');
-    lines.push('        sidewalkGrassEdgeStrip: Object.freeze({');
-    lines.push(`            enabled: ${formatBool(sidewalkGrassEdgeStrip.enabled)},`);
-    lines.push(`            width: ${formatNumber(sidewalkGrassEdgeStrip.width)},`);
-    lines.push(`            opacity: ${formatNumber(sidewalkGrassEdgeStrip.opacity)},`);
-    lines.push(`            roughness: ${formatNumber(sidewalkGrassEdgeStrip.roughness)},`);
-    lines.push(`            metalness: ${formatNumber(sidewalkGrassEdgeStrip.metalness)},`);
-    lines.push(`            colorHex: ${formatHexColor(sidewalkGrassEdgeStrip.colorHex)},`);
-    lines.push(`            fadePower: ${formatNumber(sidewalkGrassEdgeStrip.fadePower)}`);
     lines.push('        }),');
     lines.push('        cracks: Object.freeze({');
     lines.push(`            enabled: ${formatBool(cracks.enabled)},`);

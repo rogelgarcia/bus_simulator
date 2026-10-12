@@ -4,6 +4,7 @@ vec4 grassTransitionCenter = modelMatrix * instanceMatrix * vec4(transformed, 1.
 float grassTransitionRange = length(grassTransitionCenter.xz - cameraPosition.xz);
 #ifdef GRASS_PROJECTED_CANOPY_BLEND
 vGrassTransitionCanopyRay = grassTransitionCenter.xyz - cameraPosition;
+vGrassTransitionGroundY = modelMatrix[3].y;
 #endif
 #ifdef GRASS_CANOPY_COLOR_HANDOFF
 vGrassTransitionCellOrigin = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;

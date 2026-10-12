@@ -1,30 +1,22 @@
-import { makeEl, makeToggleRow } from '../OptionsUiControls.js';
+import { makeEl, makeSelectRow } from '../OptionsUiControls.js';
 
 export function renderGrassTab() {
-    this._ensureDraftAsphaltNoise();
-
-    const d = this._draftAsphaltNoise;
-    const livedIn = d.livedIn ?? (d.livedIn = {});
-    const strip = livedIn.sidewalkGrassEdgeStrip ?? (livedIn.sidewalkGrassEdgeStrip = {});
-    const emit = () => this._emitLiveChange();
-
     const section = makeEl('div', 'options-section');
-    section.appendChild(makeEl('div', 'options-section-title', 'Sidewalk Edge Blend'));
-
-    const controls = {
-        enabled: makeToggleRow({
-            label: 'Sidewalk grass-edge dirt strip',
-            value: strip.enabled,
-            onChange: (v) => { strip.enabled = v; emit(); }
-        })
-    };
-
-    section.appendChild(controls.enabled.row);
-
+    section.appendChild(makeEl('div', 'options-section-title', 'Grass'));
+    const details = makeEl('div', 'options-section');
+    const title = makeEl('div', 'options-section-title');
     const note = makeEl('div', 'options-note');
-    note.textContent = 'Adds a subtle dirt/wear strip where sidewalks transition into grass/ground.';
-
-    this.body.appendChild(section);
-    this.body.appendChild(note);
+    const refresh = () => {
+        const mode = this._draftGrass.mode === '3d' ? '3D' : 'Texture';
+        title.textContent = `${mode} details`;
+        note.textContent = `Detailed ${mode} grass settings will be added later.`;
+    };
+    const mode = makeSelectRow({ label: 'Grass mode', value: this._draftGrass.mode,
+        options: [{ id: 'texture', label: 'Texture' }, { id: '3d', label: '3D' }],
+        onChange: value => { this._draftGrass.mode = value; refresh(); this._emitLiveChange(); } });
+    mode.select.setAttribute('aria-label', 'Grass mode');
+    section.appendChild(mode.row);
+    details.append(title, note);
+    refresh();
+    this.body.append(section, details);
 }
-

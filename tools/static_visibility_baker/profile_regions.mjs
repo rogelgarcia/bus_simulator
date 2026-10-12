@@ -551,7 +551,6 @@ try {
         tag(city.roads?.asphaltEdgeWear, 'road_asphalt_edge_wear');
         tag(city.roads?.curbBlocks, 'road_curbs');
         tag(city.roads?.sidewalk, 'road_sidewalks');
-        tag(city.roads?.sidewalkEdgeDirt, 'road_sidewalk_edge_dirt');
         tag(city.roads?.group?.getObjectByName?.('Markings'), 'road_markings');
         tag(city.buildings?.group, 'buildings');
         tag(city.buildings?.group?.getObjectByName?.('BuildingSlabs'), 'building_slabs');

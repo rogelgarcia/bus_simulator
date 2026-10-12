@@ -5,7 +5,9 @@
 Grass Debug v2 is the isolated scene for developing and comparing 3D grass. It
 provides a dirt surface, asphalt road, game trees and city bus, camera navigation,
 performance diagnostics, three ground substrates and the shared distance-based grass renderer.
-It does not instantiate the v1 grass system or integrate grass into gameplay.
+It does not instantiate the v1 grass system. The baked appearance, field renderer
+and LOD selection are shared with [gameplay grass](GRASS_GAMEPLAY.md); the lab
+retains its isolated scene and comparison controls.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
 

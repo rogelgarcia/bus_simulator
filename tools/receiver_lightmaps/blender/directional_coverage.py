@@ -54,9 +54,7 @@ def install_coverage(material, alpha):
     coverage = float(alpha['opacity'])
     for adapter in alpha['proceduralCoverage']:
         config = adapter['semantics']
-        if adapter['adapterId'] == 'sidewalk-edge-dirt-strip-v1':
-            mask = math('POWER', math('SUBTRACT', 1, v, clamp=True), max(.01, config['fadePower']))
-        elif adapter['adapterId'] == 'asphalt-edge-wear-v1':
+        if adapter['adapterId'] == 'asphalt-edge-wear-v1':
             width = min(max(config['width'], 0), config['maxWidth'])
             if width <= 1e-6 or config['strength'] <= 0:
                 mask = 0

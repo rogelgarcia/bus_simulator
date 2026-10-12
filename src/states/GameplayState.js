@@ -374,6 +374,7 @@ export class GameplayState {
             getTarget: () => this._getBusCenter()
         });
         this._configureGameplayPoseCamera();
+        void this.city.enableGrass(this.engine).catch(() => {});
 
         // ✅ Ensure physics systems have the real anchor/api so locomotion can use rear-axle kinematics.
         sim.physics?.setEnvironment?.(this.city);

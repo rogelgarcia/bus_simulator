@@ -35,6 +35,7 @@ export class GameplayLoadingScreen {
             await Promise.all([
                 state.busModel?.userData?.readyPromise,
                 state.city?.world?.readyPromise,
+                state.city?.grass?.ready,
                 this.engine.waitForLightingReady()
             ]);
             if (revision !== this.revision) return;

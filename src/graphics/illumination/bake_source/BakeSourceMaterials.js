@@ -43,7 +43,6 @@ const USER_DATA_KEYS = Object.freeze([
     'asphaltMarkingsNoiseBase',
     'asphaltMarkingsNoiseConfig',
     'asphaltEdgeWearConfig',
-    'sidewalkEdgeDirtStripConfig',
     'roadSurfaceVariationConfig',
     'materialVariationConfig',
     'uvTilingConfig',
@@ -68,7 +67,6 @@ const USER_DATA_KEYS = Object.freeze([
 const CUSTOM_SHADER_TAGS = Object.freeze([
     'asphaltMarkingsNoiseInjected',
     'asphaltEdgeWearInjected',
-    'sidewalkEdgeDirtStripInjected',
     'roadMarkingsOverlayEnabled',
     'roadSurfaceVariationConfig',
     'materialVariationConfig',
@@ -84,7 +82,6 @@ const CUSTOM_SHADER_TAGS = Object.freeze([
 const CUSTOM_SHADER_ADAPTERS = Object.freeze({
     asphaltMarkingsNoiseInjected: Object.freeze({ id: 'asphalt-markings-noise-v1', semantics: ['asphaltMarkingsNoiseConfig'] }),
     asphaltEdgeWearInjected: Object.freeze({ id: 'asphalt-edge-wear-v1', semantics: ['asphaltEdgeWearConfig'] }),
-    sidewalkEdgeDirtStripInjected: Object.freeze({ id: 'sidewalk-edge-dirt-strip-v1', semantics: ['sidewalkEdgeDirtStripConfig'] }),
     roadMarkingsOverlayEnabled: Object.freeze({ id: 'road-markings-overlay-v5', semantics: ['roadMarkingsOverlayConfig'] }),
     roadSurfaceVariationConfig: Object.freeze({ id: 'road-surface-variation-v1', semantics: ['roadSurfaceVariationConfig'] }),
     materialVariationConfig: Object.freeze({ id: 'material-variation-v1', semantics: ['materialVariationConfig'] }),
@@ -221,12 +218,10 @@ function alphaSemantics(material, bindings, customAdapters, customSemantics) {
     }
     let mode = 'opaque';
     const proceduralCoverage = customAdapters
-        .filter((entry) => entry.id === 'asphalt-edge-wear-v1' || entry.id === 'sidewalk-edge-dirt-strip-v1')
+        .filter((entry) => entry.id === 'asphalt-edge-wear-v1')
         .map((entry) => ({
             adapterId: entry.id,
-            semantics: entry.id === 'asphalt-edge-wear-v1'
-                ? customSemantics.asphaltEdgeWearConfig
-                : customSemantics.sidewalkEdgeDirtStripConfig
+            semantics: customSemantics.asphaltEdgeWearConfig
         }));
     if (transmission > 0) mode = 'transmissive';
     else if (blended && proceduralCoverage.length > 0) mode = 'procedural_coverage';

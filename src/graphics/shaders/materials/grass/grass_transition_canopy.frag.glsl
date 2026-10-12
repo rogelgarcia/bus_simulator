@@ -2,7 +2,7 @@
 // surface. Match its cell transform and derivatives, including across cells.
 #ifdef GRASS_CANOPY_COLOR_HANDOFF
 vec2 handoffWorld = cameraPosition.xz + vGrassTransitionCanopyRay.xz
-    * ((GRASS_HANDOFF_HEIGHT - cameraPosition.y) / vGrassTransitionCanopyRay.y);
+    * ((vGrassTransitionGroundY + GRASS_HANDOFF_HEIGHT - cameraPosition.y) / vGrassTransitionCanopyRay.y);
 // Derivatives must be evaluated before the varying fade branch.
 vec2 handoffWorldDx = dFdx(handoffWorld), handoffWorldDy = dFdy(handoffWorld);
 if (grassCanopyFade > 0.0) {

@@ -4,6 +4,16 @@
 generator triangulates its top and builds its skirt. The road sidewalk remains
 a separate mesh. Scalar-field sampling determines aprons, connections and bridges.
 
+The slab plan's `foot` loop is also the authoritative grass exclusion outline.
+City assembly passes the same final contour used by the rendered skirt into
+gameplay grass coverage, including reservation slabs such as the bus-start base.
+This preserves merged aprons, sidewalk cuts and placed/rotated footprints without
+recomputing an offset from the building bounds. Grass begins beyond the slope's
+outer ground contact with the coverage mask's one-texel clearance; there is no
+additional slab-specific setback. Every grass representation uses this contour.
+The regression is `grass_slab_exclusion.pwtest.js`; evidence belongs under
+`tests/artifacts/screens/grass/ai612_sloped_base_exclusion/`.
+
 Runs classified as flush must use exact sidewalk segments after contour
 simplification. `BuildingSlabBoundary.js` projects the connected points within
 the existing flush tolerance and reconstructs nearby finite segment intersections.

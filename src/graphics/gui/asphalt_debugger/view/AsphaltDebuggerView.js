@@ -11,7 +11,6 @@ import { createToolCameraController } from '../../../engine3d/camera/ToolCameraP
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../../../visuals/city/AsphaltRoadVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../../../visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../../../visuals/city/AsphaltMarkingsNoiseVisuals.js';
-import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from '../../../visuals/city/SidewalkEdgeDirtStripVisuals.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../../../visuals/city/AsphaltNoiseSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX, hexToCssColor } from '../../../assets3d/materials/RoadMarkingsColors.js';
@@ -354,16 +353,6 @@ export class AsphaltDebuggerView {
             });
         }
 
-        const stripConfig = getSidewalkEdgeDirtStripConfig(asphaltNoise);
-        const stripMats = new Set();
-        if (city.materials.sidewalkEdgeDirt?.isMeshStandardMaterial) stripMats.add(city.materials.sidewalkEdgeDirt);
-        if (city.roads?.sidewalkEdgeDirt?.material?.isMeshStandardMaterial) stripMats.add(city.roads.sidewalkEdgeDirt.material);
-        for (const mat of stripMats) {
-            applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial(mat, { asphaltNoise });
-        }
-        if (city.roads?.sidewalkEdgeDirt?.isMesh) {
-            city.roads.sidewalkEdgeDirt.visible = stripConfig.enabled;
-        }
     }
 
     _sampleMarkingsCalibration() {

@@ -14,7 +14,10 @@ import { saveVehicleMotionDebugSettings, clearSavedVehicleMotionDebugSettings } 
 import { saveStaticVisibilitySettings, clearSavedStaticVisibilitySettings } from '../../../app/city/visibility/index.js';
 import { saveBakedLightingSettings, clearSavedBakedLightingSettings } from '../../../app/illumination/runtime/index.js';
 
+import { saveGrassSettings, clearSavedGrassSettings } from '../../../app/grass/GrassSettings.js';
+
 const GROUPS = [
+    ['grass', saveGrassSettings, clearSavedGrassSettings],
     ['lighting', saveLightingSettings, clearSavedLightingSettings],
     ['shadows', saveShadowSettings, clearSavedShadowSettings],
     ['antiAliasing', saveAntiAliasingSettings, clearSavedAntiAliasingSettings],

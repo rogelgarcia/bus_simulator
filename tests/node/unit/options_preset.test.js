@@ -105,7 +105,7 @@ test('OptionsPreset: antiAliasing is included and sanitized', () => {
     assert.equal(preset.settings.antiAliasing.fxaa.edgeThreshold, 0.5);
 });
 
-test('OptionsPreset: sidewalk grass-edge strip toggle parses loose booleans', () => {
+test('OptionsPreset: obsolete sidewalk grass-edge strip settings are discarded', () => {
     const preset = parseOptionsPresetJson(JSON.stringify({
         version: 1,
         schema: OPTIONS_PRESET_SCHEMA_ID,
@@ -117,7 +117,7 @@ test('OptionsPreset: sidewalk grass-edge strip toggle parses loose booleans', ()
             }
         }
     }));
-    assert.equal(preset.settings.asphaltNoise.livedIn.sidewalkGrassEdgeStrip.enabled, false);
+    assert.equal(preset.settings.asphaltNoise.livedIn.sidewalkGrassEdgeStrip, undefined);
 });
 
 test('OptionsPreset: ambient occlusion GTAO debug view parses loose booleans', () => {

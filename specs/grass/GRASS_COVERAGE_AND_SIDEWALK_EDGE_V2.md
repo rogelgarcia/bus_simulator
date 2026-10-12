@@ -163,10 +163,9 @@ sidewalk-adjacent reveal, and tree exclusions. The narrow visible strip is real
 uncovered substrate between `sourceLoop` and `onsetLoop`; it is not a brown
 overlay or material crossfade.
 
-Where this maintained-grass boundary is active, RoadEngine is called with the
-legacy sidewalk edge dirt strip suppressed. The old translucent dirt material
-may remain available to unrelated callers, but it must not be drawn underneath
-or beside the V2 approval edge.
+The legacy sidewalk edge dirt strip and its suppression flag have been removed
+from RoadEngine. No translucent dirt overlay is drawn underneath or beside the
+V2 approval edge. Gameplay's replacement is described in [GRASS_GAMEPLAY.md](GRASS_GAMEPLAY.md).
 
 The cap and edge materials resolve through the shared catalog/calibration
 pipeline and consume AI 358's corrected V2 grass appearance. The cap is fully

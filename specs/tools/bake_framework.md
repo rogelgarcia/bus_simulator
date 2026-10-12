@@ -1,5 +1,13 @@
 # Offline bake framework
 
+`materials/grass/gameplay-runtime` is an explicit browser leaf outside the
+default `materials` traversal. It packages the current bus lab's prepared detailed
+appearance for production gameplay under `assets/public/grass/gameplay/`, using
+the shared browser configuration. It requires stable authenticated inputs, a
+bounded hashed payload and a fresh runtime loader rendering all six LODs before
+rollback-preserving publication. See the [workflow](../../tools/bake_materials/grass/gameplay_runtime/README.md)
+and [gameplay contract](../grass/GRASS_GAMEPLAY.md).
+
 `vegetation/distant` generates the literal-budget LOD3–LOD6 representations,
 including camera-facing view metadata and ten-tree cluster plates. Its separate
 publish phase validates complete species sets before installing them under

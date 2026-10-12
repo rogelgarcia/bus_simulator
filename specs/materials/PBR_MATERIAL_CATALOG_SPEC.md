@@ -51,6 +51,8 @@ Each PBR entry must be assigned to exactly one `classId` from this first-pass li
 - `roof_tiles` — roof tile surfaces
 - `pavers` — paving stones/pavers/crosswalk bricks
 - `grass` — grass surfaces (non-ORM sets)
+- `foliage` — botanical leaf surfaces; eligibility remains defined by each material
+- `bark` — botanical trunk and branch surfaces; eligibility remains defined by each material
 - `ground` — sand/gravel/dirt/rocky terrain ground
 
 UI ordering:

@@ -19,6 +19,8 @@ export const PBR_MATERIAL_CLASS = Object.freeze({
     ROOF_TILES: 'roof_tiles',
     PAVERS: 'pavers',
     GRASS: 'grass',
+    FOLIAGE: 'foliage',
+    BARK: 'bark',
     GROUND: 'ground'
 });
 
@@ -33,6 +35,8 @@ const PBR_MATERIAL_CLASS_META = Object.freeze({
     [PBR_MATERIAL_CLASS.ROOF_TILES]: Object.freeze({ id: PBR_MATERIAL_CLASS.ROOF_TILES, label: 'Roof Tiles' }),
     [PBR_MATERIAL_CLASS.PAVERS]: Object.freeze({ id: PBR_MATERIAL_CLASS.PAVERS, label: 'Pavers' }),
     [PBR_MATERIAL_CLASS.GRASS]: Object.freeze({ id: PBR_MATERIAL_CLASS.GRASS, label: 'Grass' }),
+    [PBR_MATERIAL_CLASS.FOLIAGE]: Object.freeze({ id: PBR_MATERIAL_CLASS.FOLIAGE, label: 'Foliage' }),
+    [PBR_MATERIAL_CLASS.BARK]: Object.freeze({ id: PBR_MATERIAL_CLASS.BARK, label: 'Bark' }),
     [PBR_MATERIAL_CLASS.GROUND]: Object.freeze({ id: PBR_MATERIAL_CLASS.GROUND, label: 'Ground' })
 });
 
@@ -47,6 +51,8 @@ const PBR_MATERIAL_CLASS_ORDER = Object.freeze([
     PBR_MATERIAL_CLASS.ROOF_TILES,
     PBR_MATERIAL_CLASS.PAVERS,
     PBR_MATERIAL_CLASS.GRASS,
+    PBR_MATERIAL_CLASS.FOLIAGE,
+    PBR_MATERIAL_CLASS.BARK,
     PBR_MATERIAL_CLASS.GROUND
 ]);
 

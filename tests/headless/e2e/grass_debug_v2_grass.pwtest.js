@@ -117,8 +117,10 @@ test('Bus scene uses distance grass, cached lighting, and complete terrain in OF
     }
     expect(snapshots.LOD3.triangles).toBeLessThan(snapshots.LOD2.triangles);
     expect(snapshots.LOD4.triangles).toBeLessThan(snapshots.LOD3.triangles);
-    // The retained 35 m fringe cutoff precedes the new 40 m canopy boundary.
-    expect(snapshots.LOD5.field.sideLeafCells).toBe(0);
+    // The wide 31.5–40 m handoff overlaps the retained 35 m fringe cutoff.
+    // Forced LOD5 keeps those same nearby field edges; distant edges stay empty.
+    expect(snapshots.LOD5.field.sideLeafCells).toBeGreaterThan(0);
+    expect(snapshots.LOD5.field.sideLeafCells).toBeLessThan(30 * (2 * 8 + 2 * 36 - 4));
     for (const value of ['coverage', 'alpha', 'staggered', 'dissolve']) {
         await page.locator('#grass-fade').selectOption(value);
         expect(await page.evaluate(() => window.__grassDebugV2.getSnapshot().grass.field.fadeStyle)).toBe(value);

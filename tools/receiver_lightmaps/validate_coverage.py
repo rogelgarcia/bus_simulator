@@ -42,15 +42,6 @@ def render(name):
 
 results = {'opaque': render('opaque')}
 assert results['opaque'] < .001
-install_coverage(black, {'mode': 'procedural_coverage', 'opacity': .45, 'inputs': [], 'alphaTest': 0,
-    'proceduralCoverage': [{'adapterId': 'sidewalk-edge-dirt-strip-v1', 'semantics': {'fadePower': 1.6}}]})
-for v in [0, .5, 1]:
-    for uv in overlay.data.uv_layers.active.data: uv.uv = (0, v)
-    value = render('dirt-' + str(v)); expected = 1 - .45 * (1 - v) ** 1.6
-    results[str(v)] = {'actual': value, 'expected': expected}
-    assert abs(value - expected) < .035, results[str(v)]
-links = black.node_tree.links
-links.new(black.node_tree.nodes['Principled BSDF'].outputs[0], black.node_tree.nodes['Material Output'].inputs['Surface'])
 install_coverage(black, {'mode': 'procedural_coverage', 'opacity': 1, 'inputs': [], 'alphaTest': 0,
     'proceduralCoverage': [{'adapterId': 'asphalt-edge-wear-v1', 'semantics': {
         'width': .65, 'maxWidth': 2.5, 'strength': .18, 'scale': .55, 'seed': [161.057145, 484.601144]}}]})

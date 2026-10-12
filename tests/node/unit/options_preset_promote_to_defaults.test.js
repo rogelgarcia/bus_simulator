@@ -1,6 +1,4 @@
-// Node unit tests: options preset promotion keeps toneMapping and
-// sidewalkGrassEdgeStrip when rewriting defaults blocks, and emits
-// single-quoted strings.
+// Preset promotion retains current settings and discards the retired edge strip.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -71,7 +69,7 @@ async function setupTempRepo() {
     return { tmp, presetPath };
 }
 
-test('promote_to_defaults: --write keeps toneMapping and sidewalkGrassEdgeStrip', async () => {
+test('promote_to_defaults: --write keeps toneMapping and removes obsolete edge-strip settings', async () => {
     const { tmp, presetPath } = await setupTempRepo();
     try {
         await execFileAsync(
@@ -87,17 +85,12 @@ test('promote_to_defaults: --write keeps toneMapping and sidewalkGrassEdgeStrip'
 
         const asphalt = await fs.readFile(path.join(tmp, MIRRORED_FILES[1]), 'utf8');
         const asphaltBlock = extractExportedBlock(asphalt, 'ASPHALT_NOISE_DEFAULTS');
-        const stripIdx = asphaltBlock.indexOf('sidewalkGrassEdgeStrip: Object.freeze({');
-        assert.ok(stripIdx >= 0, 'expected sidewalkGrassEdgeStrip block');
-        assert.ok(asphaltBlock.indexOf('edgeDirt: Object.freeze({') < stripIdx, 'strip after edgeDirt');
-        assert.ok(stripIdx < asphaltBlock.indexOf('cracks: Object.freeze({'), 'strip before cracks');
-        assert.match(asphaltBlock, /colorHex: 0x4d473c,/);
-        assert.match(asphaltBlock, /fadePower: 2\n/);
-        assert.match(asphaltBlock, /opacity: 0\.5,/);
+        assert.doesNotMatch(asphaltBlock, /sidewalkGrassEdgeStrip/);
+        assert.match(asphaltBlock, /edgeDirt: Object.freeze/);
 
         // The rewritten files must remain parseable modules with intact tails.
         assert.match(lighting, /export const LIGHTING_LIMITS/);
-        assert.match(asphalt, /function sanitizeSidewalkGrassEdgeStripSettings/);
+        assert.match(asphalt, /function sanitizeAsphaltLivedInSettings/);
     } finally {
         await fs.rm(tmp, { recursive: true, force: true });
     }

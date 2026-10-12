@@ -46,7 +46,7 @@ function createRoad() {
         materials,
         options: {
             includeCurbs: true, includeSidewalks: true, includeMarkings: true,
-            includeDebug: false, suppressSidewalkEdgeDirtStrip: true,
+            includeDebug: false,
             asphaltNoise: ASPHALT_NOISE_DEFAULTS
         }
     });

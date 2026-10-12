@@ -81,7 +81,7 @@ export async function createGrassDebugV2BakedLightingAssets({ renderer, assets, 
     Object.values(sources).forEach(source => { source.material = leafMaterial; });
     const blades = ranged ? [{ fraction: .5, widthScale: 2, colorGain: detailed ? [1.35, 1.38, 1.39] : [1.35, 1.33, 1.42] }, { fraction: 1 / 3, widthScale: 2.7, colorGain: detailed ? [1.60, 1.60, 1.63] : [1.55, 1.48, 1.63] }].map(profile => createGrassDebugV2RangeBlades(sources.LOD2, profile)) : null;
     const canopy = { materials: { all: canopyMaterial }, cardBase: null, rootShade: detailed ? .32 : 1, getSnapshot: assets.canopy.getSnapshot };
-    return Object.freeze({ sources, canopy, settings, cards, blades, tileVariation: detailed, litterMaterial: baseMaterial,
+    return Object.freeze({ sources, canopy, settings, cards, blades, maps: { canopy: colors, litter: baseColors }, tileVariation: detailed, litterMaterial: baseMaterial,
         litterUv: new THREE.Matrix3().set(.5, 0, 0, 0, -.5, 0, 0, 0, 1),
         getSnapshot: () => ({ baseShootDensity: .6, baseLeafLayers, rootShade: natural ? [.045, 1] : [.225, .9], leafContrast, leafVariation, sourcePaletteGains, cardCounts: cards.map(card => card.getSnapshot().cardsPerSquareMeter),
             naturalRoots: natural, understoryGain: natural ? .38 : 1,

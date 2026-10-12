@@ -47,4 +47,8 @@ vec2 bakedGrassShadowUv = vec2(vBakedGrassWorld.x - bakedGrassShadowBounds.x,
 float bakedGrassInside = step(0.0, bakedGrassShadowUv.x) * step(bakedGrassShadowUv.x, 1.0)
     * step(0.0, bakedGrassShadowUv.y) * step(bakedGrassShadowUv.y, 1.0);
 float bakedGrassShadow = texture2D(bakedGrassVisibility, bakedGrassShadowUv).r;
+#ifdef BAKED_GRASS_STATIC_SHADOWS
+bakedGrassShadow = min(mix(1.0, bakedGrassShadow, bakedGrassInside), grassRuntimeStaticShadow(vBakedGrassWorld));
+bakedGrassInside = 1.0;
+#endif
 outgoingLight *= bakedGrassBrightness * mix(1.0, mix(0.35, 1.0, bakedGrassShadow), bakedGrassShadowStrength * bakedGrassInside);

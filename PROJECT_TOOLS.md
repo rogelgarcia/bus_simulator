@@ -1,5 +1,10 @@
 # Project Tools
 
+- Gameplay grass runtime: `node tools/bake.mjs --target materials/grass/gameplay-runtime --publish`.
+  Explicit browser leaf using shared bake configuration, prepared bus-lab assets,
+  all-LOD loading validation and guarded publication. See
+  [workflow](tools/bake_materials/grass/gameplay_runtime/README.md).
+
 The registered `vegetation/lod0` workflow includes spatial canopy revision and
 three-way review phases. See [LOD0 workflow](tools/bake_vegetation/lod0/README.md)
 for `spatial-build`, `placement=spatial`, baseline protection, and separate

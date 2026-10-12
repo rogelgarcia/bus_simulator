@@ -21,10 +21,13 @@ import {
     sanitizeBakedLightingSettings
 } from '../../../app/illumination/runtime/index.js';
 
+import { GRASS_DEFAULTS, sanitizeGrassSettings } from '../../../app/grass/GrassSettings.js';
+
 export const OPTIONS_PRESET_SCHEMA_ID = 'bus_sim.options_preset';
 export const OPTIONS_PRESET_VERSION = 1;
 
 const GROUPS = Object.freeze([
+    'grass',
     'lighting',
     'bakedLighting',
     'shadows',
@@ -64,6 +67,7 @@ function sanitizeIncludes(input) {
 
 function getDefaultSettings() {
     return {
+        grass: sanitizeGrassSettings(GRASS_DEFAULTS),
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
         bakedLighting: sanitizeBakedLightingSettings(BAKED_LIGHTING_DEFAULTS),
         shadows: sanitizeShadowSettings(SHADOW_DEFAULTS),
@@ -84,6 +88,7 @@ function sanitizeSettings(input) {
     const normalized = normalizeSettingsBooleans(src);
     const defaults = getDefaultSettings();
     return {
+        grass: sanitizeGrassSettings(src.grass),
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
         bakedLighting: sanitizeBakedLightingSettings(normalized.bakedLighting ?? defaults.bakedLighting),
         shadows: sanitizeShadowSettings(normalized.shadows ?? defaults.shadows),
@@ -209,9 +214,6 @@ function normalizeSettingsBooleans(src) {
         const markings = asphaltNoise.markings && typeof asphaltNoise.markings === 'object' ? asphaltNoise.markings : null;
         const livedIn = asphaltNoise.livedIn && typeof asphaltNoise.livedIn === 'object' ? asphaltNoise.livedIn : null;
         const edgeDirt = livedIn?.edgeDirt && typeof livedIn.edgeDirt === 'object' ? livedIn.edgeDirt : null;
-        const sidewalkGrassEdgeStrip = livedIn?.sidewalkGrassEdgeStrip && typeof livedIn.sidewalkGrassEdgeStrip === 'object'
-            ? livedIn.sidewalkGrassEdgeStrip
-            : null;
         const cracks = livedIn?.cracks && typeof livedIn.cracks === 'object' ? livedIn.cracks : null;
         const patches = livedIn?.patches && typeof livedIn.patches === 'object' ? livedIn.patches : null;
         const tireWear = livedIn?.tireWear && typeof livedIn.tireWear === 'object' ? livedIn.tireWear : null;
@@ -236,12 +238,6 @@ function normalizeSettingsBooleans(src) {
                 ? {
                     ...livedIn,
                     edgeDirt: edgeDirt ? { ...edgeDirt, enabled: parseLooseBool(edgeDirt.enabled, edgeDirt.enabled) } : edgeDirt,
-                    sidewalkGrassEdgeStrip: sidewalkGrassEdgeStrip
-                        ? {
-                            ...sidewalkGrassEdgeStrip,
-                            enabled: parseLooseBool(sidewalkGrassEdgeStrip.enabled, sidewalkGrassEdgeStrip.enabled)
-                        }
-                        : sidewalkGrassEdgeStrip,
                     cracks: cracks ? { ...cracks, enabled: parseLooseBool(cracks.enabled, cracks.enabled) } : cracks,
                     patches: patches ? { ...patches, enabled: parseLooseBool(patches.enabled, patches.enabled) } : patches,
                     tireWear: tireWear ? { ...tireWear, enabled: parseLooseBool(tireWear.enabled, tireWear.enabled) } : tireWear

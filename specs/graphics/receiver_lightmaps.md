@@ -91,7 +91,7 @@ the existing offline material reconstruction, which does not reproduce all
 custom shaders or normal/bump detail. This is not complete Blender/game material
 parity, and the angular reference fixture does not measure that reconstruction error.
 
-The enhanced compiler reconstructs procedural opacity for sidewalk dirt strips and
+The enhanced compiler reconstructs procedural opacity for
 asphalt edge wear, using the original `uv` layer, authored fade and world-space
 noise. The earlier reconstruction treated these participant surfaces as opaque,
 incorrectly blocking illumination below decorative overlays. The correction is

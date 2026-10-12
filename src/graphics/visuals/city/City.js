@@ -50,6 +50,7 @@ import {
     getResolvedStaticVisibilitySettings
 } from '../../../app/city/visibility/index.js';
 import { CityStaticVisibility } from './CityStaticVisibility.js';
+import { GameplayGrassRenderer } from '../../engine3d/grass/runtime/GameplayGrassRenderer.js';
 
 import { getAuthoredMaterialShadowSide, overrideMaterialShadowSide, restoreMaterialShadowSide } from '../../lighting/MaterialShadowSideState.js';
 
@@ -254,6 +255,8 @@ export class City {
         }
         const roadHardscapeMargin = Math.max(0, this.generatorConfig.road?.curb?.thickness ?? 0)
             + Math.max(0, this.generatorConfig.road?.sidewalk?.extraWidth ?? 0);
+        this.grassCoverage = { size, roadPolygons, roadMargin: roadHardscapeMargin, buildingFootprints, slabFootprints: [] };
+        this.grass = null;
 
         this.world = createCityWorld({
             size,
@@ -464,7 +467,10 @@ export class City {
                     material: this.materials.sidewalk,
                     cityInputs: options.cityInputs
                 });
-                for (const slab of slabMeshes) slabsGroup.add(slab);
+                for (const slab of slabMeshes) {
+                    slabsGroup.add(slab);
+                    this.grassCoverage.slabFootprints.push(slab.userData.buildingSlabPlan.foot);
+                }
                 buildingsGroup.add(slabsGroup);
             }
 
@@ -560,6 +566,9 @@ export class City {
 
     detach(engine) {
         if (!this._attached) return;
+
+        this.grass?.dispose();
+        this.grass = null;
 
         this.disableStaticVisibility();
         let casterRestorationError = null;
@@ -929,8 +938,14 @@ export class City {
         this.updateVisuals(engine);
     }
 
+    enableGrass(engine) {
+        if (!this.grass) this.grass = new GameplayGrassRenderer({ engine, city: this, coverage: this.grassCoverage });
+        return this.grass.ready;
+    }
+
     updateVisuals(engine) {
         this._applyAtmosphere(engine);
+        this.grass?.update();
         if (this._csm) {
             // Cull before the cascades fit: castShadow flags are read during
             // the renderer's shadow pass, which happens after this returns.

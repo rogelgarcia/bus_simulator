@@ -645,7 +645,7 @@ def _validate_material_texture_alpha(manifest: dict[str, Any], inventories: dict
         alpha = material.get("alpha", {})
         if alpha.get("mode") == "procedural_coverage":
             adapters = alpha.get("proceduralCoverage")
-            known = {"asphalt-edge-wear-v1": 1.0, "sidewalk-edge-dirt-strip-v1": 0.45}
+            known = {"asphalt-edge-wear-v1": 1.0}
             if not isinstance(adapters, list) or not adapters:
                 fail("procedural_coverage_adapter_missing", "A procedural-coverage material has no declared adapter.", id=stable_id)
             for adapter in adapters:

@@ -43,7 +43,7 @@ test('Use defaults clears only Options overrides and follows changed source defa
         localStorage.setItem('defaults-test-unrelated', 'keep');
         return count;
     });
-    expect(count).toBe(14);
+    expect(count).toBe(15);
     const output = path.resolve('tests/artifacts/screens/options_use_defaults');
     await mkdir(output, { recursive: true });
     const button = page.getByRole('button', { name: 'Use defaults', exact: true });
@@ -136,7 +136,7 @@ test('Reset stays a preview until Save, while Cancel preserves saved settings', 
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('#ui-options')).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.length)).toBe(14);
+    expect(await page.evaluate(() => localStorage.length)).toBe(15);
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('bus_sim.lighting.v1')).exposure)).toBe(.0511001705221839);
 });
 

@@ -4,7 +4,7 @@ vec2 grassTransitionCoverage = vGrassTransitionCoverage;
 #ifdef GRASS_PROJECTED_CANOPY_BLEND
 // Use one point on the view ray for both heights. Interpolated vertex fade weights
 // differ between thin blades and large canopy triangles and expose the dark floor.
-float grassCanopyRange = length(vGrassTransitionCanopyRay.xz) * abs(cameraPosition.y - 0.07) / max(abs(vGrassTransitionCanopyRay.y), 0.001);
+float grassCanopyRange = length(vGrassTransitionCanopyRay.xz) * abs(cameraPosition.y - vGrassTransitionGroundY - 0.07) / max(abs(vGrassTransitionCanopyRay.y), 0.001);
 float grassCanopyFade = smoothstep(grassTransitionBlendStarts[4], grassTransitionBlendEnds[4], grassCanopyRange);
     #if GRASS_TRANSITION_BLEND_LEVEL == 4
     grassTransitionCoverage.y = grassCanopyFade;

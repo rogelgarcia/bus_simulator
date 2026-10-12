@@ -9,6 +9,7 @@ import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/Bl
 import { getDefaultResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
+import { GRASS_DEFAULTS, sanitizeGrassSettings } from '../../../app/grass/GrassSettings.js';
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
@@ -76,7 +77,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'bakedLighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'staticVisibility'];
+    const keys = ['grass', 'lighting', 'bakedLighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'staticVisibility'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -95,6 +96,7 @@ export class OptionsUI {
         initialSunBloom = null,
         initialColorGrading = null,
         initialBuildingWindowVisuals = null,
+        initialGrass = null,
         initialAsphaltNoise = null,
         initialSunFlare = null,
         initialPostProcessingActive = null,
@@ -274,6 +276,7 @@ export class OptionsUI {
         this._draftBuildingWindowVisuals = initialBuildingWindowVisuals && typeof initialBuildingWindowVisuals === 'object'
             ? JSON.parse(JSON.stringify(initialBuildingWindowVisuals))
             : null;
+        this._draftGrass = sanitizeGrassSettings(initialGrass);
         this._draftAsphaltNoise = initialAsphaltNoise && typeof initialAsphaltNoise === 'object'
             ? JSON.parse(JSON.stringify(initialAsphaltNoise))
             : null;
@@ -319,6 +322,7 @@ export class OptionsUI {
         if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
         if (d.sunFlare) this._draftSunFlare = JSON.parse(JSON.stringify(d.sunFlare));
         if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
+        if (d.grass) this._draftGrass = sanitizeGrassSettings(d.grass);
         if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
         if (d.vehicleMotionDebug) this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(d.vehicleMotionDebug));
         if (d.staticVisibility) this._draftStaticVisibility = JSON.parse(JSON.stringify(d.staticVisibility));
@@ -852,18 +856,6 @@ export class OptionsUI {
         if (edgeDirt.width === undefined) edgeDirt.width = livedInDefaults.edgeDirt?.width;
         if (edgeDirt.scale === undefined) edgeDirt.scale = livedInDefaults.edgeDirt?.scale;
 
-        if (!livedIn.sidewalkGrassEdgeStrip || typeof livedIn.sidewalkGrassEdgeStrip !== 'object') {
-            livedIn.sidewalkGrassEdgeStrip = { ...(livedInDefaults.sidewalkGrassEdgeStrip ?? {}) };
-        }
-        const sidewalkGrassEdgeStrip = livedIn.sidewalkGrassEdgeStrip;
-        if (sidewalkGrassEdgeStrip.enabled === undefined) sidewalkGrassEdgeStrip.enabled = livedInDefaults.sidewalkGrassEdgeStrip?.enabled;
-        if (sidewalkGrassEdgeStrip.width === undefined) sidewalkGrassEdgeStrip.width = livedInDefaults.sidewalkGrassEdgeStrip?.width;
-        if (sidewalkGrassEdgeStrip.opacity === undefined) sidewalkGrassEdgeStrip.opacity = livedInDefaults.sidewalkGrassEdgeStrip?.opacity;
-        if (sidewalkGrassEdgeStrip.roughness === undefined) sidewalkGrassEdgeStrip.roughness = livedInDefaults.sidewalkGrassEdgeStrip?.roughness;
-        if (sidewalkGrassEdgeStrip.metalness === undefined) sidewalkGrassEdgeStrip.metalness = livedInDefaults.sidewalkGrassEdgeStrip?.metalness;
-        if (sidewalkGrassEdgeStrip.colorHex === undefined) sidewalkGrassEdgeStrip.colorHex = livedInDefaults.sidewalkGrassEdgeStrip?.colorHex;
-        if (sidewalkGrassEdgeStrip.fadePower === undefined) sidewalkGrassEdgeStrip.fadePower = livedInDefaults.sidewalkGrassEdgeStrip?.fadePower;
-
         if (!livedIn.cracks || typeof livedIn.cracks !== 'object') livedIn.cracks = { ...(livedInDefaults.cracks ?? {}) };
         const cracks = livedIn.cracks;
         if (cracks.enabled === undefined) cracks.enabled = livedInDefaults.cracks?.enabled;
@@ -1263,6 +1255,7 @@ export class OptionsUI {
         this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(getDefaultResolvedVehicleMotionDebugSettings()));
         this._draftStaticVisibility = JSON.parse(JSON.stringify(getDefaultResolvedStaticVisibilitySettings()));
         this._draftBakedLighting = JSON.parse(JSON.stringify(getDefaultResolvedBakedLightingSettings()));
+        this._draftGrass = sanitizeGrassSettings(GRASS_DEFAULTS);
         this._renderTab();
         if (emit) return this._emitLiveChange();
     }
@@ -1312,6 +1305,7 @@ export class OptionsUI {
                 }
             },
             atmosphere: JSON.parse(JSON.stringify(atmo)),
+            grass: sanitizeGrassSettings(this._draftGrass),
             bakedLighting: JSON.parse(JSON.stringify(bakedLighting)),
             // Pass the whole draft through rather than picking fields: this
             // used to emit `quality` alone, which silently dropped every other
@@ -1438,15 +1432,6 @@ export class OptionsUI {
                         strength: asphaltNoise.livedIn?.edgeDirt?.strength,
                         width: asphaltNoise.livedIn?.edgeDirt?.width,
                         scale: asphaltNoise.livedIn?.edgeDirt?.scale
-                    },
-                    sidewalkGrassEdgeStrip: {
-                        enabled: !!asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.enabled,
-                        width: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.width,
-                        opacity: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.opacity,
-                        roughness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.roughness,
-                        metalness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.metalness,
-                        colorHex: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.colorHex,
-                        fadePower: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.fadePower
                     },
                     cracks: {
                         enabled: !!asphaltNoise.livedIn?.cracks?.enabled,
