@@ -68,7 +68,8 @@ DRIP_L = (0.12, 0.40)           # ... its e-fold down the wall ...
 DRIP_AMP = (0.55, 0.95)         # ... and its value against the strip's at the ledge
 
 # ---------------------------------------------------------------------------------------------------- the look
-AMOUNT = 0.45                   # at strength 1 a full strip goes this far toward DIRT (calibrated on pose 12, see README)
+AMOUNT = 0.225                  # at strength 1 a full strip goes this far toward DIRT (0.45 calibrated on pose 12, halved
+                                # 2026-10-12: "some dark black powder ... reduce the effect by 50%")
 DIRT_DARK = 0.45                # soiling's deposit: DIRT keeps this share of the wall's own colour ...
 DIRT_GREY = 0.45                # ... after losing this much of its saturation toward a warm grey-brown
 DIRT_TINT = (1.00, 0.95, 0.88)

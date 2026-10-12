@@ -104,7 +104,7 @@ DEBUG_COLOR = (0.55, 0.20, 0.95)
 # floor, so above the ground floor the strength is raised by UPPER x its value, ramping in over UPPER_H of height above
 # the pavement; the street level keeps its calibration. wear_soiling_upper: 2.0 is the owner's x3, 0 the look before
 # AI 605; the group's switch wear_realism (0 or absent) turns it off too.
-CONTROLS = {"upper": 2.0}
+CONTROLS = {"upper": 1.0}         # 2.0 (x3) until 2026-10-12, then halved with the group's other deposits ("reduce the effect by 50%")
 UPPER_H = (5.8, 8.0)             # the ramp: none at the ground floor's crown, all of it from the second floor's mid height
 MASK = dict(res=0.05, channels=4, bits=16)   # R: the shelter of the surface the street sees, as its element's soiling
 RES = MASK["res"]                            # reaches; G, B: that element's share above and below 1; A: the depth

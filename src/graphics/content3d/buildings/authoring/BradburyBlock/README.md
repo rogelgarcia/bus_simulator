@@ -7967,3 +7967,11 @@ exists in four combinations -- original, chipped, uneven, chipped and uneven -- 
 pieces renders exactly once. Revert checked: `wear_hand_set=0` against step 5 on pose 12, mean 0.007, max 4 levels (at
 4 of a million pixels). Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/610/v1/`
 (`raking_crown_crop2x.png`, `raking_band_crop2x.png`: along Broadway's crown and band, where the lines read best).
+
+**The group's deposits halved (2026-10-12).** On the group's before/after close-ups the owner found the deposits a
+"dark black powder ... like asphalt" in the cornices and crevices: "reduce the effect by 50%". The three dirt deposits the
+group added were halved in their calibration (defaults stay 1): `cavity` AMOUNT 0.44 -> 0.22, `ledge_stain` AMOUNT 0.45
+-> 0.225, soiling's upper extra `wear_soiling_upper` 2.0 -> 1.0 (x2 up high instead of x3). The tones, the glass, the
+worn arrises, the chips and the hand-set lines are unchanged. Evidence
+`tests/artifacts/screens/bradbury_weathering/closeups_before_after/` (`pair_*.jpg`; the first `after` in `after_v1/`;
+`crop3_*.jpg`: before | first after | halved).

@@ -45,8 +45,9 @@ CLASS_SHARE = {classes.TERRACOTTA: 1.0, classes.STONE: 1.0, classes.BRICK: 0.55}
 ORIENT = (0.75, 1.0)             # a hollow facing the street takes the first share, one facing up or down the second
 
 # ---------------------------------------------------------------------------------------------------- the look
-AMOUNT = 0.44                    # at strength 1 a full hollow goes this far toward DIRT: the owner, on the sweep of
-                                 # 2026-10-11 (0.55 x 0.6 / 1 / 1.6), "use a more subtle approach; value 1 or even less": 0.8 x 0.55
+AMOUNT = 0.22                    # at strength 1 a full hollow goes this far toward DIRT: the owner, on the sweep of
+                                 # 2026-10-11 (0.55 x 0.6 / 1 / 1.6), "use a more subtle approach; value 1 or even less": 0.8 x 0.55;
+                                 # halved 2026-10-12 ("some dark black powder ... like asphalt ... reduce the effect by 50%")
 DIRT_DARK = 0.45                 # soiling's deposit: DIRT keeps this share of the surface's own colour ...
 DIRT_GREY = 0.45                 # ... after losing this much of its saturation toward a warm grey-brown
 DIRT_TINT = (1.00, 0.95, 0.88)
