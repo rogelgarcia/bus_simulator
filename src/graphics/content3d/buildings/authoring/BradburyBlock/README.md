@@ -7921,3 +7921,15 @@ texture draws none (the courses and the archivolts). The owner chose strength 2 
 (`AMP` 0.08, `WARM` 0.03 now at strength 1); the strength scales the amplitude itself (a first build scaled a mix factor,
 which clamped at 1), and at 0 the joints go too. Revert checked: `wear_piece_tone=0` against step 2 on pose 12, max 1
 level. Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/607/` (`sweep/`, `v1/`).
+
+**AI 608, each pane its own glass.** A new feature, `wear/features/pane_glass.py` (`wear_pane_glass`, default 1, 0
+reverts; `wear_pane_glass_tilt` and `wear_pane_glass_vary` scale the tilt and the roughness/tint alone): every pane --
+a connected piece of a window object's glass, numbered per mesh by `apply()` (235 panes: 229 in the block, 6 in the
+portal), its window told apart by Cycles' Object Info Random, so windows sharing a mesh still differ -- has its shading
+normal tilted by up to 1.2 degrees either way about two axes in its plane (the glass stays flat; only what it reflects
+moves), its roughness by up to 0.03 and its tint by up to 4.5 % green against blue. The glass grime, transmission and the
+interiors are untouched. Glass materials now take their normal through the wear layer even without a normal map
+(`nodes.wear_material` feeds them the surface's own shading normal, which changes nothing by itself). Calibrated from a
+sweep to the owner's standing rule for these effects: a balance that changes the look without being clearly visible.
+Revert checked: `wear_pane_glass=0` against step 3 on poses 04 and 12, max 1 level. Render time unchanged. Evidence
+`tests/artifacts/screens/bradbury_weathering/608/` (`sweep/`, `v1/`).

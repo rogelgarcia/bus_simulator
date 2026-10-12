@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Every window pane of the Bradbury block is perfectly flat, perfectly aligned with its neighbours and made of the same
@@ -78,3 +80,10 @@ Shared rules (every step):
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary (2026-10-11, approved by the owner)
+- New wear feature `pane_glass` (`wear/features/pane_glass.py`, `wear_pane_glass`, 0 reverts; `_tilt`, `_vary`): per pane a seeded tilt of the shading normal up to 1.2 deg about two in-plane axes, roughness +-0.03 and tint +-4.5 % green/blue; panes = connected glass per mesh (235) x Object Info Random per window.
+- `nodes.wear_material` now routes glass normals through the layer even without a normal map (the surface's own shading normal: no change by itself).
+- Strength from an internal sweep, chosen to the owner's new standing rule (subtle, not clearly visible); the optional reflection-only cloud sky was not needed (the sky map already carries cloud).
+- Revert: `wear_pane_glass=0` against step 3 on poses 04 and 12, max 1 level; render time unchanged.
+- Evidence: `tests/artifacts/screens/bradbury_weathering/608/` (sweep, v1 sheets with 1:1 crops, x8 heat maps); README "The weathering-realism group".

@@ -522,6 +522,12 @@ def wear_material(mat, cls, layer):
     if cls == classes.GLASS: routes += [("Alpha", "Alpha"), ("Transmission Weight", "Transmission"),
                                         ("Specular IOR Level", "Specular")]
     if cls == classes.METAL: routes.append(("Metallic", "Metallic"))
+    if cls == classes.GLASS and not bsdf.inputs["Normal"].is_linked:
+        # glass takes its normal through the layer too (AI 608 tilts each pane's): the surface's own shading normal,
+        # which is what the BSDF used unlinked, so nothing changes until a feature changes it
+        geo = nt.nodes.new('ShaderNodeNewGeometry'); geo.location = (gn.location.x - 300, gn.location.y - 300)
+        nt.links.new(geo.outputs['Normal'], bsdf.inputs["Normal"])
+        routes.append(("Normal", "Normal"))
     for bs, gs in routes:
         bi = bsdf.inputs[bs]
         if bi.is_linked:
