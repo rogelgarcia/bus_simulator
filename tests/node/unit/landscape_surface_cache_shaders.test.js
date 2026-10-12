@@ -80,7 +80,7 @@ test('Surface cache shaders: the cached frame program compiles out coverage and 
 
 test('Surface cache shaders: cache uniforms are counted apart from the shared coverage slot sizing', () => {
     const sizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
-    assert.deepEqual(landscapeFragmentUniformVectors(terrainSource, sizes), { fixedVectors: 155, slotVectors: 4 }, 'the shared coverage slot sizing is unchanged');
+    assert.deepEqual(landscapeFragmentUniformVectors(terrainSource, sizes), { fixedVectors: 156, slotVectors: 4 }, 'the shared coverage slot sizing is unchanged (155 + the AI 597 ocean switch vector)');
     assert.deepEqual(landscapeFragmentVariantUniformVectors(terrainSource, sizes), { variantVectors: 7 },
         'four cache samplers and two state vectors of the cached frame, and the near band of the near pass');
     assert.throws(() => landscapeFragmentVariantUniformVectors('#ifdef LANDSCAPE_SURFACE_CACHE\nuniform vec4 a[LANDSCAPE_COVERAGE_SLOTS];\n#endif\n'), /coverage slot define/);

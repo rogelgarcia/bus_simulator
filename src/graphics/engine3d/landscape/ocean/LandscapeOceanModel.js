@@ -1,0 +1,225 @@
+// Declares the animated ocean contract (AI 597, landscape-ocean-v1): sea-state and quality presets, the spectral cascade layout, the deterministic clock, the surface clipmap rings and the residency share.
+// @ts-check
+// Design. The sea surface of the landscape viewer is a presentation layer over the authoritative sea level (Y = 0 stays the water level of every
+// query, pick and terrain shading): a deep-water spectral sea (JONSWAP wind sea plus a narrow swell under the TMA finite-depth factor, Mitsuyasu
+// spreading, finite-depth dispersion) evolved on the GPU in band-limited cascades, drawn on a camera-snapped clipmap of rings that reaches the camera
+// far plane, so the sea continues past the 4 km extent over the far-field surround to the horizon. Every parameter lives in a versioned preset
+// (sea state, quality) and the simulation time is a clock the owner advances or fixes, so captures and motion comparisons repeat exactly. The flat
+// AI577 reference plane remains the `flat` inspection surface. Resources reserve inside one share of the shared residency ledger (kind
+// landscape-ocean), like the surround's, so the ocean can never take the authoritative streams' room. Pure module (no three.js): the spectrum
+// math has its exact JavaScript mirrors in LandscapeOceanSpectrum.js; the GPU passes and the surface live in LandscapeOceanSimulation.js and
+// LandscapeOceanSurface.js.
+import { LANDSCAPE_CAMERA_DEPTH } from '../LandscapeCameraDepth.js';
+import { createLandscapeReservedShare } from '../../../../app/landscape/LandscapeResidencyBudget.js';
+
+const MiB = 1024 * 1024;
+
+export const LANDSCAPE_OCEAN = Object.freeze({
+    id: 'landscape-ocean-v1',
+    // the one residency kind of every ocean reservation in the shared ledger
+    kind: 'landscape-ocean',
+    // the viewer's landscapeOcean option: animated draws the spectral sea, flat the AI577 sea-level reference plane (inspection mode)
+    surfaces: Object.freeze(['animated', 'flat']),
+    defaultSurface: 'animated',
+    seaStates: Object.freeze(['calm', 'moderate', 'rough']),
+    defaultSeaState: 'moderate',
+    qualities: Object.freeze(['low', 'medium', 'high']),
+    defaultQuality: 'medium',
+    // free: the clock follows the frame interval (clamped); fixed: it moves only through setTime/step, so captures repeat exactly
+    clock: Object.freeze({ modes: Object.freeze(['free', 'fixed']), maxStepSeconds: .1, defaultMode: 'free', defaultTime: 0 }),
+    gravity: 9.80665,
+    // the surface must cover the camera far plane: the outermost ring's half extent reaches LANDSCAPE_CAMERA_DEPTH.farMeters
+    farMeters: LANDSCAPE_CAMERA_DEPTH.farMeters,
+    // each cascade keeps the wavelengths it samples with at least this many texels, the next coarser cascade the longer ones
+    texelsPerWavelength: 8,
+    // ring vertices morph to the next ring's lattice over the outer part of the ring (fractions of its half extent, L-infinity distance)
+    morph: Object.freeze({ start: .7, end: .95 }),
+    // the depth below which the spectral displacement fades to zero (the beach and the far coast never see the open sea's amplitude; AI 597 D2
+    // replaces this band with the shoaling model) and the depth band over which the fade runs
+    depthFade: Object.freeze({ zeroMeters: .3, fullMeters: 4 }),
+    // world-space envelope of the swell cascade (wave groups): 1 +- amplitude at the wavelength, in meters, so the patch never repeats exactly
+    envelope: Object.freeze({ amplitude: .35, wavelengthMeters: 1500 }),
+    // the share of the shared ledger the view holds for its lifetime once the budget is at least the shipped profile (one standing reservation,
+    // so the streams, which expand into free room within a frame, can never deny a rebuilt ocean): the spectral atlases, the per-cascade displacement and slope textures with
+    // their mips, the bathymetry fields of the extent and the surround and the clipmap geometry (medium quality 24.5 MiB GPU); the AI 597 foam
+    // and swash state (D3, D4) reserves inside the same share. LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share
+    budgets: Object.freeze({ cpuBytes: 32 * MiB, gpuBytes: 64 * MiB }),
+    statuses: Object.freeze(['off', 'loading', 'active', 'unavailable', 'failed']),
+    // the bathymetry fields: the extent at the level-2 hierarchy spacing (4 x the native spacing: 3.906 m on coastal v3), the surround at its
+    // level-1 spacing (62.5 m), both rasterized on the CPU from the saved chunks (LandscapeOceanField.js)
+    fields: Object.freeze({ extentLevel: 2, surroundLevel: 1, texels: 1024, surroundTexels: 512 })
+});
+
+/**
+ * Sea-state presets. Headings are landscape headings (degrees clockwise from north, +Z; 90 = east, +X) the waves travel toward; the coast of
+ * the coastal landscapes faces west, so the open sea arrives from the west and travels east. The wind sea follows JONSWAP with a fetch, the
+ * swell is a narrow JONSWAP (gamma 7) calibrated to its significant height; depthMeters is the representative depth of the TMA factor and the
+ * dispersion of the open sea (the shelf floor), the shore model handles the real shoaling (D2). choppiness is the horizontal displacement scale
+ * per cascade (the finest cascades sharpen more).
+ */
+export const LANDSCAPE_OCEAN_SEA_STATES = Object.freeze({
+    calm: Object.freeze({ label: 'Calm: light breeze, low long swell', wind: Object.freeze({ speedMetersPerSecond: 3, headingDegrees: 80, fetchKilometres: 15 }),
+        swell: Object.freeze({ heightMeters: .25, periodSeconds: 8, headingDegrees: 95, spread: 30 }), depthMeters: 30, gamma: 3.3, choppiness: Object.freeze([1, 1.3, 1.6, 1.8]), seed: 1 }),
+    moderate: Object.freeze({ label: 'Moderate: fresh breeze over 60 km of fetch with a west swell', wind: Object.freeze({ speedMetersPerSecond: 7, headingDegrees: 85, fetchKilometres: 60 }),
+        swell: Object.freeze({ heightMeters: .6, periodSeconds: 8.5, headingDegrees: 95, spread: 25 }), depthMeters: 30, gamma: 3.3, choppiness: Object.freeze([1.2, 1.6, 1.9, 2]), seed: 2 }),
+    rough: Object.freeze({ label: 'Rough: strong breeze over 150 km of fetch with a long west swell', wind: Object.freeze({ speedMetersPerSecond: 12, headingDegrees: 75, fetchKilometres: 150 }),
+        swell: Object.freeze({ heightMeters: 1.5, periodSeconds: 11, headingDegrees: 100, spread: 20 }), depthMeters: 30, gamma: 3.3, choppiness: Object.freeze([1.4, 1.8, 2, 2]), seed: 3 })
+});
+
+/**
+ * Quality presets: the spectral texels per cascade (the FFT size), the cascade patch lengths from the swell patch to the ripple patch, the
+ * clipmap ring resolution (cells per ring side, a multiple of four) and the finest cell, and whether the filtered slope variance feeds the
+ * specular roughness (LEAN). low is the explicit low-cost path.
+ */
+export const LANDSCAPE_OCEAN_QUALITIES = Object.freeze({
+    low: Object.freeze({ label: 'Low: two cascades at 128 texels, 1 m cells', texels: 128, cascadeLengths: Object.freeze([1600, 100]), ringCells: 64, baseCellMeters: 1, lean: false }),
+    medium: Object.freeze({ label: 'Medium: three cascades at 256 texels, 0.5 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25]), ringCells: 128, baseCellMeters: .5, lean: true }),
+    high: Object.freeze({ label: 'High: four cascades at 256 texels, 0.25 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25, 3.125]), ringCells: 192, baseCellMeters: .25, lean: true })
+});
+
+/** The largest cascade count a program variant compiles (the uniform arrays and samplers are sized by it). */
+export const LANDSCAPE_OCEAN_MAX_CASCADES = 4;
+
+const finite = (value, label) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`[LandscapeOcean] ${label} must be a finite number; received ${String(value)}`);
+    return value;
+};
+
+/** @param {unknown} value @returns {'animated'|'flat'} */
+export function landscapeOceanSurface(value) {
+    if (value === null || value === undefined || value === '') return /** @type {'animated'|'flat'} */ (LANDSCAPE_OCEAN.defaultSurface);
+    if (typeof value !== 'string' || !LANDSCAPE_OCEAN.surfaces.includes(value)) throw new Error(`[LandscapeOcean] landscapeOcean must be one of ${LANDSCAPE_OCEAN.surfaces.join(', ')}; received ${String(value)}`);
+    return /** @type {'animated'|'flat'} */ (value);
+}
+
+/** @param {unknown} value @returns {string} a sea-state preset id */
+export function landscapeOceanSeaState(value) {
+    if (value === null || value === undefined || value === '') return LANDSCAPE_OCEAN.defaultSeaState;
+    if (typeof value !== 'string' || !Object.hasOwn(LANDSCAPE_OCEAN_SEA_STATES, value)) throw new Error(`[LandscapeOcean] landscapeSeaState must be one of ${LANDSCAPE_OCEAN.seaStates.join(', ')}; received ${String(value)}`);
+    return value;
+}
+
+/** @param {unknown} value @returns {string} a quality preset id */
+export function landscapeOceanQuality(value) {
+    if (value === null || value === undefined || value === '') return LANDSCAPE_OCEAN.defaultQuality;
+    if (typeof value !== 'string' || !Object.hasOwn(LANDSCAPE_OCEAN_QUALITIES, value)) throw new Error(`[LandscapeOcean] landscapeOceanQuality must be one of ${LANDSCAPE_OCEAN.qualities.join(', ')}; received ${String(value)}`);
+    return value;
+}
+
+/**
+ * The band-limited cascades of a quality preset: cascade c keeps the wavelengths from texelsPerWavelength of its own texels up to the same bound
+ * of the next coarser cascade; the coarsest keeps everything longer, so no wavelength is simulated twice or dropped between cascades. Wavenumber
+ * bounds are radians per meter (kMin exclusive, kMax inclusive; the coarsest cascade's kMin is 0).
+ * @param {string} quality
+ * @returns {ReadonlyArray<Readonly<{index:number,lengthMeters:number,texelMeters:number,minWavelengthMeters:number,maxWavelengthMeters:number,kMin:number,kMax:number}>>}
+ */
+export function landscapeOceanCascades(quality) {
+    const preset = LANDSCAPE_OCEAN_QUALITIES[landscapeOceanQuality(quality)], texels = preset.texels, lengths = preset.cascadeLengths;
+    if (!Number.isInteger(Math.log2(texels)) || texels < 16) throw new Error(`[LandscapeOcean] The spectral texel count must be a power of two of at least 16; received ${texels}`);
+    if (!lengths.length || lengths.length > LANDSCAPE_OCEAN_MAX_CASCADES) throw new Error(`[LandscapeOcean] A quality needs 1 to ${LANDSCAPE_OCEAN_MAX_CASCADES} cascades; received ${lengths.length}`);
+    for (let index = 1; index < lengths.length; index++) if (!(lengths[index] < lengths[index - 1])) throw new Error('[LandscapeOcean] Cascade lengths must decrease');
+    return Object.freeze(lengths.map((lengthMeters, index) => {
+        const texelMeters = lengthMeters / texels, minWavelengthMeters = LANDSCAPE_OCEAN.texelsPerWavelength * texelMeters;
+        const maxWavelengthMeters = index === 0 ? Infinity : LANDSCAPE_OCEAN.texelsPerWavelength * lengths[index - 1] / texels;
+        return Object.freeze({ index, lengthMeters, texelMeters, minWavelengthMeters, maxWavelengthMeters, kMin: index === 0 ? 0 : 2 * Math.PI / maxWavelengthMeters, kMax: 2 * Math.PI / minWavelengthMeters });
+    }));
+}
+
+/**
+ * The clipmap rings of a quality preset: ring r is a square of ringCells cells of baseCellMeters x 2^r around the camera with a hole where ring r - 1
+ * lies (ring 0 has none); rings double until the outermost half extent covers the far plane.
+ * @param {{cells:number,baseCellMeters:number,farMeters?:number}} options
+ * @returns {ReadonlyArray<Readonly<{index:number,cellMeters:number,halfExtentMeters:number,hole:boolean}>>}
+ */
+export function landscapeOceanRings({ cells, baseCellMeters, farMeters = LANDSCAPE_OCEAN.farMeters }) {
+    if (!Number.isInteger(cells) || cells < 8 || cells % 4 !== 0 || cells > 512) throw new Error(`[LandscapeOcean] Ring cells must be a multiple of four from 8 to 512; received ${cells}`);
+    finite(baseCellMeters, 'the base cell');
+    finite(farMeters, 'the far plane');
+    if (!(baseCellMeters > 0 && farMeters > 0)) throw new Error('[LandscapeOcean] The base cell and the far plane must be positive');
+    const rings = [];
+    for (let index = 0, cellMeters = baseCellMeters; ; index++, cellMeters *= 2) {
+        const halfExtentMeters = cells * cellMeters / 2;
+        rings.push(Object.freeze({ index, cellMeters, halfExtentMeters, hole: index > 0 }));
+        if (halfExtentMeters >= farMeters) break;
+        if (index > 40) throw new Error('[LandscapeOcean] Ring layout does not converge');
+    }
+    return Object.freeze(rings);
+}
+
+/**
+ * The world origin of a ring for a camera position: snapped to twice its cell, so vertex parity is stable in world space (the even vertices lie on
+ * the next ring's lattice) and the ring never swims under a moving camera.
+ * @param {{cellMeters:number}} ring @param {number} cameraX @param {number} cameraZ @returns {{x:number,z:number}}
+ */
+export function landscapeOceanRingOrigin(ring, cameraX, cameraZ) {
+    const lattice = 2 * finite(ring.cellMeters, 'the ring cell');
+    return { x: Math.round(finite(cameraX, 'the camera x') / lattice) * lattice, z: Math.round(finite(cameraZ, 'the camera z') / lattice) * lattice };
+}
+
+/**
+ * Conservative byte estimate of the ocean's resources for a quality preset: the spectral atlases (h0 and the two FFT ping-pong textures, RGBA32F,
+ * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (RGBA16F,
+ * the extent and the surround; their CPU rasters as float32) and the clipmap geometry (position attribute and index per ring).
+ * @param {string} quality @param {{extentTexels?:number,surroundTexels?:number}} [fields]
+ * @returns {Readonly<{cpuBytes:number,gpuBytes:number,parts:Readonly<Record<string,Readonly<{cpuBytes:number,gpuBytes:number}>>>}>}
+ */
+export function landscapeOceanResources(quality, { extentTexels = LANDSCAPE_OCEAN.fields.texels, surroundTexels = LANDSCAPE_OCEAN.fields.surroundTexels } = {}) {
+    const preset = LANDSCAPE_OCEAN_QUALITIES[landscapeOceanQuality(quality)], cascades = preset.cascadeLengths.length, texels = preset.texels, stages = Math.log2(texels);
+    const atlasBytes = cascades * texels * texels * 16, mipped = Math.ceil(texels * texels * 8 * 4 / 3);
+    const rings = landscapeOceanRings({ cells: preset.ringCells, baseCellMeters: preset.baseCellMeters });
+    const vertices = (preset.ringCells + 1) ** 2, indices = preset.ringCells * preset.ringCells * 6;
+    const geometryBytes = rings.length * (vertices * 8 + indices * 4);
+    const parts = Object.freeze({
+        spectra: Object.freeze({ cpuBytes: 0, gpuBytes: 3 * atlasBytes + stages * texels * 16 }),
+        cascades: Object.freeze({ cpuBytes: 0, gpuBytes: cascades * 2 * mipped }),
+        fields: Object.freeze({ cpuBytes: (extentTexels * extentTexels + surroundTexels * surroundTexels) * 4, gpuBytes: (extentTexels * extentTexels + surroundTexels * surroundTexels) * 8 }),
+        geometry: Object.freeze({ cpuBytes: geometryBytes, gpuBytes: geometryBytes })
+    });
+    const total = Object.values(parts).reduce((sum, part) => ({ cpuBytes: sum.cpuBytes + part.cpuBytes, gpuBytes: sum.gpuBytes + part.gpuBytes }), { cpuBytes: 0, gpuBytes: 0 });
+    return Object.freeze({ ...total, parts });
+}
+
+/**
+ * The deterministic simulation clock. free mode advances by the frame interval (clamped to maxStepSeconds, never backwards); fixed mode moves only
+ * through setTime and step, so a capture at a given time is reproducible whatever the frame rate.
+ * @param {{mode?:string,time?:number}} [options]
+ */
+export function createLandscapeOceanClock({ mode = LANDSCAPE_OCEAN.clock.defaultMode, time = LANDSCAPE_OCEAN.clock.defaultTime } = {}) {
+    const requireMode = value => {
+        if (!LANDSCAPE_OCEAN.clock.modes.includes(value)) throw new Error(`[LandscapeOcean] The clock mode must be one of ${LANDSCAPE_OCEAN.clock.modes.join(', ')}; received ${String(value)}`);
+        return value;
+    };
+    const requireTime = value => {
+        finite(value, 'the simulation time');
+        if (value < 0) throw new Error(`[LandscapeOcean] The simulation time must not be negative; received ${value}`);
+        return value;
+    };
+    let current = requireMode(mode), seconds = requireTime(time), frame = 0;
+    return Object.freeze({
+        get mode() { return current; },
+        get time() { return seconds; },
+        get frame() { return frame; },
+        /** @param {number} dt frame interval in seconds; ignored in fixed mode */
+        advance(dt) {
+            finite(dt, 'the frame interval');
+            frame++;
+            if (current === 'fixed') return seconds;
+            seconds += Math.min(Math.max(dt, 0), LANDSCAPE_OCEAN.clock.maxStepSeconds);
+            return seconds;
+        },
+        /** @param {number} dt exact step in seconds, any mode */
+        step(dt) { seconds += requireTime(dt); return seconds; },
+        setTime(value) { seconds = requireTime(value); return seconds; },
+        setMode(value) { current = requireMode(value); return current; },
+        snapshot() { return { mode: current, time: seconds, frame, maxStepSeconds: LANDSCAPE_OCEAN.clock.maxStepSeconds }; }
+    });
+}
+
+/**
+ * The ocean's share of the shared residency ledger (kind landscape-ocean), reserved whole in the shared budget as one entry while it exists; the
+ * ocean's own reservations are accounted inside it and denied beyond its limits. Throws when the shared budget cannot hold the share.
+ * @param {any} shared the view's LandscapeResidencyBudget @param {{cpuBytes:number,gpuBytes:number}} [limits]
+ */
+export function createLandscapeOceanLedger(shared, limits = LANDSCAPE_OCEAN.budgets) {
+    return createLandscapeReservedShare(shared, { kind: LANDSCAPE_OCEAN.kind, limits, label: 'LandscapeOcean' });
+}

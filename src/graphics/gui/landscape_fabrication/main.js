@@ -8,6 +8,7 @@ import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '
 import { LANDSCAPE_LIGHTING, LANDSCAPE_LIGHTING_TIERS } from '../../engine3d/landscape/LandscapeLightingModel.js';
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
 import { LANDSCAPE_SURROUND, landscapeSurroundOption } from '../../engine3d/landscape/LandscapeSurroundModel.js';
+import { landscapeOceanQuality, landscapeOceanSeaState, landscapeOceanSurface } from '../../engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 const canvas = document.getElementById('game-canvas');
 const parameters = new URL(location.href).searchParams;
@@ -53,8 +54,13 @@ if (![1, 2, 4, 8, 16].includes(surfaceCacheAnisotropy)) throw new Error(`landsca
 const surfaceCacheNear = mode('landscapeSurfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, 'on');
 // landscapeSurround=auto|off|<manifest url>: the AI 596 D5 render-only far-field surround (auto streams the sidecar published beside the landscape when it exists)
 const surround = landscapeSurroundOption(parameters.get('landscapeSurround') ?? LANDSCAPE_SURROUND.defaultMode);
+// landscapeOcean=animated|flat (AI 597): the animated spectral sea or the flat AI577 reference plane; landscapeSeaState=calm|moderate|rough and landscapeOceanQuality=low|medium|high
+// select its presets; landscapeOceanTime=<seconds> fixes the simulation clock at that time (captures), otherwise it runs with the frame interval
+const ocean = landscapeOceanSurface(parameters.get('landscapeOcean')), seaState = landscapeOceanSeaState(parameters.get('landscapeSeaState')), oceanQuality = landscapeOceanQuality(parameters.get('landscapeOceanQuality'));
+const oceanTime = parameters.has('landscapeOceanTime') ? Number(parameters.get('landscapeOceanTime')) : null;
+if (oceanTime !== null && !(Number.isFinite(oceanTime) && oceanTime >= 0)) throw new Error(`landscapeOceanTime must be a nonnegative number of seconds; received ${parameters.get('landscapeOceanTime')}`);
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
-    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode });
+    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode, ocean, seaState, oceanQuality, oceanTime });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -63,6 +69,13 @@ window.__landscapeTestHooks = Object.freeze({
     setWater: visible => view.setWater(visible),
     // AI 596 D5 render-only surround: 'auto', 'off' or a manifest URL; resolves with snapshot().surround once applied
     setSurround: mode => view.setSurround(mode),
+    // AI 597 animated ocean: {surface: 'animated' | 'flat', seaState, quality, clock: {mode: 'free' | 'fixed', time, step}}; resolves with snapshot().ocean once applied
+    setOcean: options => view.setOcean(options),
+    // AI 597 verification: a cascade's displacement and derivative rasters with statistics (null without an active ocean)
+    setOceanDebug: mode => view.ocean?.setDebug?.(mode),
+    // AI 597 verification: the RGBA bytes of a region of the next rendered frame, read inside that frame (in-page use: hash or difference it there)
+    readFrame: region => view.readFrame(region),
+    oceanReadback: index => { const result = view.ocean?.readback?.(index) ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),

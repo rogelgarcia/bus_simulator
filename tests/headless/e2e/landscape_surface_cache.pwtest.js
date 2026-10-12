@@ -322,7 +322,7 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
         await page.close();
         // profiles without room for the minimum atlas above the streams' reserve (the uncached shipped 640/352 since AI 596 D5, the reduced 128/64 and
         // 48/24 MiB) report why, and the tiles compile the uncached program from the start (no variant switch, so no bootstrap frame while it links)
-        for (const [cpu, gpu] of [[640, 352], [128, 64], [48, 24]]) {
+        for (const [cpu, gpu] of [[672, 416], [128, 64], [48, 24]]) {
             const small = await context.newPage(), smallErrors = observeErrors(small);
             await small.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpu}&landscapeGpuMiB=${gpu}&landscapeSurfaceCache=on`));
             await small.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.appearance?.surfaceCache?.status === 'unavailable', null, { timeout: 120000 });
@@ -366,8 +366,8 @@ test('Landscape D7 surface cache capacity: the slots and window follow the drawi
         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), gamePov);
         const display = landscapeSurfaceCacheBudgets(landscapeSurfaceCacheCapacity({ width: 3840, height: 2160 }));
         const first = await settle(page);
-        // the 3840x2160 display profile: 950 MiB before AI 596 D5, 1046 since the D5 raise by the surround's 96 MiB share
-        expect(display.gpuBytes / MiB).toBe(1046);
+        // the 3840x2160 display profile: 950 MiB before AI 596 D5, 1046 since the D5 raise by the surround's 96 MiB share, 1110 since the AI 597 D1 ocean share
+        expect(display.gpuBytes / MiB).toBe(1110);
         expect(first.budget.limits).toEqual(display);
         expect(first.surfaceCacheCapacity).toMatchObject({ ...first.canvas, targetSlots: 3072, windowPages: 64, display: { width: 3840, height: 2160 }, rebuilds: 0 });
         expect(first.appearance.surfaceCache.atlas.slots).toBe(3072);

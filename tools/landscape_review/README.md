@@ -149,6 +149,36 @@ Images (PNG/JPG/WebP) are scaled to a common height and laid out in one row, or 
 `--grid` columns for N-up sheets, each under a label strip (Segoe UI or Arial when present, else
 Pillow's default font). Fixed colors, no timestamps: the same inputs give the same PNG.
 
+## Ocean captures, clips and periodicity (AI 597)
+
+`capture.mjs` fixes the sea surface and its deterministic clock for every capture:
+`--ocean animated|flat` (the spectral sea or the AI577 flat reference plane), `--sea-state calm|moderate|rough`
+and `--ocean-time <seconds>` (default 30: the ocean clock is set to that time before the first frame, so a pose
+renders the same wave phase on every run). The receipt's `snapshotSummary.ocean` records the status, sea state,
+clock, wave height, simulation GPU time and program compile.
+
+`clip.mjs` renders a short deterministic motion clip from a pose:
+
+```text
+node tools/landscape_review/clip.mjs --landscape <saved landscape directory> --output <dir> --pose NW-12 [--frames 90] [--fps 30]
+     [--ocean animated|flat] [--sea-state <id>] [--ocean-time 30] [--move dx,dy,dz] [--region l,t,r,b] [--width 1920 --height 1080] [--surround auto|off|<url>]
+```
+
+Every frame steps the ocean clock by exactly 1 / fps seconds and, with `--move`, translates the camera by a fixed
+vector (a moving-camera stability clip); frames go to `<dir>/frames/NNNNN.png`, `clip.json` records the mean and
+maximum absolute luminance difference between consecutive frames inside the region (default the lower half of the
+frame) with the frames whose mean difference exceeds four times the median plus one (popping), and `clip.mp4` is
+encoded when ffmpeg is on the PATH. The exit code is 1 when a spike was found.
+
+`periodicity.py` measures whether a rendered sea repeats across a capture (the spectral patches are periodic):
+
+```text
+python tools/landscape_review/periodicity.py --image <capture.png> --region left,top,right,bottom [--min-lag 64] [--threshold 0.5] [--output receipt.json]
+```
+
+It detrends every row of the region's luminance, averages the normalized autocorrelation over the rows and reports the
+strongest correlation beyond the minimum lag; above the threshold the sea counts as repeating (exit code 1).
+
 ## Tests
 
 `node --test tests/node/unit/landscape_review_poses.test.js` validates the pose file, the

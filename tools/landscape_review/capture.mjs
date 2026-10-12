@@ -11,11 +11,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 import { createLandscapeServer } from '../landscape_server/Server.mjs';
 import { createNativeGroundSampler, loadReviewPoses, resolveReviewPose } from './ReviewPoses.mjs';
+import { LANDSCAPE_OCEAN, landscapeOceanSeaState, landscapeOceanSurface } from '../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 export const REVIEW_CAPTURE_FORMAT = 'landscape-review-capture';
 export const REVIEW_CAPTURES_FORMAT = 'landscape-review-captures';
 export const REVIEW_CAPTURE_DEFAULTS = Object.freeze({
     poses: 'tools/landscape_review/poses/natural-world-v1.json', width: 1920, height: 1080, water: true, planning: false, allowMissingAppearance: false, surround: 'auto',
+    // AI 597: the drawn sea surface, its sea state and the fixed simulation time of every capture (deterministic: the ocean clock never runs free during a capture)
+    ocean: LANDSCAPE_OCEAN.defaultSurface, seaState: LANDSCAPE_OCEAN.defaultSeaState, oceanTime: 30,
     chromium: 'C:/Users/rogel/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe',
     chromiumArgs: Object.freeze(['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']),
     readyTimeoutMs: 180000, settleTimeoutMs: 120000, settlePollMs: 250, tailMs: 1500, sizeTimeoutMs: 10000
@@ -27,9 +30,9 @@ const PLANNING_LAYERS = Object.freeze(['districts', 'roads', 'shoreline', 'point
 const OVERLAY_SELECTOR = '.landscape-ui, #ui-perf-bar';
 const USAGE = `Usage: node tools/landscape_review/capture.mjs --landscape <saved landscape directory> --output <directory>
        [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]
-       [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>]`;
+       [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>] [--ocean animated|flat] [--sea-state calm|moderate|rough] [--ocean-time <seconds>]`;
 
-/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string}} CaptureOptions */
+/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number}} CaptureOptions */
 
 /** @param {string} message @returns {never} */
 function fail(message) { throw new Error(`[LandscapeReview] ${message}`); }
@@ -59,7 +62,8 @@ export function parseCaptureOptions(args) {
         landscape: { type: 'string' }, output: { type: 'string' }, poses: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.poses }, select: { type: 'string' },
         label: { type: 'string' }, water: { type: 'string', default: 'on' }, planning: { type: 'string', default: 'off' },
         width: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.width) }, height: { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.height) },
-        'allow-missing-appearance': { type: 'string', default: 'off' }, surround: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surround } } });
+        'allow-missing-appearance': { type: 'string', default: 'off' }, surround: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surround },
+        ocean: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.ocean }, 'sea-state': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.seaState }, 'ocean-time': { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.oceanTime) } } });
     if (!values.landscape || !values.output) fail(`--landscape and --output are required\n${USAGE}`);
     const select = values.select === undefined ? null : values.select.split(',').map(id => id.trim()).filter(Boolean);
     if (select && !select.length) fail('--select needs at least one pose id');
@@ -67,10 +71,14 @@ export function parseCaptureOptions(args) {
     // the viewer's landscapeSurround option (AI 596 D5): auto draws the sidecar published beside the landscape, off never loads one, a URL loads that surround
     const surround = /** @type {string} */ (values.surround);
     if (surround !== 'auto' && surround !== 'off' && !/^[^\s]+\.json$/.test(surround)) fail(`--surround must be auto, off or a manifest URL ending in .json; received ${surround}`);
+    let ocean, seaState;
+    try { ocean = landscapeOceanSurface(values.ocean); seaState = landscapeOceanSeaState(values['sea-state']); } catch (error) { fail(/** @type {Error} */ (error).message.replace('[LandscapeOcean] landscapeOcean', '--ocean').replace('[LandscapeOcean] landscapeSeaState', '--sea-state')); }
+    const oceanTime = Number(values['ocean-time']);
+    if (!Number.isFinite(oceanTime) || oceanTime < 0) fail(`--ocean-time must be a nonnegative number of seconds; received ${values['ocean-time']}`);
     return Object.freeze({ landscapeDirectory, outputDirectory: path.resolve(values.output), posesFile: path.resolve(/** @type {string} */ (values.poses)), select: select && Object.freeze(select),
         label: values.label ?? path.basename(landscapeDirectory), water: parseSwitch(/** @type {string} */ (values.water), 'water'), planning: parseSwitch(/** @type {string} */ (values.planning), 'planning'),
         width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height'),
-        allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance'), surround });
+        allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance'), surround, ocean: /** @type {string} */ (ocean), seaState: /** @type {string} */ (seaState), oceanTime });
 }
 
 /** @param {readonly any[]} errors appearance errors as the viewer reports them ({message} records, or strings) */
@@ -86,7 +94,7 @@ async function renderedFrames(page, frames, timeoutMs) {
 }
 
 /** @param {import('playwright-core').Page} page @param {number} width @param {number} height */
-async function fitCanvas(page, width, height) {
+export async function fitCanvas(page, width, height) {
     const size = () => page.evaluate(() => window.__landscapeTestHooks.snapshot().canvas);
     let canvas = await size();
     for (let attempt = 0; attempt < 3 && (canvas.width !== width || canvas.height !== height); attempt++) {
@@ -106,7 +114,7 @@ async function fitCanvas(page, width, height) {
  * appearance sidecar (MISSING_APPEARANCE_ERROR): the viewer is settled on its fallback soil colors and the error is returned for the receipt.
  * @param {import('playwright-core').Page} page @param {boolean} allowMissingAppearance
  */
-async function settleViewer(page, allowMissingAppearance) {
+export async function settleViewer(page, allowMissingAppearance) {
     const started = Date.now();
     let consecutive = 0, state = null;
     await renderedFrames(page, 2, REVIEW_CAPTURE_DEFAULTS.settleTimeoutMs);
@@ -115,13 +123,13 @@ async function settleViewer(page, allowMissingAppearance) {
             const view = window.__landscapeTestHooks.snapshot();
             return { pending: view.streaming?.pending ?? null, streamingSettled: view.streaming?.settled ?? false, appearanceSettled: view.appearance?.settled ?? false,
                 lighting: view.lighting?.status ?? null, lastError: view.lastError, errors: view.appearance?.errors ?? [],
-                surroundSettled: !view.surround || (view.surround.settled && (view.surround.pending ?? 0) === 0) };
+                surroundSettled: !view.surround || (view.surround.settled && (view.surround.pending ?? 0) === 0), oceanSettled: !view.ocean || view.ocean.settled };
         });
         if (state.lastError) fail(`the viewer reported an error while settling: ${state.lastError}`);
         if (state.lighting === 'failed') fail('the viewer lighting failed to load');
         const appearanceErrors = errorMessages(state.errors), unexpected = allowMissingAppearance ? appearanceErrors.filter(message => message !== MISSING_APPEARANCE_ERROR) : appearanceErrors;
         if (unexpected.length) fail(`the viewer appearance reported errors: ${unexpected.join('; ')}${allowMissingAppearance ? '' : ' (a landscape saved without an appearance sidecar needs --allow-missing-appearance on)'}`);
-        consecutive = state.pending === 0 && state.streamingSettled && state.appearanceSettled && state.surroundSettled && (state.lighting === null || state.lighting === 'ready') ? consecutive + 1 : 0;
+        consecutive = state.pending === 0 && state.streamingSettled && state.appearanceSettled && state.surroundSettled && state.oceanSettled && (state.lighting === null || state.lighting === 'ready') ? consecutive + 1 : 0;
         if (consecutive >= 2) return { settled: true, waitedMs: Date.now() - started, appearanceErrors };
         await page.waitForTimeout(REVIEW_CAPTURE_DEFAULTS.settlePollMs);
     }
@@ -136,7 +144,10 @@ function summarize(view) {
         lighting: { status: view.lighting?.status ?? null, tier: view.lighting?.tier ?? null }, terrainFields: { status: view.appearance?.terrainFields?.status ?? null },
         terrainProgramVariant: view.terrainProgramVariant ?? null, frameIndex: view.frameIndex, water: view.water ?? null,
         surround: view.surround ? { mode: view.surround.mode, status: view.surround.status, reason: view.surround.reason ?? null, revision: view.surround.revision ?? null, tiles: view.surround.tiles ?? 0,
-            residentByLevel: view.surround.residentByLevel ?? {}, settled: view.surround.settled ?? null, share: view.surround.share ?? null, degradationReason: view.surround.degradationReason ?? null } : null };
+            residentByLevel: view.surround.residentByLevel ?? {}, settled: view.surround.settled ?? null, share: view.surround.share ?? null, degradationReason: view.surround.degradationReason ?? null } : null,
+        ocean: view.ocean ? { mode: view.ocean.mode, status: view.ocean.status, reason: view.ocean.reason ?? null, seaState: view.ocean.seaState?.id ?? null, quality: view.ocean.quality?.id ?? null, clock: view.ocean.clock ?? null,
+            significantWaveHeightMeters: view.ocean.seaState?.significantWaveHeightMeters ?? null, simulation: view.ocean.simulation ? { gpu: view.ocean.simulation.gpu, drawsPerFrame: view.ocean.simulation.drawsPerFrame } : null,
+            programCompile: view.ocean.surface?.programCompile ?? null, share: view.ocean.share ?? null, drawnLastFrame: view.ocean.drawnLastFrame ?? null } : null };
 }
 
 /** @param {import('./ReviewPoses.mjs').ReviewPoseFile} poses @param {readonly string[]|null} select */
@@ -150,7 +161,8 @@ function selectPoses(poses, select) {
 
 /** @param {CaptureOptions} options */
 export async function captureReviewPoses(options) {
-    const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height, allowMissingAppearance, surround = REVIEW_CAPTURE_DEFAULTS.surround } = options;
+    const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height, allowMissingAppearance, surround = REVIEW_CAPTURE_DEFAULTS.surround,
+        ocean = REVIEW_CAPTURE_DEFAULTS.ocean, seaState = REVIEW_CAPTURE_DEFAULTS.seaState, oceanTime = REVIEW_CAPTURE_DEFAULTS.oceanTime } = options;
     const poses = await loadReviewPoses(posesFile), selected = selectPoses(poses, select);
     const sampleGround = await createNativeGroundSampler(landscapeDirectory);
     const cameras = [];
@@ -172,15 +184,19 @@ export async function captureReviewPoses(options) {
         page.on('pageerror', error => pageErrors.push(error.message));
         page.on('console', message => { if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) pageErrors.push(message.text().slice(0, 500)); });
         page.on('response', response => { if (response.status() >= 400) pageErrors.push(`${response.status()} ${response.url()}`); });
-        await page.goto(`${origin}/screens/landscape_fabrication.html${surround === 'auto' ? '' : `?landscapeSurround=${encodeURIComponent(surround)}`}`);
+        // the ocean clock is fixed at the capture time before the first frame, so every pose renders the same sea state and phase (AI 597)
+        const query = new URLSearchParams({ landscapeOcean: ocean, landscapeSeaState: seaState, landscapeOceanTime: String(oceanTime), ...(surround === 'auto' ? {} : { landscapeSurround: surround }) });
+        await page.goto(`${origin}/screens/landscape_fabrication.html?${query}`);
         await page.waitForFunction(() => { const view = window.__landscapeTestHooks?.snapshot(); return !!view && (view.ready || !!view.lastError); }, null, { timeout: REVIEW_CAPTURE_DEFAULTS.readyTimeoutMs });
         // the surround is decided in the background after the landscape is ready (AI 596 D5): wait for its status before judging it
         await page.waitForFunction(() => { const view = window.__landscapeTestHooks.snapshot(); return !!view.lastError || !view.surround || view.surround.status !== 'loading'; }, null, { timeout: REVIEW_CAPTURE_DEFAULTS.readyTimeoutMs });
+        await page.waitForFunction(() => { const view = window.__landscapeTestHooks.snapshot(); return !!view.lastError || !view.ocean || view.ocean.status !== 'loading'; }, null, { timeout: REVIEW_CAPTURE_DEFAULTS.readyTimeoutMs });
         const loaded = await snapshot(page);
         if (loaded.lastError) fail(`the viewer failed to load ${landscapeDirectory}: ${loaded.lastError}`);
         if (loaded.revision !== sampleGround.revision) fail(`the viewer shows revision ${loaded.revision} but ${landscapeDirectory} is at ${sampleGround.revision}`);
         if (surround !== 'off' && surround !== 'auto' && loaded.surround?.status !== 'active') fail(`the requested surround ${surround} is not drawn (${loaded.surround?.status}): ${loaded.surround?.reason}`);
-        log(`viewer ready in ${Date.now() - started} ms, revision ${loaded.revision}, surround ${loaded.surround?.status ?? 'none'}${loaded.surround?.revision ? ` ${loaded.surround.revision}` : ''}`);
+        if (ocean === 'animated' && loaded.ocean?.status !== 'active') fail(`the animated ocean is not drawn (${loaded.ocean?.status}): ${loaded.ocean?.reason}`);
+        log(`viewer ready in ${Date.now() - started} ms, revision ${loaded.revision}, surround ${loaded.surround?.status ?? 'none'}${loaded.surround?.revision ? ` ${loaded.surround.revision}` : ''}, ocean ${loaded.ocean?.status ?? 'none'}${loaded.ocean?.status === 'active' ? ` (${loaded.ocean.seaState?.id} at ${loaded.ocean.clock?.time} s)` : ''}`);
         const clip = await fitCanvas(page, width, height);
         await page.evaluate(({ water, planning, layers, selector }) => {
             const hooks = window.__landscapeTestHooks;
@@ -200,7 +216,7 @@ export async function captureReviewPoses(options) {
             const receipt = { format: REVIEW_CAPTURE_FORMAT, schemaVersion: 1, poseId: pose.id, label, landscapeDirectory: posix(landscapeDirectory), revision: loaded.revision,
                 poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) }, pose, camera, groundHeight: camera.groundHeight, file: fileName, settled: settle.settled, waitedMs: settle.waitedMs,
                 canvas: { width, height }, clip, snapshotSummary: summarize(view), timing: { settleMs: settle.waitedMs, tailMs: REVIEW_CAPTURE_DEFAULTS.tailMs, screenshotMs, totalMs },
-                viewer: { water, planning, width, height, allowMissingAppearance, surround }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
+                viewer: { water, planning, width, height, allowMissingAppearance, surround, ocean, seaState, oceanTime }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
             await writeFile(path.join(outputDirectory, `${pose.id}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
             captures.push({ poseId: pose.id, file: fileName, receipt: `${pose.id}.json`, settled: settle.settled, groundHeight: camera.groundHeight, totalMs, appearanceErrors: settle.appearanceErrors });
             log(`${pose.id} ${settle.settled ? 'settled' : 'NOT settled'} in ${(settle.waitedMs / 1000).toFixed(1)} s, total ${(totalMs / 1000).toFixed(1)} s, ground ${camera.groundHeight === null ? 'outside' : `${camera.groundHeight.toFixed(2)} m`} -> ${shown(file)}`);
@@ -213,7 +229,7 @@ export async function captureReviewPoses(options) {
         await new Promise(resolve => server.close(() => resolve(undefined)));
     }
     const index = { format: REVIEW_CAPTURES_FORMAT, schemaVersion: 1, label, landscapeDirectory: posix(landscapeDirectory), revision: sampleGround.revision, poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) },
-        viewer: { width, height, water, planning, allowMissingAppearance, surround, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
+        viewer: { width, height, water, planning, allowMissingAppearance, surround, ocean, seaState, oceanTime, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
     await writeFile(path.join(outputDirectory, 'captures.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;
 }

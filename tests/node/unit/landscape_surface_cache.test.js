@@ -251,9 +251,9 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
         return { gpuMiB: limits.gpuBytes / MIB, cpuMiB: limits.cpuBytes / MIB, cacheMiB: fit.gpuBytes / MIB, room: limits.gpuBytes - fit.gpuBytes };
     };
     const base = roomAt({ width: 1920, height: 1080 }), qhd = roomAt({ width: 2560, height: 1440 }), uhd = roomAt({ width: 3840, height: 2160 });
-    // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile)
-    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [544, 684, 1046]);
-    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [640, 640, 640]);
+    // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile); AI 597 D1: 608/748/1110 with the ocean's 64 MiB share
+    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [608, 748, 1110]);
+    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [672, 672, 672]);
     assert.ok(Math.abs(uhd.cacheMiB - 674.1) < .1 && Math.abs(qhd.cacheMiB - 312.2) < .1 && Math.abs(base.cacheMiB - 172.3) < .1, `${base.cacheMiB} / ${qhd.cacheMiB} / ${uhd.cacheMiB} MiB`);
     for (const value of [qhd, uhd]) assert.ok(value.room >= base.room && value.room - base.room < MIB, 'the streams keep the reference room');
     assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 2816, windowPages: 64 }), /target slots/, 'below the reference');
@@ -560,14 +560,24 @@ test('Surface cache default (AI577 D7): a view runs the cache unless it selects 
     try {
         delete process.env.LANDSCAPE_TEST_SURFACE_CACHE;
         assert.equal(landscapeEffectiveSurfaceCache(), 'on');
-        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html', 'an unselected run keeps the address');
-        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 640, gpuMiB: 544 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 640, gpuMiB: 684 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 640, gpuMiB: 1046 });
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html?landscapeOceanTime=30', 'an unselected run keeps the address, fixing only the AI 597 ocean clock');
+        process.env.LANDSCAPE_TEST_OCEAN_TIME = 'free';
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html', 'a free ocean clock leaves the address alone');
+        process.env.LANDSCAPE_TEST_OCEAN_TIME = '12.5';
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOceanTime=3'), '/screens/landscape_fabrication.html?landscapeOceanTime=3', 'an address that fixes its own ocean time keeps it');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html#top'), '/screens/landscape_fabrication.html?landscapeOceanTime=12.5#top');
+        process.env.LANDSCAPE_TEST_OCEAN = 'flat';
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html'), '/screens/landscape_fabrication.html?landscapeOceanTime=12.5&landscapeOcean=flat', 'a run can select the flat plane for every address');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOcean=animated'), '/screens/landscape_fabrication.html?landscapeOcean=animated&landscapeOceanTime=12.5', 'an address that selects its surface keeps it');
+        delete process.env.LANDSCAPE_TEST_OCEAN;
+        delete process.env.LANDSCAPE_TEST_OCEAN_TIME;
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 672, gpuMiB: 608 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 672, gpuMiB: 748 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 672, gpuMiB: 1110 });
         process.env.LANDSCAPE_TEST_SURFACE_CACHE = 'off';
         assert.equal(landscapeEffectiveSurfaceCache(), 'off');
-        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off');
-        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceCache=on'), '/screens/landscape_fabrication.html?landscapeSurfaceCache=on', 'an address that selects the cache keeps it');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off&landscapeOceanTime=30');
+        assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSurfaceCache=on'), '/screens/landscape_fabrication.html?landscapeSurfaceCache=on&landscapeOceanTime=30', 'an address that selects the cache keeps it');
         assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: LANDSCAPE_STREAMING_BUDGETS.cpuBytes / 2 ** 20, gpuMiB: LANDSCAPE_STREAMING_BUDGETS.gpuBytes / 2 ** 20 });
     } finally {
         if (saved === undefined) delete process.env.LANDSCAPE_TEST_SURFACE_CACHE; else process.env.LANDSCAPE_TEST_SURFACE_CACHE = saved;

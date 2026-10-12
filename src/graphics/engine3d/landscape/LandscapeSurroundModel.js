@@ -5,6 +5,7 @@
 // another revision is stale and is reported, never drawn, so a terrain edit can never show a surround of the terrain before it. At runtime it streams
 // through a second LandscapeStreamer in render-only mode and is never picked, queried, edited or counted as the landscape. Its tiles reserve inside the
 // shared residency ledger under one kind, bounded by its own share, so it can degrade to its coarse root but never take the authoritative stream's room.
+import { createLandscapeResidencyShare } from '../../../app/landscape/LandscapeResidencyBudget.js';
 
 export const LANDSCAPE_SURROUND = Object.freeze({
     id: 'landscape-surround-v1',
@@ -30,10 +31,6 @@ export const LANDSCAPE_SURROUND = Object.freeze({
 });
 
 const SHA256 = /^[a-f0-9]{64}$/;
-const bytesInput = (value, label) => {
-    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`[LandscapeSurround] ${label} must be a nonnegative safe byte count`);
-    return value;
-};
 const nearly = (a, b) => Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
 const sameBounds = (a, b) => ['minX', 'maxX', 'minZ', 'maxZ'].every(key => nearly(a[key], b[key]));
 const boundsInput = (bounds, label) => {
@@ -114,59 +111,10 @@ export function landscapeSurroundResidency(snapshot) {
 }
 
 /**
- * A view of the shared residency ledger that bounds one surround's reservations to its share: every reservation is forwarded under the surround kind
- * and counted against the share's own limits before the shared ledger admits it, so a denial reads like the shared ledger's (`cpu-budget`,
- * `gpu-budget`; the stream then prunes and retries) while the authoritative stream keeps the rest of the ledger. Leases and snapshots pass through.
- * @param {any} shared the LandscapeResidencyBudget of the view @param {{cpuBytes:number,gpuBytes:number}} [limits]
+ * The surround's share of the shared residency ledger (kind landscape-surround): a reservation beyond the share is denied before it reaches the
+ * shared budget, so the surround can degrade to its coarse root but never take the authoritative streams' room (createLandscapeResidencyShare).
+ * @param {any} shared the view's LandscapeResidencyBudget @param {{cpuBytes:number,gpuBytes:number}} [limits]
  */
 export function createLandscapeSurroundLedger(shared, limits = LANDSCAPE_SURROUND.budgets) {
-    if (!shared || typeof shared.reserve !== 'function' || typeof shared.update !== 'function' || typeof shared.release !== 'function') throw new Error('[LandscapeSurround] The surround ledger wraps a residency budget');
-    const share = Object.freeze({ cpuBytes: bytesInput(limits?.cpuBytes, 'cpu share'), gpuBytes: bytesInput(limits?.gpuBytes, 'gpu share') });
-    const entries = new Map();
-    let cpuBytes = 0, gpuBytes = 0, peakCpuBytes = 0, peakGpuBytes = 0, denied = 0;
-    const sizes = (resources, previous) => ({ cpuBytes: bytesInput(resources.cpuBytes ?? previous.cpuBytes, 'cpuBytes'), gpuBytes: bytesInput(resources.gpuBytes ?? previous.gpuBytes, 'gpuBytes') });
-    const admit = (next, previous) => {
-        const cpu = cpuBytes - previous.cpuBytes + next.cpuBytes, gpu = gpuBytes - previous.gpuBytes + next.gpuBytes;
-        const reason = cpu > share.cpuBytes ? 'cpu-budget' : gpu > share.gpuBytes ? 'gpu-budget' : null;
-        if (reason) { denied++; return Object.freeze({ admitted: false, reason }); }
-        return null;
-    };
-    const apply = (key, next, previous) => {
-        cpuBytes += next.cpuBytes - previous.cpuBytes; gpuBytes += next.gpuBytes - previous.gpuBytes;
-        peakCpuBytes = Math.max(peakCpuBytes, cpuBytes); peakGpuBytes = Math.max(peakGpuBytes, gpuBytes);
-        entries.set(key, next);
-    };
-    const nothing = Object.freeze({ cpuBytes: 0, gpuBytes: 0 });
-    return Object.freeze({
-        kind: LANDSCAPE_SURROUND.kind,
-        limits: share,
-        reserve(key, resources) {
-            if (entries.has(key)) throw new Error(`[LandscapeSurround] duplicate reservation ${key}`);
-            const next = sizes(resources, nothing), refusal = admit(next, nothing);
-            if (refusal) return refusal;
-            const result = shared.reserve(key, { ...resources, kind: LANDSCAPE_SURROUND.kind });
-            if (result.admitted) apply(key, next, nothing);
-            return result;
-        },
-        update(key, resources) {
-            const previous = entries.get(key);
-            if (!previous) throw new Error(`[LandscapeSurround] missing reservation ${key}`);
-            const next = sizes(resources, previous), refusal = admit(next, previous);
-            if (refusal) return refusal;
-            const result = shared.update(key, { ...resources, ...(resources.kind !== undefined ? { kind: LANDSCAPE_SURROUND.kind } : {}) });
-            if (result.admitted) apply(key, next, previous);
-            return result;
-        },
-        release(key) {
-            const previous = entries.get(key);
-            const released = shared.release(key);
-            if (released && previous) { cpuBytes -= previous.cpuBytes; gpuBytes -= previous.gpuBytes; entries.delete(key); }
-            return released;
-        },
-        has(key) { return shared.has(key); },
-        acquireLease(key, options) { return shared.acquireLease(key, options); },
-        snapshot() { return shared.snapshot(); },
-        /** The surround's own accounting inside the shared ledger. */
-        shareSnapshot() { return Object.freeze({ kind: LANDSCAPE_SURROUND.kind, cpuBytes, gpuBytes, peakCpuBytes, peakGpuBytes, limits: share, denied, entries: entries.size }); }
-    });
+    return createLandscapeResidencyShare(shared, { kind: LANDSCAPE_SURROUND.kind, limits, label: 'LandscapeSurround' });
 }

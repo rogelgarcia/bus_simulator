@@ -5,7 +5,7 @@ model. Elevation and semantic source data remain authoritative on disk. A render
 partition is a temporary view of that data, never a saved terrain edit.
 
 Status: AI 596 D5 shipped the render-only far-field surround and the raised
-profiles (640/352 MiB with the surface cache off, 640/544 MiB with it on at
+profiles (672/416 MiB with the surface cache off, 672/608 MiB with it on at
 1920 × 1080; "Resource admission and ownership" and "Far-field surround" below).
 Coastal terrain v3 (341 nodes, 0.9765625 m) is the pinned production landscape;
 the 85-node v2 remains the default directory of the viewer, server and suites.
@@ -94,7 +94,7 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Resource or work limit | Default |
 | --- | ---: |
 | Controlled terrain CPU buffers and reservations | 640 MiB since AI 596 D5 (512 MiB in AI577 D4 – AI 596 D4, 128 MiB before AI577 D2, 384 MiB in D2–D3) |
-| Estimated terrain GPU buffers and reservations | 352 MiB since AI 596 D5 (256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Estimated terrain GPU buffers and reservations | 416 MiB since AI 597 D1 (352 MiB in AI 596 D5 – AI 597 D1, 256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
 | Render-only surround share inside the totals (AI 596 D5, `LANDSCAPE_SURROUND.budgets`, kind `landscape-surround`) | 128 MiB CPU / 96 MiB GPU: the raise above is exactly this share, so the authoritative streams keep their 512/256 MiB |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
 | Concurrent independent appearance worker | 1 |
@@ -102,10 +102,10 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
-| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 640 MiB CPU / 544 MiB GPU up to 1920×1080, 684 at 2560×1440, 1046 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
+| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 672 MiB CPU / 608 MiB GPU up to 1920×1080 since AI 597 D1 (640 / 544, 684 and 1046 in AI 596 D5 – AI 597 D1), 748 at 2560×1440, 1110 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
 | Geometric screen error goal | 1.5 pixels (the render-only surround streams at 3 pixels) |
 
-URL budgets may not exceed the profile of the selected mode (surface cache off: 640/352 MiB; on: the display's cache profile, 640/544 MiB up to 1920×1080).
+URL budgets may not exceed the profile of the selected mode (surface cache off: 672/416 MiB; on: the display's cache profile, 672/608 MiB up to 1920×1080).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle
@@ -266,7 +266,9 @@ colour boundary when looking along the edge from within 300 m). Picking restores
 displayed heights (`exclusionHeights`), not to the replaced source samples.
 
 **Water.** `createLandscapeWaterReference({bounds})` / `setBounds` size the sea plane: the surround bounds
-while a surround is active (`snapshot().water.extent === 'surround'`), the landscape bounds otherwise.
+while a surround is active (`snapshot().water.extent === 'surround'`), the landscape bounds otherwise. The AI 597 animated
+ocean honours the same contract with its bathymetry fields: inside the landscape bounds its extent field answers, beyond them the
+surround's level-1 depth raster while a surround is active, and elsewhere no sea is drawn ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md)).
 The plane keeps every authoritative rule (never picked, never queried, never converts seabed to sea).
 
 **AI 597 interface.** The animated ocean must cover every surround sample below sea level out to the

@@ -26,8 +26,8 @@ export const LANDSCAPE_LIGHTING = Object.freeze({
         standard: 'low + terrain shadows and terrain sky occlusion from the terrain fields, light reflected by occluding terrain, aerial perspective (isotropic sky, ground and Rayleigh/Mie sun lobes) on terrain and water + an in-water source that decays with depth along the view path',
         high: 'standard + phase-convolved anisotropic sky in-scattering and horizon occlusion of normal-mapped sky reflections'
     }),
-    uniforms: Object.freeze({ uLandscapeSky: 9, uLandscapeSun: 1, uLandscapeSunIrradiance: 1, uLandscapeResponse: 1 }),
-    uniformVectors: 12,
+    uniforms: Object.freeze({ uLandscapeSky: 9, uLandscapeSun: 1, uLandscapeSunIrradiance: 1, uLandscapeResponse: 1, uLandscapeOcean: 1 }),
+    uniformVectors: 13,
     sunAngularDiameterDeg: CALIBRATED_DAYLIGHT.angularDiameterDeg,
     hooks: Object.freeze({ sunVisibility: 'landscapeSunVisibility', skyVisibility: 'landscapeSkyVisibility' }),
     // terrain-field binding of the hooks (terrain program, tiers standard and high): the sun margin against the azimuth-interpolated horizon is
@@ -66,6 +66,17 @@ export function landscapeResponseUniformValue(response) {
         throw new Error(`[Landscape] The lighting response accepts boolean ${Object.keys(LANDSCAPE_LIGHTING.response).join(', ')}`);
     }
     return [response.model ? 1 : 0, response.bounce ? 1 : 0, response.terrainVisibility ? 1 : 0, response.terrainAppearance ? 1 : 0];
+}
+
+/**
+ * uLandscapeOcean of a lighting state (AI 597): x is 1 while the animated ocean surface draws the sun glint of its own wavy facets, so the terrain's
+ * flat-surface glint of submerged fragments is skipped; y, z, w are reserved for the swash and caustic terms of later deliverables (0).
+ * @param {{animated?:boolean}|undefined} ocean @returns {number[]}
+ */
+export function landscapeOceanUniformValue(ocean) {
+    if (ocean === undefined) return [0, 0, 0, 0];
+    if (!ocean || typeof ocean !== 'object' || typeof ocean.animated !== 'boolean') throw new Error('[Landscape] The lighting ocean state needs a boolean animated flag');
+    return [ocean.animated ? 1 : 0, 0, 0, 0];
 }
 
 export const LANDSCAPE_ATMOSPHERE = Object.freeze({
@@ -440,8 +451,8 @@ export function landscapeTerrainRadiance(state, { albedo, normal: n, roughness, 
     if (origin[1] > state.waterLevel) {
         const entry = world.map((value, axis) => value + v[axis] * pathLength), haze = landscapeAerialPerspective(state, origin, entry, tier);
         const f0 = ((water.ior - 1) / (water.ior + 1)) ** 2, glint = landscapeBrdfGgx(sun, v, [0, 1, 0], [f0, f0, f0], landscapeWaterSurfaceRoughness().roughness);
-        const transmission = Math.max(1 - landscapeWaterReflectance(v), 1e-3);
-        radiance = radiance.map((value, channel) => (value / (water.ior * water.ior) + state.sunIrradiance[channel] * clamp01(sun[1]) * glint[channel] * sunVisibility / transmission) * haze.transmittance[channel] + haze.inscatter[channel]);
+        const transmission = Math.max(1 - landscapeWaterReflectance(v), 1e-3), surfaceGlint = state.ocean?.animated ? 0 : 1;
+        radiance = radiance.map((value, channel) => (value / (water.ior * water.ior) + state.sunIrradiance[channel] * clamp01(sun[1]) * glint[channel] * sunVisibility * surfaceGlint / transmission) * haze.transmittance[channel] + haze.inscatter[channel]);
     }
     return radiance;
 }
@@ -473,7 +484,7 @@ export const LANDSCAPE_REFERENCE_PROBE_LIGHTING = (() => {
  * Uniform values of a lighting state in the shader layout (uLandscapeSky planar per channel, sun direction with the atmosphere's reference
  * level, sun irradiance with the optical water level, the response switches; an absent state.response is the D5b model).
  * @param {LandscapeLightingState & {waterLevel:number,response?:{model?:boolean,bounce?:boolean,terrainVisibility?:boolean}}} state
- * @returns {{uLandscapeSky:Float32Array,uLandscapeSun:Float32Array,uLandscapeSunIrradiance:Float32Array,uLandscapeResponse:Float32Array}}
+ * @returns {{uLandscapeSky:Float32Array,uLandscapeSun:Float32Array,uLandscapeSunIrradiance:Float32Array,uLandscapeResponse:Float32Array,uLandscapeOcean:Float32Array}}
  */
 export function landscapeLightingUniformValues(state) {
     const { sunDirection, sunIrradiance, skyCoefficients, seaLevel, waterLevel } = state, calibration = state.calibration ?? [1, 1, 1];
@@ -486,21 +497,21 @@ export function landscapeLightingUniformValues(state) {
         sky[channel * 12 + 11] = calibration[channel];
     }
     return { uLandscapeSky: sky, uLandscapeSun: Float32Array.of(...sunDirection, seaLevel), uLandscapeSunIrradiance: Float32Array.of(...sunIrradiance, waterLevel),
-        uLandscapeResponse: Float32Array.from(landscapeResponseUniformValue(state.response)) };
+        uLandscapeResponse: Float32Array.from(landscapeResponseUniformValue(state.response)), uLandscapeOcean: Float32Array.from(landscapeOceanUniformValue(state.ocean)) };
 }
 
 /**
  * Shader uniform cells ({value}) of a lighting state; without a state, the calibrated sun with no sky light, no water body and the shipped
  * response switches, which a material holds until the view lighting binds its shared cells.
  * @param {LandscapeLightingState & {waterLevel:number,response?:{model?:boolean,bounce?:boolean,terrainVisibility?:boolean}}} [state]
- * @returns {{uLandscapeSky:{value:Float32Array},uLandscapeSun:{value:Float32Array},uLandscapeSunIrradiance:{value:Float32Array},uLandscapeResponse:{value:Float32Array}}}
+ * @returns {{uLandscapeSky:{value:Float32Array},uLandscapeSun:{value:Float32Array},uLandscapeSunIrradiance:{value:Float32Array},uLandscapeResponse:{value:Float32Array},uLandscapeOcean:{value:Float32Array}}}
  */
 export function createLandscapeLightingUniforms(state) {
     const values = landscapeLightingUniformValues(state ?? { sunDirection: landscapeSunDirection(CALIBRATED_DAYLIGHT.azimuthDeg, CALIBRATED_DAYLIGHT.elevationDeg),
         sunIrradiance: [...CALIBRATED_DAYLIGHT.sunNormalRgb], skyCoefficients: new Array(LANDSCAPE_SKY_IRRADIANCE.coefficients * 3).fill(0), seaLevel: 0, waterLevel: LANDSCAPE_WATER_LEVEL_DISABLED,
         response: { ...LANDSCAPE_LIGHTING.response } });
     return { uLandscapeSky: { value: values.uLandscapeSky }, uLandscapeSun: { value: values.uLandscapeSun }, uLandscapeSunIrradiance: { value: values.uLandscapeSunIrradiance },
-        uLandscapeResponse: { value: values.uLandscapeResponse } };
+        uLandscapeResponse: { value: values.uLandscapeResponse }, uLandscapeOcean: { value: values.uLandscapeOcean } };
 }
 
 /** Uniform cells of LANDSCAPE_REFERENCE_PROBE_LIGHTING (the D5b response) for isolated material probes (compile them with the low tier and

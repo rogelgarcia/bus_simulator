@@ -209,6 +209,14 @@ test hooks are documented in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 Water toggles a separately owned translucent plane at the retained sea level.
 Terrain raycasts and native height/soil/submerged queries always use the actual
 heightfield. The water reference never converts seabed elevation into sea level.
+Since AI 597 D1 the drawn sea is the animated ocean ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md)):
+`landscapeOcean=animated|flat` (default animated; `flat` keeps the AI577 plane as the inspection
+surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|medium|high` and
+`landscapeOceanTime=<seconds>` (a fixed simulation clock for captures); the toolbar's *Ocean* button
+switches animated and flat, the test hook `setOcean({surface, seaState, quality, clock})` drives it and
+`snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share).
+The water toggle hides both surfaces and the optical water body; the ocean is never pickable and the
+water reference keeps the optical body while its plane is hidden (`snapshot().water.surfaceDrawn`).
 Planning urban/road/runway classes display natural ground, inferred from terrain
 fields since AI577 D5 (the shared overview flood fill is the fallback). The legend labels those classes as imported surface
 references; semantic queries still report their original cover and unknown soil.

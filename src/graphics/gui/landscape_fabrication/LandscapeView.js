@@ -32,6 +32,8 @@ import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/Landscape
 import { createLandscapeSurround } from '../../engine3d/landscape/LandscapeSurround.js';
 import { LANDSCAPE_SURROUND, landscapeSurroundOption, landscapeSurroundUrl, landscapeSurroundWaterBounds } from '../../engine3d/landscape/LandscapeSurroundModel.js';
 import { landscapeCameraNear, landscapeCameraNearChanged } from '../../engine3d/landscape/LandscapeCameraDepth.js';
+import { createLandscapeOcean } from '../../engine3d/landscape/ocean/LandscapeOcean.js';
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanLedger, landscapeOceanQuality, landscapeOceanSeaState, landscapeOceanSurface } from '../../engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 
@@ -96,15 +98,24 @@ export class LandscapeView {
      *   the cache off with its reason); the cache's slot target and window follow the drawing buffer (landscapeSurfaceCacheCapacity, AI577 D7) unless
      *   surfaceCacheSlots / surfaceCacheWindow fix them; surfaceCacheAnisotropy is its sampler anisotropy; surfaceCacheNear 'off' leaves the near field to the
      *   cache instead of evaluating it per pixel (landscape-surface-cache-near-v1 A/B evidence); surround (AI 596 D5) 'auto' streams the render-only
-     *   far-field surround when the landscape publishes its sidecar, 'off' never loads it, a manifest URL loads that surround (landscapeSurroundOption)
+     *   far-field surround when the landscape publishes its sidecar, 'off' never loads it, a manifest URL loads that surround (landscapeSurroundOption);
+     *   ocean (AI 597) 'animated' draws the spectral sea instead of the flat reference plane, 'flat' keeps the AI577 plane as the inspection surface; seaState and
+     *   oceanQuality select the presets (LANDSCAPE_OCEAN_SEA_STATES, LANDSCAPE_OCEAN_QUALITIES); oceanTime fixes the simulation clock at that time (captures), null runs it
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
         lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
         surfaceCache = LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, surfaceCacheSlots = null, surfaceCacheWindow = null, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy,
-        surfaceCacheNear = 'on', surround = LANDSCAPE_SURROUND.defaultMode } = {}) {
+        surfaceCacheNear = 'on', surround = LANDSCAPE_SURROUND.defaultMode, ocean = LANDSCAPE_OCEAN.defaultSurface, seaState = LANDSCAPE_OCEAN.defaultSeaState, oceanQuality = LANDSCAPE_OCEAN.defaultQuality, oceanTime = null } = {}) {
         this.surroundOption = landscapeSurroundOption(surround);
         this.surround = null;
         this.surroundSequence = 0;
+        // AI 597: the drawn sea surface (animated ocean or the flat reference), its sea-state and quality presets and a fixed simulation time for captures (null: free-running)
+        if (oceanTime !== null && !(typeof oceanTime === 'number' && Number.isFinite(oceanTime) && oceanTime >= 0)) throw new Error(`[Landscape] oceanTime must be a nonnegative number of seconds or null; received ${oceanTime}`);
+        this.oceanOptions = { surface: landscapeOceanSurface(ocean), seaState: landscapeOceanSeaState(seaState), quality: landscapeOceanQuality(oceanQuality), time: oceanTime };
+        this.ocean = null;
+        this.oceanShare = null;
+        this.oceanFailure = null;
+        this.oceanSequence = 0;
         if (!Object.hasOwn(LANDSCAPE_SURFACE_DETAIL_MODES, surfaceDetail)) throw new Error(`[Landscape] surfaceDetail must be one of ${Object.keys(LANDSCAPE_SURFACE_DETAIL_MODES).join(', ')}; received ${surfaceDetail}`);
         if (!LANDSCAPE_MULTISCALE_MODES.includes(multiscale)) throw new Error(`[Landscape] multiscale must be one of ${LANDSCAPE_MULTISCALE_MODES.join(', ')}; received ${multiscale}`);
         landscapeMaterialSamplingMode(materialSampling);
@@ -148,6 +159,7 @@ export class LandscapeView {
         this.disposed = false;
         this.cacheAvailability = null;
         this.frameIndex = 0;
+        this.frameReads = [];
         this.cameraGround = null;
         this.peakUploadedBytes = 0;
         this.loadSequence = 0;
@@ -228,6 +240,8 @@ export class LandscapeView {
             const [loaded] = await Promise.all([loadLandscapeOverview(this.source, { signal: this.loadAbort.signal }), this.lighting.ready]);
             if (this.disposed || sequence !== this.loadSequence) return;
             this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
+            // AI 597: the ocean's share is held before the streams and the surface cache start filling the ledger (ensureOceanShare)
+            if (this.oceanOptions.surface === 'animated') this.ensureOceanShare();
             // AI577 D6: the tiles compile the cached frame variant only where a surface cache can run (a rebinding runtime, or a device and budget profile
             // that admit one); otherwise they compile the uncached program from the start instead of drawing the cache's bootstrap while it links
             const runtime = this.surfaceCacheRuntime, capacity = this.surfaceCacheCapacity(), cached = this.surfaceCache === 'on' && (this.canRebindSurfaceCache(runtime, loaded, capacity)
@@ -245,6 +259,8 @@ export class LandscapeView {
             this.planning?.dispose();
             this.surround?.dispose();
             this.surround = null;
+            this.ocean?.dispose();
+            this.ocean = null;
             this.loaded = loaded;
             if (!this.bookmarkStore || this.bookmarkStore.landscapeId !== loaded.manifest.id) this.bookmarkStore = new LandscapeBookmarks({ landscapeId: loaded.manifest.id, source: this.source });
             this.panel.bookmarks(this.bookmarkStore.snapshot());
@@ -274,6 +290,8 @@ export class LandscapeView {
             // AI 596 D5: the render-only surround loads last and in the background (its program compiles in parallel; snapshot().surround reads `loading`
             // until it is decided), so the authoritative streams are up before its stream reserves and a load without one is unchanged
             this.loadSurround(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Surround failed: ${error.message}`); } });
+            // AI 597: the animated ocean also loads in the background (bathymetry field, spectrum, program); the flat reference draws until it is ready
+            this.loadOcean(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Ocean failed: ${error.message}`); } });
             this.loadTiming.readyAtMs = performance.now();
             this.panel.references(planning.features);
             this.syncPlanningPanel();
@@ -314,15 +332,103 @@ export class LandscapeView {
         this.surround?.dispose();
         this.surround = null;
         const url = landscapeSurroundUrl(loaded.manifestUrl, this.surroundOption);
-        if (!url) { this.water?.setBounds(loaded.manifest.bounds); this.panel.active('surround', false); return null; }
+        if (!url) { this.water?.setBounds(loaded.manifest.bounds); this.panel.active('surround', false); this.ocean?.setSurround(null); return null; }
         const surround = await createLandscapeSurround({ landscape: loaded, url, budget: this.budget, renderer: this.renderer, scene: this.scene, camera: this.camera, coverageSlots: this.coverageSlots.total,
             lighting: this.lighting, lightingTier: this.lighting.tier, materialSampling: this.materialSampling, mode: this.mode, lodColors: this.lodColors, boundaries: this.boundaries, palette: this.surroundPalette(), signal: this.loadAbort.signal });
         if (this.disposed || sequence !== this.loadSequence || request !== this.surroundSequence || loaded !== this.loaded) { surround.dispose(); return null; }
         this.surround = surround;
         this.water?.setBounds(landscapeSurroundWaterBounds(loaded.manifest, surround));
+        this.ocean?.setSurround(surround.status === 'active' ? surround : null).catch(error => { if (error.name !== 'AbortError' && !this.disposed) this.panel.notice(`Ocean far field failed: ${error.message}`); });
         this.panel.active('surround', surround.status === 'active');
         if (surround.status !== 'active' && surround.status !== 'absent') this.panel.notice(`Surround not drawn (${surround.status}): ${surround.reason}`);
         return surround;
+    }
+
+    /**
+     * AI 597: creates the animated ocean of the loaded landscape in the background (its bathymetry field, spectrum and programs load while the flat
+     * reference draws) and hides the reference plane once the ocean draws; 'flat' keeps the reference. A newer load or request supersedes it; the
+     * clock of a replaced ocean carries over. Resolves once decided.
+     * @param {number} sequence the load this ocean belongs to @param {any} loaded the loaded landscape
+     */
+    async loadOcean(sequence, loaded) {
+        const request = ++this.oceanSequence, previousClock = this.ocean?.clock.snapshot() ?? null;
+        this.ocean?.dispose();
+        this.ocean = null;
+        this.oceanFailure = null;
+        this.water?.setSurfaceDrawn(true);
+        this.lighting.setOceanSurface(false);
+        this.panel.active('ocean', false);
+        if (this.oceanOptions.surface !== 'animated') return null;
+        // the ocean's share is held in the ledger for the view's lifetime (ensureOceanShare): the streams expand into any room a released ocean
+        // leaves within a frame, so a rebuild (sea state, quality, flat and back) must never compete with them for it
+        if (!this.ensureOceanShare()) { this.panel.notice(`Ocean not drawn: ${this.oceanFailure}`); return null; }
+        const clock = previousClock ? { mode: previousClock.mode, time: previousClock.time } : this.oceanOptions.time === null ? {} : { mode: 'fixed', time: this.oceanOptions.time };
+        const ocean = await createLandscapeOcean({ landscape: loaded, ledger: this.oceanShare, renderer: this.renderer, scene: this.scene, camera: this.camera, lighting: this.lighting, lightingTier: this.lighting.tier,
+            seaState: this.oceanOptions.seaState, quality: this.oceanOptions.quality, clock, surround: this.surround?.status === 'active' ? this.surround : null, signal: this.loadAbort.signal });
+        if (this.disposed || sequence !== this.loadSequence || request !== this.oceanSequence || loaded !== this.loaded) { ocean.dispose(); return null; }
+        this.ocean = ocean;
+        if (ocean.status === 'active') {
+            ocean.setVisible(this.waterVisible);
+            this.water?.setSurfaceDrawn(false);
+            this.lighting.setOceanSurface(true);
+            this.panel.active('ocean', true);
+        } else this.panel.notice(`Ocean not drawn (${ocean.status}): ${ocean.reason}`);
+        return ocean;
+    }
+
+    /**
+     * AI 597 ocean controls: surface 'animated' | 'flat' and the quality preset rebuild the ocean, the sea-state preset re-initializes its spectrum,
+     * clock {mode, time, step} drives its deterministic clock. Resolves with the ocean snapshot once applied.
+     * @param {{surface?:string,seaState?:string,quality?:string,clock?:{mode?:string,time?:number,step?:number}}} [options]
+     */
+    async setOcean({ surface, seaState, quality, clock } = {}) {
+        const next = { surface: surface === undefined ? this.oceanOptions.surface : landscapeOceanSurface(surface), quality: quality === undefined ? this.oceanOptions.quality : landscapeOceanQuality(quality),
+            seaState: seaState === undefined ? this.oceanOptions.seaState : landscapeOceanSeaState(seaState) };
+        const rebuild = next.surface !== this.oceanOptions.surface || next.quality !== this.oceanOptions.quality;
+        Object.assign(this.oceanOptions, next);
+        if (seaState !== undefined) this.ocean?.setSeaState(next.seaState);
+        if (clock !== undefined) { if (this.ocean) this.ocean.setClock(clock); else if (clock.time !== undefined) this.oceanOptions.time = clock.time; }
+        if (rebuild && this.loaded && this.stream && !this.reloading) {
+            try { await this.loadOcean(this.loadSequence, this.loaded); }
+            catch (error) { if (error.name !== 'AbortError') throw error; }
+        }
+        return this.oceanSnapshot();
+    }
+
+    /**
+     * Holds the ocean's share in the shared ledger for the view's lifetime, once the budget is at least the shipped uncached profile (the profiles grew
+     * by exactly the share, so the streams keep their pre-AI 597 room; a smaller budget, such as the historical and constrained evidence profiles, keeps
+     * every byte for the streams and reports the ocean unavailable). Returns whether the share is held; the failure reason is kept for the snapshot.
+     */
+    ensureOceanShare() {
+        if (this.oceanShare) return true;
+        const limits = this.budget.snapshot().limits;
+        if (limits.cpuBytes < LANDSCAPE_STREAMING_BUDGETS.cpuBytes || limits.gpuBytes < LANDSCAPE_STREAMING_BUDGETS.gpuBytes) {
+            this.oceanFailure = `the budget (${Math.round(limits.cpuBytes / 1048576)} / ${Math.round(limits.gpuBytes / 1048576)} MiB) is below the shipped profile that holds the ocean share`;
+            return false;
+        }
+        try { this.oceanShare = createLandscapeOceanLedger(this.budget); this.oceanFailure = null; return true; }
+        catch (error) { this.oceanFailure = error.message; return false; }
+    }
+
+    /** Releases the ocean's standing share in the ledger (after the ocean itself; disposal only). */
+    releaseOceanShare() {
+        if (!this.oceanShare) return;
+        this.oceanShare.dispose();
+        this.oceanShare = null;
+    }
+
+    /**
+     * The ocean's snapshot: `mode` is the drawn surface option (animated or flat), status 'off' with the flat reference surface, 'loading' until a load or
+     * switch decides it, 'failed' when the ledger cannot hold the share; settled once decided. seaState and quality are the preset records (id, label, ...) in every state.
+     */
+    oceanSnapshot() {
+        const mode = this.oceanOptions.surface, decided = this.ocean !== null || mode !== 'animated' || this.oceanFailure !== null;
+        const inert = { recipe: LANDSCAPE_OCEAN.id, status: this.oceanFailure ? (this.oceanFailure.includes('below the shipped profile') ? 'unavailable' : 'failed') : mode === 'animated' ? 'loading' : 'off', present: false, reason: this.oceanFailure, clock: null, fields: null, simulation: null, surface: null,
+            seaState: { id: this.oceanOptions.seaState, label: LANDSCAPE_OCEAN_SEA_STATES[this.oceanOptions.seaState].label }, quality: { id: this.oceanOptions.quality, label: LANDSCAPE_OCEAN_QUALITIES[this.oceanOptions.quality].label },
+            share: { kind: LANDSCAPE_OCEAN.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_OCEAN.budgets, denied: 0, entries: 0 }, drawnLastFrame: false };
+        const current = this.ocean?.snapshot() ?? inert;
+        return { mode, fixedTime: this.oceanOptions.time, ...current, settled: decided && current.settled !== false };
     }
 
     /**
@@ -539,6 +645,7 @@ export class LandscapeView {
             this.stream?.setLightingTier(tier);
             this.surround?.setLightingTier(tier);
             this.water?.setLightingTier(tier);
+            this.ocean?.setLightingTier(tier);
             this.backdrop.setLightingTier(tier);
         }
         if (response !== undefined) this.lighting.setResponse(response);
@@ -661,6 +768,7 @@ export class LandscapeView {
         if (typeof visible !== 'boolean') throw new Error('Water visibility must be boolean');
         this.waterVisible = visible;
         if (this.water) this.water.setVisible(visible); else this.lighting.setWaterVisible(visible);
+        this.ocean?.setVisible(visible);
         this.panel.active('water', visible);
     }
 
@@ -1060,6 +1168,7 @@ export class LandscapeView {
         if (action === 'boundaries') return this.setInspection({ boundaries: !this.boundaries });
         if (action === 'water') return this.setWater(!this.waterVisible);
         if (action === 'surround') return this.setSurround(this.surroundOption.mode === 'off' ? LANDSCAPE_SURROUND.defaultMode : 'off');
+        if (action === 'ocean') return this.setOcean({ surface: this.oceanOptions.surface === 'animated' ? 'flat' : 'animated' });
         if (action === 'focus-selection') return this.focusSelection();
         if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
@@ -1098,7 +1207,7 @@ export class LandscapeView {
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null }, lighting: { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot() },
-            surround: this.surroundSnapshot(),
+            surround: this.surroundSnapshot(), ocean: this.oceanSnapshot(),
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
             terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off', surfaceCache: this.surfaceCache,
@@ -1174,6 +1283,8 @@ export class LandscapeView {
                 // appearance palette (a versioned object: the cells change only when a coarse page or the calibration did)
                 this.surround?.setPalette(this.surroundPalette());
                 this.surround?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
+                // AI 597: the ocean clock, simulation batch (its own timer query, before the frame timer) and ring placement
+                this.ocean?.update({ dt: rawDt, camera: this.camera });
                 const surroundUploads = this.surround?.stream?.uploadedBytes ?? 0;
                 this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0) - surroundUploads));
                 const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + surroundUploads + (this.appearance?.uploadedBytes ?? 0);
@@ -1208,6 +1319,7 @@ export class LandscapeView {
             this.gpuTimer.beginFrame();
             this.renderer.render(this.scene, this.camera);
             this.gpuTimer.endFrame();
+            if (this.frameReads.length) this.completeFrameReads();
             if (this.stream && this.loadTiming?.coarseReadyAtMs !== null && this.loadTiming?.firstCoveredFrameAtMs === null) this.loadTiming.firstCoveredFrameAtMs = performance.now();
             this.perfBar.onFrame({ dt: Math.min(rawDt, .1), rawDt, nowMs: now, renderer: this.renderer, frameIndex: ++this.frameIndex });
             this.performanceCapture?.record({ nowMs: now, intervalMs: rawDt * 1000, cpuFrameMs: performance.now() - frameStart,
@@ -1218,6 +1330,33 @@ export class LandscapeView {
             this.frameRequest = requestAnimationFrame(frame);
         };
         this.frameRequest = requestAnimationFrame(frame);
+    }
+
+    /**
+     * AI 597 verification: resolves with the RGBA bytes of a region of the next rendered frame, read inside that frame's own task (the drawing
+     * buffer is not preserved between frames, so a read from another task sees a cleared buffer). Rows run top to bottom. Never used by the view itself.
+     * @param {{left?:number,top?:number,width?:number,height?:number}} [region] in drawing-buffer pixels
+     * @returns {Promise<{left:number,top:number,width:number,height:number,frameIndex:number,data:Uint8Array}>}
+     */
+    readFrame({ left = 0, top = 0, width = this.canvas.width, height = this.canvas.height } = {}) {
+        const region = { left, top, width, height };
+        if (!Object.values(region).every(value => Number.isInteger(value) && value >= 0) || left + width > this.canvas.width || top + height > this.canvas.height || !width || !height) throw new Error(`[Landscape] readFrame needs an integer region inside the ${this.canvas.width}x${this.canvas.height} drawing buffer`);
+        if (this.disposed) throw new Error('[Landscape] readFrame needs a live viewer');
+        return new Promise((resolve, reject) => this.frameReads.push({ ...region, resolve, reject }));
+    }
+
+    completeFrameReads() {
+        const gl = this.renderer.getContext(), reads = this.frameReads.splice(0), frameIndex = this.frameIndex + 1, height = this.canvas.height;
+        for (const read of reads) {
+            try {
+                const data = new Uint8Array(read.width * read.height * 4);
+                gl.readPixels(read.left, height - read.top - read.height, read.width, read.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+                // readPixels returns rows bottom-up; flip them so row 0 is the top of the region
+                const stride = read.width * 4, row = new Uint8Array(stride);
+                for (let y = 0; y < read.height >> 1; y++) { const a = y * stride, b = (read.height - 1 - y) * stride; row.set(data.subarray(a, a + stride)); data.copyWithin(a, b, b + stride); data.set(row, b); }
+                read.resolve({ left: read.left, top: read.top, width: read.width, height: read.height, frameIndex, data });
+            } catch (error) { read.reject(error); }
+        }
     }
 
     pause() { cancelAnimationFrame(this.frameRequest); this.frameRequest = null; this.controls.clearInput(); this.cancelCameraRequest(); }
@@ -1242,6 +1381,8 @@ export class LandscapeView {
         this.disposeDetailCache();
         this.water?.dispose();
         this.water = null;
+        this.ocean?.dispose(); this.ocean = null;
+        this.releaseOceanShare();
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;
         this.planning?.dispose(); this.planning = null;
         this.surround?.dispose(); this.surround = null;

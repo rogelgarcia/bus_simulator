@@ -12,6 +12,8 @@ uniform vec4 uLandscapeSun;
 uniform vec4 uLandscapeSunIrradiance;
 // switches, 1 enabled or 0 for the D5b model: x material response, y terrain-reflected light, z terrain-field visibility, w terrain-driven appearance
 uniform vec4 uLandscapeResponse;
+// AI 597: x is 1 while the animated ocean surface draws the sun glint of its own facets (the terrain skips its flat-surface glint); y, z, w reserved
+uniform vec4 uLandscapeOcean;
 
 #define LANDSCAPE_PI 3.141592653589793
 #define LANDSCAPE_RECIPROCAL_PI 0.3183098861837907

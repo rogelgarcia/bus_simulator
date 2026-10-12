@@ -79,19 +79,19 @@ queries.
 
 ### D1. Spectral ocean surface
 
-- [ ] **Spectrum and surface.** Provide multi-cascade spectral waves with:
+- [x] **Spectrum and surface.** Provide multi-cascade spectral waves with:
   - directional spreading;
   - a finite-depth spectrum and dispersion (TMA rather than deep-water only);
   - choppy horizontal displacement, normals and a surface-folding measure.
 
   Wind, swell and fetch parameters live in versioned sea-state presets (calm, moderate, rough). The time
   base is deterministic.
-- [ ] **Coverage to the horizon.** The surface covers everything from the shoreline to the horizon, well
+- [x] **Coverage to the horizon.** The surface covers everything from the shoreline to the horizon, well
   beyond the 4 km extent, with continuous level of detail. It must show no visible tiling, swimming,
   cracks or popping, and no seam with the AI 596 far-field land.
-- [ ] **Optics.** Keep the existing optics physically consistent on the displaced surface: Fresnel,
+- [x] **Optics.** Keep the existing optics physically consistent on the displaced surface: Fresnel,
   sky reflection, water column, glint and underwater view.
-- [ ] **Gate.**
+- [x] **Gate.**
   - Open-sea views at NW-10, NW-11 and NW-12 compared against R09.
   - A periodicity check at large view distances.
   - Temporal stability under a moving camera.
@@ -185,6 +185,64 @@ queries.
 
 Record each deliverable here when it passes: a summary, spec and source locations, validation results,
 measurements, limitations and artifact paths.
+
+### D1. Spectral ocean surface — delivered 2026-10-12
+
+**Summary.** The viewer draws an animated spectral sea instead of the flat AI577 plane (`landscapeOcean=animated`, the default; `flat`
+keeps the plane as the inspection surface). Wind sea (JONSWAP from wind speed and fetch) plus a narrow swell calibrated to its significant
+height, both under the TMA finite-depth factor with Mitsuyasu spreading and finite-depth dispersion, are evolved on the GPU in band-limited
+cascades (medium: 1600 / 200 / 25 m patches at 256 texels) through a single-output radix-2 FFT over a cascade atlas, with per-cascade wrapped
+displacement and slope/Jacobian textures (mipmapped). The surface is a camera-snapped clipmap of 11 rings (128 cells, 0.5 m base cell,
+CDLOD morph, hole collapse) that reaches the 25 km far plane over the surround's seabed; the spectral amplitude fades below 4 m of depth
+(the beach and the far coast stay flat until D2), the swell carries a world-space envelope so the patch never repeats. Shading keeps the
+AI577 optics on the displaced normal: split-sum Fresnel with a LEAN roughness, the prefiltered sky blurred by the removed slope variance,
+below-horizon reflections resolving to the water's own colour, a Cox–Munk (Beckmann) sun glitter, composed in display space over the
+terrain's water column. The clock is deterministic (`free` / `fixed`, `landscapeOceanTime=<s>`, `setOcean({clock})`), every browser suite
+opens the viewer at a fixed time (`tests/shared/landscape_viewer_url.js`, `LANDSCAPE_TEST_OCEAN_TIME`), and the capture tool, the new
+`clip.mjs` (deterministic motion clips with stability statistics) and `periodicity.py` carry the gates. Sea level, picking, queries and the
+underwater view are unchanged; the water reference keeps the optical body; `uLandscapeOcean.x` hands the terrain's flat-surface glint to the
+ocean's facets while it draws. Residency: the view holds the ocean's 32 / 64 MiB share (`LANDSCAPE_OCEAN.budgets`) as one standing
+reservation of kind `landscape-ocean` in the shared ledger for its lifetime whenever the budget is at least the shipped profile (smaller
+evidence profiles keep every byte for the streams and report the ocean unavailable), the ocean's own entries (24.5 MiB GPU at medium)
+account inside it (`createLandscapeReservedShare`), so a rebuild after a sea-state, quality or flat switch can never be denied by the streams
+(the suite caught that denial); the shipped profiles grew by exactly the share, as for the surround: 640 / 352 → 672 / 416 MiB uncached,
+640 / 544 → 672 / 608 MiB with the cache (748 / 1110 MiB at 2560 × 1440 and 3840 × 2160), stream reserve 352 → 416 MiB.
+
+**Spec and sources.** `specs/landscape/LANDSCAPE_OCEAN.md` (new, canonical), `LANDSCAPE_VIEWER.md` and `LANDSCAPE_STREAMING.md` (water
+extent), `LANDSCAPE_NATURAL_WORLD_ROADMAP.md` status; `src/graphics/engine3d/landscape/ocean/` (`LandscapeOceanModel.js`,
+`LandscapeOceanSpectrum.js`, `LandscapeOceanField.js`, `LandscapeOceanSimulation.js`, `LandscapeOceanSurface.js`, `LandscapeOcean.js`),
+shaders `src/graphics/shaders/materials/landscape/ocean_*.glsl` + `LandscapeOceanShaderLoader.js`, chunks `ocean_spectrum.glsl`,
+`ocean_sampling.glsl`; `LandscapeLightingModel.js` / `LandscapeLighting.js` / `lighting.glsl` / `terrain.frag.glsl` (`uLandscapeOcean`),
+`LandscapeWaterReference.js` (`setSurfaceDrawn`), `LandscapeView.js` / `main.js` / `LandscapePanel.js` (options, hooks, Ocean button),
+`LandscapeResidencyBudget.js` (`createLandscapeResidencyShare`, the surround ledger now delegates to it), tools
+`tools/landscape_review/capture.mjs` (`--ocean`, `--sea-state`, `--ocean-time`), `clip.mjs`, `periodicity.py`.
+
+**Validation.** Unit: `tests/node/unit/landscape_ocean_model.test.js` (presets, band partition, rings, clock, share, spectrum, FFT table
+against a direct DFT, Hermitian pairs, field raster), `landscape_review_tools.test.js`; all 609 landscape unit tests pass. Browser:
+`tests/headless/e2e/landscape_ocean.pwtest.js` on coastal v3 with the surround (status, fields, 22 simulation draws, share, GPU read-back
+Hs 0.554 / 1.125 / 0.196 m vs the model's 0.556 / 1.147 / 0.196 m, determinism same time 0.001 / stepped 18.28 / restored 0.003 mean luminance units over the open-sea region (the terrain under the sea drifts by up to
+0.3 between captures seconds apart under a loaded GPU, so the sea is judged against its step); picking through the sea to the seabed;
+hide/show; flat switch and back; sea-state switch; disposal to zero), `landscape_lighting` 6/6, `landscape_surround` 1/1,
+`landscape_surface_cache` 6/6 with the raised profile pins, `landscape_surface_transition` opt-in (skipped by design, its overhead accounting
+updated), `landscape_acceptance` 4/4 at 23:00 with the fixed ocean time (its revisit check had failed with a free-running sea); the later
+acceptance runs during another process's Blender render at 99–100 % GPU failed timing-sensitive checks (one revisit stop drifting 1.9–2.5
+bytes while every water-facing stop reproduced within 0.08, a 57 KB margin on the per-frame upload cap in flat mode, 20 FPS under held
+responses): recorded in `d1/README.md`, to be settled by the D7 regression on an idle GPU. Periodicity (row autocorrelation after a 96 px high-pass, lags ≥ 64 px): animated NW-11 peak 0.032, NW-10
+0.035, flat NW-11 0.015 (threshold 0.5). Motion: static clips NW-09 / NW-11 mean frame difference 2.28 / 2.20 with no spikes, moving-camera
+clips NW-10 / NW-11 11.3 / 20.3 with no spikes (no popping); NW-12 static 0.014 (the D1 depth fade keeps the shore band flat).
+
+**Measurements** (RTX 3060, ANGLE/D3D11, 1920 × 1080, cache on at 640/544 MiB, 30 warm-up + 120 sampled frames, animated and flat in one
+session minutes apart): see `tests/artifacts/screens/landscape/ai597/d1/README.md` for the table; simulation batch (22 draws) median
+0.45–0.6 ms (2.2 ms at NW-12), surface program compile 174–513 ms linked in parallel, simulation init 2.9 ms, 24.5 MiB GPU / 5.7 MiB CPU
+in the share, frames stay vsync-bound at every pose. Not measured: cold FXC compile of the surface on a fresh profile beyond the in-page link
+time (the Playwright profile is fresh, so the 174–513 ms figures are cold), GPU memory as reported by the driver (estimated from formats).
+
+**Limitations.** No shoaling, refraction, breaking (D2), foam (D3), swash (D4) or seabed refraction (D5); the far-field sea damps near the
+far coast from a 62.5 m raster; reflections are the prefiltered sky only; R08–R10 are still missing on disk, so the composites use the
+user's coast photos and beach-video frames (`tests/artifacts/screens/landscape/references/natural_world/user_coast/`).
+
+**Artifacts.** `tests/artifacts/screens/landscape/ai597/d1/` (README.md: captures `animated/`, `flat/`, composites, periodicity receipts,
+clips with `clip.mp4`, suite receipt `suite/ocean-suite.json`, `perf/measure_ocean*.json`).
 
 ## On completion
 

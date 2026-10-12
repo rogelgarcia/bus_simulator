@@ -77,16 +77,16 @@ test('Coverage slots: conservative uniform accounting sizes the arrays from devi
         + 'the lighting chunks, the terrain-driven appearance and the dressing-input diagnostics');
     assert.throws(() => landscapeFragmentUniformVectors(expandedShader), /unsupported array size LANDSCAPE_SURFACE_WARP_OCTAVES/, 'the warp octave arrays need their compile-time size');
     const vectors = landscapeFragmentUniformVectors(expandedShader, warpSizes);
-    assert.deepEqual(vectors, { fixedVectors: 155, slotVectors: 4 },
+    assert.deepEqual(vectors, { fixedVectors: 156, slotVectors: 4 },
         '81 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, 18 clump relief vectors, 9 stochastic tiling vectors, '
         + '6 packed soil state vectors (replacing the 12 scalar height/resolution vectors), 12 macro variation vectors, 2 surface layer vectors, '
         + 'the 11 AI577 D5 lighting vectors (9 sky harmonic, 1 sun direction, 1 sun irradiance), the D5 terrain-field sampler and state vector, the D5c '
         + 'response (6 soil response vectors, 1 switch vector) and the D5 planning cover bitmask of the terrain-driven appearance (its parameters are '
-        + 'compile-time constants and its switch and soil roles reuse spare components), less the 8 surface-level tints that became compile-time constants');
+        + 'compile-time constants and its switch and soil roles reuse spare components), less the 8 surface-level tints that became compile-time constants, plus the AI 597 ocean switch vector (uLandscapeOcean)');
     assert.equal(LANDSCAPE_THREE_FRAGMENT_UNIFORM_VECTORS, 7);
     assert.ok(vectors.fixedVectors <= 156, 'the AI577 D5 hard cap keeps 17 native slots plus one spare vector at the WebGL2 minimum');
     assert.deepEqual(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024, ...vectors }),
-        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 155, slotUniformVectors: 4 });
+        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 156, slotUniformVectors: 4 });
     assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 17, 'the WebGL2 minimum still fits the 17 native slots (no fine detail slot)');
     assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 228, ...vectors }).detail, 1);
     assert.ok(vectors.fixedVectors <= 224 - 17 * vectors.slotVectors, 'fixed vectors stay within the WebGL2 minimum budget for 17 native slots');

@@ -903,7 +903,7 @@ vec3 terrainRadiance(vec3 albedo, vec3 n, vec3 geometricNormal, float roughness,
         if (origin.y > level) {
             vec3 surface = world + v * pathLength;
             LandscapeHaze haze = landscapeAerialPerspective(origin, surface);
-            wet = (wet / (LANDSCAPE_WATER_IOR * LANDSCAPE_WATER_IOR) + landscapeWaterGlint(surface, v)) * haze.transmittance + haze.inscatter;
+            wet = (wet / (LANDSCAPE_WATER_IOR * LANDSCAPE_WATER_IOR) + landscapeWaterGlint(surface, v) * (1.0 - uLandscapeOcean.x)) * haze.transmittance + haze.inscatter;
         }
         radiance += wet * submerged;
     }

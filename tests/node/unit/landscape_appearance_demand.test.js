@@ -38,9 +38,9 @@ test('Appearance demand: a 16/8 profile protects attainable 128 tiers and still 
 
 test('Appearance demand: the shipped and former full profiles keep all five requested 512 tiers plus one 128 transition allowance', () => {
     const shared = new LandscapeResidencyBudget(), appearance = new LandscapeAppearanceBudget(shared, 'shipped');
-    // half of the shipped 640/352 MiB profile (AI 596 D5; 256/128 MiB at the former 512/256, kept below as a former full profile)
-    assert.deepEqual(appearance.limits, { cpuBytes: 320 * MIB, gpuBytes: 176 * MIB });
-    for (const limits of [appearance.limits, { cpuBytes: 256 * MIB, gpuBytes: 128 * MIB }, { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }]) {
+    // half of the shipped 672/416 MiB profile (AI 597 D1; 320/176 at the AI 596 D5 640/352, 256/128 MiB at the former 512/256, kept below as former full profiles)
+    assert.deepEqual(appearance.limits, { cpuBytes: 336 * MIB, gpuBytes: 208 * MIB });
+    for (const limits of [appearance.limits, { cpuBytes: 320 * MIB, gpuBytes: 176 * MIB }, { cpuBytes: 256 * MIB, gpuBytes: 128 * MIB }, { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, { cpuBytes: 40 * MIB, gpuBytes: 28 * MIB }]) {
         const demand = planLandscapeAppearanceDemand(coastal(17, limits));
         assert.deepEqual(fittedValues(demand), ['32', '512', '512', '512', '512', '512']);
         // the pre-composition credit (23,976,618 CPU / 25,702,008 GPU) now also protects the 128 tier a material may still hold while its fitted 512 arrives

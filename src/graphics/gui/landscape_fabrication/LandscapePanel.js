@@ -49,7 +49,7 @@ export class LandscapePanel {
         const groups = {
             mode: [['mode:shaded', 'Shaded'], ['mode:wireframe', 'Wireframe'], ['mode:combined', 'Shaded + wire']],
             camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach'], ['camera:pov', 'Game POV']],
-            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water'], ['surround', 'Surround']],
+            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water'], ['ocean', 'Ocean'], ['surround', 'Surround']],
             source: [['reload', 'Reload source']],
             planning: [['planning:districts', 'Districts'], ['planning:roads', 'Roads'], ['planning:shoreline', 'Shoreline'], ['planning:points', 'Points'], ['planning:corridors', 'View corridor']],
             reference: [['reference:focus', 'Focus reference']],

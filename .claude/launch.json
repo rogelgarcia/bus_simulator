@@ -4,8 +4,18 @@
     {
       "name": "bus-sim-static",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["tests/headless/e2e/static_server.mjs"],
+      "runtimeArgs": [
+        "tests/headless/e2e/static_server.mjs"
+      ],
       "port": 4173
+    },
+    {
+      "name": "landscape-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/landscape_server/run.mjs"
+      ],
+      "port": 8002
     }
   ]
 }

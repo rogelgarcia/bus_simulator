@@ -49,14 +49,17 @@ export function createLandscapeWaterReference({ manifest, budget, scene, lightin
     mesh.name = 'Landscape sea-level reference';
     const place = () => mesh.position.set((current.minX + current.maxX) / 2, coordinates.seaLevel, (current.minZ + current.maxZ) / 2);
     place();
-    mesh.visible = visible;
+    let surfaceDrawn = true;
+    mesh.visible = visible && surfaceDrawn;
     // a ShaderMaterial draws both faces in one pass (three.js forceSinglePass), unlike the pre-D5 two-pass transparent MeshStandardMaterial
     let renderInfo = null, drawnFrame = -1;
     mesh.onBeforeRender = renderer => { renderInfo = renderer.info.render; drawnFrame = renderInfo.frame; };
     scene.add(mesh);
     lighting.setWaterVisible(visible);
     return Object.freeze({
-        setVisible(value) { mesh.visible = value; lighting.setWaterVisible(value); },
+        setVisible(value) { visible = value; mesh.visible = visible && surfaceDrawn; lighting.setWaterVisible(value); },
+        /** AI 597: whether the flat plane is drawn; false while the animated ocean draws the sea surface, the optical water body stays. @param {boolean} value */
+        setSurfaceDrawn(value) { surfaceDrawn = value; mesh.visible = visible && surfaceDrawn; },
         /** Replaces the plane's extent (the landscape bounds, or the surround bounds while a surround is active). @param {any} value */
         setBounds(value) {
             const next = waterBounds(value, manifest.bounds);
@@ -75,10 +78,10 @@ export function createLandscapeWaterReference({ manifest, budget, scene, lightin
             tier = value;
         },
         snapshot() {
-            return { visible: mesh.visible, seaLevel: coordinates.seaLevel, cpuBytes: bytes, gpuBytes: bytes, separateFromTerrain: true,
+            return { visible, surfaceDrawn, seaLevel: coordinates.seaLevel, cpuBytes: bytes, gpuBytes: bytes, separateFromTerrain: true,
                 bounds: { ...current }, extent: sameBounds(current, manifest.bounds) ? 'landscape' : 'surround',
                 material: 'landscape-water-surface-v1', lightingTier: tier, reflection: environment ? environment.model : 'sky-harmonics', transparency: 'fresnel-premultiplied',
-                ior: LANDSCAPE_WATER_OPTICS.ior, surface: landscapeWaterSurfaceRoughness(), opticalBody: mesh.visible,
+                ior: LANDSCAPE_WATER_OPTICS.ior, surface: landscapeWaterSurfaceRoughness(), opticalBody: visible,
                 drawPasses: material.transparent && material.side === THREE.DoubleSide && !material.forceSinglePass ? 2 : 1, trianglesPerPass: geometry.index.count / 3,
                 drawnLastFrame: renderInfo !== null && drawnFrame === renderInfo.frame };
         },

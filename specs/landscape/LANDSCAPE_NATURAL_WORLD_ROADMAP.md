@@ -234,7 +234,7 @@ What AI 597–604 consume from AI 596 (the contract, with encodings, samplers an
 | Prompt | Status |
 | --- | --- |
 | AI 596 | D1–D5 delivered 2026-10-09/10 (variant B decided 2026-10-09; `coastal-city-v3` published and pinned, geology sidecar, far-field surround; [LANDSCAPE_TERRAIN_SYNTHESIS.md](LANDSCAPE_TERRAIN_SYNTHESIS.md)); D6 integrated acceptance delivered 2026-10-11 (regressions, flyover and performance tables under `tests/artifacts/screens/landscape/ai596/d6/`; prompt closed as DONE); consumer handoff [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md) |
-| AI 597 | pending |
+| AI 597 | D1 spectral ocean surface delivered 2026-10-12 ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md): band-limited JONSWAP/TMA cascades, camera-snapped clipmap to the far plane over the surround, deterministic clock, the flat plane kept as the inspection surface); D2–D7 pending |
 | AI 598 | pending |
 | AI 599 | pending |
 | AI 600 | pending |
