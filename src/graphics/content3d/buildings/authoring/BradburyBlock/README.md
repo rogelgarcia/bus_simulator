@@ -7906,3 +7906,18 @@ Strength: the owner's sweep on the frieze close-up (0.6, 1, 1.6) -- "use a more 
 set the calibrated amount at 0.8 of the first (`AMOUNT` 0.44). Revert checked: `wear_cavity=0` against step 1 on pose 12,
 max 1 level. Render time: no measurable change on pose 12 (the occlusion node runs at every strength). Evidence
 `tests/artifacts/screens/bradbury_weathering/606/` (`sweep/`, `v1/`).
+
+**AI 607, a tone of its own for every terracotta piece.** A new feature, `wear/features/piece_tone.py`
+(`wear_piece_tone`, default 1, 0 reverts the whole feature; `wear_piece_tone_joints`, the joint lines, default 1;
+`wear_piece_tone_seed`, a seed offset): every fired piece one tone, lighter or darker by up to 8 % and warmer or cooler
+by up to 3 %, uniform inside the piece and changing only at its joints. The pieces are the model's own, found by
+`apply()` and tagged per face: blocks of 0.76 m along each facade on the long courses (the crown's members, the band's
+mouldings, the impost course) and three blocks to a sill, both measured along the face's own facade (a per-face frame:
+the wear frame's per-point facade flips on the parapet's inner faces); the frieze's 0.55 m flower tiles and the band's
+0.183 m medallion tiles from their UVs; seven wedges to an archivolt round its arch's centre; a dentil takes the tone of
+the block it sits in, a bracket is its own piece. A tone is a white-noise hash of the piece's index, its facade and the
+object's seed: one value per piece, nothing placed by noise. Fine joint lines (3 mm, 18 % darker at the centre) where the
+texture draws none (the courses and the archivolts). The owner chose strength 2 of the first calibration on the sweep
+(`AMP` 0.08, `WARM` 0.03 now at strength 1); the strength scales the amplitude itself (a first build scaled a mix factor,
+which clamped at 1), and at 0 the joints go too. Revert checked: `wear_piece_tone=0` against step 2 on pose 12, max 1
+level. Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/607/` (`sweep/`, `v1/`).

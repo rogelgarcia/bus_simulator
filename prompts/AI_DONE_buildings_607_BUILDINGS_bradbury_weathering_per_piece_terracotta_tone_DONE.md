@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The Bradbury block's terracotta trim -- the cornice and band mouldings, the floral frieze tiles, the medallion band,
@@ -78,3 +80,10 @@ Shared rules (every step):
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary (2026-10-11, approved by the owner)
+- New wear feature `piece_tone` (`wear/features/piece_tone.py`, `wear_piece_tone`, 0 reverts it wholly; `_joints`, `_seed`): one tone per fired piece, lighter/darker up to 8 % and warmer/cooler up to 3 %, changing only at the pieces' joints.
+- Pieces found and tagged per face by `apply()`: 0.76 m blocks along each facade on the courses and three per sill (in a per-face facade frame), the frieze's and the band's own tiles from their UVs, seven wedges per archivolt, dentils by their block, brackets each; a white-noise hash of the piece key, one value per piece; 3 mm joint lines where no texture draws joints.
+- Strength from the owner's sweep (0 / 1 / 2 / 3 of the first calibration): "use 2", baked in as strength 1; two sweep bugs fixed on the way (a clamped mix factor made 2 equal 1; the joints ignored strength 0).
+- Revert: `wear_piece_tone=0` against step 2 on pose 12, max 1 level; render time unchanged (pose 12 30 s off/on, 1600x1000, 96 spp, OptiX).
+- Evidence: `tests/artifacts/screens/bradbury_weathering/607/` (sweep, v1 sheets with 1:1 crops, x8 heat maps, debug view of the pieces); README "The weathering-realism group".
