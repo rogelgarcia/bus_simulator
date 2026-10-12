@@ -1,5 +1,39 @@
 # Offline bake framework
 
+`vegetation/hybrid-lod0` derives all mature canopies from authenticated natural
+reference indices, preserving accepted structural wood. It authors flat PBR
+branchlets and two geometric leaf detail levels, validates actual exported
+triangle counts, reuses UASTC quality gates and renders CPU comparisons. It is
+explicit and review-only, with publication rejected. See the
+[hybrid contract](../graphics/vegetation_hybrid_lod0.md).
+
+`vegetation/natural-foliage` stages a reference-only foliage revision through
+the shared Blender backend. It authenticates the accepted scene, preserves
+wood and leaf-shell geometry, writes separate specimen files and matched
+comparisons, and rejects publication. See the [foliage contract](../graphics/vegetation_reference_foliage.md).
+The `coverage` phase authenticates a complete reviewed reference index, adds
+attached leaves at exposed internode gaps and calibrates four-view projected
+coverage while preserving prior leaves and all wood. Arrowwood is referenced
+unchanged. New model files and receipts remain separate ignored artifacts.
+
+`vegetation/turntable` is an explicit review-only Eevee video leaf. It authenticates
+installed LOD0 sources or the accepted high-detail reference scene fingerprint,
+renders one full orbit per species with visible common
+and botanical names, and validates clips and the assembled H.264 movie. It uses
+the shared isolated Blender backend, preserves publication gates, and writes
+only ignored artifacts. Reference mode retains original solid-leaf instances and
+detailed wood, identifies the representation in labels/receipts, and requires a
+separate output. See [the video workflow](../../tools/bake_vegetation/turntable/README.md).
+Its `closeups` phase authenticates both sources and renders camera-matched
+outer-branchlet and upward foliage stills without recentering either specimen
+independently. Source hashes, image hashes, dimensions and camera equality are
+checked before generating labeled comparison sheets through the shared browser.
+Close-ups require a dedicated ignored artifact output and cannot publish assets.
+For revised natural references, `reference-index` authenticates all fifteen
+per-model files and loads the selected solid leaves, curved branchlets and wood.
+It supports proof/render/assemble only. Assembly checks preview/source identity
+and produces an HTML video gallery and full-tree overview sheet.
+
 `materials/grass/lod4-leaf-fill` is an explicit browser experiment outside the
 default material/master parents. It projects the installed runtime package's
 omitted LOD3 leaves into eight padded ground texture layers and authenticates

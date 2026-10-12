@@ -46,6 +46,9 @@ The first implementation executes sequentially, including Blender and browser jo
 
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
+| `vegetation/hybrid-lod0` | Three-zone canopies from updated references: detailed edges, simple curved leaves, flat interior cards | Explicit atlas/build/compress/render/variants/gallery/validate leaf; CPU review only; [workflow](../bake_vegetation/hybrid_lod0/README.md) |
+| `vegetation/natural-foliage` | Curved connected reference shoots, species leaf arrangement and crowding-aware placement | Explicit study/build/render/all/consolidate/coverage review leaf; no publication; [workflow](../bake_vegetation/natural_foliage/README.md) |
+| `vegetation/turntable` | Labeled species orbits and matched reference/LOD0 leaf close-ups in Eevee | Explicit artifact-only proof/render/assemble/closeups leaf; [workflow](../bake_vegetation/turntable/README.md) |
 | `vegetation/branchlets` | Connected exterior branchlets for all mature LOD0 and LOD1 forms; immutable accepted wood | Explicit review only; [workflow](../bake_vegetation/branchlets/README.md) |
 | `vegetation/branchlet-library` | Install the 30 reviewed branchlet GLBs with embedded PBR in `assets/public/vegetation_lods` | Explicit validated publication; [workflow](../bake_vegetation/branchlet_library/README.md) |
 | `vegetation/distant` | LOD3/4 panels, LOD5 view billboards and LOD6 ten-tree cluster plates | Explicit build/compress/render/validate/publish phases; [workflow](../bake_vegetation/distant/README.md) |
