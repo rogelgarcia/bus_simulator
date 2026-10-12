@@ -7933,3 +7933,19 @@ interiors are untouched. Glass materials now take their normal through the wear 
 sweep to the owner's standing rule for these effects: a balance that changes the look without being clearly visible.
 Revert checked: `wear_pane_glass=0` against step 3 on poses 04 and 12, max 1 level. Render time unchanged. Evidence
 `tests/artifacts/screens/bradbury_weathering/608/` (`sweep/`, `v1/`).
+
+**AI 609, worn arrises and chips up high.** Two parts, both behind the group switch:
+- Worn arrises: the AI 576 edge band's upper term (`wear/edges.py`, scene `edge_worn_upper`, default 1, 0 reverts; also
+  `render_wear.py -- edge_worn_upper=`): on the terracotta trim and the arch rings, the band at the arris reads 8 % lighter
+  in its own hue and 0.10 rougher where it faces up or out (a soffit's arris stays crisp), ramping in from 6.5 to 9.0 m.
+- Chips: a new feature, `wear/features/upper_chips.py` (`wear_upper_chips`, default 1, 0 shows the originals): small
+  pieces broken off the nose arris -- the outermost convex top-front edge -- of the crown's projecting member, the band's
+  top moulding, the impost course and the sills, at block joints (AI 607's 0.76 m blocks; a sill's two joints), each
+  site its own sha256 draw of whether it lost a piece (2.5-4 % on the courses, 15 % on a sill joint: 29 chips on the
+  whole block) and of the chip's size, outline, facets and age (AI 570's `chip_shape` / `lens_points`, 0.85 x), cut as
+  AI 570 does with one exact boolean into worn copies (`WEAR_upper_<object>` in `WEAR_GEO_upper_chips`, the originals in
+  `WEAR_ORIG_upper_chips`); the scar is fresh clay, up to 22 % lighter in its own hue and matter. A sill's outer corners
+  are built into the jambs, so they take none (`P_CORNER` 0). `controls.REALISM_GEO` makes the group switch hide the
+  copies and show the originals.
+Revert checked: `wear_upper_chips=0 edge_worn_upper=0` against step 4 on poses 12 and the window close-up, max 1 level.
+Render time unchanged. Evidence `tests/artifacts/screens/bradbury_weathering/609/v1/`.

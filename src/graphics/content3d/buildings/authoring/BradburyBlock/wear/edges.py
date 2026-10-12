@@ -13,6 +13,17 @@ import re
 
 SCENE_ROUND, SCENE_WEAR = "edge_round", "edge_worn"
 DEFAULT_ROUND, DEFAULT_WEAR = 1.0, 1.0
+# Worn arrises up high (AI 609, the weathering-realism group): on the upper floors' terracotta trim and arch rings the
+# worn band reads a little more weathered -- lighter in its own hue and rougher -- where the arris faces up or out
+# (wind-driven rain and frost work the exposed nose of a course; a soffit's arris stays crisp), ramping in above the
+# ground floor. One more term on the same band (no second bevel), switched by the scene's edge_worn_upper (0: the look
+# before AI 609 exactly) and the group switch wear_realism.
+SCENE_UPPER, DEFAULT_UPPER = "edge_worn_upper", 1.0
+UPPER_CLASSES = ("terracotta",)
+UPPER_NAMES = (r"^PBR_bradbury_arch_ring(\.\d+)?$",)
+UPPER_Z = (6.5, 9.0)              # world z: none at the ground floor's crown, all of it from the third floor up
+UPPER_EXPO = (-0.5, 0.0)          # the shading normal's z: a soffit's arris (pointing down) takes none, a front or a top all
+UPPER_LIFT, UPPER_ROUGH = 0.08, 0.10
 
 # the radius (metres) of each material family's rounded edge at edge_round = 1, by wear/classes.py class name. A masonry
 # arris is chipped to a few millimetres; the metal and paint of the frames and shopfronts are thinner sections.
@@ -95,6 +106,32 @@ def round_material(mat, cls_name):
             else: mix.inputs[6].default_value = bi.default_value
             mix.inputs[7].default_value = (1.0 + LIFT, 1.0 + LIFT, 1.0 + LIFT, 1.0)
             link(mix.outputs[2], bi)
+    if cls_name in UPPER_CLASSES or any(re.match(rx, mat.name) for rx in UPPER_NAMES):
+        geo = node('ShaderNodeNewGeometry', 600, -800)
+        sp = node('ShaderNodeSeparateXYZ', 800, -800); link(geo.outputs['Position'], sp.inputs[0])
+        sn = node('ShaderNodeSeparateXYZ', 800, -950); link(geo.outputs['Normal'], sn.inputs[0])
+        zr = node('ShaderNodeMapRange', 1000, -800, clamp=True, interpolation_type='SMOOTHSTEP')
+        zr.inputs['From Min'].default_value, zr.inputs['From Max'].default_value = UPPER_Z
+        link(sp.outputs['Z'], zr.inputs['Value'])
+        ex = node('ShaderNodeMapRange', 1000, -950, clamp=True, interpolation_type='SMOOTHSTEP')
+        ex.inputs['From Min'].default_value, ex.inputs['From Max'].default_value = UPPER_EXPO
+        link(sn.outputs['Z'], ex.inputs['Value'])
+        amt = band.outputs[0]
+        for src in (zr.outputs['Result'], ex.outputs['Result'],
+                    node('ShaderNodeAttribute', 1000, -1100, attribute_type='VIEW_LAYER', attribute_name=SCENE_UPPER).outputs['Fac'],
+                    node('ShaderNodeAttribute', 1000, -1250, attribute_type='VIEW_LAYER', attribute_name="wear_realism").outputs['Fac']):
+            m_ = node('ShaderNodeMath', 1200, -800, operation='MULTIPLY', use_clamp=True)
+            link(amt, m_.inputs[0]); link(src, m_.inputs[1]); amt = m_.outputs[0]
+        bi = bsdf.inputs["Roughness"]
+        add = node('ShaderNodeMath', 1400, -800, operation='MULTIPLY_ADD', use_clamp=True)
+        link(amt, add.inputs[0]); add.inputs[1].default_value = UPPER_ROUGH
+        link(bi.links[0].from_socket, add.inputs[2]); link(add.outputs[0], bi)
+        bi = bsdf.inputs["Base Color"]
+        mix = node('ShaderNodeMix', 1400, -1000, data_type='RGBA', blend_type='MULTIPLY', clamp_result=True)
+        link(amt, mix.inputs[0]); link(bi.links[0].from_socket, mix.inputs[6])
+        mix.inputs[7].default_value = (1.0 + UPPER_LIFT, 1.0 + UPPER_LIFT, 1.0 + UPPER_LIFT, 1.0)
+        link(mix.outputs[2], bi)
+        mat["edge_worn_upper"] = True
     mat["edge_radius_m"] = r
     return True, f"{r * 1000:g} mm"
 
@@ -113,17 +150,20 @@ def round_objects(objs, classify, names, log=print):
     return done
 
 
-def apply(scene, scale=DEFAULT_ROUND, wear=DEFAULT_WEAR, log=print):
-    scene[SCENE_ROUND] = float(scale); scene[SCENE_WEAR] = float(wear)
-    log(f"edges: round x{scale:g}, worn band {wear:g}")
+def apply(scene, scale=DEFAULT_ROUND, wear=DEFAULT_WEAR, upper=DEFAULT_UPPER, log=print):
+    scene[SCENE_ROUND] = float(scale); scene[SCENE_WEAR] = float(wear); scene[SCENE_UPPER] = float(upper)
+    log(f"edges: round x{scale:g}, worn band {wear:g}, worn arrises up high {upper:g}")
 
 
 def parse(args, scene=None):
-    """(round scale, worn strength) from edges=on|off|<scale> and edge_worn=<strength>; unnamed ones keep the scene's."""
+    """(round scale, worn strength, upper worn arrises) from edges=on|off|<scale>, edge_worn=<strength> and
+    edge_worn_upper=<strength>; unnamed ones keep the scene's (a scene without edge_worn_upper reads 0, its look)."""
     sc = float(scene.get(SCENE_ROUND, DEFAULT_ROUND)) if scene is not None else DEFAULT_ROUND
     wr = float(scene.get(SCENE_WEAR, DEFAULT_WEAR)) if scene is not None else DEFAULT_WEAR
     e = args.get("edges")
     if e is not None:
         sc = {"on": 1.0, "off": 0.0}.get(e.lower()) if e.lower() in ("on", "off") else float(e)
     if "edge_worn" in args: wr = float(args["edge_worn"])
-    return sc, wr
+    up = float(scene.get(SCENE_UPPER, 0.0)) if scene is not None else DEFAULT_UPPER
+    if "edge_worn_upper" in args: up = float(args["edge_worn_upper"])
+    return sc, wr, up

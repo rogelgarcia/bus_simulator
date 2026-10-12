@@ -28,8 +28,20 @@ def parse_realism(args, scene=None, default=1.0):
     return 1.0 if v == "on" else 0.0 if v == "off" else float(v)
 
 
+# the group's features that add geometry (worn copies in WEAR_GEO_<name>, originals in WEAR_ORIG_<name>): with the group
+# off their copies hide and the originals show, whatever their strength
+REALISM_GEO = ("upper_chips",)
+
+
 def apply_realism(scene, value, log=print):
+    import bpy
     scene[REALISM] = float(value)
+    for f in REALISM_GEO:
+        on = float(scene.get("wear", 0.0)) > 0.0 and float(scene.get("wear_" + f, 0.0)) > 0.0 and float(value) > 0.0
+        for c in bpy.data.collections:
+            if c.library is not None: continue
+            if c.name == GEO + f: c.hide_render = not on
+            elif c.name == ORIG + f: c.hide_render = on
     log(f"weathering group (AI 605-610): {'on' if value >= 1.0 else 'off' if value <= 0.0 else value}")
 SOURCES = "WEAR_SOURCES"
 SRC, GEO, ORIG = "WEAR_SRC_", "WEAR_GEO_", "WEAR_ORIG_"

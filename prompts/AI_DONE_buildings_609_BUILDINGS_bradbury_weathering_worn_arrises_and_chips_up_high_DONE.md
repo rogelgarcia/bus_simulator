@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 On the Bradbury block's upper floors every arris of the trim is intact: the cornice nose, the band mouldings, the sills
@@ -76,3 +78,11 @@ Shared rules (every step):
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Completion summary (2026-10-12, approved by the owner)
+- Worn arrises up high: the AI 576 edge band's upper term (`wear/edges.py`, `edge_worn_upper`, 0 reverts): on terracotta trim and arch rings, 8 % lighter in hue and +0.10 rough where the arris faces up/out, ramping in over 6.5-9.0 m.
+- New wear feature `upper_chips` (`wear/features/upper_chips.py`, `wear_upper_chips`, 0 shows the originals): 29 small chips at block joints on the noses of the crown, the band's top moulding, the impost course and the sills, each site's own sha256 draw (rare, unique; AI 570's chip shapes at 0.85x), cut as worn copies with an exact boolean; fresh-clay scars.
+- `controls.REALISM_GEO`: the group switch hides geometry features' copies and shows the originals.
+- Strength chosen to the owner's standing subtle rule; a first build's sill-corner chips (hidden in the jambs) were dropped.
+- Revert: both off against step 4 on pose 12 and the window close-up, max 1 level; render time unchanged.
+- Evidence: `tests/artifacts/screens/bradbury_weathering/609/v1/`; README "The weathering-realism group".

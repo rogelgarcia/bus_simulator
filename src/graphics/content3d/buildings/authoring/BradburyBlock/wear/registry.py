@@ -4,10 +4,10 @@
 # BUILD order: a feature is built after every feature named in its NEEDS, whose published fields it reads.
 import re
 from .features import probe, runoff, soiling, washed, street_grime, rust, efflorescence, edge_wear, glass_grime, pigeon
-from .features import mortar_erosion, ledge_stain, cavity, piece_tone, pane_glass
+from .features import mortar_erosion, ledge_stain, cavity, piece_tone, pane_glass, upper_chips
 
 MODULES = [probe, runoff, soiling, washed, street_grime, rust, efflorescence, edge_wear, glass_grime, pigeon,
-           mortar_erosion, ledge_stain, cavity, piece_tone, pane_glass]
+           mortar_erosion, ledge_stain, cavity, piece_tone, pane_glass, upper_chips]
 
 REQUIRED = ("NAME", "AI", "LABEL", "ORDER", "DEFAULT_STRENGTH", "DEBUG_COLOR", "build", "shader")
 _IDENT = re.compile(r"[a-z][a-z0-9_]*")
