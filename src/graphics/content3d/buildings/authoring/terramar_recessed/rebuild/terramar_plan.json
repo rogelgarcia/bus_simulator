@@ -10196,6 +10196,28 @@
         "TM_RB_slab_top"
       ]
     },
+    "roof_paving": {
+      "set": "terramar_continuous_limestone",
+      "repeat_m": 4.0,
+      "tone": [
+        0.84,
+        0.83,
+        0.81
+      ],
+      "tile_m": 0.6,
+      "joint_m": 0.005,
+      "joint_rgb": [
+        0.3,
+        0.28,
+        0.25
+      ],
+      "joint_roughness": 0.9,
+      "roughness_gain": 1.0,
+      "normal_strength": 0.8,
+      "slots": [
+        "TM_RB_roof_paving"
+      ]
+    },
     "joints": {
       "width": 0.008,
       "bevel": 0.003,
@@ -27136,6 +27158,359 @@
           ],
           "shrubs": 3
         }
+      ]
+    },
+    "roof_furniture": {
+      "comment": "AI 630 roof furniture after the aerial: groups in the frames of their terrace runs (u along, v in from the guard shoe's inner line); 'face' is each item's front (its local +v); 'size' its footprint (width along its local u, depth along v). The layer checks every footprint against the guard (at least clear_of_guard_m inside), the islands and the penthouse, and tags the pieces rb_hide_from_b8 for the CAM_B8 sightline check.",
+      "seed": 630,
+      "z": 27.3,
+      "items": [
+        {
+          "group": "dining",
+          "kind": "dining_table",
+          "at": [
+            -6.9487,
+            -5.1198
+          ],
+          "face": [
+            0.70711,
+            0.7071
+          ],
+          "size": [
+            2.4,
+            0.95
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -8.0603,
+            -5.1377
+          ],
+          "face": [
+            0.7042,
+            0.71
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -7.4995,
+            -5.6902
+          ],
+          "face": [
+            0.66771,
+            0.74442
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -6.9571,
+            -6.2426
+          ],
+          "face": [
+            0.71078,
+            0.70342
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -6.9515,
+            -4.0072
+          ],
+          "face": [
+            -0.74834,
+            -0.66331
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -6.3802,
+            -4.5364
+          ],
+          "face": [
+            -0.74766,
+            -0.66408
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -5.8128,
+            -5.1225
+          ],
+          "face": [
+            -0.71014,
+            -0.70406
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -8.0467,
+            -4.0181
+          ],
+          "face": [
+            0.7029,
+            -0.71129
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "dining",
+          "kind": "dining_chair",
+          "at": [
+            -5.8377,
+            -6.2118
+          ],
+          "face": [
+            -0.72638,
+            0.6873
+          ],
+          "size": [
+            0.48,
+            0.52
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "coffee_table",
+          "at": [
+            6.5244,
+            -5.4027
+          ],
+          "face": [
+            -0.70711,
+            0.7071
+          ],
+          "size": [
+            1.1,
+            0.6
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "sofa",
+          "at": [
+            7.2315,
+            -6.1098
+          ],
+          "face": [
+            -0.70711,
+            0.7071
+          ],
+          "size": [
+            2.1,
+            0.9
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "armchair",
+          "at": [
+            5.3443,
+            -6.4219
+          ],
+          "face": [
+            0.67741,
+            0.73561
+          ],
+          "size": [
+            0.85,
+            0.85
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "armchair",
+          "at": [
+            7.5522,
+            -4.2475
+          ],
+          "face": [
+            -0.73963,
+            -0.67302
+          ],
+          "size": [
+            0.85,
+            0.85
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "side_table",
+          "at": [
+            6.3123,
+            -7.029
+          ],
+          "face": [
+            -0.70711,
+            0.7071
+          ],
+          "size": [
+            0.44,
+            0.44
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "lounge",
+          "kind": "side_table",
+          "at": [
+            8.1508,
+            -5.1905
+          ],
+          "face": [
+            -0.70711,
+            0.7071
+          ],
+          "size": [
+            0.44,
+            0.44
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "front_centre",
+          "kind": "low_table",
+          "at": [
+            0.0,
+            -7.22
+          ],
+          "face": [
+            -0.0,
+            1.0
+          ],
+          "size": [
+            0.9,
+            0.55
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "front_centre",
+          "kind": "armchair",
+          "at": [
+            -0.9317,
+            -7.216
+          ],
+          "face": [
+            0.99954,
+            -0.03021
+          ],
+          "size": [
+            0.85,
+            0.85
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "front_centre",
+          "kind": "armchair",
+          "at": [
+            0.9421,
+            -7.2396
+          ],
+          "face": [
+            -1.0,
+            -0.0025
+          ],
+          "size": [
+            0.85,
+            0.85
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "front_centre",
+          "kind": "lounger",
+          "at": [
+            -3.4,
+            -8.12
+          ],
+          "face": [
+            -0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            2.0
+          ],
+          "cushion": "offwhite"
+        },
+        {
+          "group": "front_centre",
+          "kind": "lounger",
+          "at": [
+            3.4,
+            -8.12
+          ],
+          "face": [
+            -0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            2.0
+          ],
+          "cushion": "offwhite"
+        }
+      ],
+      "clear_of_guard_m": 1.2,
+      "groups": [
+        "dining",
+        "lounge",
+        "front_centre"
       ]
     }
   }

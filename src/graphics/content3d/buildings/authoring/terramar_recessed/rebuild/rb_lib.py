@@ -39,6 +39,7 @@ MATERIALS = {
     "TM_RB_glass": (0.80, 0.86, 0.90),
     "TM_RB_wood": (0.42, 0.22, 0.10),
     "TM_RB_paving": (0.58, 0.56, 0.52),
+    "TM_RB_roof_paving": (0.66, 0.64, 0.60),
     "TM_RB_threshold": (0.70, 0.68, 0.63),
     "TM_RB_downlight": (0.90, 0.90, 0.88),
     "TM_RB_podium_stone": (0.80, 0.77, 0.71),

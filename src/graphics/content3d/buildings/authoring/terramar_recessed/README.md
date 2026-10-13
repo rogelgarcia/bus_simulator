@@ -339,7 +339,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 627 | DONE (rebuild): 94 seeded pots on floors 2–5 with the game's own viburnum shrubs and silver lindens as olives (collection instances), the front loggia's bistro (floor 3) and lounge (floor 5) sets; 0 plants past the guards |
 | props | 628 | DONE (rebuild): 46 dark-metal planter modules on the upper recesses, behind the floor-1 guard (H, A, B) and on the entrance terrace, with 352 viburnum forms and 2746 seeded flower heads; 0 plants past the guards |
 | props | 629 | DONE (rebuild): a perimeter ring of low limestone troughs with viburnum, feature clusters of procedural cycads, palms and spiky rosettes and linden olives at the corners and along the runs (the front's middle low, as b8), six planter islands after the aerial; 0 foliage past the guard |
-| props | 630 | Roof terrace furniture and paving (aerial only, lower priority) (retargeted to the rebuild) |
+| props | 630 | DONE (rebuild): the aerial's dining (table, eight chairs), lounge (sofa, armchairs, tables) and front-centre groups (armchairs, low table, loungers) in teak, off-white cushions and charcoal metal; the deck's limestone paving tiles; 0 px from CAM_B8 |
 | props | 631 | Storefront canopies (retargeted to the rebuild) |
 | props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) (retargeted to the rebuild) |
 | props | 633 | Street palms and entrance planters (site) (retargeted to the rebuild) |
@@ -510,6 +510,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
+| `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
@@ -857,6 +858,43 @@ Audit: 87 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 p
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre629.blend`.
+
+**Roof terrace furniture and paving (AI 630, props).** b8 cannot see the roof deck, so this follows the aerial.
+`props_layout.roof_furniture()` lays the groups out in `plan["props"]["roof_furniture"]` (seed 630). Each group sits in the
+frame of its run of the terrace loop: u along the run, v in from the guard shoe's inner line.
+
+| Group | Where | Pieces |
+| --- | --- | --- |
+| dining | the H chamfer, 2.6 m in | a 2.4 m teak table on charcoal legs, eight chairs (three a side, one at each end; teak seat and back, cushion) |
+| lounge | the B chamfer, 2.7 m in, as an L | a three-seat sofa backing onto the guard, two armchairs flanking a coffee table, two side tables |
+| front centre | run A, 3.6 m in | two armchairs round a low table, and two sun loungers with a raised back, feet towards the view |
+
+Each piece is a prism in its own frame (local +v is its front). The materials are `TM_RB_teak`, a seeded cushion tone per
+group (`TM_RB_cushion_offwhite` / `_ecru` / `_greige`) and `TM_RB_charcoal_metal`. Chairs carry a 2 cm, 4° seeded jitter.
+
+`layer_roof_furniture.py` builds `RB_PROPS/RB_ROOF_FURNITURE` (one object per group) and checks every footprint:
+- at least 1.2 m inside the guard shoe's inner line (closest 1.25 m), which clears AI 629's planting;
+- clear of the islands by 0.25 m and of the penthouse and annex by 0.5 m.
+
+The first layout put two lounge armchairs within 0.25 m of two islands, hence the L. Every furniture object is tagged
+`rb_hide_from_b8`, and `check_layers.py`'s sightline render finds 0 px. The `CAM_B8` frame changes in only 22 of 1.57 M
+pixels, by at most 13 levels, along the roofline: the guard glass reflecting the new floor.
+
+**Paving tiles.** The deck's walking face is now a face set of its own, `TM_RB_roof_paving` (the roof layer). The materials
+pass dresses it as the kit limestone in 600 mm square tiles:
+- the tile cells come from the object's x / y;
+- a white-noise value per cell offsets that tile's sample of the 4 m map, so neighbours differ;
+- the joints are 5 mm, darker (0.30, 0.28, 0.25) and rougher.
+
+It is a material, not geometry: the deck stays one solid, and nothing on it (planters, furniture) has to be cut around.
+
+Audit: 90 objects, 0 z-fights, 0 penetrations. New poses: `roof_dining_closeup` and `roof_lounge_closeup`. 630 is also
+tagged on `b8_calibrated` (to show the b8 view unchanged) and `rebuild_top`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/630_props_roof_terrace_furniture_and_paving/`:
+- `poses/rebuild_pre630_vs_rebuild/`: 8 sheets;
+- the checks, including `check_b8_sightline.png`, and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre630.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

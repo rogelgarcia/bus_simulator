@@ -3,6 +3,8 @@
 # Run through build.py, which appends it after any geometry layer it rebuilds (layers=materials alone re-dresses the
 # materials; materials=0 skips it). It owns no collection of its own: it dresses the other layers' objects.
 #   materials   every TM_RB_* face set is re-dressed by slot name from its family in the plan:
+#                 roof_paving      the same limestone as 600 mm square tiles with thin joints, a per-tile map offset
+#                                  (the roof terrace deck's walking face, AI 630)
 #                 stone / paving   the kit limestone (AI 640, assets/public/pbr/terramar_continuous_limestone: basecolor,
 #                                  arm = AO / roughness / metallic, normal_gl) through the node group TM_RB_limestone,
 #                                  4 m repeat, a calibrated linear tone on the base colour
@@ -139,6 +141,83 @@ def dress_stone(mat, ng, fam):
     mat.diffuse_color = (*[c * t for c, t in zip(mean, fam["tone"])], 1.0)
 
 
+def dress_tiles(mat, folder, fam):
+    """Square stone tiles from the kit maps: object x / y split into tile_m cells, each cell sampling the 4 m map at its
+    own seeded offset (a white-noise value per cell), joints of joint_m darkened and rougher."""
+    nt, out = fresh_tree(mat)
+    n, links = nt.nodes, nt.links
+
+    def math(op, a, b=None):
+        m = n.new("ShaderNodeMath")
+        m.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                m.inputs[i].default_value = v
+            else:
+                links.new(m.inputs[i], v)
+        return m.outputs[0]
+    tc = n.new("ShaderNodeTexCoord")
+    xyz = n.new("ShaderNodeSeparateXYZ")
+    links.new(xyz.inputs[0], tc.outputs["Object"])
+    t, w = fam["tile_m"], fam["joint_m"]
+    u, v = math("DIVIDE", xyz.outputs["X"], t), math("DIVIDE", xyz.outputs["Y"], t)
+    cell = n.new("ShaderNodeCombineXYZ")
+    links.new(cell.inputs["X"], math("FLOOR", u))
+    links.new(cell.inputs["Y"], math("FLOOR", v))
+    rnd = n.new("ShaderNodeTexWhiteNoise")
+    rnd.noise_dimensions = "3D"
+    links.new(rnd.inputs["Vector"], cell.outputs[0])
+    uvw = n.new("ShaderNodeCombineXYZ")                                # metres / repeat + the cell's offset
+    links.new(uvw.inputs["X"], math("DIVIDE", xyz.outputs["X"], fam["repeat_m"]))
+    links.new(uvw.inputs["Y"], math("DIVIDE", xyz.outputs["Y"], fam["repeat_m"]))
+    coords = n.new("ShaderNodeVectorMath")
+    coords.operation = "ADD"
+    links.new(coords.inputs[0], uvw.outputs[0])
+    links.new(coords.inputs[1], rnd.outputs["Color"])
+
+    def tex(name, colorspace):
+        node = n.new("ShaderNodeTexImage")
+        node.image = kit_image(folder, name, colorspace)
+        node.extension = "REPEAT"
+        links.new(node.inputs["Vector"], coords.outputs[0])
+        return node
+    base, arm, nrm = tex("basecolor.png", "sRGB"), tex("arm.png", "Non-Color"), tex("normal_gl.png", "Non-Color")
+    sep = n.new("ShaderNodeSeparateColor")
+    links.new(sep.inputs["Color"], arm.outputs["Color"])
+
+    def joint_of(c):                                                  # 1 within w/2 of a cell edge
+        f = math("FRACT", c)
+        d = math("MULTIPLY", math("MINIMUM", f, math("SUBTRACT", 1.0, f)), t)
+        return math("LESS_THAN", d, w / 2)
+    joint = math("MAXIMUM", joint_of(u), joint_of(v))
+    tone = n.new("ShaderNodeVectorMath")
+    tone.operation = "MULTIPLY"
+    links.new(tone.inputs[0], base.outputs["Color"])
+    tone.inputs[1].default_value = fam["tone"]
+    colour = n.new("ShaderNodeMix")
+    colour.data_type = "RGBA"
+    links.new(colour.inputs["Factor"], joint)
+    links.new(colour.inputs[6], tone.outputs["Vector"])
+    colour.inputs[7].default_value = (*fam["joint_rgb"], 1.0)
+    rough = n.new("ShaderNodeMix")
+    links.new(rough.inputs["Factor"], joint)
+    links.new(rough.inputs[2], math("MULTIPLY", sep.outputs["Green"], fam["roughness_gain"]))
+    rough.inputs[3].default_value = fam["joint_roughness"]
+    nm = n.new("ShaderNodeNormalMap")
+    nm.inputs["Strength"].default_value = fam["normal_strength"]
+    links.new(nm.inputs["Color"], nrm.outputs["Color"])
+    bsdf = n.new("ShaderNodeBsdfPrincipled")
+    links.new(bsdf.inputs["Base Color"], colour.outputs[2])
+    links.new(bsdf.inputs["Roughness"], rough.outputs[0])
+    links.new(bsdf.inputs["Metallic"], sep.outputs["Blue"])
+    links.new(bsdf.inputs["Normal"], nm.outputs["Normal"])
+    links.new(out.inputs["Surface"], bsdf.outputs["BSDF"])
+    mean = (227 / 255, 215 / 255, 202 / 255)
+    mat.diffuse_color = (*[c * k for c, k in zip(mean, fam["tone"])], 1.0)
+
+
 def dress_plain(mat, rgb, roughness, metallic=0.0, transmission=0.0, ior=1.5):
     nt, out = fresh_tree(mat)
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
@@ -168,6 +247,8 @@ def dress_materials(m):
                 continue
             if fam_name in ("stone", "paving"):
                 dress_stone(mat, ng, fam)
+            elif fam_name == "roof_paving":
+                dress_tiles(mat, folder, fam)
             elif fam_name == "glass":
                 dress_plain(mat, fam["rgb"], fam["roughness"], transmission=1.0, ior=fam["ior"])
             else:

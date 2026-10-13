@@ -4,7 +4,8 @@
 # itself (deep, rounded, 0.68 m) is the structure's; this layer adds:
 #   rb_roof_guard          the frameless glass guard all round on the roof guard line (two mitred halves meeting at
 #                          the front and rear centres; shoe and rail TM_RB_frame, glass panels <= 1.6 m)
-#   rb_roof_paving         the flat terrace deck (TM_RB_paving, 50 mm; the drainage falls stay in the slab below),
+#   rb_roof_paving         the flat terrace deck (TM_RB_paving, 50 mm; the drainage falls stay in the slab below), its
+#                          walking surface a face set of its own (TM_RB_roof_paving: the materials pass lays the tiles, AI 630),
 #                          from the guard shoe to the penthouse walls
 #   rb_penthouse_walls     pale stone walls (TM_RB_penthouse_stone) with a parapet, broken by the aerial's openings
 #   rb_penthouse_roof      its roof slab over the core, and the parapet cap
@@ -73,7 +74,7 @@ def build(plan):
     px, py = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"]
     deck = L.solid("rb_roof_paving", coll, [(top, walk)],
                    [(rf["terrace_outer"], "TM_RB_paving"), (rect(px[0], px[1], py[0], py[1]), "TM_RB_paving")],
-                   [([rf["terrace_outer"], rect(px[0], px[1], py[0], py[1])], "TM_RB_paving", "TM_RB_hidden")],
+                   [([rf["terrace_outer"], rect(px[0], px[1], py[0], py[1])], "TM_RB_roof_paving", "TM_RB_hidden")],
                    tags("paving", "roof_paving", False))
     made.append(deck)
 

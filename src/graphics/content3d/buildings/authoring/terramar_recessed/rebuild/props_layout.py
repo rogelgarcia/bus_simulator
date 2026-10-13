@@ -472,3 +472,68 @@ def roof_planters(plan, seed=629):
             "seed": seed, "boxes": boxes, "features": features, "feature_counts": counts,
             "shrubs": sum(len(b["plants"]) for b in boxes), "keep_inside": [list(q) for q in loop], "config": ROOF_BOX,
             "clusters": ROOF_CLUSTERS, "islands": ROOF_ISLANDS}
+
+
+# ---------------------------------------------------------------- AI 630: the roof terrace's furniture
+# The aerial furnishes the terrace with a long dining table and about eight chairs on the west (along the H chamfer), a
+# lounge group of sofas and a coffee table on the east (along the B chamfer) and more lounge chairs at the front centre.
+# Each group stands in the frame of its run of the terrace loop (u along the run, v inward from the guard shoe's inner
+# line), far enough in to stay out of CAM_B8's view and clear of AI 629's planting (its ring reaches about 1.1 m in).
+# Every item has a facing (its local front, +v) in world terms; the layer models the pieces.
+CUSHIONS = [("offwhite", 0.5), ("ecru", 0.3), ("greige", 0.2)]
+ROOF_GROUPS = [
+    {"id": "dining", "run": "H", "u": 0.4, "v": 2.6, "items": [
+        ("dining_table", 0.0, 0.0, "in")]
+        + [("dining_chair", du, -0.80, "in") for du in (-0.8, 0.0, 0.8)]
+        + [("dining_chair", du, 0.80, "out") for du in (-0.8, 0.0, 0.8)]
+        + [("dining_chair", -1.55, 0.0, "+u"), ("dining_chair", 1.55, 0.0, "-u")]},
+    {"id": "lounge", "run": "B", "u": -0.9, "v": 2.7, "items": [                 # an L: the armchairs flank the table
+        ("coffee_table", 0.0, 0.0, "in"), ("sofa", 0.0, -1.0, "in"), ("armchair", -1.55, 0.1, "+u"),
+        ("armchair", 1.55, 0.1, "-u"), ("side_table", -1.3, -1.0, "in"), ("side_table", 1.3, -1.0, "in")]},
+    {"id": "front_centre", "run": "A", "u": 0.0, "v": 3.6, "items": [
+        ("low_table", 0.0, 0.0, "in"), ("armchair", -0.95, 0.0, "+u"), ("armchair", 0.95, 0.0, "-u"),
+        ("lounger", -3.4, -0.9, "in"), ("lounger", 3.4, -0.9, "in")]},
+]
+CLEAR_OF_GUARD = 1.2          # every footprint corner at least this far inside the guard shoe's inner line
+ITEM_SIZE = {"dining_table": (2.4, 0.95), "dining_chair": (0.48, 0.52), "sofa": (2.1, 0.9), "armchair": (0.85, 0.85),
+             "coffee_table": (1.1, 0.6), "low_table": (0.9, 0.55), "side_table": (0.44, 0.44), "lounger": (0.7, 2.0)}
+
+
+def roof_furniture(plan, seed=630):
+    rp = plan["props"]["roof_planters"]
+    loop = [tuple(q) for q in rp["keep_inside"]]
+    n = len(loop)
+    runs = {r["run"]: r["outward"] for r in plan["podium"]["runs"]}
+    frames = {}
+    for k in range(n):
+        a, b = loop[k], loop[(k + 1) % n]
+        L = math.dist(a, b)
+        if L < 0.5:
+            continue
+        U = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        out = (U[1], -U[0])
+        name = max(runs, key=lambda r: out[0] * runs[r][0] + out[1] * runs[r][1])
+        frames[name] = {"mid": ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), "U": U, "N": (-U[1], U[0])}   # N inward
+    items = []
+    for g in ROOF_GROUPS:
+        f = frames[g["run"]]
+        U, N = f["U"], f["N"]
+        rng = random.Random(f"{seed}:{g['id']}")
+        cushion = pick(rng, CUSHIONS)
+        c = (f["mid"][0] + U[0] * g["u"] + N[0] * g["v"], f["mid"][1] + U[1] * g["u"] + N[1] * g["v"])
+        faces = {"in": N, "out": (-N[0], -N[1]), "+u": U, "-u": (-U[0], -U[1])}
+        for kind, du, dv, face in g["items"]:
+            jitter = 0.02 if kind in ("dining_chair", "armchair") else 0.0
+            at = (c[0] + U[0] * du + N[0] * dv + rng.uniform(-jitter, jitter), c[1] + U[1] * du + N[1] * dv + rng.uniform(-jitter, jitter))
+            fx, fy = faces[face]
+            turn = math.radians(rng.uniform(-4.0, 4.0)) if jitter else 0.0
+            fx, fy = fx * math.cos(turn) - fy * math.sin(turn), fx * math.sin(turn) + fy * math.cos(turn)
+            items.append({"group": g["id"], "kind": kind, "at": [round(at[0], 4), round(at[1], 4)],
+                          "face": [round(fx, 5), round(fy, 5)], "size": list(ITEM_SIZE[kind]), "cushion": cushion})
+    return {"comment": "AI 630 roof furniture after the aerial: groups in the frames of their terrace runs (u along, v in "
+                       "from the guard shoe's inner line); 'face' is each item's front (its local +v); 'size' its footprint "
+                       "(width along its local u, depth along v). The layer checks every footprint against the guard "
+                       "(at least clear_of_guard_m inside), the islands and the penthouse, and tags the pieces "
+                       "rb_hide_from_b8 for the CAM_B8 sightline check.",
+            "seed": seed, "z": round(plan["roof"]["roof_top"] + plan["roof"]["paving"], 4), "items": items,
+            "clear_of_guard_m": CLEAR_OF_GUARD, "groups": [g["id"] for g in ROOF_GROUPS]}

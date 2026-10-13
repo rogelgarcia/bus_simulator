@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): This item comes from the supplementary aerial only; `b8.png` cannot see the roof deck. The aerial shows the roof terrace furnished: a lounge group (sofas and a coffee table) on the east side, a long dining table with about eight chairs on the west side, further lounge chairs, and stone paving tiles. The extracted terrace is a flat, empty concrete deck (`roof__35`).
@@ -47,3 +49,28 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read:** the aerial (b8 cannot see the deck) shows a long dining table with about eight chairs on the west, sofas round a coffee table on the east, more lounge chairs at the front centre, and light stone paving tiles.
+- **Layout** (`rebuild/props_layout.py` `roof_furniture()`, written to `plan["props"]["roof_furniture"]` by `make_plan.py`, seed 630), groups in their terrace runs' frames:
+  - dining on the H chamfer: a 2.4 m table and eight chairs;
+  - lounge on the B chamfer: a sofa, two flanking armchairs, a coffee table and two side tables (an L, after the first layout crowded two of AI 629's islands);
+  - front centre: two armchairs, a low table, two sun loungers.
+- **Layer** (`rebuild/layer_roof_furniture.py`, registered in `build.py` after `roof_planters`) builds `RB_PROPS/RB_ROOF_FURNITURE`:
+  - one object per group, prisms in each item's frame;
+  - teak, a seeded cushion tone per group, charcoal metal;
+  - every object tagged `rb_hide_from_b8`;
+  - footprint checks: at least 1.2 m inside the guard (closest 1.25 m), clear of the islands, penthouse and annex: 0 problems.
+  - Nothing went to `TM_REPLACED`.
+- **Paving tiles:**
+  - the roof layer gives the deck's walking face its own slot (`TM_RB_roof_paving`; `rb_lib` placeholder);
+  - the materials pass's new `roof_paving` family dresses it: the kit limestone as 600 mm tiles with a per-tile map offset and 5 mm darker joints, as a material (`layer_materials.dress_tiles`).
+- **Checks:**
+  - `CAM_B8` sightline: 0 px of furniture; the b8 frame differs in only 22 pixels (at most 13 levels, guard-glass reflections of the new floor);
+  - audit 90 objects, 0 z-fights, 0 penetrations;
+  - a fresh headless build gives the same counts.
+- **Poses:** new `roof_dining_closeup` and `roof_lounge_closeup`; 630 added to `b8_calibrated` and `rebuild_top`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/630_props_roof_terrace_furniture_and_paving/`:
+  - `poses/rebuild_pre630_vs_rebuild/` (8 sheets);
+  - `check_sheet.png`, `check_b8_sightline.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre630.blend`.
