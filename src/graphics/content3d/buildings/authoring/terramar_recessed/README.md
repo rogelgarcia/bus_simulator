@@ -338,7 +338,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | exterior | 626 | ~~Coplanar face fixes from the audit~~ superseded by the rebuild → none (game geometry) |
 | props | 627 | DONE (rebuild): 94 seeded pots on floors 2–5 with the game's own viburnum shrubs and silver lindens as olives (collection instances), the front loggia's bistro (floor 3) and lounge (floor 5) sets; 0 plants past the guards |
 | props | 628 | DONE (rebuild): 46 dark-metal planter modules on the upper recesses, behind the floor-1 guard (H, A, B) and on the entrance terrace, with 352 viburnum forms and 2746 seeded flower heads; 0 plants past the guards |
-| props | 629 | Roof terrace planters and small trees (retargeted to the rebuild) |
+| props | 629 | DONE (rebuild): a perimeter ring of low limestone troughs with viburnum, feature clusters of procedural cycads, palms and spiky rosettes and linden olives at the corners and along the runs (the front's middle low, as b8), six planter islands after the aerial; 0 foliage past the guard |
 | props | 630 | Roof terrace furniture and paving (aerial only, lower priority) (retargeted to the rebuild) |
 | props | 631 | Storefront canopies (retargeted to the rebuild) |
 | props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) (retargeted to the rebuild) |
@@ -509,6 +509,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
+| `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
@@ -817,6 +818,45 @@ New poses: `podium_edge_planters_closeup` and `entrance_terrace_planters`. 628 i
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre628.blend`.
+
+**Roof terrace planters and trees (AI 629, props).** b8 shows small palms and spiky rosettes behind the roof guard
+against the sky: bushy clusters at the front corners and along the chamfers, and low planting along the front. The aerial
+shows a dense band all round and planter islands. `props_layout.roof_planters()` lays them out in
+`plan["props"]["roof_planters"]` (seed 629):
+
+| Part | Layout | Planting |
+| --- | --- | --- |
+| perimeter ring | AI 647's 0.7 m band just inside the guard: 42 low limestone troughs (0.63 x 0.30 m; `TM_RB_paving`, so the materials pass dresses them), each straight run in modules of at most 2.4 m and one curved module per corner arc | an outer row of low viburnum (it covers the trough edge seen through the glass) and a fuller inner row leaning over the terrace |
+| feature clusters | the 8 corners and the run midpoints; the front corners carry 4 plants each, and the front's middle stays low (b8) | procedural cycads (the bushy spiky masses), palms and spiky rosettes, and linden olives with a companion form |
+| fill plants | one every 2.6 m along every run but A | cycad, spiky or olive (50 / 30 / 20) |
+| islands | after the aerial: one at the penthouse's front-left corner, a row of four square planters between the front lounge and the penthouse (paths kept to its door and slider), one by the right-hand lounge; clear of AI 630's seating zones | larger plants (x1.15 height, x1.5 crown) and shrubs, in dark-metal boxes |
+
+`proc_plants.py` builds the plants the game lacks as plain geometry (deterministic per variant), as prototypes in
+`RB_PROP_PROTOTYPES`, carrying the same size properties as the game models:
+- **spiky:** a short trunk under about 40 arching blades;
+- **palm:** a 1.0–1.4 m trunk under about 15 folded fronds;
+- **cycad:** a short stout trunk under about 21 fronds, from upright to level.
+
+`layer_roof_planters.py` builds `RB_PROPS/RB_ROOF_PLANTERS`:
+- `rb_roof_planter_boxes`: the ring modules (a body, thin rim walls and end caps, so the curved corner modules need no region with a hole) and the islands;
+- 441 collection instances.
+
+Every perimeter plant's foliage stays inside the guard shoe's inner line: 0 outside, closest 3.2 cm.
+
+The first pass read wrong against b8:
+- the palms looked like lollipops on tall trunks;
+- 0.45 m dark troughs showed as a dark band through the glass.
+
+The fix was the cycads, shorter palm trunks, low limestone troughs, the fill plants and the inner row.
+
+Audit: 87 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 px. New pose: `aerial_calibrated`
+(`CAM_AERIAL`, with the aerial beside it). `compose_pose_sheets.py` now puts a pose's reference first for
+`"reference": "aerial"` too. 629 is also tagged on `b8_calibrated`, `full_front_left` and `rebuild_top`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/629_props_roof_terrace_planters_and_trees/`:
+- `poses/rebuild_pre629_vs_rebuild/`: 8 sheets, with b8 or the aerial first where framed like them;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre629.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

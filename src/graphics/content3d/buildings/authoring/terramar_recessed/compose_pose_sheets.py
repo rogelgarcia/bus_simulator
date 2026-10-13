@@ -4,8 +4,9 @@
 #                                    [--contact <tag>] [--out <dir>]
 #
 # Pairs: for every selected pose rendered under both tags (render_poses.py writes poses/<tag>/<pose>.png), one sheet
-# [before | after], with b8.png first for the poses framed like it (b8_target, and any pose with "reference": "b8",
-# such as b8_calibrated), into poses/sheets/<before>_vs_<after>/<pose>.png. The rebuild's tag is "rebuild":
+# [before | after], with the reference first for the poses framed like it (b8_target and "reference": "b8", such as
+# b8_calibrated, put b8.png first; "reference": "aerial" puts the supplementary aerial first, for the CAM_AERIAL pose),
+# into poses/sheets/<before>_vs_<after>/<pose>.png. The rebuild's tag is "rebuild":
 #   python -I compose_pose_sheets.py --before edit --after rebuild --items 643
 # Contact: --contact <tag> lays every rendered pose of one tag on a single labelled grid, poses/sheets/contact_<tag>.png
 # (no pairs are made when only --contact is given).
@@ -20,6 +21,7 @@ sys.path.insert(0, HERE)
 import tm_common as C  # noqa: E402
 
 LABEL_H, GAP = 52, 10
+REFERENCES = {"b8": C.B8, "aerial": os.path.join(C.REFERENCES, "aerial-unannotated.png")}   # "reference" of a pose
 
 
 def font(size):
@@ -70,8 +72,10 @@ def pairs(poses, args):
             continue
         h = min(Image.open(b).height, 1080)
         tiles = []
-        if (p["name"] == "b8_target" or p.get("reference") == "b8") and os.path.exists(C.B8):
-            tiles.append(labelled(Image.open(C.B8), "TARGET  b8.png", h))
+        ref = "b8" if p["name"] == "b8_target" else p.get("reference")
+        ref_path = REFERENCES.get(ref)
+        if ref_path and os.path.exists(ref_path):
+            tiles.append(labelled(Image.open(ref_path), f"{'TARGET' if ref == 'b8' else 'REFERENCE'}  {os.path.basename(ref_path)}", h))
         tiles += [labelled(Image.open(a), f"BEFORE  {args.before}  -  {p['name']}", h),
                   labelled(Image.open(b), f"AFTER  {args.after}  -  {p['name']}", h)]
         path = os.path.join(out_dir, f"{p['name']}.png")

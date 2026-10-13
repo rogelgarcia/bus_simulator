@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): `b8.png` shows small trees (olive, pine and palm-like) and shrubs standing behind the roof's glass guard, against the sky, all around the visible roof edge. The supplementary aerial shows how they run: perimeter planters, plus planter islands between seating areas. The extracted roof is an empty deck.
@@ -46,3 +48,28 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read:**
+  - b8 roofline: bushy spiky palms / cycads about 2 m tall clustered at the front corners and along the chamfers, low planting along the front;
+  - aerial (CAM_AERIAL frame): a dense band all round, islands at the penthouse's front-left corner, a row of planters before the penthouse, planters by the right lounge.
+- **Layout** (`rebuild/props_layout.py` `roof_planters()`, written to `plan["props"]["roof_planters"]` by `make_plan.py`, seed 629):
+  - 42 perimeter modules in AI 647's 0.7 m band (low limestone troughs, one curved module per corner arc);
+  - 376 viburnum in two rows;
+  - 53 feature plants: 24 cycads, 8 palms, 9 spiky rosettes, 12 olives, as clusters at the corners and run midpoints plus fill plants every 2.6 m, with the front's middle kept low;
+  - 6 islands clear of AI 630's seating zones and the penthouse openings.
+- **New `rebuild/proc_plants.py`:** procedural spiky rosettes, palms and cycads (deterministic geometry prototypes in `RB_PROP_PROTOTYPES`), for what the game's vegetation lacks; reusable by AI 633's palms.
+- **Layer** (`rebuild/layer_roof_planters.py`, registered in `build.py` after `podium_planters`) builds `RB_PROPS/RB_ROOF_PLANTERS`:
+  - `rb_roof_planter_boxes` (ring modules as body, rim walls and end caps; islands);
+  - 441 collection instances.
+  - Nothing went to `TM_REPLACED`.
+- **Clearance check:** every perimeter plant's foliage stays inside the guard shoe's inner line (0 outside, closest 3.2 cm).
+- **Iteration:** the first pass's tall-trunk palms read as lollipops and its 0.45 m dark troughs as a dark band through the glass; fixed with cycads, shorter palms, low limestone troughs, fill plants and an inner row.
+- **Checks:** audit 87 objects, 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:**
+  - new `aerial_calibrated` (`CAM_AERIAL` with the aerial beside it; `compose_pose_sheets.py` learned `"reference": "aerial"`);
+  - 629 added to `b8_calibrated`, `full_front_left` and `rebuild_top`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/629_props_roof_terrace_planters_and_trees/`:
+  - `poses/rebuild_pre629_vs_rebuild/` (8 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre629.blend`.

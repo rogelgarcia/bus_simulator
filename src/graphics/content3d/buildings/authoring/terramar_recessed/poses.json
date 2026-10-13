@@ -53,7 +53,8 @@
                 647,
                 648,
                 627,
-                628
+                628,
+                629
             ]
         },
         {
@@ -623,7 +624,8 @@
             "label": "CAM_TOP: orthographic plan view from above",
             "items": [
                 643,
-                647
+                647,
+                629
             ]
         },
         {
@@ -762,6 +764,17 @@
             "resolution": [
                 1920,
                 1080
+            ]
+        },
+        {
+            "name": "aerial_calibrated",
+            "group": "target",
+            "reference": "aerial",
+            "plan_camera": "aerial",
+            "label": "CAM_AERIAL: the supplementary aerial camera fitted to its roof plane only (the roof layout; its facades cannot share one camera)",
+            "items": [
+                629,
+                630
             ]
         }
     ]

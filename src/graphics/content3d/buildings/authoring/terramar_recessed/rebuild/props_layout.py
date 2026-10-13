@@ -276,3 +276,199 @@ def podium_planters(plan, seed=628):
                        "behind: the guard glass and, on the upper recesses, the glazing frames" % MODULE_MAX,
             "seed": seed, "boxes": boxes, "counts": counts, "plants": sum(len(bx["plants"]) for bx in boxes),
             "flowers": sum(bx["flowers"] for bx in boxes), "config": PODIUM_BOX}
+
+
+# ---------------------------------------------------------------- AI 629: the roof terrace's planters and trees
+# b8 shows small palms and spiky rosettes (yucca / cycad-like) behind the roof guard against the sky, in clusters at the
+# front corners and along the chamfers, and low planting along the front between them. The aerial shows the perimeter
+# band all round and planter islands: one at the penthouse's front-left corner, a row of square planters between the
+# front lounge and the penthouse, and one by the right-hand lounge (clear of AI 630's seating zones and the doors).
+ROOF_BOX = {"depth": 0.63, "height": 0.30, "guard_gap": 0.03, "island_height": 0.50, "material": "TM_RB_paving",
+            "greens": {"height": (0.35, 0.65), "radius": (0.25, 0.31), "spacing": 0.36},
+            "inner_greens": {"height": (0.45, 0.80), "radius": (0.32, 0.42), "spacing": 0.55, "v": -0.62},
+            "feature_v": -0.58, "fill_every": 2.6, "fill_kinds": [("cycad", 0.5), ("spiky", 0.3), ("olive", 0.2)],
+            "island_scale": {"height": 1.15, "radius": 1.5},
+            "kinds": {"palm": {"height": (2.0, 2.6), "radius": (0.48, 0.54), "models": ["proc/palm_0", "proc/palm_1", "proc/palm_2"]},
+                      "cycad": {"height": (1.3, 1.9), "radius": (0.46, 0.54), "models": ["proc/cycad_0", "proc/cycad_1", "proc/cycad_2"]},
+                      "spiky": {"height": (1.1, 1.6), "radius": (0.36, 0.46), "models": ["proc/spiky_0", "proc/spiky_1", "proc/spiky_2"]},
+                      "olive": {"height": (1.6, 2.1), "radius": (0.40, 0.50), "models": KINDS["olive"]["models"]}}}
+# feature clusters by place: corners (named by the runs they join) and straight-run midpoints; A's middle stays low (b8)
+# feature clusters by place: corners (named by the runs they join) and straight-run midpoints; A's middle stays low (b8).
+# Besides the clusters, every run but A carries a fill plant each fill_every metres (the aerial's continuous band).
+ROOF_CLUSTERS = {"HA": ["cycad", "palm", "cycad", "spiky"], "AB": ["spiky", "cycad", "palm", "cycad"], "BC": ["cycad", "olive"],
+                 "GH": ["olive", "cycad"], "CD": ["olive", "cycad"], "DE": ["palm", "cycad"], "EF": ["cycad", "palm"],
+                 "FG": ["cycad", "olive"], "B": ["cycad", "spiky", "cycad"], "H": ["cycad", "spiky", "cycad"],
+                 "D": ["olive", "palm"], "F": ["palm", "olive"], "C": ["cycad"], "G": ["cycad"], "E": ["spiky"]}
+ROOF_ISLANDS = [{"id": "penthouse_left", "rect": [-7.6, -5.6, -3.2, -1.7], "kinds": ["palm", "cycad"], "shrubs": 3},
+                {"id": "row_1", "rect": [-4.95, -3.85, -4.55, -3.45], "kinds": ["olive"], "shrubs": 2},
+                {"id": "row_2", "rect": [-2.15, -1.05, -4.55, -3.45], "kinds": ["cycad"], "shrubs": 2},
+                {"id": "row_3", "rect": [1.05, 2.15, -4.55, -3.45], "kinds": ["palm"], "shrubs": 2},
+                {"id": "row_4", "rect": [3.85, 4.95, -4.55, -3.45], "kinds": ["olive"], "shrubs": 2},
+                {"id": "lounge_right", "rect": [5.6, 7.6, -3.2, -1.7], "kinds": ["cycad", "olive"], "shrubs": 3}]
+RUN_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H"]
+
+
+def _offset_left(path, d):
+    """An open polyline moved d to its left (inward for a counter-clockwise loop), mitred at the joints."""
+    n = len(path)
+    dirs = [((b[0] - a[0]) / math.dist(a, b), (b[1] - a[1]) / math.dist(a, b)) for a, b in zip(path, path[1:])]
+    lefts = [(-dy, dx) for dx, dy in dirs]
+    out = []
+    for i in range(n):
+        if i == 0 or i == n - 1:
+            m = lefts[0] if i == 0 else lefts[-1]
+        else:
+            a, b = lefts[i - 1], lefts[i]
+            k = 1.0 + a[0] * b[0] + a[1] * b[1]
+            m = ((a[0] + b[0]) / k, (a[1] + b[1]) / k)
+        out.append((path[i][0] + m[0] * d, path[i][1] + m[1] * d))
+    return out
+
+
+class Ring:
+    """The terrace's outer loop (counter-clockwise, just inside the guard shoe) by arc length, from a start vertex."""
+
+    def __init__(self, loop, start):
+        self.pts = loop[start:] + loop[:start]
+        self.cum = [0.0]
+        for a, b in zip(self.pts, self.pts[1:] + self.pts[:1]):
+            self.cum.append(self.cum[-1] + math.dist(a, b))
+        self.length = self.cum[-1]
+
+    def seg(self, s):
+        s %= self.length
+        i = max(k for k in range(len(self.pts)) if self.cum[k] <= s)
+        return i, s - self.cum[i]
+
+    def at(self, s, v=0.0):
+        """The point at arc length s, moved v along the loop's outward normal (v < 0 is inside)."""
+        i, ds = self.seg(s)
+        a, b = self.pts[i], self.pts[(i + 1) % len(self.pts)]
+        L = math.dist(a, b)
+        t = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        return (a[0] + t[0] * ds + t[1] * v, a[1] + t[1] * ds - t[0] * v)
+
+    def path(self, s0, s1):
+        """The loop's points from arc length s0 to s1 (s1 > s0, both within one turn)."""
+        out = [self.at(s0)]
+        for k in range(len(self.pts) + 1):
+            c = self.cum[k] if k < len(self.pts) else self.length
+            if s0 < c < s1:
+                out.append(self.pts[k % len(self.pts)])
+        out.append(self.at(s1))
+        return [q for i, q in enumerate(out) if i == 0 or math.dist(q, out[i - 1]) > 1e-6]
+
+
+def _feature(rng, kind, xy, z_soil):
+    k = ROOF_BOX["kinds"][kind]
+    rec = {"kind": kind, "model": rng.choice(k["models"]), "at": [round(xy[0], 4), round(xy[1], 4)], "z": round(z_soil, 4),
+           "height": round(uniform(rng, k["height"]), 3), "radius": round(uniform(rng, k["radius"]), 3),
+           "rot_deg": round(rng.uniform(0.0, 360.0), 1)}
+    if kind == "olive":
+        models = k["models"]
+        rec["companion"] = {"model": models[(models.index(rec["model"]) + 1) % len(models)],
+                            "rot_deg": round((rec["rot_deg"] + rng.uniform(110.0, 160.0)) % 360.0, 1),
+                            "height": round(rec["height"] * rng.uniform(0.82, 0.92), 3), "radius": round(rec["radius"] * 0.95, 3)}
+    return rec
+
+
+def roof_planters(plan, seed=629):
+    rf = plan["roof"]
+    cfg = ROOF_BOX
+    loop = [tuple(q) for q in rf["props"]["terrace_planters_ai629"]["outer"]]
+    n = len(loop)
+    segs = [math.dist(loop[k], loop[(k + 1) % n]) for k in range(n)]
+    straight = [k for k in range(n) if segs[k] > 0.5]                 # the eight runs; the short segments are the arcs
+    # name the straight runs by their outward normals against the podium runs'
+    runs = {r["run"]: r["outward"] for r in plan["podium"]["runs"]}
+    names = {}
+    for k in straight:
+        a, b = loop[k], loop[(k + 1) % n]
+        t = ((b[0] - a[0]) / segs[k], (b[1] - a[1]) / segs[k])
+        out = (t[1], -t[0])
+        names[k] = max(runs, key=lambda r: out[0] * runs[r][0] + out[1] * runs[r][1])
+    start = next(k for k in straight if names[k] == "E")              # modules start at the rear
+    ring = Ring(loop, start)
+    z = rf["roof_top"] + rf["paving"]
+    soil = z + cfg["height"] - 0.04
+    gap = MODULE_GAP
+    # pieces in ring order: each straight run, then the arc after it
+    pieces = []
+    order = straight[straight.index(start):] + straight[:straight.index(start)]
+    for idx, k in enumerate(order):
+        s0 = ring.cum[(k - start) % n]
+        s1 = s0 + segs[k]
+        nxt = order[(idx + 1) % len(order)]
+        s2 = ring.cum[(nxt - start) % n] if idx + 1 < len(order) else ring.length
+        pieces.append(("run", names[k], s0, s1))
+        pieces.append(("corner", names[k] + names[nxt], s1, s2))
+    boxes, features = [], []
+    rng = random.Random(f"{seed}:ring")
+    v_out, v_in = -cfg["guard_gap"], -(cfg["guard_gap"] + cfg["depth"])
+    for kind, name, s0, s1 in pieces:
+        mods = _modules(s0 + gap / 2, s1 - gap / 2) if kind == "run" else [(s0 + gap / 2, s1 - gap / 2)]
+        for j, (m0, m1) in enumerate(mods):
+            path = ring.path(m0, m1)
+            outer, inner = _offset_left(path, -v_out), _offset_left(path, -v_in)
+            foot = [[round(x, 4), round(y, 4)] for x, y in outer + list(reversed(inner))]
+            nn = max(1, round((m1 - m0) / cfg["greens"]["spacing"]))
+            greens = []
+            for g in range(nn):
+                s = m0 + (g + 0.5 + rng.uniform(-0.2, 0.2)) * (m1 - m0) / nn
+                plant = _plant(rng, ring.at(s, (v_out + v_in) / 2 + rng.uniform(-0.03, 0.03)), soil, cfg["greens"])
+                greens.append(plant)
+            ig = cfg["inner_greens"]                                  # a fuller inner row, leaning over the terrace
+            for g in range(max(1, round((m1 - m0) / ig["spacing"]))):
+                s = m0 + (g + 0.5 + rng.uniform(-0.2, 0.2)) * (m1 - m0) / max(1, round((m1 - m0) / ig["spacing"]))
+                greens.append(_plant(rng, ring.at(s, ig["v"] + rng.uniform(-0.02, 0.02)), soil, ig))
+            boxes.append({"id": f"ring_{name}_{j}", "kind": "ring", "loop": foot, "z": round(z, 4), "height": cfg["height"],
+                          "path": [[round(x, 4), round(y, 4)] for x, y in path], "v": [v_in, v_out], "plants": greens})
+        cluster = ROOF_CLUSTERS.get(name, [])
+        taken = []
+        if cluster:
+            mid = (s0 + s1) / 2
+            spread = 0.55 if kind == "corner" else 0.9
+            for i, kd in enumerate(cluster):
+                s = mid + (i - (len(cluster) - 1) / 2) * spread + rng.uniform(-0.08, 0.08)
+                taken.append(s)
+                features.append({"place": name, **_feature(rng, kd, ring.at(s, cfg["feature_v"]), soil)})
+        if kind == "run" and name != "A":                             # the fill plants along the run
+            nf = max(0, int((s1 - s0) // cfg["fill_every"]))
+            for i in range(nf):
+                s = s0 + (i + 0.5) * (s1 - s0) / nf
+                if any(abs(s - t) < 0.9 for t in taken):
+                    continue
+                features.append({"place": name, **_feature(rng, pick(rng, cfg["fill_kinds"]), ring.at(s, cfg["feature_v"]), soil)})
+    for isl in ROOF_ISLANDS:
+        x0, x1, y0, y1 = isl["rect"]
+        irng = random.Random(f"{seed}:island:{isl['id']}")
+        isoil = z + cfg["island_height"] - 0.04
+        plants = []
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        span = max(x1 - x0, y1 - y0)
+        for i, kd in enumerate(isl["kinds"]):
+            off = (i - (len(isl["kinds"]) - 1) / 2) * span * 0.45
+            xy = (cx + off, cy) if x1 - x0 >= y1 - y0 else (cx, cy + off)
+            f = _feature(irng, kd, xy, isoil)                         # islands stand in the open: larger plants
+            f["height"] = round(f["height"] * cfg["island_scale"]["height"], 3)
+            f["radius"] = round(f["radius"] * cfg["island_scale"]["radius"], 3)
+            if "companion" in f:
+                f["companion"]["height"] = round(f["companion"]["height"] * cfg["island_scale"]["height"], 3)
+                f["companion"]["radius"] = round(f["companion"]["radius"] * cfg["island_scale"]["radius"], 3)
+            features.append({"place": isl["id"], **f})
+        for i in range(isl["shrubs"]):
+            plants.append(_plant(irng, (irng.uniform(x0 + 0.2, x1 - 0.2), irng.uniform(y0 + 0.2, y1 - 0.2)), isoil,
+                                 {"height": (0.40, 0.65), "radius": (0.22, 0.30)}))
+        boxes.append({"id": f"island_{isl['id']}", "kind": "island", "loop": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+                      "z": round(z, 4), "height": cfg["island_height"], "plants": plants})
+    counts = {}
+    for f in features:
+        counts[f["kind"]] = counts.get(f["kind"], 0) + 1
+    return {"comment": "AI 629 roof planters: a perimeter ring of low limestone troughs (modules of at most %.1f m, one per "
+                       "corner arc) just inside the guard, planted with low viburnum; feature clusters (procedural cycads, "
+                       "palms and spiky rosettes, linden olives) at the corners and run midpoints and fill plants along the "
+                       "runs -- none along the front's middle, as b8 -- and planter islands after the aerial. 'keep_inside' "
+                       "is the loop the perimeter foliage must stay inside (the guard shoe's inner line)" % MODULE_MAX,
+            "seed": seed, "boxes": boxes, "features": features, "feature_counts": counts,
+            "shrubs": sum(len(b["plants"]) for b in boxes), "keep_inside": [list(q) for q in loop], "config": ROOF_BOX,
+            "clusters": ROOF_CLUSTERS, "islands": ROOF_ISLANDS}
