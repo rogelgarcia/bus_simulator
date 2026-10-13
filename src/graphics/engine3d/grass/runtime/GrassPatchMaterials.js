@@ -18,6 +18,8 @@ export function createGrassPatchMaterials({ asset, distances, groundY }) {
         const material = createSharedUniformMaterialVariant(source);
         if (handoff) material.defines.GRASS_PATCH_HANDOFF = 1;
         if (surface) {
+            material.map = null;
+            delete material.defines.BAKED_GRASS_PAIR;
             delete material.defines.BAKED_GRASS_TILE_VARIATION;
             delete material.defines.BAKED_GRASS_CANOPY_VIEW;
             material.defines.GRASS_PATCH_SURFACE = 1;

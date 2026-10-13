@@ -122,7 +122,7 @@ test('gameplay grass starts outside building and bus slab slopes at every detail
                 const grass = window.__busSim.engine.context.city.grass;
                 return { kind, view, camera, anchor: grass.anchor.toArray(), edgeExcluded: !grass.coverage.sample(edge.x, edge.z),
                     outsideGrass: grass.coverage.sample(edge.x + edge.normal[0] * .5, edge.z + edge.normal[1] * .5),
-                    selection: grass.selection.getSnapshot() };
+                    field: grass.getSnapshot().field };
             }, { edge, kind, view, camera }));
         }
     }

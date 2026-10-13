@@ -11,20 +11,20 @@ distance, quality or experimental lab controls are exposed.
 Texture uses the existing textured terrain and stops grass updates and rendering.
 A fresh Texture session does not fetch the grass package. After a live switch,
 the hidden renderer retains its resources for reuse until city detach. City
-detach disposes the renderer, including shadow targets and instance buffers;
+detach disposes the renderer, including shadow targets and shared patch buffers;
 re-entry creates one renderer. The gameplay loading cover waits for grass readiness.
 
 ## Shared renderer and assets
 
-`src/graphics/engine3d/grass/runtime/` owns the shared baked appearance, field
-batching, transitions and selection. The bus lab imports compatibility re-exports
-and retains both its default baked strategy and the previous `?grass=current`
-comparison. Gameplay imports no lab scene, diagnostic UI or authoring assets.
-
-The bus lab also exposes the [immutable patch experiment](GRASS_RUNTIME_REDESIGN.md)
-at `?grass=patches`. Its implementation lives in this shared runtime directory,
-but gameplay has not adopted it. The lab's baked reference and patch experiment
-both consume the same authenticated gameplay package.
+`src/graphics/engine3d/grass/runtime/GrassPatchRenderer.js` owns the immutable
+patch geometry, bounded mesh pools, transitions and selection shared by gameplay
+and the bus lab's `?grass=patches` strategy. Gameplay snapshots identify
+`strategy: patches`; the old camera-dependent instance batches are no longer
+part of gameplay. The lab retains its default baked reference and the previous
+`?grass=current` comparison. Gameplay imports no lab scene, diagnostic UI or
+authoring assets. The lab's baked reference and patch path consume the same
+authenticated gameplay package. See [GRASS_RUNTIME_REDESIGN.md](GRASS_RUNTIME_REDESIGN.md)
+for measurements and remaining performance targets.
 
 The runtime loader generates mipmaps for textures containing only a base level
 and preserves supplied multi-level mip chains. A lone base level must not be
@@ -56,7 +56,7 @@ exclusion groups so overlapping obstacles cannot cancel each other.
 
 The mask retains antialiased coverage and uses linear filtering without mipmaps;
 the 0.5 contour follows the hardscape within each one-metre rendering cell.
-Every blade, transition, litter, near canopy and distant canopy fragment uses
+Every blade and litter/canopy surface fragment uses
 the same world-space mask. CPU coverage queries use matching bilinear sampling
 and the same threshold; batch culling conservatively includes partial cells.
 Sampling remains capped at 4096² (about 14.65 cm texels for the 600 m city),
@@ -76,19 +76,35 @@ camera window. Slab geometry and the grass asset package are unchanged.
 rotated and merged footprints, sidewalk joins and preserved gaps. Visual evidence
 is gitignored under `tests/artifacts/screens/grass/ai612_sloped_base_exclusion/`.
 
-The camera drives automatic horizontal LOD ranges of 0.6 / 0.8 / 20 / 30 / 40 m,
-30% transition bands and a 31.5–40 m final handoff. Selection is cached at
-50 ms / 0.2 m. Detailed instances occupy a 128 m square, translated on a 16 m
-grid. A periodic 16 m blade-variation block and world-space texture variation keep
-overlapping leaves stable across anchor changes. There are no exposed window
-perimeter walls. Outside the window, spatially culled 32 m batches of one-metre
-canopy tiles cover valid city ground. No lab roadside rectangles are used.
+The camera drives automatic LOD ranges of 0.6 / 0.8 / 8 / 16 / 24 m, measured
+from camera to ground in three dimensions. LOD0/1 use 2 m patches; LOD2–4 use
+4 m patches. Conservative coverage grids and frustum/range culling choose from
+bounded pools each frame. Geometry and 40 bytes of shared placement attributes
+are uploaded during loading and remain immutable during travel. Ordinary mesh
+transforms place selected patches on a stable world grid; reversing or crossing
+boundaries preserves the same grass at each position. No lab rectangles are used.
+
+Static 32 m quads, 5 mm above the authored ground, blend litter into canopy
+appearance. Over 16–21.6 m, LOD4 color and the ground approach the same projected
+canopy sample before blades dissolve at 21.6–24 m. Adjacent blade levels use
+complementary opaque dissolve. Every representation uses the shared coverage mask.
+Loading prewarms all five blade levels and the surface, including invisible levels.
+Disposal while shader compilation is pending cancels the warmup draw; preparation
+does not restore renderer state saved before an asynchronous loading interval.
+
+Grass already contains baked local shading. SSAO/GTAO depth and normal passes
+exclude its group and use the underlying city terrain; they do not draw dense
+blades with generic override materials. Dynamic AO follows the same exclusion.
+The surface samples its textures through the grass shader, without a redundant
+material map that would misclassify it as an AO alpha-cutout receiver. Grass
+still renders in the color pass and receives the scene's screen-space AO.
 
 Prepared radiance follows the game's sun intensity. Separate cached visibility
 targets capture authored static casters and moving dynamic participants without
 changing game meshes or baked-shadow ownership. The static target refreshes when
-sun direction changes; the window target follows camera-window and vehicle
-movement, with a 100 ms update interval. Shading combines both visibility fields.
+sun direction changes; the 128 m dynamic target follows camera anchors on a
+16 m grid and vehicle movement, with a 100 ms update interval. Anchors affect
+only shadow caching, not grass geometry or coverage. Shading combines both visibility fields.
 Grass does not cast duplicate live self-shadows. Texture suspends these passes.
 
 ## Removed edge blend
@@ -109,6 +125,14 @@ and compares rendered grass with and without cached external shadows.
 The existing bus-lab regression continues to cover all six shared LODs.
 Generated captures and measurements live under
 `tests/artifacts/screens/grass/ai611_game_migration/`.
+
+`grass_gameplay_patches.pwtest.js` tracks the production grass's 36 GPU buffers
+through 120 forward/reverse camera poses, six shadow anchors and all blade
+levels. It checks zero grass uploads, unchanged attribute versions and identical
+patch placements on return. It exercises SSAO/GTAO with both alpha handling modes,
+requiring color rendering, terrain depth rendering and no grass override draws
+or false alpha-cutout candidates. Captures and data are under
+`tests/artifacts/screens/grass/gameplay_patches/`.
 
 `grass_gameplay_curves.pwtest.js` validates 18 m / 30 m contours with enclosed
 grass islands, overlapping slab exclusions, and actual city sidewalk curves.

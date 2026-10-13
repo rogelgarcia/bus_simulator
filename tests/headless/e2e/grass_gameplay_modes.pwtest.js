@@ -45,7 +45,7 @@ async function measure(page) {
     });
 }
 
-test('gameplay uses baked grass and supports Texture, preview, cancel, save, reset and re-entry', async ({ page }) => {
+test('gameplay uses immutable grass patches and supports Texture, preview, cancel, save, reset and re-entry', async ({ page }) => {
     test.setTimeout(240_000);
     await mkdir(output, { recursive: true });
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -57,6 +57,8 @@ test('gameplay uses baked grass and supports Texture, preview, cancel, save, res
     await ready(page);
     expect((await snapshot(page)).mode).toBe('3d');
     expect((await snapshot(page)).active).toBe(true);
+    expect((await snapshot(page)).strategy).toBe('patches');
+    expect((await snapshot(page)).field.geometryPolicy).toBe('immutable');
     const threeD = await measure(page);
     await page.screenshot({ path: path.join(output, 'gameplay-3d.png') });
     await options(page);
@@ -144,7 +146,7 @@ test('gameplay uses baked grass and supports Texture, preview, cancel, save, res
         sm.current.busAnchor.position.x += 5; sm.current.busAnchor.updateMatrixWorld(true);
         grass.update(true);
         return { road, buildings, dynamicChanged: grass.dynamicShadows.generations > before,
-            groundY: grass.group.position.y, expectedGroundY: engine.context.city.generatorConfig.ground.surfaceY };
+            groundY: grass.patches.group.position.y, expectedGroundY: engine.context.city.generatorConfig.ground.surfaceY };
     });
     expect(boundaries.road).toBe(false);
     expect(boundaries.buildings.filter(Boolean)).toHaveLength(0);

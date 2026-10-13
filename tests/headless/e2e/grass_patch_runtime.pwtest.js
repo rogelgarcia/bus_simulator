@@ -135,3 +135,31 @@ test('Baked and fixed-patch bus-lab comparisons share runtime assets and preserv
     for (let i = 0; i < 3; i++) expect(after.camera.target[i]).toBeCloseTo(before.camera.target[i], 5);
     expect(errors).toEqual([]);
 });
+
+test('grass disposed during shader preparation cannot render or restore stale renderer state', async ({ page }) => {
+    await page.route('**/tests/headless/harness/main.js', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+    await page.goto('/tests/headless/harness/index.html');
+    const result = await page.evaluate(async () => {
+        const THREE = await import('three');
+        const { loadGrassRuntimeAsset } = await import('/src/graphics/engine3d/grass/runtime/GrassRuntimeAsset.js');
+        const { createGrassBoundaryMask } = await import('/src/graphics/engine3d/grass/runtime/GrassBoundaryMask.js');
+        const { createGrassPatchRenderer } = await import('/src/graphics/engine3d/grass/runtime/GrassPatchRenderer.js');
+        const renderer = new THREE.WebGLRenderer(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+        const asset = await loadGrassRuntimeAsset({ renderer }), bounds = { minX: 0, minZ: 0, maxX: 4, maxZ: 4 };
+        const coverage = createGrassBoundaryMask({ bounds, outline: [{ x: 0, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 4 }, { x: 0, z: 4 }], exclusions: [], resolution: 64 });
+        const grass = createGrassPatchRenderer({ asset, coverage, bounds });
+        let renders = 0;
+        renderer.shadowMap.needsUpdate = true;
+        renderer.compileAsync = async () => {
+            await Promise.resolve(); grass.dispose();
+            renderer.setViewport(11, 12, 13, 14); renderer.shadowMap.needsUpdate = false;
+        };
+        renderer.render = () => { renders++; };
+        await grass.prewarm(renderer, scene, camera);
+        const result = { renders, viewport: renderer.getViewport(new THREE.Vector4()).toArray(), shadowNeedsUpdate: renderer.shadowMap.needsUpdate };
+        coverage.dispose(); asset.dispose(); renderer.dispose(); return result;
+    });
+    expect(result.renders).toBe(0);
+    expect(result.viewport).toEqual([11, 12, 13, 14]);
+    expect(result.shadowNeedsUpdate).toBe(false);
+});

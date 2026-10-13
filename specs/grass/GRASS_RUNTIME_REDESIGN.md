@@ -1,23 +1,23 @@
-# Proposed gameplay grass redesign
+# Gameplay grass redesign
 
-Status: bus-lab prototype implemented, 2026-10-13. Gameplay has not adopted it;
-its current contract remains [GRASS_GAMEPLAY.md](GRASS_GAMEPLAY.md). The sections
-below distinguish the implemented lab path from the remaining design targets.
+Status: shared immutable patches adopted by gameplay and the bus lab's fixed-patch
+strategy, 2026-10-13. The production contract is [GRASS_GAMEPLAY.md](GRASS_GAMEPLAY.md).
+The sections below distinguish the implemented path from remaining design targets.
 
-The proposed replacement uses immutable grass patches, a small set of visual
+The replacement uses immutable grass patches, a small set of visual
 representations, and a continuous grass ground surface. Camera movement selects
 patches and updates small placement/LOD values instead of rebuilding instance
 buffers. Visual simplification is allowed where differences are hard to notice
 from the driving camera; nearby silhouettes, coverage and lighting remain the
 reference for acceptance.
 
-## Implemented lab path
+## Implemented shared path
 
 Open `debug_tools/grass_debug_v2.html?grass=patches`. The **Fixed patches** and
 **Latest baked** links retain the current camera and curved layout for comparison.
 Both load the authenticated gameplay package. The lab no longer needs authoring
 exports to run its baked reference; `?grass=current` retains that older dependency.
-The default lab URL and gameplay still select the existing baked renderer.
+The default lab URL retains the baked reference; gameplay selects patches.
 
 The new shared `GrassPatchRenderer` owns immutable source geometry and placement
 attributes, conservative occupancy grids, bounded mesh pools and shader distance
@@ -42,8 +42,8 @@ The lab combines roadside rectangles and the optional curved plot in one union
 mask. Each original outline retains even-odd fill semantics; separate outlines
 form a union. Road exclusions are applied after that union. The terrain uses its
 complement, and both grass strategies share the same scene-shadow projection.
-Prepared grass samples cached external visibility. This lab has a stationary bus;
-gameplay's moving-vehicle shadow lifecycle still needs integration and validation.
+Prepared grass samples cached external visibility. The lab has a stationary bus;
+gameplay retains its separate static-city and moving-vehicle shadow caches.
 
 Forced LOD0–4 cover the full visible field, regardless of automatic distance or
 camera height. Explicit mode switches expand the selected mesh pool to the finite
@@ -61,11 +61,16 @@ poses in alternating orders, plus native wall-clock flights. Set
 then run it through the selected-test runner. Evidence is under
 `tests/artifacts/screens/grass/runtime_redesign/`.
 
-Gameplay adoption remains the next stage after the requested lab test. It must
-wire the shared renderer into `GameplayGrassRenderer`, preserve mode/disposal and
-moving shadows, and validate grass placement in the game's AO/depth passes and
-the supplied recording. The existing prepared assets remain the comparison
-reference while progressive density and projected-size selection are evaluated.
+`GameplayGrassRenderer` now owns this shared renderer instead of the old field
+selection, instance matrices and distant one-metre canopy batches. Texture/3D
+lifecycle, filtered city exclusions and moving shadows are retained. Grass is
+excluded from AO geometry passes; the underlying terrain supplies depth and
+normals while grass's baked local shading remains visible. The production movement
+test covers immutable buffers, stable placements and both SSAO/GTAO alpha policies.
+Gameplay lifecycle, curve and slab suites cover integration. This migration does
+not establish the original recording's whole-game frame-time targets. The existing
+prepared assets remain the comparison reference while progressive density and
+projected-size selection are evaluated.
 
 ### Lab measurements, 2026-10-13
 
@@ -171,7 +176,7 @@ The current package also retains substantial blade geometry over a large area:
 
 These are index counts divided by the 2 x 2 m source area, not measured submitted
 triangles or GPU time. Coverage, frustum culling and overlapping transitions
-change the actual workload. Current selection thresholds are 0.6 / 0.8 / 20 / 30 /
+change the actual workload. The recorded renderer used thresholds of 0.6 / 0.8 / 20 / 30 /
 40 m. The large total scene draw-call increase in the recording has not been
 attributed entirely to grass.
 

@@ -99,14 +99,16 @@ export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0,
                 const mesh = new THREE.Mesh(geometry.geometries[level], material.leaves[level]); mesh.frustumCulled = false; warm.add(mesh);
             }
             const surface = new THREE.Mesh(surfaceGeometry, material.surface); surface.frustumCulled = false; warm.add(surface);
+            await renderer.compileAsync(warm, camera);
+            if (disposed) { warm.clear(); return; }
             const target = new THREE.WebGLRenderTarget(1, 1), previous = renderer.getRenderTarget();
             const viewport = renderer.getViewport(new THREE.Vector4()), scissor = renderer.getScissor(new THREE.Vector4());
-            const scissorTest = renderer.getScissorTest();
+            const scissorTest = renderer.getScissorTest(), shadowNeedsUpdate = renderer.shadowMap.needsUpdate;
             try {
-                await renderer.compileAsync(warm, camera);
                 renderer.setScissorTest(false); renderer.setRenderTarget(target); renderer.render(warm, camera);
             } finally {
                 renderer.setRenderTarget(previous); renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(scissorTest);
+                renderer.shadowMap.needsUpdate = shadowNeedsUpdate;
                 target.dispose(); warm.clear();
             }
         },

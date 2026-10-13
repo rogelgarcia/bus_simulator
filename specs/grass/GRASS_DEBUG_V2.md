@@ -5,8 +5,8 @@
 Grass Debug v2 is the isolated scene for developing and comparing 3D grass. It
 provides a dirt surface, asphalt road, game trees and city bus, camera navigation,
 performance diagnostics, three ground substrates and the shared distance-based grass renderer.
-It does not instantiate the v1 grass system. The baked appearance, field renderer
-and LOD selection are shared with [gameplay grass](GRASS_GAMEPLAY.md); the lab
+It does not instantiate the v1 grass system. The baked appearance and fixed-patch
+renderer are shared with [gameplay grass](GRASS_GAMEPLAY.md); the lab
 retains its isolated scene and comparison controls.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
@@ -32,8 +32,9 @@ full visible field with the selected geometry; LOD5 shows the continuous canopy.
 Returning to AUTO releases extra forced-mode mesh objects and restores bounded
 distance selection. Counts combine the
 straight and curved layouts and include overlapping detail patches. OFF restores
-the terrain. Curve radius changes preserve the fixed strategy. The game remains
-on its existing renderer pending this lab evaluation and gameplay pass validation.
+the terrain. Curve radius changes preserve the fixed strategy. Gameplay now uses
+this same patch renderer with city coverage, moving shadows and its Texture/3D
+lifecycle. Its AO passes use the underlying terrain rather than individual blades.
 
 Implementation, remaining targets and validation are recorded in
 [GRASS_RUNTIME_REDESIGN.md](GRASS_RUNTIME_REDESIGN.md). Automated coverage includes
