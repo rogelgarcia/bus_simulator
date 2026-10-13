@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): In `b8.png`, dark charcoal canopies with a fine slatted or ribbed surface and a shallow slope cover the ground-floor storefronts on the chamfers, but not the entrance (the aerial and the AI smart model show them continuing along the side faces). The extracted model has none.
@@ -46,3 +48,23 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read:**
+  - b8 (gridded crops of both chamfers): dark charcoal slatted canopies from pier to pier over every chamfer storefront, none over the entrance, a dark front fascia and thin diagonal tie rods, the front edge near 4 m;
+  - the aerial: the side faces carry them too.
+- **Layout** (`rebuild/props_layout.py` `storefront_awnings()`, written to `plan["props"]["storefront_awnings"]` by `make_plan.py`):
+  - one canopy per podium bay (13, the bays AI 646 reserved), from the storefront frames' face to 1.2 m past the podium outline;
+  - the slat plane falls 24 degrees (4.70 -> 4.06 m);
+  - 2-3 tie rods each.
+- **Layer** (`rebuild/layer_awnings.py`, registered in `build.py` after `roof_furniture`) builds `RB_PROPS/RB_AWNINGS`:
+  - one object of 286 hexahedra in `TM_RB_awning`: wall plate (30 mm under the lintel), side rails, slats, a 140 mm fascia, 39 sheared tie rods ending flat on the lintel;
+  - clear of the pier lanterns.
+  - Nothing went to `TM_REPLACED`.
+- **Iteration:** at a 12 degree slope the canopies read edge-on from `CAM_B8`; at 24 degrees they read as b8's slatted bands.
+- **Checks:** audit 91 objects, 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `awning_closeup`; 631 added to `b8_calibrated` and `full_front_left`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/631_props_storefront_awnings/`:
+  - `poses/rebuild_pre631_vs_rebuild/` (7 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre631.blend`.

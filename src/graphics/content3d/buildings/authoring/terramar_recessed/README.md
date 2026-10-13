@@ -340,7 +340,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 628 | DONE (rebuild): 46 dark-metal planter modules on the upper recesses, behind the floor-1 guard (H, A, B) and on the entrance terrace, with 352 viburnum forms and 2746 seeded flower heads; 0 plants past the guards |
 | props | 629 | DONE (rebuild): a perimeter ring of low limestone troughs with viburnum, feature clusters of procedural cycads, palms and spiky rosettes and linden olives at the corners and along the runs (the front's middle low, as b8), six planter islands after the aerial; 0 foliage past the guard |
 | props | 630 | DONE (rebuild): the aerial's dining (table, eight chairs), lounge (sofa, armchairs, tables) and front-centre groups (armchairs, low table, loungers) in teak, off-white cushions and charcoal metal; the deck's limestone paving tiles; 0 px from CAM_B8 |
-| props | 631 | Storefront canopies (retargeted to the rebuild) |
+| props | 631 | DONE (rebuild): 13 dark charcoal slatted canopies, one per podium storefront bay (none over the entrance), 24 degrees, wall plate under the lintel, fascia, 39 tie rods |
 | props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) (retargeted to the rebuild) |
 | props | 633 | Street palms and entrance planters (site) (retargeted to the rebuild) |
 | interior | 634 | Interior base: floor plates, ceilings, partitions (retargeted to the rebuild) |
@@ -511,6 +511,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
+| `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
@@ -895,6 +896,31 @@ tagged on `b8_calibrated` (to show the b8 view unchanged) and `rebuild_top`. Evi
 - the checks, including `check_b8_sightline.png`, and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre630.blend`.
+
+**Storefront canopies (AI 631, props).** b8 shows dark charcoal canopies over each chamfer storefront, from pier to pier
+and none over the entrance, each with a slatted surface, a dark fascia and thin diagonal tie rods. The aerial continues
+them along the side faces. `props_layout.storefront_awnings()` builds one per podium bay (AI 646 reserved all 13) into
+`plan["props"]["storefront_awnings"]`:
+- **Extent:** along the bay between the pier faces (20 mm clear), from the storefront frames' outer face (v −0.24) out to 1.2 m past the podium outline.
+- **Slope:** the slat plane falls 24° from 4.70 m at the wall to 4.06 m at the front. At 12°, the first try, the canopies read edge-on from `CAM_B8`, where b8 shows a clear slatted band.
+- **Tie rods:** 2–3 per canopy (one every 2.4 m at most), from the fascia's top to the stone lintel's face at 5.22 m.
+
+`layer_awnings.py` builds `RB_PROPS/RB_AWNINGS`: one object of hexahedra in `TM_RB_awning` (dark charcoal, slightly
+metallic). Each canopy has:
+- a wall plate on the storefront head panel, 30 mm under the lintel;
+- two sloping side rails, with the transverse slats between them (50 mm, at a 90 mm pitch);
+- a 140 mm front fascia;
+- the tie rods, sheared so both ends are vertical faces: flat on the lintel, standing on the fascia, so nothing penetrates.
+
+They are well above the pier lanterns (2.70–3.02 m).
+
+Audit: 91 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 px. New pose: `awning_closeup`. 631 is also
+tagged on `b8_calibrated` and `full_front_left`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/631_props_storefront_awnings/`:
+- `poses/rebuild_pre631_vs_rebuild/`: 7 sheets, with b8 first for the b8 poses;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre631.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

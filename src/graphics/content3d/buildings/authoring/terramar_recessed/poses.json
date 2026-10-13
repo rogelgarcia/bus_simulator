@@ -55,7 +55,8 @@
                 627,
                 628,
                 629,
-                630
+                630,
+                631
             ]
         },
         {
@@ -820,6 +821,29 @@
                 27.6
             ],
             "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "awning_closeup",
+            "group": "props",
+            "label": "Under a B chamfer canopy from the sidewalk: the slats, side rails, fascia and tie rods against the storefront head and the lintel",
+            "items": [
+                631
+            ],
+            "location": [
+                10.6,
+                -13.2,
+                1.7
+            ],
+            "target": [
+                7.6,
+                -9.3,
+                4.4
+            ],
+            "vfov_deg": 50.0,
             "resolution": [
                 1920,
                 1080

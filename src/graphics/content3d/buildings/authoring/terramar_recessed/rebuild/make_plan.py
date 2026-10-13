@@ -476,6 +476,7 @@ def main():
                      "podium_planters": props_layout.podium_planters(plan),               # AI 628
                      "roof_planters": props_layout.roof_planters(plan)}                   # AI 629
     plan["props"]["roof_furniture"] = props_layout.roof_furniture(plan)                    # AI 630 (needs roof_planters)
+    plan["props"]["storefront_awnings"] = props_layout.storefront_awnings(plan)            # AI 631
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

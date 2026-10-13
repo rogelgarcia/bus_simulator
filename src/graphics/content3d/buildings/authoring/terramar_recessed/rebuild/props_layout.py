@@ -537,3 +537,36 @@ def roof_furniture(plan, seed=630):
                        "rb_hide_from_b8 for the CAM_B8 sightline check.",
             "seed": seed, "z": round(plan["roof"]["roof_top"] + plan["roof"]["paving"], 4), "items": items,
             "clear_of_guard_m": CLEAR_OF_GUARD, "groups": [g["id"] for g in ROOF_GROUPS]}
+
+
+# ---------------------------------------------------------------- AI 631: the storefront canopies
+# b8: dark charcoal canopies with a slatted surface sloping down and out over each chamfer storefront, from pier to pier
+# (about 24 degrees: at 12 the canopies read edge-on from CAM_B8, where b8 shows a clear slatted band),
+# none over the entrance; a dark front fascia and thin diagonal tie rods to the wall; the side faces carry them too (the
+# aerial). AI 646 reserved one per podium bay (all 13). Each hangs from a plate on the storefront's head panel just under
+# the stone lintel and slopes down and out past the pier faces; its rods end flat on the lintel's face.
+AWNING = {"slope_deg": 24.0, "back_top": 4.70, "plate": [0.04, 0.12], "end_gap": 0.02, "rail": [0.04, 0.08],
+          "fascia": [0.04, 0.14], "slat": [0.05, 0.02], "slat_pitch": 0.09, "rod": 0.018, "rod_anchor_z": 5.22,
+          "rod_end_inset": 0.25, "rod_every": 2.4}
+
+
+def storefront_awnings(plan):
+    pd = plan["podium"]
+    runs = {r["run"]: r for r in pd["runs"]}
+    v_back = pd["storefront"]["plane_v"] + pd["frame_depth"] / 2         # the storefront frames' outer face
+    out = []
+    for a in pd["props"]["awnings_ai631"]:
+        r = runs[a["run"]]
+        s0, s1 = a["s"][0] + AWNING["end_gap"], a["s"][1] - AWNING["end_gap"]
+        v_front = a["projection"]
+        drop = (v_front - v_back) * math.tan(math.radians(AWNING["slope_deg"]))
+        n_rods = max(2, 1 + math.ceil((s1 - s0 - 2 * AWNING["rod_end_inset"]) / AWNING["rod_every"]))
+        rods = [round(s0 + AWNING["rod_end_inset"] + k * (s1 - s0 - 2 * AWNING["rod_end_inset"]) / (n_rods - 1), 4)
+                for k in range(n_rods)]
+        out.append({"run": a["run"], "bay": a["bay"], "p": r["p"], "along": r["along"], "outward": r["outward"],
+                    "s": [round(s0, 4), round(s1, 4)], "v": [round(v_back, 4), round(v_front, 4)],
+                    "z_top": [AWNING["back_top"], round(AWNING["back_top"] - drop, 4)], "rods": rods})
+    return {"comment": "AI 631 storefront canopies, one per podium bay: s along the bay between the pier faces, v from the "
+                       "storefront frames' outer face out past the podium outline (v 0), the slat plane's top falling from "
+                       "z_top[0] to z_top[1]; tie rods at 'rods' (s) from the fascia to the lintel face at rod_anchor_z",
+            "config": AWNING, "lintel_bottom": pd["ground_lintel"][0], "canopies": out}
