@@ -467,7 +467,8 @@ def main():
     plan["podium"] = podium(plan, poly, radii)
     plan["roof"] = roof(plan, poly, radii)
     plan["materials"] = materials(plan)
-    plan["props"] = {"balcony_plants": props_layout.balcony_plants(plan, P.BALCONY)}       # AI 627
+    plan["props"] = {"balcony_plants": props_layout.balcony_plants(plan, P.BALCONY),       # AI 627
+                     "podium_planters": props_layout.podium_planters(plan)}                # AI 628
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

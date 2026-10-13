@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): `b8.png` shows three runs of planters on the podium:
@@ -51,3 +53,29 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read (b8, gridded crops):**
+  - floor 1: a low row of pink, white and yellow flowers behind the podium-top guard, with yellow-green potted shrubs beside the front pilasters;
+  - entrance terrace: a flower row along the front guard and a large dark leafy plant at each end;
+  - upper recesses: dense greenery at the glazing base on the chamfers.
+- **Layout** (`rebuild/props_layout.py` `podium_planters()`, written to `plan["props"]["podium_planters"]` by `make_plan.py`, seed 628), from the strips AI 645 and AI 646 reserved:
+  - upper: 26 modules, 0.64 x 0.50 m, at every upper recess;
+  - edge: 15 modules, 0.42 x 0.40 m, behind the floor-1 guard on H, A and B, with the rounded corners left free and tall shrubs in the boxes beside the pilasters;
+  - terrace: a 3-module front trough and two 0.55 m corner planters with tall shrubs;
+  - modules are at most 2.4 m; each box lists the planes (guard glass, glazing frames) its foliage stays behind.
+- **Layer** (`rebuild/layer_podium_planters.py`, registered in `build.py` after `balcony_plants`) builds `RB_PROPS/RB_PODIUM_PLANTERS`:
+  - `rb_podium_planter_boxes`: dark-metal troughs with a rim and soil;
+  - 352 collection instances of the game's arrowwood viburnum, sharing AI 627's prototypes and leaf tone;
+  - `rb_podium_flowers`: 2746 seeded flower heads in five colours, kept within each box's rim.
+  - Nothing went to `TM_REPLACED`.
+- **Clearance check:** 0 shrubs past the guard glass or the glazing (closest 3.1 cm), after pulling the upper boxes' two rows in to the thirds of their depth.
+- **Checks:**
+  - audit 86 objects, 0 z-fights, 0 penetrations (the first run caught flower heads poking into the right pilaster and the piers; they now stay inside the rim);
+  - hidden parts visible from b8: 0 px;
+  - a fresh headless build gives the same counts.
+- **Poses:** new `podium_edge_planters_closeup` and `entrance_terrace_planters`; 628 added to `b8_calibrated`, `full_front_left` and `stone_cladding_closeup`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/628_props_podium_planter_boxes/`:
+  - `poses/rebuild_pre628_vs_rebuild/` (8 sheets; b8 beside the b8 poses);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre628.blend`.

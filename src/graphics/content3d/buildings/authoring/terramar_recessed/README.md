@@ -337,7 +337,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | exterior | 625 | ~~Sign lettering from the PBR kit masks and maps (needs 640)~~ superseded by the rebuild → 646, 648 |
 | exterior | 626 | ~~Coplanar face fixes from the audit~~ superseded by the rebuild → none (game geometry) |
 | props | 627 | DONE (rebuild): 94 seeded pots on floors 2–5 with the game's own viburnum shrubs and silver lindens as olives (collection instances), the front loggia's bistro (floor 3) and lounge (floor 5) sets; 0 plants past the guards |
-| props | 628 | Podium planter boxes (window-base line, top edge, entrance terrace) (retargeted to the rebuild) |
+| props | 628 | DONE (rebuild): 46 dark-metal planter modules on the upper recesses, behind the floor-1 guard (H, A, B) and on the entrance terrace, with 352 viburnum forms and 2746 seeded flower heads; 0 plants past the guards |
 | props | 629 | Roof terrace planters and small trees (retargeted to the rebuild) |
 | props | 630 | Roof terrace furniture and paving (aerial only, lower priority) (retargeted to the rebuild) |
 | props | 631 | Storefront canopies (retargeted to the rebuild) |
@@ -509,6 +509,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
+| `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
 Base scene: `INSPECTION_RIG` (appended once from the baseline: the calibrated sky, sun, ground and rig cameras, with
@@ -780,6 +781,42 @@ Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/627_
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre627.blend`.
+
+**Podium planter boxes (AI 628, props).** b8 shows three runs of planting on the podium. `props_layout.podium_planters()`
+lays them out in `plan["props"]["podium_planters"]` (seed 628) from the strips AI 645 and AI 646 reserved:
+
+| Run | Where | Boxes | Planting |
+| --- | --- | --- | --- |
+| upper | the base of every upper-recess glazing, behind its guard (13 bays) | 26 modules, 0.64 m deep, 0.50 m high | dense greenery: two staggered rows of viburnum forms, a few flower heads |
+| edge | behind the floor-1 guard on the podium top, runs H, A, B; the corners the guard rounds stay free | 15 modules, 0.42 deep, 0.40 high | low flowering plants, about 70 heads per metre; the short boxes beside the front pilasters add a tall shrub |
+| terrace | the entrance roof, inside its guard | a front trough (3 modules) and a 0.55 m square planter at each front corner | flowers along the front, a tall leafy shrub at each corner |
+
+The modules are at most 2.4 m long with 40 mm joints. The troughs are dark metal (`TM_RB_planter_metal`) with a 30 mm rim,
+and their soil (`TM_RB_soil`) sits 40 mm below it.
+
+The game has no flowering plants, so the flowers are small faceted heads in pink, white, yellow, coral and violet. They are
+scattered over the shrubs' crowns and kept within the box's rim, with a seeded three-colour mix per box.
+
+Each box records the planes its foliage must stay behind: the guard glass and, on the upper recesses, the glazing frames.
+Shrubs keep their crown clear of the box ends.
+
+`layer_podium_planters.py` builds `RB_PROPS/RB_PODIUM_PLANTERS`:
+- `rb_podium_planter_boxes`: every box, as one object;
+- `rb_podium_plant_<box>_<n>`: 352 collection instances of the viburnum prototypes it shares with AI 627;
+- `rb_podium_flowers`: 2746 heads, as one object.
+
+The layer's check finds 0 shrubs past the guard glass or the glazing (closest 3.1 cm).
+
+Audit: 86 objects, 0 z-fights, 0 penetrations. The first run caught flower heads poking into the right pilaster and the
+piers; heads now stay inside the rim. Hidden parts visible from b8: 0 px.
+
+New poses: `podium_edge_planters_closeup` and `entrance_terrace_planters`. 628 is also tagged on `b8_calibrated`,
+`full_front_left` and `stone_cladding_closeup`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/628_props_podium_planter_boxes/`:
+- `poses/rebuild_pre628_vs_rebuild/`: [b8 | before | after] for the b8 poses, [before | after] for the rest;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre628.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 
