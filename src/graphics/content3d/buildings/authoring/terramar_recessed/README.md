@@ -341,7 +341,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 629 | DONE (rebuild): a perimeter ring of low limestone troughs with viburnum, feature clusters of procedural cycads, palms and spiky rosettes and linden olives at the corners and along the runs (the front's middle low, as b8), six planter islands after the aerial; 0 foliage past the guard |
 | props | 630 | DONE (rebuild): the aerial's dining (table, eight chairs), lounge (sofa, armchairs, tables) and front-centre groups (armchairs, low table, loungers) in teak, off-white cushions and charcoal metal; the deck's limestone paving tiles; 0 px from CAM_B8 |
 | props | 631 | DONE (rebuild): 13 dark charcoal slatted canopies, one per podium storefront bay (none over the entrance), 24 degrees, wall plate under the lintel, fascia, 39 tie rods |
-| props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) (retargeted to the rebuild) |
+| props | 632 | DONE (rebuild, site): `RB_SITE` beside the building: a 6 m paved sidewalk along the front runs, 8 café sets (square cream market umbrellas, round wood tables, 23 woven chairs) before the chamfer storefronts |
 | props | 633 | Street palms and entrance planters (site) (retargeted to the rebuild) |
 | interior | 634 | Interior base: floor plates, ceilings, partitions (retargeted to the rebuild) |
 | interior | 635 | Ground-floor restaurant (retargeted to the rebuild) |
@@ -512,6 +512,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
+| `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
@@ -921,6 +922,37 @@ tagged on `b8_calibrated` and `full_front_left`. Evidence is in
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre631.blend`.
+
+**Sidewalk café (AI 632, site dressing).** b8 shows cream square market umbrellas on wood poles over round wood tables
+with brown woven bistro chairs, just in front of the chamfer storefronts on both sides of the entrance: about two per bay.
+It belongs to the street, so it is built in `RB_SITE`, a scene collection beside `TERRAMAR_REBUILD`. A city scene can
+keep or drop it, and the building's audit root does not include it.
+
+`props_layout.sidewalk_cafe()` writes `plan["props"]["sidewalk_cafe"]` (seed 632):
+- **Sidewalk:** its inner edge is the balcony edge's front part (runs H, A, B) with the entrance's bump. The outer edge is the plain front path moved 6 m out. It runs from the street (z 0) up to the ground floor level (0.15).
+- **Café sets:** two per bay AI 646 reserved (B0, B1, H0, H1), each 2.4 m from the podium outline. Each is a 2.2 m square umbrella aligned with the run, a table, and 2–4 chairs on a 0.62 m circle facing it (seeded count, turn and jitter).
+
+`layer_site_cafe.py` builds:
+- `RB_SITE_GROUND/rb_site_sidewalk`: top `TM_RB_site_paving`, which the materials pass dresses with the roof's 600 mm tiles, a shade greyer;
+- `RB_SITE_CAFE/rb_cafe_canopies`: a thin pyramid shell canopy (rim 2.40, apex 2.90 above the street) with a 120 mm valance, in `TM_RB_cafe_canopy`;
+- `rb_cafe_poles`, in teak;
+- `rb_cafe_tables`: a wood top, a charcoal pedestal and base, each a ring with a hole the pole runs through, so nothing penetrates;
+- `rb_cafe_chairs`: woven, in `TM_RB_cafe_rattan`.
+
+The umbrellas stand clear under AI 631's canopies, which start 1.2 m out at 4 m or higher.
+
+The materials pass now lays tiles on any family with `tile_m`: `roof_paving` and `site_paving`.
+
+Audits:
+- the building, 91 objects: 0 z-fights, 0 penetrations;
+- the site (`audit_collisions.py -- root=RB_SITE`), 5 objects: 0 / 0.
+
+Hidden parts visible from b8: 0 px. New pose: `cafe_closeup`. 632 is also tagged on `b8_calibrated` and `full_front_left`.
+Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/632_props_sidewalk_cafe_site/`:
+- `poses/rebuild_pre632_vs_rebuild/`: 6 sheets;
+- the checks, `terramar_rebuild.audit.json` and `site.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre632.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

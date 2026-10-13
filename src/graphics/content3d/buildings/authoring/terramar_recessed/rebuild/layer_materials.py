@@ -247,7 +247,7 @@ def dress_materials(m):
                 continue
             if fam_name in ("stone", "paving"):
                 dress_stone(mat, ng, fam)
-            elif fam_name == "roof_paving":
+            elif "tile_m" in fam:                                     # roof_paving, site_paving
                 dress_tiles(mat, folder, fam)
             elif fam_name == "glass":
                 dress_plain(mat, fam["rgb"], fam["roughness"], transmission=1.0, ior=fam["ior"])

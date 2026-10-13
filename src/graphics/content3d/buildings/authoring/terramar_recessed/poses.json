@@ -56,7 +56,8 @@
                 628,
                 629,
                 630,
-                631
+                631,
+                632
             ]
         },
         {
@@ -77,7 +78,8 @@
                 645,
                 646,
                 648,
-                628
+                628,
+                632
             ],
             "location": [
                 -46.0,
@@ -842,6 +844,29 @@
                 7.6,
                 -9.3,
                 4.4
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "cafe_closeup",
+            "group": "props",
+            "label": "The B chamfer cafe at eye level: market umbrellas, round tables and woven chairs on the sidewalk pavers under the canopies",
+            "items": [
+                632
+            ],
+            "location": [
+                12.8,
+                -15.2,
+                1.6
+            ],
+            "target": [
+                8.2,
+                -8.6,
+                1.5
             ],
             "vfov_deg": 50.0,
             "resolution": [

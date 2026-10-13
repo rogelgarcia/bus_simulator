@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): The reference shows a café terrace along the frontage: cream umbrellas, round tables and woven or wood chairs on the sidewalk in front of the side storefronts, several on each side of the entrance (`b8.png`, aerial). It belongs to the street, not the building, and the extracted model has none of it.
@@ -46,3 +48,23 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read (b8, gridded crops of both sides):** cream square market umbrellas with a short valance on wood poles, round wood tables, brown woven bistro chairs, about two sets per chamfer bay, just before the storefronts.
+- **Layout** (`rebuild/props_layout.py` `sidewalk_cafe()`, written to `plan["props"]["sidewalk_cafe"]` by `make_plan.py`, seed 632):
+  - a 6 m sidewalk along the front runs H, A and B (inner edge with the entrance's bump, top at the ground floor level 0.15);
+  - 8 café sets in the bays AI 646 reserved, 23 chairs (2-4 per table, seeded).
+- **Layer** (`rebuild/layer_site_cafe.py`, registered in `build.py` after `awnings`) builds `RB_SITE`, a scene collection beside `TERRAMAR_REBUILD`:
+  - `RB_SITE_GROUND/rb_site_sidewalk` (`TM_RB_site_paving`);
+  - `RB_SITE_CAFE` with the umbrella canopies (thin pyramid shells and valances), poles, tables (rings round the pole) and woven chairs.
+  - Nothing went to `TM_REPLACED`.
+- **Materials pass:** a new `site_paving` family (the roof's tiles a shade greyer); the tile shader now serves any family with `tile_m`.
+- **Checks:**
+  - audit of the building 91 objects and of the site (`root=RB_SITE`) 5 objects: 0 z-fights, 0 penetrations;
+  - hidden parts visible from b8: 0 px;
+  - a fresh headless build gives the same counts.
+- **Poses:** new `cafe_closeup`; 632 added to `b8_calibrated` and `full_front_left`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/632_props_sidewalk_cafe_site/`:
+  - `poses/rebuild_pre632_vs_rebuild/` (6 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`, `site.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre632.blend`.

@@ -570,3 +570,73 @@ def storefront_awnings(plan):
                        "storefront frames' outer face out past the podium outline (v 0), the slat plane's top falling from "
                        "z_top[0] to z_top[1]; tie rods at 'rods' (s) from the fascia to the lintel face at rod_anchor_z",
             "config": AWNING, "lintel_bottom": pd["ground_lintel"][0], "canopies": out}
+
+
+# ---------------------------------------------------------------- AI 632: the sidewalk café (site dressing)
+# b8: cream square market umbrellas on wood poles over round wood tables with brown woven bistro chairs, just in front of
+# the chamfer storefronts on both sides of the entrance (about two per bay). It belongs to the street: the site layer
+# builds it, with a sidewalk slab along the front runs (H, A, B), outside the building's root collection.
+CAFE = {"sets_per_bay": 2, "v": 2.4, "s_jitter": 0.15, "chair_radius": 0.62, "chairs": [(2, 0.3), (3, 0.3), (4, 0.4)],
+        "umbrella": {"half": 1.1, "rim_z": 2.25, "apex_z": 2.75, "shell": 0.015, "valance": 0.12, "pole_r": 0.025},
+        "table": {"r": 0.40, "h": 0.75, "hole": 0.035},
+        "chair": {"w": 0.44, "d": 0.44, "seat": 0.47, "back": 0.84}}
+SIDEWALK = {"width": 6.0, "top": None, "front_y_cut": -2.0}
+
+
+def sidewalk(plan):
+    """The sidewalk slab's footprint: the balcony edge's front part (runs H, A, B; points below front_y_cut) with the
+    entrance's bump as the inner edge, and the plain front path moved width outward as the outer edge."""
+    loop = [tuple(q) for q in plan["layers"]["balcony_edge"]["outline"]]
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(loop, loop[1:] + loop[:1]))
+    if area < 0:
+        loop.reverse()
+    n = len(loop)
+    front = [i for i in range(n) if loop[i][1] < SIDEWALK["front_y_cut"]]
+    start = next(i for i in front if loop[i - 1][1] >= SIDEWALK["front_y_cut"])   # first front point, after the G side
+    path = []
+    i = start
+    while loop[i % n][1] < SIDEWALK["front_y_cut"]:
+        path.append(loop[i % n])
+        i += 1
+    ent = plan["layers"]["entrance"]["outline"]
+    ex = sorted({round(q[0], 4) for q in ent})
+    ey = sorted({round(q[1], 4) for q in ent})
+    inner = []
+    for a, b in zip(path, path[1:] + [None]):
+        inner.append(a)
+        if b is not None and abs(a[1] - b[1]) < 1e-6 and a[0] < ex[0] < b[0] and abs(a[1] - ey[1]) < 1e-3:
+            inner += [(ex[0], ey[1]), (ex[0], ey[0]), (ex[1], ey[0]), (ex[1], ey[1])]   # round the entrance's bump
+    outer = _offset_left(path, -SIDEWALK["width"])
+    foot = inner + list(reversed(outer))
+    return [[round(x, 4), round(y, 4)] for x, y in foot]
+
+
+def sidewalk_cafe(plan, seed=632):
+    pd = plan["podium"]
+    runs = {r["run"]: r for r in pd["runs"]}
+    z = plan["structure"]["ground_floor_level"]
+    sets = []
+    for zone in pd["props"]["sidewalk_cafe_ai632"]:
+        r = runs[zone["run"]]
+        U, N = r["along"], r["outward"]
+        s0, s1 = zone["s"]
+        rng = random.Random(f"{seed}:{zone['bay']}")
+        k = CAFE["sets_per_bay"]
+        for j in range(k):
+            s = s0 + (j + 0.5) * (s1 - s0) / k + rng.uniform(-CAFE["s_jitter"], CAFE["s_jitter"])
+            at = (r["p"][0] + U[0] * s + N[0] * CAFE["v"], r["p"][1] + U[1] * s + N[1] * CAFE["v"])
+            n_chairs = pick(rng, [(str(c), w) for c, w in CAFE["chairs"]])
+            a0 = rng.uniform(0.0, 360.0)
+            chairs = []
+            for c in range(int(n_chairs)):
+                ang = math.radians(a0 + 360.0 * c / int(n_chairs) + rng.uniform(-8.0, 8.0))
+                d = (math.cos(ang), math.sin(ang))
+                rr = CAFE["chair_radius"] + rng.uniform(-0.03, 0.05)
+                chairs.append({"at": [round(at[0] + d[0] * rr, 4), round(at[1] + d[1] * rr, 4)],
+                               "face": [round(-d[0], 5), round(-d[1], 5)]})          # facing the table
+            sets.append({"bay": zone["bay"], "at": [round(at[0], 4), round(at[1], 4)], "along": U, "chairs": chairs})
+    return {"comment": "AI 632 sidewalk café (site dressing): sets of a square market umbrella over a round table and its "
+                       "chairs, %d per reserved bay, v from the podium outline; a sidewalk slab along the front runs, its top "
+                       "at the ground floor level" % CAFE["sets_per_bay"],
+            "seed": seed, "z": z, "config": CAFE, "sets": sets,
+            "sidewalk": {"footprint": sidewalk(plan), "z": [0.0, z], "width": SIDEWALK["width"]}}

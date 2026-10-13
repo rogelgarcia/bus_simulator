@@ -105,6 +105,10 @@ MATERIALS = {
     "roof_paving": {"set": "terramar_continuous_limestone", "repeat_m": 4.0, "tone": [0.84, 0.83, 0.81], "tile_m": 0.60,
                     "joint_m": 0.005, "joint_rgb": [0.30, 0.28, 0.25], "joint_roughness": 0.9, "roughness_gain": 1.0,
                     "normal_strength": 0.8, "slots": ["TM_RB_roof_paving"]},
+    # AI 632: the sidewalk's pavers (site dressing), the same tiles a shade greyer
+    "site_paving": {"set": "terramar_continuous_limestone", "repeat_m": 4.0, "tone": [0.74, 0.73, 0.71], "tile_m": 0.60,
+                    "joint_m": 0.006, "joint_rgb": [0.27, 0.26, 0.24], "joint_roughness": 0.9, "roughness_gain": 1.0,
+                    "normal_strength": 0.8, "slots": ["TM_RB_site_paving"]},
     "joints": {"width": 0.008, "bevel": 0.003, "depth": 0.006, "panel_max": 1.2, "course_target": 0.67, "margin": 0.004,
                "vertical_min_height": 0.2,
                "seed": 648, "rgb": [0.20, 0.185, 0.165], "roughness": 0.9,
@@ -477,6 +481,7 @@ def main():
                      "roof_planters": props_layout.roof_planters(plan)}                   # AI 629
     plan["props"]["roof_furniture"] = props_layout.roof_furniture(plan)                    # AI 630 (needs roof_planters)
     plan["props"]["storefront_awnings"] = props_layout.storefront_awnings(plan)            # AI 631
+    plan["props"]["sidewalk_cafe"] = props_layout.sidewalk_cafe(plan)                      # AI 632 (site dressing)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)
