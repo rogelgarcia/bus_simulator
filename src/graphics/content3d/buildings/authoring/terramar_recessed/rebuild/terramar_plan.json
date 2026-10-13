@@ -28816,6 +28816,404 @@
         ],
         "width": 6.0
       }
+    },
+    "street_dressing": {
+      "comment": "AI 633 street dressing (site): tall procedural street palms in raised limestone tree pits on the sidewalk before the front corners (b8's positions through CAM_B8) and at the far corners, low planting round each trunk; charcoal pots with cycads at the entrance spots AI 646 reserved; street lamps (the installed CC0 street_lamp_01, read-only) on the kerb side",
+      "seed": 633,
+      "z": 0.15,
+      "pits": [
+        {
+          "run": "A",
+          "s": -2.55,
+          "loop": [
+            [
+              -8.15,
+              -14.66
+            ],
+            [
+              -6.95,
+              -14.66
+            ],
+            [
+              -6.95,
+              -15.86
+            ],
+            [
+              -8.15,
+              -15.86
+            ]
+          ],
+          "z": 0.15,
+          "height": 0.4
+        },
+        {
+          "run": "A",
+          "s": 12.55,
+          "loop": [
+            [
+              6.95,
+              -14.66
+            ],
+            [
+              8.15,
+              -14.66
+            ],
+            [
+              8.15,
+              -15.86
+            ],
+            [
+              6.95,
+              -15.86
+            ]
+          ],
+          "z": 0.15,
+          "height": 0.4
+        },
+        {
+          "run": "H",
+          "s": 1.4,
+          "loop": [
+            [
+              -15.9042,
+              -6.0355
+            ],
+            [
+              -15.0556,
+              -6.8841
+            ],
+            [
+              -15.9042,
+              -7.7326
+            ],
+            [
+              -16.7527,
+              -6.8841
+            ]
+          ],
+          "z": 0.15,
+          "height": 0.4
+        },
+        {
+          "run": "B",
+          "s": 10.6,
+          "loop": [
+            [
+              15.0409,
+              -6.8988
+            ],
+            [
+              15.8894,
+              -6.0503
+            ],
+            [
+              16.738,
+              -6.8988
+            ],
+            [
+              15.8894,
+              -7.7473
+            ]
+          ],
+          "z": 0.15,
+          "height": 0.4
+        }
+      ],
+      "palms": [
+        {
+          "kind": "street_palm",
+          "model": "proc/street_palm_1",
+          "at": [
+            -7.55,
+            -15.26
+          ],
+          "z": 0.51,
+          "height": 12.403,
+          "radius": 2.875,
+          "rot_deg": 355.7
+        },
+        {
+          "kind": "street_palm",
+          "model": "proc/street_palm_2",
+          "at": [
+            7.55,
+            -15.26
+          ],
+          "z": 0.51,
+          "height": 11.527,
+          "radius": 2.933,
+          "rot_deg": 176.4
+        },
+        {
+          "kind": "street_palm",
+          "model": "proc/street_palm_0",
+          "at": [
+            -15.9042,
+            -6.8841
+          ],
+          "z": 0.51,
+          "height": 12.31,
+          "radius": 3.008,
+          "rot_deg": 304.9
+        },
+        {
+          "kind": "street_palm",
+          "model": "proc/street_palm_1",
+          "at": [
+            15.8894,
+            -6.8988
+          ],
+          "z": 0.51,
+          "height": 11.527,
+          "radius": 2.723,
+          "rot_deg": 13.7
+        }
+      ],
+      "pit_greens": [
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -7.3406,
+            -14.9429
+          ],
+          "z": 0.51,
+          "height": 0.359,
+          "radius": 0.267,
+          "rot_deg": 72.7
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -7.8273,
+            -15.0002
+          ],
+          "z": 0.51,
+          "height": 0.434,
+          "radius": 0.276,
+          "rot_deg": 56.4
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -7.7672,
+            -15.5718
+          ],
+          "z": 0.51,
+          "height": 0.526,
+          "radius": 0.296,
+          "rot_deg": 57.3
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -7.3118,
+            -15.5561
+          ],
+          "z": 0.51,
+          "height": 0.421,
+          "radius": 0.246,
+          "rot_deg": 194.0
+        },
+        {
+          "model": "arrowwood_viburnum/mature_02",
+          "at": [
+            7.8072,
+            -14.9803
+          ],
+          "z": 0.51,
+          "height": 0.37,
+          "radius": 0.273,
+          "rot_deg": 222.8
+        },
+        {
+          "model": "arrowwood_viburnum/mature_02",
+          "at": [
+            7.2426,
+            -15.0365
+          ],
+          "z": 0.51,
+          "height": 0.498,
+          "radius": 0.28,
+          "rot_deg": 196.7
+        },
+        {
+          "model": "arrowwood_viburnum/mature_02",
+          "at": [
+            7.2425,
+            -15.4833
+          ],
+          "z": 0.51,
+          "height": 0.423,
+          "radius": 0.276,
+          "rot_deg": 305.9
+        },
+        {
+          "model": "arrowwood_viburnum/mature_03",
+          "at": [
+            7.8398,
+            -15.5058
+          ],
+          "z": 0.51,
+          "height": 0.423,
+          "radius": 0.252,
+          "rot_deg": 356.9
+        },
+        {
+          "model": "arrowwood_viburnum/mature_03",
+          "at": [
+            -15.5772,
+            -6.6904
+          ],
+          "z": 0.51,
+          "height": 0.536,
+          "radius": 0.269,
+          "rot_deg": 223.9
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -16.1727,
+            -6.6152
+          ],
+          "z": 0.51,
+          "height": 0.425,
+          "radius": 0.242,
+          "rot_deg": 332.4
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -16.1176,
+            -7.1985
+          ],
+          "z": 0.51,
+          "height": 0.537,
+          "radius": 0.265,
+          "rot_deg": 112.2
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            -15.6234,
+            -7.1402
+          ],
+          "z": 0.51,
+          "height": 0.423,
+          "radius": 0.276,
+          "rot_deg": 269.6
+        },
+        {
+          "model": "arrowwood_viburnum/mature_01",
+          "at": [
+            16.1731,
+            -6.6459
+          ],
+          "z": 0.51,
+          "height": 0.385,
+          "radius": 0.25,
+          "rot_deg": 28.7
+        },
+        {
+          "model": "arrowwood_viburnum/mature_03",
+          "at": [
+            15.6653,
+            -6.5919
+          ],
+          "z": 0.51,
+          "height": 0.417,
+          "radius": 0.258,
+          "rot_deg": 64.8
+        },
+        {
+          "model": "arrowwood_viburnum/mature_03",
+          "at": [
+            15.5858,
+            -7.1272
+          ],
+          "z": 0.51,
+          "height": 0.405,
+          "radius": 0.242,
+          "rot_deg": 89.6
+        },
+        {
+          "model": "arrowwood_viburnum/mature_02",
+          "at": [
+            16.1987,
+            -7.1197
+          ],
+          "z": 0.51,
+          "height": 0.495,
+          "radius": 0.298,
+          "rot_deg": 48.7
+        }
+      ],
+      "pots": [
+        {
+          "at": [
+            -4.05,
+            -12.65
+          ],
+          "z": 0.15,
+          "radius": 0.45,
+          "height": 0.75,
+          "colour": "charcoal"
+        },
+        {
+          "at": [
+            4.05,
+            -12.65
+          ],
+          "z": 0.15,
+          "radius": 0.45,
+          "height": 0.75,
+          "colour": "charcoal"
+        }
+      ],
+      "entrance_plants": [
+        {
+          "kind": "cycad",
+          "model": "proc/cycad_1",
+          "at": [
+            -4.05,
+            -12.65
+          ],
+          "z": 0.85,
+          "height": 1.813,
+          "radius": 0.509,
+          "rot_deg": 294.5
+        },
+        {
+          "kind": "cycad",
+          "model": "proc/cycad_0",
+          "at": [
+            4.05,
+            -12.65
+          ],
+          "z": 0.85,
+          "height": 1.907,
+          "radius": 0.536,
+          "rot_deg": 221.1
+        }
+      ],
+      "lamps": [
+        {
+          "at": [
+            -14.9849,
+            -8.7933
+          ],
+          "z": 0.15,
+          "rot_deg": 45.0
+        },
+        {
+          "at": [
+            14.9702,
+            -8.808
+          ],
+          "z": 0.15,
+          "rot_deg": 135.0
+        }
+      ],
+      "lamp_model": "assets/props/street_lamp_01/street_lamp_01_1k.gltf"
     }
   }
 }

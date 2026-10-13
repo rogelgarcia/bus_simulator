@@ -482,6 +482,7 @@ def main():
     plan["props"]["roof_furniture"] = props_layout.roof_furniture(plan)                    # AI 630 (needs roof_planters)
     plan["props"]["storefront_awnings"] = props_layout.storefront_awnings(plan)            # AI 631
     plan["props"]["sidewalk_cafe"] = props_layout.sidewalk_cafe(plan)                      # AI 632 (site dressing)
+    plan["props"]["street_dressing"] = props_layout.street_dressing(plan)                  # AI 633 (site dressing)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

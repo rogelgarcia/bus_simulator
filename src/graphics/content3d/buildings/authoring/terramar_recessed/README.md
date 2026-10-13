@@ -342,7 +342,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 630 | DONE (rebuild): the aerial's dining (table, eight chairs), lounge (sofa, armchairs, tables) and front-centre groups (armchairs, low table, loungers) in teak, off-white cushions and charcoal metal; the deck's limestone paving tiles; 0 px from CAM_B8 |
 | props | 631 | DONE (rebuild): 13 dark charcoal slatted canopies, one per podium storefront bay (none over the entrance), 24 degrees, wall plate under the lintel, fascia, 39 tie rods |
 | props | 632 | DONE (rebuild, site): `RB_SITE` beside the building: a 6 m paved sidewalk along the front runs, 8 café sets (square cream market umbrellas, round wood tables, 23 woven chairs) before the chamfer storefronts |
-| props | 633 | Street palms and entrance planters (site) (retargeted to the rebuild) |
+| props | 633 | DONE (rebuild, site): 4 tall procedural street palms in limestone tree pits (the two main ones at b8's positions through `CAM_B8`), charcoal entrance pots with cycads, 2 CC0 street lamps |
 | interior | 634 | Interior base: floor plates, ceilings, partitions (retargeted to the rebuild) |
 | interior | 635 | Ground-floor restaurant (retargeted to the rebuild) |
 | interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
@@ -512,6 +512,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
+| `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
@@ -953,6 +954,37 @@ Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/632_
 - the checks, `terramar_rebuild.audit.json` and `site.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre632.blend`.
+
+**Street palms, entrance planters and lamps (AI 633, site dressing).** b8 shows two tall pinnate palms with low
+planting at their bases rising before the building's front corners, more at the street corners, a large dark leafy plant
+in a planter on each side of the entrance, and dark lamp posts. `props_layout.street_dressing()` writes
+`plan["props"]["street_dressing"]` (seed 633), and `layer_site_palms.py` builds `RB_SITE/RB_SITE_PALMS`:
+
+| Part | Where | What |
+| --- | --- | --- |
+| main palms | b8's positions: `CAM_B8`'s rays through their trunk bases (b8 x 278 / 845) meet the sidewalk at (±7.55, −15.26), before the front corners | `proc_plants.py`'s new `street_palm` (an 8–10.5 m leaning trunk, about 25 drooping 2.6–3.3 m fronds), 10.5–12.5 m tall |
+| corner palms | the far ends of the sidewalk, near the G/H and B/C corners | the same |
+| tree pits | under every palm | raised 1.2 m limestone planters (`TM_RB_paving`, a body and rim walls; soil 40 mm below the rim) with low viburnum round each trunk |
+| entrance planters | the spots AI 646 reserved, either side of the entrance | AI 627's tapered pot in charcoal with a procedural cycad (1.7–2.0 m) |
+| street lamps | on the kerb side of the H and B chamfers | the installed CC0 `street_lamp_01` (Poly Haven, Josh Dean; `assets/props/street_lamp_01`, with `source.json`), imported read-only once as the prototype `RBP_street_lamp_01` and instanced |
+
+Every crown is capped to stay 0.4 m off the facade, measured 0.4–2.6 m. The palms stand 1.9 m or more from the café
+chairs and 2.1 m or more from the lamps.
+
+Two first placements read wrong from `CAM_B8`, where they slid out past the building's silhouette:
+- the palms first stood before the chamfers' middles;
+- the pits first used a holed rim region, whose cut line meets a turned square's corners.
+
+The fixes were b8's projected positions and a body-plus-rim-walls build.
+
+Audits: the building (91 objects) and the site (7 objects): 0 z-fights, 0 penetrations. Hidden parts visible from b8:
+0 px. New pose: `entrance_planters_closeup`. 633 is also tagged on `b8_calibrated`, `full_front_left` and
+`cafe_closeup`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/633_props_street_palms_and_entrance_planters_site/`:
+- `poses/rebuild_pre633_vs_rebuild/`: 7 sheets;
+- the checks, `terramar_rebuild.audit.json` and `site.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre633.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

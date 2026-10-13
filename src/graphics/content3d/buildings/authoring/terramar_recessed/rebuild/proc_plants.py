@@ -6,6 +6,8 @@
 #           drooping), about 1.0 m tall, 0.6-0.8 m across
 #   palm    a slim leaning trunk (1.0-1.4 m) under a crown of ~15 fronds, each a folded tapered strip curving down along
 #           its rachis, about 2.2 m tall, 1.8 m across
+#   street_palm  the palm's build at street scale (AI 633): an 8-10.5 m leaning trunk under ~25 long fronds (2.6-3.3 m)
+#           that droop well below level, the tall palms b8 shows along the frontage
 #   cycad   the palm's build with a short stout trunk and a dense crown of ~21 fronds from upright to level (sago palm /
 #           pygmy date-like): the bushy spiky masses b8 shows at the roof corners, about 1.4 m tall, 1.6 m across
 # ensure(kind, k) builds (or rebuilds) collection RBP_proc_<kind>_<k> under RB_PROP_PROTOTYPES with the same custom
@@ -20,6 +22,7 @@ from mathutils import Vector
 
 PROTOTYPES = "RB_PROP_PROTOTYPES"
 LOOKS = {"RBP_proc_spiky_foliage": ((0.15, 0.27, 0.07), 0.50), "RBP_proc_palm_foliage": ((0.13, 0.25, 0.06), 0.45),
+         "RBP_proc_street_palm_foliage": ((0.16, 0.26, 0.07), 0.45),
          "RBP_proc_cycad_foliage": ((0.11, 0.23, 0.05), 0.40),
          "RBP_proc_trunk": ((0.21, 0.165, 0.12), 0.90)}
 
@@ -82,13 +85,16 @@ def spiky(bm, rng):
 
 PALMS = {"palm": {"trunk": (1.0, 1.4), "r": (0.10, 0.075), "lean": 0.15, "fronds": (14, 17), "length": (1.0, 1.3),
                   "elev": (62.0, 72.0), "curl": 38.0},
+         "street_palm": {"trunk": (8.0, 10.5), "r": (0.24, 0.17), "lean": 0.6, "fronds": (22, 28), "length": (2.6, 3.3),
+                         "elev": (68.0, 100.0), "curl": 45.0, "width": 0.80, "sides": 10, "rings": 10},
          "cycad": {"trunk": (0.25, 0.6), "r": (0.13, 0.11), "lean": 0.04, "fronds": (18, 24), "length": (0.85, 1.1),
                    "elev": (72.0, 70.0), "curl": 30.0}}
 
 
 def palm(bm, rng, kind="palm"):
     c = PALMS[kind]
-    top = trunk(bm, 1, rng.uniform(*c["trunk"]), c["r"][0], c["r"][1], rng.uniform(-c["lean"], c["lean"]), sides=8, rings=6)
+    top = trunk(bm, 1, rng.uniform(*c["trunk"]), c["r"][0], c["r"][1], rng.uniform(-c["lean"], c["lean"]),
+                sides=c.get("sides", 8), rings=c.get("rings", 6))
     n = rng.randint(*c["fronds"])
     stations = 6
     for i in range(n):
@@ -104,7 +110,7 @@ def palm(bm, rng, kind="palm"):
             if j:
                 elev = elev0 - math.radians(c["curl"]) * t ** 1.5
                 p = p + direction(elev, az) * length / stations
-            w = 0.02 if t < 0.08 else 0.32 * math.sin(math.pi * min(t * 1.08, 1.0)) ** 0.6
+            w = 0.02 if t < 0.08 else c.get("width", 0.32) * math.sin(math.pi * min(t * 1.08, 1.0)) ** 0.6
             fold = Vector((0.0, 0.0, -0.18 * w))                     # the leaflets hang either side of the rachis
             rows.append([bm.verts.new(p - side * w / 2 + fold), bm.verts.new(p), bm.verts.new(p + side * w / 2 + fold)])
         for a, b in zip(rows, rows[1:]):

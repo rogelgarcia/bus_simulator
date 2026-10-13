@@ -640,3 +640,67 @@ def sidewalk_cafe(plan, seed=632):
                        "at the ground floor level" % CAFE["sets_per_bay"],
             "seed": seed, "z": z, "config": CAFE, "sets": sets,
             "sidewalk": {"footprint": sidewalk(plan), "z": [0.0, z], "width": SIDEWALK["width"]}}
+
+
+# ---------------------------------------------------------------- AI 633: street palms, entrance planters, lamps (site)
+# b8: two tall pinnate palms rise before the building's front corners (low planting at their bases), more stand at the
+# street corners; a large dark leafy plant in a planter flanks each side of the entrance; dark lamp posts stand at the
+# kerb side of the sidewalk. Palms stand in raised limestone tree-pit planters on the sidewalk (clear of
+# the café sets' chairs), the entrance planters at the spots AI 646 reserved, the lamps between them on the kerb side.
+STREET = {"pit": {"half": 0.6, "height": 0.40}, "crown_clear": 0.4,
+          # (run, s, v): b8's two tall palms, where CAM_B8's rays through their trunk bases (b8 x 278 / 845 at the sidewalk)
+          # meet the sidewalk -- before the front corners, 4.26 m out from A's face, s beyond A's ends; then the far corners
+          "palms": [("A", -2.55, 4.26), ("A", 12.55, 4.26), ("H", 1.4, 4.8), ("B", 10.6, 4.8)],
+          "palm": {"height": (10.5, 12.5), "radius": (2.6, 3.1), "models": ["proc/street_palm_0", "proc/street_palm_1",
+                                                                           "proc/street_palm_2"]},
+          "pit_greens": {"height": (0.35, 0.55), "radius": (0.24, 0.30), "spacing": 0.0},
+          "entrance_pot": {"radius": 0.45, "height": 0.75, "colour": "charcoal"},
+          "entrance_plant": {"height": (1.7, 2.0), "radius": (0.48, 0.55), "models": ["proc/cycad_0", "proc/cycad_1"]},
+          "lamps": [("H", 3.4), ("B", 8.6)], "lamp_v": 5.5, "lamp": "assets/props/street_lamp_01/street_lamp_01_1k.gltf"}
+
+
+def street_dressing(plan, seed=633):
+    pd = plan["podium"]
+    runs = {r["run"]: r for r in pd["runs"]}
+    z = plan["structure"]["ground_floor_level"]
+    at = lambda run, s, v: (runs[run]["p"][0] + runs[run]["along"][0] * s + runs[run]["outward"][0] * v,  # noqa: E731
+                            runs[run]["p"][1] + runs[run]["along"][1] * s + runs[run]["outward"][1] * v)
+    rng = random.Random(f"{seed}:street")
+    pits, palms, greens = [], [], []
+    h = STREET["pit"]["half"]
+    for run, s, v in STREET["palms"]:
+        c = at(run, s, v)
+        U, N = runs[run]["along"], runs[run]["outward"]
+        corner = lambda su, sv, c=c, U=U, N=N: [round(c[0] + (U[0] * su + N[0] * sv) * h, 4), round(c[1] + (U[1] * su + N[1] * sv) * h, 4)]  # noqa: E731
+        pits.append({"run": run, "s": s, "loop": [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], "z": z,
+                     "height": STREET["pit"]["height"]})
+        soil = z + STREET["pit"]["height"] - 0.04
+        p = STREET["palm"]
+        palms.append({"kind": "street_palm", "model": rng.choice(p["models"]), "at": [round(c[0], 4), round(c[1], 4)],
+                      "z": round(soil, 4), "height": round(uniform(rng, p["height"]), 3),
+                      "radius": round(min(uniform(rng, p["radius"]), v - STREET["crown_clear"]), 3),   # off the facade
+                      "rot_deg": round(rng.uniform(0, 360), 1)})
+        for k in range(4):                                            # low planting round the trunk
+            a = math.radians(45 + 90 * k + rng.uniform(-15, 15))
+            q = (c[0] + 0.38 * math.cos(a), c[1] + 0.38 * math.sin(a))
+            greens.append(_plant(rng, q, soil, {"height": STREET["pit_greens"]["height"], "radius": STREET["pit_greens"]["radius"]}))
+    pots, entrance_plants = [], []
+    for spot in pd["props"]["street_planters_ai633"]:
+        ep = STREET["entrance_pot"]
+        pots.append({"at": spot["at"], "z": z, "radius": ep["radius"], "height": ep["height"], "colour": ep["colour"]})
+        pl = STREET["entrance_plant"]
+        entrance_plants.append({"kind": "cycad", "model": rng.choice(pl["models"]), "at": spot["at"],
+                                "z": round(z + ep["height"] - 0.05, 4), "height": round(uniform(rng, pl["height"]), 3),
+                                "radius": round(uniform(rng, pl["radius"]), 3), "rot_deg": round(rng.uniform(0, 360), 1)})
+    lamps = []
+    for run, s in STREET["lamps"]:
+        c = at(run, s, STREET["lamp_v"])
+        N = runs[run]["outward"]
+        lamps.append({"at": [round(c[0], 4), round(c[1], 4)], "z": z,
+                      "rot_deg": round(math.degrees(math.atan2(-N[1], -N[0])), 1)})   # the lamp head over the sidewalk
+    return {"comment": "AI 633 street dressing (site): tall procedural street palms in raised limestone tree pits on the "
+                       "sidewalk before the front corners (b8's positions through CAM_B8) and at the far corners, low planting round each "
+                       "trunk; charcoal pots with cycads at the entrance spots AI 646 reserved; street lamps (the installed "
+                       "CC0 street_lamp_01, read-only) on the kerb side",
+            "seed": seed, "z": z, "pits": pits, "palms": palms, "pit_greens": greens, "pots": pots,
+            "entrance_plants": entrance_plants, "lamps": lamps, "lamp_model": STREET["lamp"]}

@@ -57,7 +57,8 @@
                 629,
                 630,
                 631,
-                632
+                632,
+                633
             ]
         },
         {
@@ -79,7 +80,8 @@
                 646,
                 648,
                 628,
-                632
+                632,
+                633
             ],
             "location": [
                 -46.0,
@@ -856,7 +858,8 @@
             "group": "props",
             "label": "The B chamfer cafe at eye level: market umbrellas, round tables and woven chairs on the sidewalk pavers under the canopies",
             "items": [
-                632
+                632,
+                633
             ],
             "location": [
                 12.8,
@@ -869,6 +872,29 @@
                 1.5
             ],
             "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "entrance_planters_closeup",
+            "group": "props",
+            "label": "The entrance at eye level from the sidewalk: the charcoal pots with cycads flanking it, the palms rising before the chamfers, a street lamp",
+            "items": [
+                633
+            ],
+            "location": [
+                1.2,
+                -21.5,
+                1.7
+            ],
+            "target": [
+                0.0,
+                -12.6,
+                3.6
+            ],
+            "vfov_deg": 62.0,
             "resolution": [
                 1920,
                 1080

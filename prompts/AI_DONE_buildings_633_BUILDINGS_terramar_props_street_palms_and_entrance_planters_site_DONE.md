@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): The reference shows tall palms along the frontage and at the corners, in tree pits or planters, potted plants flanking the entrance, and dark street lamps (`b8.png`, aerial). The extracted model has none of these.
@@ -46,3 +48,28 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read:** b8 (gridded crop of the street) shows two tall pinnate palms with low planting at their bases before the front corners, more at the street corners, a dark leafy plant in a planter either side of the entrance, and dark lamp posts.
+- **Layout** (`rebuild/props_layout.py` `street_dressing()`, written to `plan["props"]["street_dressing"]` by `make_plan.py`, seed 633):
+  - the two main palms at b8's positions, found by casting `CAM_B8` rays through their trunk bases onto the sidewalk: (+-7.55, -15.26);
+  - two palms at the sidewalk's far corners;
+  - raised tree pits with low planting;
+  - charcoal pots with cycads at the entrance spots AI 646 reserved;
+  - two lamps on the kerb side;
+  - crowns capped 0.4 m off the facade.
+- **Palms:** procedural, `proc_plants.py`'s new `street_palm` kind (an 8-10.5 m leaning trunk, about 25 long drooping fronds). The CC0 route of the prompt would need a download; the procedural palm matches b8's pinnate silhouettes and needs none.
+- **Lamps:** the installed CC0 `street_lamp_01` (Poly Haven, `assets/props/street_lamp_01` with `source.json`), imported read-only once as a prototype and instanced.
+- **Layer** (`rebuild/layer_site_palms.py`, registered in `build.py` after `site_cafe`) builds `RB_SITE/RB_SITE_PALMS`:
+  - `rb_site_tree_pits` (limestone, body plus rim walls);
+  - the palm, pit-planting and entrance-plant instances;
+  - `rb_site_entrance_pots`;
+  - the lamp instances.
+  - Nothing went to `TM_REPLACED`.
+- **Iteration:** palms first placed before the chamfers' middles slid out past the building's silhouette from `CAM_B8`; b8's projected positions put them in front of the chamfer storefronts as in b8.
+- **Checks:** audits of the building (91 objects) and the site (7 objects): 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `entrance_planters_closeup`; 633 added to `b8_calibrated`, `full_front_left` and `cafe_closeup`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/633_props_street_palms_and_entrance_planters_site/`:
+  - `poses/rebuild_pre633_vs_rebuild/` (7 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`, `site.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre633.blend`.
