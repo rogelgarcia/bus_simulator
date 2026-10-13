@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 import plan_options as P  # noqa: E402  (shares the geometry helpers and the measured constants)
 import b8_camera_fit  # noqa: E402
 import envelope_layout  # noqa: E402
+import balcony_layout  # noqa: E402
 
 C = P.C
 APPROVED = "E"
@@ -45,6 +46,13 @@ ENTRANCE_SIDE_WALL = 0.4
 ENVELOPE = {"frame_depth": 0.12, "member": 0.06, "head": 0.08, "sill": 0.05, "transom": 0.06, "transom_below_head": 0.40,
             "glass": 0.024, "post_ext": 0.03, "column_gap": 0.003, "pane_target": 1.0, "wood_reveal": 0.66,
             "wood_floors": [1, 2, 3, 4], "centre_panes": 4}
+# Balconies layer (AI 645): b8's frameless glass guards (slim dark top rail ~1.0 m above the floor, dark base shoe
+# behind the slab fascia), stone walking surfaces, warm wood soffits with small downlights
+BALCONIES = {"guard_inset": GUARD_INSET, "shoe": {"width": 0.06, "height": 0.10}, "glass": 0.015,
+             "rail": {"width": 0.04, "height": 0.04}, "guard_height": 1.0, "panel_max": 1.6, "panel_gap": 0.01,
+             "paving": 0.03, "threshold": {"depth": 0.28, "height": 0.015}, "column_gap": 0.003,
+             "downlight": {"radius": 0.06, "height": 0.012, "spacing": 2.2},
+             "soffit_rgb": [0.31, 0.125, 0.085]}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -107,6 +115,51 @@ def envelope(plan, wall_sharp, columns):
                               "in doors slide (the balconies layer puts thresholds there).",
             "floors": {str(i + 1): z for i, z in enumerate(env["storeys"])}, "bays": bays, "corners": corners,
             "wall_radius": 0.25}
+
+
+def balconies(plan, poly, radii):
+    """The balconies layer's layout (balcony_layout.py): walking-surface pieces, guard runs, downlights, planter slots."""
+    b = BALCONIES
+    env = plan["envelope"]
+    col = plan["structure"]["columns"]
+    half_frame = env["frame_depth"] / 2
+    shoe = b["shoe"]["width"]
+
+    def loop(inset_m, radius_rule):
+        return P.dedupe(P.rounded(P.inset(poly, inset_m), [radius_rule(r) if r > 0 else 0.0 for r in radii]))
+    outer = loop(b["guard_inset"] + shoe / 2, lambda r: max(r - b["guard_inset"] - shoe / 2, 0.25))
+    inner = loop(P.BALCONY - half_frame, lambda r: env["wall_radius"] + half_frame)      # the frames' outer face
+    inner = balcony_layout.bulge_columns(inner, plan["markers"]["chamfer_columns"], col, half_frame, b["column_gap"])
+    pil = [tuple(m["x"]) for m in plan["markers"]["front_pilasters"]]
+    pil_pairs = ((pil[0][0], pil[0][1]), (pil[1][0], pil[1][1]))
+    y_out, y_in = P.Y_FRONT + b["guard_inset"] + shoe / 2, P.Y_FRONT + P.BALCONY - half_frame
+    long_piece, centre, _, _ = balcony_layout.split_at_pilasters(outer, inner, pil_pairs, y_out, y_in)
+    guard = loop(b["guard_inset"], lambda r: max(r - b["guard_inset"], 0.25))
+    yg = P.Y_FRONT + b["guard_inset"]
+    (l_out, l_in), (r_in, r_out) = pil_pairs
+    guard_ins = balcony_layout._insert(guard, [(x, yg) for x in (l_out, l_in, r_in, r_out)])
+    long_run = balcony_layout._path(guard_ins, (r_out, yg), (l_out, yg))
+    centre_run = [(l_in, yg), (r_in, yg)]
+    centre_line = loop(P.BALCONY / 2, lambda r: max(r - P.BALCONY / 2, 0.25))
+    lights = balcony_layout.downlights(centre_line, pil, P.Y_FRONT, b["downlight"]["spacing"], 0.25)
+    guard_v = P.BALCONY - b["guard_inset"] - shoe / 2 - 0.32                              # pot centre from the wall line
+    slots = balcony_layout.planter_slots(env["bays"], [1, 2, 3, 4, 5], guard_v, env["wood_reveal"])
+    sharp = plan["runs"]["sharp_corners"]
+    g_sharp = {k: v for k, v in zip(["H/A", "A/B", "B/C", "C/D", "D/E", "E/F", "F/G", "G/H"], P.inset(poly, b["guard_inset"]))}
+    strips = [{"run": "H", "from": [round(c, 4) for c in g_sharp["G/H"]], "to": [round(c, 4) for c in g_sharp["H/A"]]},
+              {"run": "A", "from": [round(c, 4) for c in g_sharp["H/A"]], "to": [l_out, yg]},
+              {"run": "A", "from": [l_in, yg], "to": [r_in, yg]},
+              {"run": "A", "from": [r_out, yg], "to": [round(c, 4) for c in g_sharp["A/B"]]},
+              {"run": "B", "from": [round(c, 4) for c in g_sharp["A/B"]], "to": [round(c, 4) for c in g_sharp["B/C"]]}]
+    rd = lambda pts: [[round(x, 4), round(y, 4)] for x, y in pts]  # noqa: E731
+    return {**b, "comment": "AI 645 balconies: the walking surface from the frames' outer face to the guard shoe, split at "
+                            "the pilasters and stepping round the column fronts; guard runs on the guard line, stopping "
+                            "against the pilasters; soffit tone for TM_RB_soffit; downlights on the soffit centre line; "
+                            "planter slots (pots per bay and floor) and the podium-edge planter strips (floor 1) are "
+                            "reserved for props AI 627 / 628.",
+            "paving_pieces": [rd(long_piece), rd(centre)], "guard_runs": [rd(long_run), rd(centre_run)],
+            "downlight_points": lights, "planter_slots": slots,
+            "podium_planter_strips": [{**st, "floor": 1, "depth": 0.45} for st in strips]}
 
 
 def cameras(cal, plan):
@@ -228,6 +281,7 @@ def main():
     }
     plan["cameras"] = cameras(cal, plan)
     plan["envelope"] = envelope(plan, wall_sharp, columns)
+    plan["balconies"] = balconies(plan, poly, radii)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

@@ -353,7 +353,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
 | rebuild | 643 | DONE: structure layer (slabs with face sets, pilasters, rounded columns, podium, core), `build.py`, `CAM_B8` fitted to the plan, rebuild switches in the pose renderer, composer and audit |
 | rebuild | 644 | DONE: envelope layer (16 bays of black-framed sliders with transoms, corner posts, column-hugging jambs, centre-bay wood reveals on floors 1–4), layout and door panes in `plan["envelope"]` |
-| rebuild | 645 | Balconies: walking surfaces, curved glass guards, warm wood soffits, podium-edge guards |
+| rebuild | 645 | DONE: balconies layer (paving, frameless glass guards with rail and shoe, door thresholds, downlights, soffit tone matched to b8), planter slots reserved in the plan |
 | rebuild | 646 | Podium: storefronts, entrance portal, kit lettering, upper-podium guard, lanterns |
 | rebuild | 647 | Roof: deep rounded edge, glass guard, terrace, penthouse with annex and solar (out of b8's view) |
 | rebuild | 648 | Materials: kit limestone with panel joints in geometry, wood, black steel, glass, bronze (needs 640) |
@@ -501,6 +501,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
+| `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots) |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
 
@@ -572,3 +573,32 @@ Frame depth 0.12 (centred on the wall line), members 0.06, head 0.08, sill 0.05.
 
 Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/644_envelope/` (`check_sheet.png`,
 `check_b8_overlay.png`, `zoom_centre_chamfer_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).
+
+**`RB_BALCONIES` (AI 645).** From b8: frameless clear glass guards with a slim dark top rail 1.0 m above the floor,
+on a dark base shoe just behind the slab fascia, following the rounded corners. Floor 1's guards run on the podium
+edge. The soffits are warm wood with small downlights. `rebuild/balcony_layout.py` computes the layout into
+`plan["balconies"]`:
+- the walking-surface pieces: from the window frames' outer face (wall line + 0.06, R 0.31 at the corners, meeting
+  the corner posts exactly) to the guard shoe. They split at the pilasters and step round each column front, 3 mm clear;
+- the guard runs on the guard line (balcony edge − 0.15): one 71.9 m run from pilaster to pilaster round the
+  building, and the centre loggia's 5.3 m run. In b8 the chamfer columns stand at the slab edge and break the guard;
+  in the approved plan they stand 1.3 m back, so the guard passes in front of them;
+- the downlight points on the soffit centre line, clear of the pilasters;
+- the reserved prop slots: 140 planter slots (pots against the guard, per bay and floor, in front of the centre bay's
+  wood panels) for AI 627, and five podium-edge planter strips on floor 1 for AI 628.
+
+| Object | What |
+| --- | --- |
+| `rb_paving_f1`…`f5` | `TM_RB_paving`, 30 mm walking surface (floor 1 = the podium-roof terrace out to the podium edge) |
+| `rb_guard_f1`…`f5` | shoe 0.06 × 0.10 and rail 0.04 × 0.04 (`TM_RB_frame`); glass panels of 15 mm, ≤ 1.6 m, 10 mm joints (`TM_RB_glass`); 245 panels in all |
+| `rb_thresholds_f1`…`f5` | `TM_RB_threshold`: a 15 mm stone step before every door pane of `plan["envelope"]`, between the paving and the 50 mm sill |
+| `rb_downlights_f1`…`f5` | `TM_RB_downlight` discs under the soffit above each floor's balcony |
+
+**Soffit tone.** The layer sets `TM_RB_soffit` to `plan["balconies"]["soffit_rgb"]`, matched to b8 under the
+calibrated rig in two Cycles iterations from `CAM_B8`: (0.62, 0.50, 0.38) → (0.32, 0.135, 0.09) → (0.31, 0.125, 0.085).
+The rendered soffits now read within about 5 levels of b8's at three soffit boxes: centre 87/55/31 vs 86/53/26,
+right chamfer 106/77/51 vs 102/72/49, left 74/57/32 vs 76/53/34.
+
+Audit: 53 objects, 0 z-fights, 0 penetrations. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/645_balconies/` (`check_sheet.png`, `check_b8_overlay.png`,
+`zoom_corner_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).

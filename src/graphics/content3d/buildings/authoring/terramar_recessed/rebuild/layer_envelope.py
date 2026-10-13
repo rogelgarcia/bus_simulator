@@ -45,7 +45,7 @@ def gaps(lo, hi, spans):
     return out
 
 
-def corner_post(c, radius, d, ext, n=10):
+def corner_post(c, radius, d, ext, n=12):     # n = plan_options.fillet's, so the paving meets it exactly
     """Footprint of the rounded corner post on a wall-line fillet (frame depth 2d), reaching ext onto both runs."""
     p, a_in, a_out = c["sharp"], c["in"], c["out"]
     t = radius * math.tan(math.radians(22.5))
