@@ -336,7 +336,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | exterior | 624 | ~~Glazing frames (storefronts, entrance, residential sliders), pier lanterns~~ superseded by the rebuild → 644, 646 |
 | exterior | 625 | ~~Sign lettering from the PBR kit masks and maps (needs 640)~~ superseded by the rebuild → 646, 648 |
 | exterior | 626 | ~~Coplanar face fixes from the audit~~ superseded by the rebuild → none (game geometry) |
-| props | 627 | Balcony planters and plants (retargeted to the rebuild) |
+| props | 627 | DONE (rebuild): 94 seeded pots on floors 2–5 with the game's own viburnum shrubs and silver lindens as olives (collection instances), the front loggia's bistro (floor 3) and lounge (floor 5) sets; 0 plants past the guards |
 | props | 628 | Podium planter boxes (window-base line, top edge, entrance terrace) (retargeted to the rebuild) |
 | props | 629 | Roof terrace planters and small trees (retargeted to the rebuild) |
 | props | 630 | Roof terrace furniture and paving (aerial only, lower priority) (retargeted to the rebuild) |
@@ -509,6 +509,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
+| `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
 Base scene: `INSPECTION_RIG` (appended once from the baseline: the calibrated sky, sun, ground and rig cameras, with
 AgX and the game's exposure), `RB_CAMERAS` (`CAM_B8`, `CAM_AERIAL`, `CAM_REAR`, `CAM_TOP` from `plan["cameras"]`),
@@ -734,6 +735,51 @@ and `joint_detail_pilaster`. Evidence is in `tests/artifacts/screens/buildings/t
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre648.blend`.
+
+**Balcony planting (AI 627, props).** `props_layout.py` turns AI 645's planter slots into seeded placements in
+`plan["props"]["balcony_plants"]` (seed 627; one generator per floor and bay, so a bay keeps its planting when another
+changes). From b8:
+- **Front centre loggia (A1):** a white pot with a leafy shrub at each end, before the wood panels, on floors 2–4. Floor 5 has one small shrub at its right end and a lounge set (two low upholstered chairs, a low table). Floor 3 has a bistro set (a round table and two ladder-back chairs) between the pots.
+- **Every other bay:** pots at both ends (75%) or at one (25%), each holding an olive (silver linden), a shrub or a low spilling plant (50 / 35 / 15). Pots are white, light grey or charcoal (65 / 25 / 10), with sizes, heights, crown radii and turns all seeded.
+- **Floors:** 2–5 only. Floor 1 is the podium terrace, whose edge planters are AI 628's.
+- **Clear of the guard:** the pots stand 0.12 m in from the reserved slot, so a crown up to 0.46 m stays inside the guard glass.
+
+The plants are the game's own vegetation, `assets/public/vegetation_lod0`:
+- the arrowwood viburnum for the shrubs and spilling plants;
+- the silver linden, scaled to a 1.6–2.1 m standard, for the olive-like trees. Each olive gets a second, smaller linden form turned against the first, to fill its crown.
+
+Those GLBs carry KTX2 (`KHR_texture_basisu`) maps, which Blender's importer refuses. `decode_vegetation_glb.mjs` transcodes
+them with the libktx 4.4.2 the vegetation bake pins (`downloads/tools/ktx-4.4.2`). It writes plain-PNG copies to
+`tests/artifacts/blender/terramar_recessed/rebuild/vegetation/` and checks each source's sha256 against the index
+(`decoded.json`). It writes nothing under `assets/`.
+
+```
+node src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/decode_vegetation_glb.mjs     # once, before the layer
+```
+
+`layer_balcony_plants.py` builds `RB_PROPS/RB_BALCONY_PLANTS`:
+
+| Object | What |
+| --- | --- |
+| `rb_balcony_pots` | the 94 pots as one object: tapered, rolled rim, soil (`TM_RB_pot_white` / `_light_grey` / `_charcoal`, `TM_RB_soil`) |
+| `rb_plant_f<floor>_<bay>_<n>[b]` | 136 collection instances of the prototypes, fitted to the plan's height and crown radius; spilling plants lean 10–20° over the rim |
+| `rb_set_f3_bistro`, `rb_set_f5_lounge` | the furniture as prisms (`TM_RB_prop_cream`, `TM_RB_prop_white`, black-steel pedestals) |
+
+The game models are imported once into `RB_PROP_PROTOTYPES`, a scene collection outside the rebuild root and excluded from
+the view layer, so only the instances render and the audit never sees the prototypes at the origin.
+- Each prototype carries its measured height and crown radius.
+- The leaves take a small hue / saturation / value step (`LEAF_TONE`): the linden greyer, as an olive, but still fresh green like b8's sunlit trees; the viburnum a touch lighter.
+
+The layer's clearance check samples every instance's foliage against the guard glass's inner face (1.3425 m from the wall
+line) and the frames' outer face (0.06): 0 past the guard, 0 into the frames. The closest crown is 2.5 cm inside the glass.
+
+Audit: 84 objects, 0 z-fights, 0 penetrations; the pots and sets sit on the paving as contacts. New poses:
+`chamfer_balcony_plants_closeup` and `loggia_bistro_closeup`; 627 is also tagged on `b8_calibrated` and `full_front_left`.
+Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/627_props_balcony_planters_and_plants/`:
+- `poses/rebuild_pre627_vs_rebuild/`: [b8 | before | after] for `b8_calibrated` and `b8_target`, [before | after] for the 7 other poses;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre627.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

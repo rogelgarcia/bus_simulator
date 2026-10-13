@@ -7,7 +7,7 @@
 # guard line, the penthouse kept out of b8's view, and the plan markers for the front pilasters and the rounded chamfer
 # columns. Also draws the dimensioned approved plan: tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/
 # plan_approved.png. The layers' own parameters follow in the same file: structure, envelope, balconies, podium, roof
-# (AI 643-647) and materials with the stone joint layout (AI 648).
+# (AI 643-647), materials with the stone joint layout (AI 648) and the props (AI 627+).
 #
 # Runs (faces) of the approved plan, counter-clockwise from the front (the game's lettering): A front, B front-right
 # chamfer, C right side, D right rear chamfer, E rear, F left rear chamfer, G left side, H front-left chamfer.
@@ -26,6 +26,7 @@ import b8_camera_fit  # noqa: E402
 import envelope_layout  # noqa: E402
 import balcony_layout  # noqa: E402
 import podium_layout  # noqa: E402
+import props_layout  # noqa: E402
 
 C = P.C
 APPROVED = "E"
@@ -466,6 +467,7 @@ def main():
     plan["podium"] = podium(plan, poly, radii)
     plan["roof"] = roof(plan, poly, radii)
     plan["materials"] = materials(plan)
+    plan["props"] = {"balcony_plants": props_layout.balcony_plants(plan, P.BALCONY)}       # AI 627
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

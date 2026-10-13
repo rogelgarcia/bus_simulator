@@ -10501,5 +10501,2129 @@
       ]
     },
     "comment": "AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone (assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d with a bevel b each side, its floor in the joint material; course planes from the datums' bands, vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show."
+  },
+  "props": {
+    "balcony_plants": {
+      "comment": "AI 627 balcony planting: pots at the reserved slots (moved 0.12 m in from the guard), floors [2, 3, 4, 5]; the plant sizes are targets above the soil (height, crown radius) the layer fits the game models to",
+      "seed": 627,
+      "floors": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "pots": [
+        {
+          "floor": 2,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            -2.325,
+            -10.38
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.233,
+            "height": 0.486,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.071,
+          "radius": 0.383,
+          "rot_deg": 306.4
+        },
+        {
+          "floor": 2,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            2.325,
+            -10.38
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.221,
+            "height": 0.435,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.885,
+          "radius": 0.435,
+          "rot_deg": 359.5
+        },
+        {
+          "floor": 2,
+          "bay": "B0",
+          "kind": "shrub",
+          "at": [
+            8.1259,
+            -6.9972
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.202,
+            "height": 0.437,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.87,
+          "radius": 0.366,
+          "rot_deg": 1.6
+        },
+        {
+          "floor": 2,
+          "bay": "B1",
+          "kind": "olive",
+          "at": [
+            9.4971,
+            -5.6259
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.252,
+            "height": 0.473,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.623,
+          "radius": 0.412,
+          "rot_deg": 190.1,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 334.3,
+            "height": 1.461,
+            "radius": 0.391
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "B1",
+          "kind": "olive",
+          "at": [
+            12.1388,
+            -2.9842
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.234,
+            "height": 0.441,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.842,
+          "radius": 0.451,
+          "rot_deg": 256.7,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 7.3,
+            "height": 1.646,
+            "radius": 0.428
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "C0",
+          "kind": "olive",
+          "at": [
+            12.88,
+            -1.1951
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.259,
+            "height": 0.494,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.854,
+          "radius": 0.444,
+          "rot_deg": 2.8,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 131.5,
+            "height": 1.645,
+            "radius": 0.422
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "C0",
+          "kind": "shrub",
+          "at": [
+            12.88,
+            1.1952
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.224,
+            "height": 0.43,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.932,
+          "radius": 0.387,
+          "rot_deg": 123.0
+        },
+        {
+          "floor": 2,
+          "bay": "D0",
+          "kind": "shrub",
+          "at": [
+            12.1389,
+            2.9842
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.215,
+            "height": 0.494,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.034,
+          "radius": 0.421,
+          "rot_deg": 358.0
+        },
+        {
+          "floor": 2,
+          "bay": "D0",
+          "kind": "olive",
+          "at": [
+            9.9341,
+            5.189
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.229,
+            "height": 0.526,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 2.02,
+          "radius": 0.457,
+          "rot_deg": 235.5,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 22.1,
+            "height": 1.847,
+            "radius": 0.434
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "D1",
+          "kind": "shrub",
+          "at": [
+            8.5628,
+            6.5603
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.201,
+            "height": 0.46,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.145,
+          "radius": 0.411,
+          "rot_deg": 242.6
+        },
+        {
+          "floor": 2,
+          "bay": "D1",
+          "kind": "shrub",
+          "at": [
+            6.5603,
+            8.5628
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.206,
+            "height": 0.476,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.929,
+          "radius": 0.404,
+          "rot_deg": 4.9
+        },
+        {
+          "floor": 2,
+          "bay": "D2",
+          "kind": "shrub",
+          "at": [
+            5.189,
+            9.934
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.241,
+            "height": 0.46,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.003,
+          "radius": 0.363,
+          "rot_deg": 30.3
+        },
+        {
+          "floor": 2,
+          "bay": "D2",
+          "kind": "spill",
+          "at": [
+            2.9842,
+            12.1388
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.211,
+            "height": 0.4,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.407,
+          "radius": 0.285,
+          "rot_deg": 312.3,
+          "tilt_deg": 11.0,
+          "tilt_towards": [
+            0.7071,
+            0.7071
+          ]
+        },
+        {
+          "floor": 2,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            1.1951,
+            12.88
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.247,
+            "height": 0.517,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.939,
+          "radius": 0.435,
+          "rot_deg": 350.5,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 109.4,
+            "height": 1.773,
+            "radius": 0.413
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "E0",
+          "kind": "shrub",
+          "at": [
+            -1.1952,
+            12.88
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.225,
+            "height": 0.417,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.182,
+          "radius": 0.421,
+          "rot_deg": 183.8
+        },
+        {
+          "floor": 2,
+          "bay": "F0",
+          "kind": "olive",
+          "at": [
+            -2.9842,
+            12.1389
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.236,
+            "height": 0.51,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 2.089,
+          "radius": 0.445,
+          "rot_deg": 72.4,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 231.8,
+            "height": 1.87,
+            "radius": 0.423
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "F0",
+          "kind": "shrub",
+          "at": [
+            -5.189,
+            9.9341
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.212,
+            "height": 0.495,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.176,
+          "radius": 0.345,
+          "rot_deg": 341.4
+        },
+        {
+          "floor": 2,
+          "bay": "F1",
+          "kind": "shrub",
+          "at": [
+            -6.5603,
+            8.5628
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.405,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.166,
+          "radius": 0.374,
+          "rot_deg": 140.9
+        },
+        {
+          "floor": 2,
+          "bay": "F1",
+          "kind": "olive",
+          "at": [
+            -8.5628,
+            6.5603
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.256,
+            "height": 0.51,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.811,
+          "radius": 0.407,
+          "rot_deg": 339.3,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 89.9,
+            "height": 1.628,
+            "radius": 0.387
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "F2",
+          "kind": "shrub",
+          "at": [
+            -9.934,
+            5.189
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.249,
+            "height": 0.403,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.984,
+          "radius": 0.428,
+          "rot_deg": 154.4
+        },
+        {
+          "floor": 2,
+          "bay": "F2",
+          "kind": "shrub",
+          "at": [
+            -12.1388,
+            2.9842
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.246,
+            "height": 0.469,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.107,
+          "radius": 0.412,
+          "rot_deg": 132.1
+        },
+        {
+          "floor": 2,
+          "bay": "G0",
+          "kind": "olive",
+          "at": [
+            -12.88,
+            1.1951
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.252,
+            "height": 0.442,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 2.072,
+          "radius": 0.444,
+          "rot_deg": 74.4,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 203.3,
+            "height": 1.756,
+            "radius": 0.422
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "G0",
+          "kind": "olive",
+          "at": [
+            -12.88,
+            -1.1952
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.236,
+            "height": 0.456,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 2.012,
+          "radius": 0.439,
+          "rot_deg": 353.7,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 106.8,
+            "height": 1.675,
+            "radius": 0.417
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "H0",
+          "kind": "spill",
+          "at": [
+            -12.1389,
+            -2.9842
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.221,
+            "height": 0.398,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.421,
+          "radius": 0.32,
+          "rot_deg": 329.2,
+          "tilt_deg": 14.0,
+          "tilt_towards": [
+            -0.7071,
+            -0.7071
+          ]
+        },
+        {
+          "floor": 2,
+          "bay": "H0",
+          "kind": "olive",
+          "at": [
+            -9.4972,
+            -5.6259
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.23,
+            "height": 0.461,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.617,
+          "radius": 0.394,
+          "rot_deg": 92.9,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 251.0,
+            "height": 1.479,
+            "radius": 0.374
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "H1",
+          "kind": "olive",
+          "at": [
+            -8.1259,
+            -6.9971
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.25,
+            "height": 0.516,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.807,
+          "radius": 0.402,
+          "rot_deg": 133.5,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 268.1,
+            "height": 1.592,
+            "radius": 0.382
+          }
+        },
+        {
+          "floor": 2,
+          "bay": "H1",
+          "kind": "shrub",
+          "at": [
+            -5.4842,
+            -9.6388
+          ],
+          "z": 13.55,
+          "pot": {
+            "radius": 0.217,
+            "height": 0.487,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.923,
+          "radius": 0.355,
+          "rot_deg": 63.2
+        },
+        {
+          "floor": 3,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            -2.325,
+            -10.38
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.238,
+            "height": 0.43,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.989,
+          "radius": 0.389,
+          "rot_deg": 205.4
+        },
+        {
+          "floor": 3,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            2.325,
+            -10.38
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.245,
+            "height": 0.403,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.147,
+          "radius": 0.398,
+          "rot_deg": 32.9
+        },
+        {
+          "floor": 3,
+          "bay": "B0",
+          "kind": "olive",
+          "at": [
+            8.1259,
+            -6.9972
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.253,
+            "height": 0.521,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.83,
+          "radius": 0.405,
+          "rot_deg": 290.2,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 58.0,
+            "height": 1.656,
+            "radius": 0.385
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "B1",
+          "kind": "olive",
+          "at": [
+            12.1388,
+            -2.9842
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.245,
+            "height": 0.473,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.921,
+          "radius": 0.439,
+          "rot_deg": 56.2,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 199.2,
+            "height": 1.64,
+            "radius": 0.417
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "C0",
+          "kind": "shrub",
+          "at": [
+            12.88,
+            -1.1951
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.22,
+            "height": 0.438,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.129,
+          "radius": 0.369,
+          "rot_deg": 279.0
+        },
+        {
+          "floor": 3,
+          "bay": "D0",
+          "kind": "olive",
+          "at": [
+            12.1389,
+            2.9842
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.227,
+            "height": 0.441,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.762,
+          "radius": 0.386,
+          "rot_deg": 48.6,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 194.7,
+            "height": 1.571,
+            "radius": 0.367
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "D1",
+          "kind": "olive",
+          "at": [
+            8.5628,
+            6.5603
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.23,
+            "height": 0.474,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.858,
+          "radius": 0.38,
+          "rot_deg": 162.3,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 277.6,
+            "height": 1.647,
+            "radius": 0.361
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "D1",
+          "kind": "olive",
+          "at": [
+            6.5603,
+            8.5628
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.232,
+            "height": 0.446,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.868,
+          "radius": 0.411,
+          "rot_deg": 230.6,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 352.2,
+            "height": 1.692,
+            "radius": 0.39
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "D2",
+          "kind": "olive",
+          "at": [
+            5.189,
+            9.934
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.248,
+            "height": 0.519,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.985,
+          "radius": 0.406,
+          "rot_deg": 271.8,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 23.6,
+            "height": 1.786,
+            "radius": 0.386
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            1.1951,
+            12.88
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.248,
+            "height": 0.529,
+            "colour": "charcoal"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.775,
+          "radius": 0.442,
+          "rot_deg": 95.1,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 214.8,
+            "height": 1.621,
+            "radius": 0.42
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            -1.1952,
+            12.88
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.485,
+            "colour": "charcoal"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.883,
+          "radius": 0.411,
+          "rot_deg": 127.3,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 258.0,
+            "height": 1.601,
+            "radius": 0.39
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "F0",
+          "kind": "shrub",
+          "at": [
+            -2.9842,
+            12.1389
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.215,
+            "height": 0.491,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.129,
+          "radius": 0.361,
+          "rot_deg": 347.5
+        },
+        {
+          "floor": 3,
+          "bay": "F0",
+          "kind": "olive",
+          "at": [
+            -5.189,
+            9.9341
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.257,
+            "height": 0.456,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.854,
+          "radius": 0.434,
+          "rot_deg": 36.9,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 193.1,
+            "height": 1.584,
+            "radius": 0.412
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "F1",
+          "kind": "olive",
+          "at": [
+            -6.5603,
+            8.5628
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.236,
+            "height": 0.458,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.869,
+          "radius": 0.386,
+          "rot_deg": 76.9,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 226.4,
+            "height": 1.613,
+            "radius": 0.367
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "F1",
+          "kind": "shrub",
+          "at": [
+            -8.5628,
+            6.5603
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.225,
+            "height": 0.466,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.983,
+          "radius": 0.36,
+          "rot_deg": 332.6
+        },
+        {
+          "floor": 3,
+          "bay": "F2",
+          "kind": "olive",
+          "at": [
+            -9.934,
+            5.189
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.237,
+            "height": 0.463,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.611,
+          "radius": 0.447,
+          "rot_deg": 332.9,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 92.6,
+            "height": 1.463,
+            "radius": 0.425
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "F2",
+          "kind": "shrub",
+          "at": [
+            -12.1388,
+            2.9842
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.246,
+            "height": 0.497,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.002,
+          "radius": 0.346,
+          "rot_deg": 218.7
+        },
+        {
+          "floor": 3,
+          "bay": "G0",
+          "kind": "shrub",
+          "at": [
+            -12.88,
+            1.1951
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.244,
+            "height": 0.401,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.983,
+          "radius": 0.381,
+          "rot_deg": 183.1
+        },
+        {
+          "floor": 3,
+          "bay": "G0",
+          "kind": "shrub",
+          "at": [
+            -12.88,
+            -1.1952
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.455,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.045,
+          "radius": 0.436,
+          "rot_deg": 229.9
+        },
+        {
+          "floor": 3,
+          "bay": "H0",
+          "kind": "olive",
+          "at": [
+            -9.4972,
+            -5.6259
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.242,
+            "height": 0.462,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.963,
+          "radius": 0.446,
+          "rot_deg": 260.3,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 47.5,
+            "height": 1.762,
+            "radius": 0.424
+          }
+        },
+        {
+          "floor": 3,
+          "bay": "H1",
+          "kind": "shrub",
+          "at": [
+            -8.1259,
+            -6.9971
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.206,
+            "height": 0.407,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.984,
+          "radius": 0.433,
+          "rot_deg": 212.6
+        },
+        {
+          "floor": 3,
+          "bay": "H1",
+          "kind": "shrub",
+          "at": [
+            -5.4842,
+            -9.6388
+          ],
+          "z": 16.9,
+          "pot": {
+            "radius": 0.249,
+            "height": 0.477,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.038,
+          "radius": 0.354,
+          "rot_deg": 324.1
+        },
+        {
+          "floor": 4,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            -2.325,
+            -10.38
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.232,
+            "height": 0.474,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.933,
+          "radius": 0.402,
+          "rot_deg": 68.7
+        },
+        {
+          "floor": 4,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            2.325,
+            -10.38
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.222,
+            "height": 0.402,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.983,
+          "radius": 0.348,
+          "rot_deg": 180.2
+        },
+        {
+          "floor": 4,
+          "bay": "B0",
+          "kind": "spill",
+          "at": [
+            8.1259,
+            -6.9972
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.21,
+            "height": 0.376,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.365,
+          "radius": 0.285,
+          "rot_deg": 54.7,
+          "tilt_deg": 13.0,
+          "tilt_towards": [
+            0.7071,
+            -0.7071
+          ]
+        },
+        {
+          "floor": 4,
+          "bay": "B1",
+          "kind": "olive",
+          "at": [
+            9.4971,
+            -5.6259
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.241,
+            "height": 0.511,
+            "colour": "charcoal"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.794,
+          "radius": 0.412,
+          "rot_deg": 103.9,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 225.0,
+            "height": 1.487,
+            "radius": 0.391
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "B1",
+          "kind": "olive",
+          "at": [
+            12.1388,
+            -2.9842
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.225,
+            "height": 0.52,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.965,
+          "radius": 0.416,
+          "rot_deg": 269.9,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 41.3,
+            "height": 1.665,
+            "radius": 0.395
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "C0",
+          "kind": "olive",
+          "at": [
+            12.88,
+            -1.1951
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.229,
+            "height": 0.451,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 2.072,
+          "radius": 0.447,
+          "rot_deg": 201.9,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 322.5,
+            "height": 1.774,
+            "radius": 0.425
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "C0",
+          "kind": "shrub",
+          "at": [
+            12.88,
+            1.1952
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.242,
+            "height": 0.4,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.935,
+          "radius": 0.433,
+          "rot_deg": 3.5
+        },
+        {
+          "floor": 4,
+          "bay": "D0",
+          "kind": "shrub",
+          "at": [
+            12.1389,
+            2.9842
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.216,
+            "height": 0.421,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.128,
+          "radius": 0.437,
+          "rot_deg": 55.7
+        },
+        {
+          "floor": 4,
+          "bay": "D0",
+          "kind": "olive",
+          "at": [
+            9.9341,
+            5.189
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.251,
+            "height": 0.534,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.854,
+          "radius": 0.45,
+          "rot_deg": 346.5,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 136.9,
+            "height": 1.543,
+            "radius": 0.427
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "D1",
+          "kind": "spill",
+          "at": [
+            8.5628,
+            6.5603
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.23,
+            "height": 0.355,
+            "colour": "charcoal"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.324,
+          "radius": 0.32,
+          "rot_deg": 92.8,
+          "tilt_deg": 12.1,
+          "tilt_towards": [
+            0.7071,
+            0.7071
+          ]
+        },
+        {
+          "floor": 4,
+          "bay": "D1",
+          "kind": "olive",
+          "at": [
+            6.5603,
+            8.5628
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.233,
+            "height": 0.537,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.608,
+          "radius": 0.383,
+          "rot_deg": 140.7,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 290.7,
+            "height": 1.426,
+            "radius": 0.364
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "D2",
+          "kind": "shrub",
+          "at": [
+            5.189,
+            9.934
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.201,
+            "height": 0.446,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.908,
+          "radius": 0.385,
+          "rot_deg": 260.1
+        },
+        {
+          "floor": 4,
+          "bay": "D2",
+          "kind": "olive",
+          "at": [
+            2.9842,
+            12.1388
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.241,
+            "height": 0.513,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.755,
+          "radius": 0.449,
+          "rot_deg": 93.8,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 220.7,
+            "height": 1.493,
+            "radius": 0.427
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            1.1951,
+            12.88
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.242,
+            "height": 0.446,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.784,
+          "radius": 0.416,
+          "rot_deg": 28.7,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 157.8,
+            "height": 1.488,
+            "radius": 0.395
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            -1.1952,
+            12.88
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.255,
+            "height": 0.453,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.911,
+          "radius": 0.439,
+          "rot_deg": 252.3,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 33.9,
+            "height": 1.614,
+            "radius": 0.417
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "F0",
+          "kind": "shrub",
+          "at": [
+            -2.9842,
+            12.1389
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.439,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.919,
+          "radius": 0.395,
+          "rot_deg": 73.7
+        },
+        {
+          "floor": 4,
+          "bay": "F0",
+          "kind": "shrub",
+          "at": [
+            -5.189,
+            9.9341
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.248,
+            "height": 0.485,
+            "colour": "charcoal"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.169,
+          "radius": 0.423,
+          "rot_deg": 127.6
+        },
+        {
+          "floor": 4,
+          "bay": "F1",
+          "kind": "olive",
+          "at": [
+            -8.5628,
+            6.5603
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.23,
+            "height": 0.488,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.781,
+          "radius": 0.406,
+          "rot_deg": 184.1,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 296.6,
+            "height": 1.588,
+            "radius": 0.386
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "F2",
+          "kind": "olive",
+          "at": [
+            -9.934,
+            5.189
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.247,
+            "height": 0.444,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.686,
+          "radius": 0.421,
+          "rot_deg": 28.3,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 142.7,
+            "height": 1.391,
+            "radius": 0.4
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "G0",
+          "kind": "shrub",
+          "at": [
+            -12.88,
+            1.1951
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.225,
+            "height": 0.426,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.998,
+          "radius": 0.401,
+          "rot_deg": 67.0
+        },
+        {
+          "floor": 4,
+          "bay": "G0",
+          "kind": "shrub",
+          "at": [
+            -12.88,
+            -1.1952
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.244,
+            "height": 0.404,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.053,
+          "radius": 0.354,
+          "rot_deg": 37.6
+        },
+        {
+          "floor": 4,
+          "bay": "H0",
+          "kind": "olive",
+          "at": [
+            -12.1389,
+            -2.9842
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.257,
+            "height": 0.467,
+            "colour": "charcoal"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.621,
+          "radius": 0.399,
+          "rot_deg": 20.1,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 143.6,
+            "height": 1.418,
+            "radius": 0.379
+          }
+        },
+        {
+          "floor": 4,
+          "bay": "H0",
+          "kind": "spill",
+          "at": [
+            -9.4972,
+            -5.6259
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.213,
+            "height": 0.369,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.444,
+          "radius": 0.297,
+          "rot_deg": 263.5,
+          "tilt_deg": 13.9,
+          "tilt_towards": [
+            -0.7071,
+            -0.7071
+          ]
+        },
+        {
+          "floor": 4,
+          "bay": "H1",
+          "kind": "olive",
+          "at": [
+            -5.4842,
+            -9.6388
+          ],
+          "z": 20.25,
+          "pot": {
+            "radius": 0.228,
+            "height": 0.458,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.622,
+          "radius": 0.444,
+          "rot_deg": 35.3,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 156.6,
+            "height": 1.331,
+            "radius": 0.422
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "A1",
+          "kind": "shrub",
+          "at": [
+            2.105,
+            -10.38
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.202,
+            "height": 0.42,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.086,
+          "radius": 0.41,
+          "rot_deg": 2.2
+        },
+        {
+          "floor": 5,
+          "bay": "B0",
+          "kind": "shrub",
+          "at": [
+            5.4842,
+            -9.6389
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.21,
+            "height": 0.463,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 0.877,
+          "radius": 0.363,
+          "rot_deg": 117.5
+        },
+        {
+          "floor": 5,
+          "bay": "B1",
+          "kind": "shrub",
+          "at": [
+            12.1388,
+            -2.9842
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.203,
+            "height": 0.439,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.854,
+          "radius": 0.358,
+          "rot_deg": 253.9
+        },
+        {
+          "floor": 5,
+          "bay": "C0",
+          "kind": "shrub",
+          "at": [
+            12.88,
+            -1.1951
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.242,
+            "height": 0.412,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.18,
+          "radius": 0.435,
+          "rot_deg": 359.3
+        },
+        {
+          "floor": 5,
+          "bay": "D0",
+          "kind": "shrub",
+          "at": [
+            9.9341,
+            5.189
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.247,
+            "height": 0.451,
+            "colour": "charcoal"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.851,
+          "radius": 0.422,
+          "rot_deg": 311.5
+        },
+        {
+          "floor": 5,
+          "bay": "D1",
+          "kind": "shrub",
+          "at": [
+            8.5628,
+            6.5603
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.202,
+            "height": 0.41,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.106,
+          "radius": 0.418,
+          "rot_deg": 211.6
+        },
+        {
+          "floor": 5,
+          "bay": "D1",
+          "kind": "shrub",
+          "at": [
+            6.5603,
+            8.5628
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.223,
+            "height": 0.454,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.05,
+          "radius": 0.429,
+          "rot_deg": 245.9
+        },
+        {
+          "floor": 5,
+          "bay": "D2",
+          "kind": "olive",
+          "at": [
+            5.189,
+            9.934
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.259,
+            "height": 0.524,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_03",
+          "height": 1.636,
+          "radius": 0.46,
+          "rot_deg": 80.6,
+          "companion": {
+            "model": "silver_linden/mature_01",
+            "rot_deg": 203.4,
+            "height": 1.41,
+            "radius": 0.437
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "D2",
+          "kind": "shrub",
+          "at": [
+            2.9842,
+            12.1388
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.203,
+            "height": 0.434,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.124,
+          "radius": 0.353,
+          "rot_deg": 171.0
+        },
+        {
+          "floor": 5,
+          "bay": "E0",
+          "kind": "shrub",
+          "at": [
+            1.1951,
+            12.88
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.232,
+            "height": 0.476,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.867,
+          "radius": 0.343,
+          "rot_deg": 341.2
+        },
+        {
+          "floor": 5,
+          "bay": "E0",
+          "kind": "olive",
+          "at": [
+            -1.1952,
+            12.88
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.241,
+            "height": 0.47,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.687,
+          "radius": 0.422,
+          "rot_deg": 277.5,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 62.7,
+            "height": 1.389,
+            "radius": 0.401
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "F0",
+          "kind": "olive",
+          "at": [
+            -2.9842,
+            12.1389
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.521,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.916,
+          "radius": 0.41,
+          "rot_deg": 316.7,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 109.4,
+            "height": 1.635,
+            "radius": 0.389
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "F0",
+          "kind": "shrub",
+          "at": [
+            -5.189,
+            9.9341
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.24,
+            "height": 0.451,
+            "colour": "charcoal"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 1.016,
+          "radius": 0.348,
+          "rot_deg": 48.8
+        },
+        {
+          "floor": 5,
+          "bay": "F1",
+          "kind": "olive",
+          "at": [
+            -6.5603,
+            8.5628
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.229,
+            "height": 0.492,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 2.081,
+          "radius": 0.441,
+          "rot_deg": 237.7,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 32.0,
+            "height": 1.737,
+            "radius": 0.419
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "F2",
+          "kind": "olive",
+          "at": [
+            -9.934,
+            5.189
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.235,
+            "height": 0.486,
+            "colour": "light_grey"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.724,
+          "radius": 0.455,
+          "rot_deg": 275.4,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 36.3,
+            "height": 1.475,
+            "radius": 0.432
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "F2",
+          "kind": "shrub",
+          "at": [
+            -12.1388,
+            2.9842
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.246,
+            "height": 0.465,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 1.161,
+          "radius": 0.356,
+          "rot_deg": 263.1
+        },
+        {
+          "floor": 5,
+          "bay": "G0",
+          "kind": "olive",
+          "at": [
+            -12.88,
+            1.1951
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.238,
+            "height": 0.464,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_02",
+          "height": 1.938,
+          "radius": 0.451,
+          "rot_deg": 71.9,
+          "companion": {
+            "model": "silver_linden/mature_03",
+            "rot_deg": 186.5,
+            "height": 1.75,
+            "radius": 0.428
+          }
+        },
+        {
+          "floor": 5,
+          "bay": "G0",
+          "kind": "shrub",
+          "at": [
+            -12.88,
+            -1.1952
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.215,
+            "height": 0.403,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_02",
+          "height": 1.167,
+          "radius": 0.356,
+          "rot_deg": 307.0
+        },
+        {
+          "floor": 5,
+          "bay": "H0",
+          "kind": "shrub",
+          "at": [
+            -12.1389,
+            -2.9842
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.207,
+            "height": 0.448,
+            "colour": "light_grey"
+          },
+          "model": "arrowwood_viburnum/mature_03",
+          "height": 0.966,
+          "radius": 0.422,
+          "rot_deg": 226.6
+        },
+        {
+          "floor": 5,
+          "bay": "H0",
+          "kind": "shrub",
+          "at": [
+            -9.4972,
+            -5.6259
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.241,
+            "height": 0.438,
+            "colour": "white"
+          },
+          "model": "arrowwood_viburnum/mature_01",
+          "height": 0.883,
+          "radius": 0.351,
+          "rot_deg": 274.2
+        },
+        {
+          "floor": 5,
+          "bay": "H1",
+          "kind": "olive",
+          "at": [
+            -5.4842,
+            -9.6388
+          ],
+          "z": 23.6,
+          "pot": {
+            "radius": 0.236,
+            "height": 0.533,
+            "colour": "white"
+          },
+          "model": "silver_linden/mature_01",
+          "height": 1.692,
+          "radius": 0.401,
+          "rot_deg": 89.8,
+          "companion": {
+            "model": "silver_linden/mature_02",
+            "rot_deg": 242.6,
+            "height": 1.525,
+            "radius": 0.381
+          }
+        }
+      ],
+      "sets": [
+        {
+          "floor": 3,
+          "bay": "A1",
+          "kind": "bistro",
+          "z": 16.9,
+          "centre": [
+            0.0,
+            -10.2
+          ],
+          "along": [
+            1.0,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            -1.0
+          ],
+          "rot_deg": -5.3
+        },
+        {
+          "floor": 5,
+          "bay": "A1",
+          "kind": "lounge",
+          "z": 23.6,
+          "centre": [
+            0.0,
+            -10.2
+          ],
+          "along": [
+            1.0,
+            0.0
+          ],
+          "outward": [
+            0.0,
+            -1.0
+          ],
+          "rot_deg": 1.1
+        }
+      ],
+      "counts": {
+        "shrub": 47,
+        "olive": 42,
+        "spill": 5
+      },
+      "guard_inner_v": 1.3425,
+      "frame_outer_v": 0.06
+    }
   }
 }

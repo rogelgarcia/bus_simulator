@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (props): In `b8.png`, nearly every balcony carries potted plants: one or two round white or grey pots per bay, with small olive-like trees, leafy shrubs and some trailing plants. The front centre loggias also hold bistro chairs and a small table on some floors. The extracted model has none.
@@ -47,3 +49,29 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read (b8, gridded crops):**
+  - front centre loggia: white pots with leafy shrubs before the wood panels on floors 2-4; a lounge set and one small plant on floor 5; a bistro set on floor 3;
+  - chamfer and side bays: a plant at nearly every bay end, olive-like trees and shrubs over the rail.
+- **Layout** (`rebuild/props_layout.py`, written to `plan["props"]["balcony_plants"]` by `make_plan.py`):
+  - 94 seeded pots on floors 2-5, from AI 645's planter slots moved 0.12 m in from the guard: 47 shrubs, 42 olives, 5 spilling plants; white, light grey or charcoal pots;
+  - other bays: both ends 75%, one end 25%;
+  - sets: the floor 3 bistro and the floor 5 lounge;
+  - floor 1 (the podium terrace) is left to AI 628.
+- **Plant sources:** the game's own vegetation (`assets/public/vegetation_lod0`): the arrowwood viburnum as shrubs and spilling plants, and the silver linden as olive standards, each olive with a second linden form to fill the crown.
+  - New `rebuild/decode_vegetation_glb.mjs` transcodes the published GLBs' KTX2 maps to PNG (Blender's importer refuses `KHR_texture_basisu`), with the libktx 4.4.2 the vegetation bake pins.
+  - Its output goes to `tests/artifacts/blender/terramar_recessed/rebuild/vegetation/` (sha256-checked against the index); nothing under `assets/` is written.
+- **Layer** (`rebuild/layer_balcony_plants.py`, registered in `build.py` before the materials pass) builds `RB_PROPS/RB_BALCONY_PLANTS`:
+  - `rb_balcony_pots`: 94 pots in one object, with soil;
+  - 136 collection instances of the prototypes, which live in `RB_PROP_PROTOTYPES`, outside the rebuild root and excluded from the view layer; each instance is fitted to the plan's height and crown radius and seeded turn; spilling plants lean over the rim;
+  - `rb_set_f3_bistro` and `rb_set_f5_lounge` (prisms);
+  - a small leaf tone (`LEAF_TONE`): the olive greyer but fresh green, the viburnum a touch lighter.
+  - Nothing went to `TM_REPLACED`: the rebuild has no game geometry to replace.
+- **Clearance check:** 0 plants past the guard glass, 0 into the window frames (closest crown 2.5 cm inside the glass).
+- **Checks:** audit 84 objects, 0 z-fights, 0 penetrations (pots and sets sit on the paving); hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `chamfer_balcony_plants_closeup` and `loggia_bistro_closeup`; 627 added to `b8_calibrated` and `full_front_left`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/627_props_balcony_planters_and_plants/`:
+  - `poses/rebuild_pre627_vs_rebuild/` (9 sheets: [b8 | before | after] for `b8_calibrated` and `b8_target`);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre627.blend`.
