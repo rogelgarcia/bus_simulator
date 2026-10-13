@@ -14,7 +14,12 @@
 # never saved: run it headless on the baseline (the fixed "before" set) or on the edit copy (the "after").
 #
 # Output: tests/artifacts/screens/buildings/terramar_recessed/poses/<tag>/<pose>.png + poses_manifest.json, where the
-# tag is "baseline" for the as-extracted file, "edit" for the edit copy, else the file's name (or tag=).
+# tag is "baseline" for the as-extracted file, "edit" for the edit copy, "rebuild" for the from-scratch rebuild
+# (terramar_rebuild.blend, AI 643+), else the file's name (or tag=).
+#
+# A pose is either a look-at camera (location, target, vfov_deg, resolution) or "plan_camera": <key>, which takes the
+# camera from the rebuild plan's cameras (terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the
+# orthographic top view, the rear view), so the pose follows the plan when the camera is refitted.
 # compose_pose_sheets.py turns two tags into before/after sheets (b8.png beside the target pose) and a contact sheet.
 import datetime
 import json
@@ -58,7 +63,45 @@ def file_tag(opts):
         return "baseline"
     if path == os.path.normcase(os.path.abspath(C.EDIT_BLEND)):
         return "edit"
+    if path == os.path.normcase(os.path.abspath(C.REBUILD_BLEND)):
+        return "rebuild"
     return os.path.splitext(os.path.basename(path))[0] or "untitled"
+
+
+def camera_spec(p, plan_cameras):
+    """The pose's camera: its own look-at fields, or the rebuild plan's camera it names."""
+    if "plan_camera" not in p:
+        return p
+    if plan_cameras is None:
+        raise SystemExit(f"pose {p['name']} uses plan_camera but {C.REBUILD_PLAN} is missing")
+    return plan_cameras[p["plan_camera"]]
+
+
+def aim(cam, cam_data, spec):
+    """Point the temporary camera as the spec says (perspective by vfov or pixel focal, or orthographic)."""
+    res = spec["resolution"]
+    cam_data.type = 'ORTHO' if "ortho_scale" in spec else 'PERSP'
+    cam_data.shift_x, cam_data.shift_y = spec.get("shift_x", 0.0), spec.get("shift_y", 0.0)
+    if "ortho_scale" in spec:
+        cam_data.sensor_fit = 'HORIZONTAL' if res[0] >= res[1] else 'VERTICAL'
+        cam_data.ortho_scale = spec["ortho_scale"]
+    elif "focal_px" in spec:
+        cam_data.sensor_fit = 'VERTICAL'
+        cam_data.sensor_height = 24.0
+        cam_data.lens = spec["focal_px"] * 24.0 / res[1]
+    elif "lens_mm" in spec:
+        cam_data.sensor_fit = 'HORIZONTAL'
+        cam_data.sensor_width = 36.0
+        cam_data.lens = spec["lens_mm"]
+    else:
+        cam_data.sensor_fit = 'VERTICAL'
+        cam_data.angle_y = math.radians(spec["vfov_deg"])
+    loc = Vector(spec["location"])
+    cam.location = loc
+    if "target" in spec:
+        cam.rotation_euler = (Vector(spec["target"]) - loc).to_track_quat('-Z', 'Y').to_euler()
+    else:
+        cam.rotation_euler = [math.radians(a) for a in spec["rotation_deg"]]
 
 
 def main(argv):
@@ -94,22 +137,21 @@ def main(argv):
     scene.collection.objects.link(cam)
     previous_camera = scene.camera
     rendered = []
+    plan_cameras = C.load_json(C.REBUILD_PLAN)["cameras"] if os.path.exists(C.REBUILD_PLAN) else None
     try:
         for p in poses:
-            loc, tgt = Vector(p["location"]), Vector(p["target"])
-            cam_data.angle_y = math.radians(p["vfov_deg"])
-            cam.location = loc
-            cam.rotation_euler = (tgt - loc).to_track_quat('-Z', 'Y').to_euler()
+            spec = camera_spec(p, plan_cameras)
+            aim(cam, cam_data, spec)
             scene.camera = cam
-            scene.render.resolution_x, scene.render.resolution_y = p["resolution"]
+            scene.render.resolution_x, scene.render.resolution_y = spec["resolution"]
             scene.render.filepath = os.path.join(out_dir, f"{p['name']}.png")
             t0 = time.time()
             bpy.ops.render.render(write_still=True)
             seconds = round(time.time() - t0, 1)
             rendered.append({"name": p["name"], "group": p["group"], "items": p.get("items", []), "label": p["label"],
-                             "location": p["location"], "target": p["target"], "vfov_deg": p["vfov_deg"],
-                             "resolution": p["resolution"], "seconds": seconds})
-            print(f"rendered {p['name']} {p['resolution'][0]}x{p['resolution'][1]} in {seconds}s -> {scene.render.filepath}")
+                             "camera": {k: v for k, v in spec.items() if k != "fit"}, "plan_camera": p.get("plan_camera"),
+                             "resolution": spec["resolution"], "seconds": seconds})
+            print(f"rendered {p['name']} {spec['resolution'][0]}x{spec['resolution'][1]} in {seconds}s -> {scene.render.filepath}")
     finally:
         scene.camera = previous_camera
         bpy.data.objects.remove(cam)

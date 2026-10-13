@@ -1,5 +1,5 @@
 {
-    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check. Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right).",
+    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check. Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
     "poses": [
         {
             "name": "b8_target",
@@ -40,6 +40,21 @@
             ]
         },
         {
+            "name": "b8_calibrated",
+            "group": "target",
+            "reference": "b8",
+            "plan_camera": "b8",
+            "label": "CAM_B8: the b8 camera fitted to the rebuild plan (lens shift, eye height), the frame b8.png is judged in",
+            "items": [
+                643,
+                644,
+                645,
+                646,
+                647,
+                648
+            ]
+        },
+        {
             "name": "full_front_left",
             "group": "full",
             "label": "Full building, three-quarter from the front left",
@@ -51,7 +66,8 @@
                 621,
                 627,
                 629,
-                631
+                631,
+                643
             ],
             "location": [
                 -46.0,
@@ -79,7 +95,8 @@
                 622,
                 623,
                 629,
-                630
+                630,
+                643
             ],
             "location": [
                 38.0,
@@ -555,6 +572,28 @@
             "resolution": [
                 1920,
                 1080
+            ]
+        },
+        {
+            "name": "rebuild_rear",
+            "group": "full",
+            "plan_camera": "rear",
+            "label": "CAM_REAR: the whole building, elevated from the rear right",
+            "items": [
+                643,
+                644,
+                645,
+                647
+            ]
+        },
+        {
+            "name": "rebuild_top",
+            "group": "full",
+            "plan_camera": "top",
+            "label": "CAM_TOP: orthographic plan view from above",
+            "items": [
+                643,
+                647
             ]
         }
     ]

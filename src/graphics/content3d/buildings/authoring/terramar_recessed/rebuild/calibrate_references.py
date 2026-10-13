@@ -125,8 +125,9 @@ def main():
     # chamfer far end: storey pitch there -> depth ratio
     far_pitch = float(np.mean(np.diff(sorted(b8["far_end_rail_y"]))))
     ratio = pitch / far_pitch
-    # solve f, chamfer angle self-consistently: Z_t = f / px_per_m; the front corner sits 1.5 m nearer (balcony edge)
-    proj = P["scale"]["balcony_projection_m"]
+    # solve f, chamfer angle self-consistently: Z_t = f / px_per_m is the distance of the measured bands; the front corner
+    # (balcony edge) sits front_setback_m nearer (0: the approved plan's flat front)
+    proj = P["scale"].get("front_setback_m", P["scale"]["balcony_projection_m"])
     x_corner, x_far = b8["front_corner_x"], b8["far_end_x"]
     best = None
     for t_deg in np.arange(30.0, 60.01, 0.05):
@@ -161,7 +162,9 @@ def main():
         "slab_edge_m": round(b8["band_px"] / px_per_m, 3),
         "roof_edge_m": round(b8["roof_band_px"] / px_per_m, 3),
     }
-    cam = {"horizon_y": round(y_h, 1), "cx": cx, "focal_px": round(f, 1), "vfov_deg": round(math.degrees(2 * math.atan(H / 2 / f)), 2),
+    band_plane_y = P["scale"]["plan_front_y"] + proj
+    cam = {"location": [0.0, round(band_plane_y - zt, 3), round((base_y - y_h) * zp / f, 3)], "band_plane_y": band_plane_y,
+           "horizon_y": round(y_h, 1), "cx": cx, "focal_px": round(f, 1), "vfov_deg": round(math.degrees(2 * math.atan(H / 2 / f)), 2),
            "shift_y": round((y_h - H / 2) / H, 4), "pier_plane_distance_m": round(zt, 2),
            "camera_height_m": round((base_y - y_h) * zp / f, 3), "vanishing_x": round(x_v, 1), "vanishing_samples": [round(v, 1) for v in vps]}
     chamfer = {"angle_deg": round(t_deg, 2), "length_at_balcony_edge_m": round(chamfer_len, 2),

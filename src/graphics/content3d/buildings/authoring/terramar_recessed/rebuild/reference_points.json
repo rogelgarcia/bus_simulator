@@ -4,6 +4,8 @@
         "storey_m": 3.35,
         "balcony_projection_m": 1.5,
         "plan_front_y": -11.0,
+        "front_setback_m": 1.5,
+        "front_setback_comment": "how far the measured centre-bay bands sit behind the front corner's balcony edge. b8 decides it: with 45-degree chamfers the solve only closes at about 1.55 m (0 drives the chamfer to the search bound; sweep 2026-10-13), so the centre bay is recessed by one balcony depth",
         "comment": "storey height from the spec (b8's own centre bay then reads 5.3 m against the spec's 5.5 m); balcony projection = the uniform depth the user asked for; the plan's front (balcony edge / podium line) placed at y = -11 like the game podium"
     },
     "b8": {

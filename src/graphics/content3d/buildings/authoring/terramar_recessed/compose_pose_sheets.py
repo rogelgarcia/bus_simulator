@@ -4,7 +4,9 @@
 #                                    [--contact <tag>] [--out <dir>]
 #
 # Pairs: for every selected pose rendered under both tags (render_poses.py writes poses/<tag>/<pose>.png), one sheet
-# [before | after], with b8.png first for the b8_target pose, into poses/sheets/<before>_vs_<after>/<pose>.png.
+# [before | after], with b8.png first for the poses framed like it (b8_target, and any pose with "reference": "b8",
+# such as b8_calibrated), into poses/sheets/<before>_vs_<after>/<pose>.png. The rebuild's tag is "rebuild":
+#   python -I compose_pose_sheets.py --before edit --after rebuild --items 643
 # Contact: --contact <tag> lays every rendered pose of one tag on a single labelled grid, poses/sheets/contact_<tag>.png
 # (no pairs are made when only --contact is given).
 import argparse
@@ -66,9 +68,9 @@ def pairs(poses, args):
         if not (os.path.exists(a) and os.path.exists(b)):
             print(f"skip {p['name']}: missing {'before' if not os.path.exists(a) else 'after'}")
             continue
-        h = min(p["resolution"][1], 1080)
+        h = min(Image.open(b).height, 1080)
         tiles = []
-        if p["name"] == "b8_target" and os.path.exists(C.B8):
+        if (p["name"] == "b8_target" or p.get("reference") == "b8") and os.path.exists(C.B8):
             tiles.append(labelled(Image.open(C.B8), "TARGET  b8.png", h))
         tiles += [labelled(Image.open(a), f"BEFORE  {args.before}  -  {p['name']}", h),
                   labelled(Image.open(b), f"AFTER  {args.after}  -  {p['name']}", h)]

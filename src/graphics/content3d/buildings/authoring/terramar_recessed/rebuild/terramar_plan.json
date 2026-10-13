@@ -41,6 +41,40 @@
       "F": 15.556,
       "G": 5.0,
       "H": 12.021
+    },
+    "sharp_corners": {
+      "H/A": [
+        -5.0,
+        -11.0
+      ],
+      "A/B": [
+        5.0,
+        -11.0
+      ],
+      "B/C": [
+        13.5,
+        -2.5
+      ],
+      "C/D": [
+        13.5,
+        2.5
+      ],
+      "D/E": [
+        2.5,
+        13.5
+      ],
+      "E/F": [
+        -2.5,
+        13.5
+      ],
+      "F/G": [
+        -13.5,
+        2.5
+      ],
+      "G/H": [
+        -13.5,
+        -2.5
+      ]
     }
   },
   "dimensions_m": {
@@ -2312,6 +2346,14 @@
           -5.689
         ],
         "width_m": 0.9,
+        "along": [
+          0.707107,
+          0.707107
+        ],
+        "outward": [
+          0.707107,
+          -0.707107
+        ],
         "on": "tower_wall_line",
         "source": "b8: the right chamfer's two bays meet at a rounded column (reads 0.9 m past mid-run, within the calibration error)"
       },
@@ -2322,6 +2364,14 @@
           -5.689
         ],
         "width_m": 0.9,
+        "along": [
+          0.707107,
+          -0.707107
+        ],
+        "outward": [
+          -0.707107,
+          -0.707107
+        ],
         "on": "tower_wall_line",
         "source": "mirror of B"
       },
@@ -2332,6 +2382,14 @@
           5.252
         ],
         "width_m": 0.9,
+        "along": [
+          -0.707107,
+          0.707107
+        ],
+        "outward": [
+          0.707107,
+          0.707107
+        ],
         "on": "tower_wall_line",
         "source": "proposed: the rear chamfers in three bays, close to the front chamfer bay width"
       },
@@ -2342,6 +2400,14 @@
           8.626
         ],
         "width_m": 0.9,
+        "along": [
+          -0.707107,
+          0.707107
+        ],
+        "outward": [
+          0.707107,
+          0.707107
+        ],
         "on": "tower_wall_line",
         "source": "proposed"
       },
@@ -2352,6 +2418,14 @@
           8.626
         ],
         "width_m": 0.9,
+        "along": [
+          -0.707107,
+          -0.707107
+        ],
+        "outward": [
+          -0.707107,
+          0.707107
+        ],
         "on": "tower_wall_line",
         "source": "proposed"
       },
@@ -2362,10 +2436,198 @@
           5.252
         ],
         "width_m": 0.9,
+        "along": [
+          -0.707107,
+          -0.707107
+        ],
+        "outward": [
+          -0.707107,
+          0.707107
+        ],
         "on": "tower_wall_line",
         "source": "proposed"
       }
     ]
+  },
+  "structure": {
+    "comment": "AI 643 structure layer. Slab kinds: ground (podium outline + entrance), podium_floor (podium + entrance canopy), podium_roof (balcony edge, split at the wall line), residential (balcony edge notched around the front pilasters, split at the wall line), roof (balcony edge). Every slab has a hole at the core.",
+    "ground_floor_level": 0.15,
+    "slab_thickness": 0.41,
+    "slabs": [
+      {
+        "name": "ground",
+        "kind": "ground",
+        "z": [
+          -0.25,
+          0.15
+        ]
+      },
+      {
+        "name": "upper_podium",
+        "kind": "podium_floor",
+        "z": [
+          5.38,
+          5.79
+        ]
+      },
+      {
+        "name": "podium_roof",
+        "kind": "podium_roof",
+        "z": [
+          9.76,
+          10.17
+        ]
+      },
+      {
+        "name": "floor2",
+        "kind": "residential",
+        "z": [
+          13.11,
+          13.52
+        ]
+      },
+      {
+        "name": "floor3",
+        "kind": "residential",
+        "z": [
+          16.46,
+          16.87
+        ]
+      },
+      {
+        "name": "floor4",
+        "kind": "residential",
+        "z": [
+          19.81,
+          20.22
+        ]
+      },
+      {
+        "name": "floor5",
+        "kind": "residential",
+        "z": [
+          23.16,
+          23.57
+        ]
+      },
+      {
+        "name": "roof",
+        "kind": "roof",
+        "z": [
+          26.57,
+          27.25
+        ]
+      }
+    ],
+    "pilasters": {
+      "proud_m": 0.05,
+      "z": [
+        10.17,
+        26.57
+      ],
+      "notch_kinds": [
+        "residential"
+      ]
+    },
+    "columns": {
+      "width": 0.9,
+      "proud": 0.18,
+      "behind": 0.3,
+      "front_radius": 0.4,
+      "back_radius": 0.05,
+      "storeys": [
+        [
+          10.17,
+          13.11
+        ],
+        [
+          13.52,
+          16.46
+        ],
+        [
+          16.87,
+          19.81
+        ],
+        [
+          20.22,
+          23.16
+        ],
+        [
+          23.57,
+          26.57
+        ]
+      ],
+      "rear_bay_check": {
+        "front_chamfer_bay_m": 5.389,
+        "rear_chamfer_wall_run_m": 14.314,
+        "rear_three_bays_m": 4.771,
+        "rear_two_bays_m": 7.157,
+        "chosen_bays": 3,
+        "why": "three bays (-11 %) sit much closer to the front chamfers' bay than two (+33 %)"
+      }
+    },
+    "core": {
+      "outer": {
+        "x": [
+          -3.6,
+          3.6
+        ],
+        "y": [
+          0.8,
+          6.0
+        ]
+      },
+      "wall": 0.3,
+      "partition": 0.2,
+      "compartments": [
+        {
+          "name": "stair",
+          "x": [
+            -3.3,
+            -0.7
+          ],
+          "y": [
+            1.1,
+            5.7
+          ]
+        },
+        {
+          "name": "lift_1",
+          "x": [
+            -0.5,
+            1.4
+          ],
+          "y": [
+            1.1,
+            5.7
+          ]
+        },
+        {
+          "name": "lift_2",
+          "x": [
+            1.6,
+            3.3
+          ],
+          "y": [
+            1.1,
+            5.7
+          ]
+        }
+      ],
+      "z": [
+        -0.25,
+        30.75
+      ],
+      "hidden_from_b8_up_to_m": 6.47,
+      "note": "stair + two lifts under the penthouse rectangle, rising to the penthouse roof; CAM_B8 sees over the roof edge at the core's front wall only above hidden_from_b8_up_to_m"
+    },
+    "entrance": {
+      "side_wall": 0.4,
+      "z": [
+        0.15,
+        5.38
+      ]
+    }
   },
   "game_comparison": {
     "podium_m": [
@@ -2377,5 +2639,104 @@
       19
     ],
     "depth_difference_m": 2.5
+  },
+  "cameras": {
+    "b8": {
+      "location": [
+        0.0,
+        -60.933,
+        1.538
+      ],
+      "rotation_deg": [
+        90.0,
+        0.0,
+        0.0
+      ],
+      "focal_px": 1712.0,
+      "vfov_deg": 44.53,
+      "shift_y": 0.3156,
+      "resolution": [
+        1122,
+        1402
+      ],
+      "fit": {
+        "method": "least squares over the b8 picks, each paired with its plan point (b8_camera_fit.py)",
+        "rms_px": 2.9,
+        "max_px": 5.54,
+        "calibration_camera_rms_px": 7.79,
+        "residuals_px": {
+          "pilaster left outer edge": 0.4,
+          "pilaster left inner edge": 0.9,
+          "pilaster right outer edge": 3.6,
+          "pilaster right inner edge": 3.1,
+          "front corner A/B": -3.6,
+          "chamfer end B/C": -5.5,
+          "centre-bay band bottom floor5": -2.8,
+          "centre-bay band bottom floor4": 2.0,
+          "centre-bay band bottom floor3": 1.9,
+          "centre-bay band bottom floor2": 1.7,
+          "podium top": 5.5,
+          "roof slab top": -2.1,
+          "base": -0.8,
+          "chamfer-end guard rail floor5": 0.4,
+          "chamfer-end guard rail floor4": -3.2,
+          "chamfer-end guard rail floor3": -0.0,
+          "chamfer-end guard rail floor2": -3.6
+        }
+      }
+    },
+    "aerial": {
+      "location": [
+        0.0,
+        -59.99,
+        92.01
+      ],
+      "rotation_deg": [
+        35.0,
+        0.0,
+        0.0
+      ],
+      "focal_px": 2658.0,
+      "shift_y": 0.0,
+      "resolution": [
+        1122,
+        1402
+      ],
+      "note": "fitted to the aerial's roof plane only: its facades cannot share one camera"
+    },
+    "rear": {
+      "location": [
+        46.0,
+        52.0,
+        34.0
+      ],
+      "target": [
+        0.0,
+        -1.0,
+        12.5
+      ],
+      "lens_mm": 35.0,
+      "resolution": [
+        1600,
+        1100
+      ]
+    },
+    "top": {
+      "location": [
+        0.0,
+        0.7,
+        80.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "ortho_scale": 32.0,
+      "resolution": [
+        1600,
+        1500
+      ]
+    }
   }
 }

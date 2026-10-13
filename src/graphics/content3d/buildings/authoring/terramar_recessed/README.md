@@ -351,7 +351,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | material | 640 | Install the Terra & Mar PBR kit (user-supplied) as PBR sets with provenance; no game catalog registration yet |
 | exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
 | rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
-| rebuild | 643 | Structure: slabs, floor plates, front pilasters, rounded chamfer columns, podium, core; tooling switches for the rebuild file |
+| rebuild | 643 | DONE: structure layer (slabs with face sets, pilasters, rounded columns, podium, core), `build.py`, `CAM_B8` fitted to the plan, rebuild switches in the pose renderer, composer and audit |
 | rebuild | 644 | Envelope: glazing line, black frames, front centre wood reveal panels, glazed sides and rear |
 | rebuild | 645 | Balconies: walking surfaces, curved glass guards, warm wood soffits, podium-edge guards |
 | rebuild | 646 | Podium: storefronts, entrance portal, kit lettering, upper-podium guard, lanterns |
@@ -456,7 +456,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/c
 | `reference_points.json` | points picked on gridded crops of b8 and the aerial, each with where it was read |
 | `calibrate_references.py` | calibrates a pinhole camera to b8 (horizon from the pedestrians' heads, focal from the chamfer rails' vanishing point, scale from the 3.35 m storey); measures the front, chamfers, corner radius and levels; rectifies the aerial's roof plane and fits a camera to it; writes `calibration.json` and overlays |
 | `plan_options.py` | the silhouette options as dimensioned top views over the game outline and the rectified aerial edges |
-| `make_plan.py` | the approved plan: every phase-1 layer outline, levels, runs, markers, decisions, provenance; `plan_approved.png` |
+| `make_plan.py` | the approved plan: every layer outline, levels, runs, markers, the structure parameters, the cameras, decisions, provenance; `plan_approved.png` |
 | `massing.py` | Blender: plain blocks per option, `CAM_B8` / `CAM_AERIAL` / `CAM_REAR`, Workbench renders; saves `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_massing.blend`; refuses to run inside any other saved file |
 | `compose_massing.py` | massing edges (magenta) over b8 and the aerial, the rear sheet, the chosen-option sheet, and the count of penthouse pixels visible from `CAM_B8` (must be 0) |
 
@@ -479,3 +479,69 @@ Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/` (`
 `b8_calibration_overlay.png`, `aerial_rectified_overlay.png`, `plan_option_<A-E>.png`, `plan_options_sheet.png`,
 `plan_approved.png`, `massing_b8_sheet.png`, `massing_aerial_sheet.png`, `massing_rear_sheet.png`, `option_E_sheet.png`,
 `massing/`).
+
+### The rebuild file and its layers (AI 643+)
+
+```
+# first time (creates tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend)
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- layers=structure
+# rebuild one layer in place (headed: open the file, exec build.py with the same argv)
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- layers=structure
+# checks, audit, lit poses
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/check_layers.py -- out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose_checks.py tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/audit_collisions.py
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- items=643
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_pose_sheets.py --before edit --after rebuild --items 643
+```
+
+| Script | Does |
+| --- | --- |
+| `build.py` | the entry: refuses any file but the rebuild (or an unsaved session); refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under `TERRAMAR_REBUILD` |
+| `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
+| `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
+| `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
+| `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
+
+Base scene: `INSPECTION_RIG` (appended once from the baseline: the calibrated sky, sun, ground and rig cameras, with
+AgX and the game's exposure), `RB_CAMERAS` (`CAM_B8`, `CAM_AERIAL`, `CAM_REAR`, `CAM_TOP` from `plan["cameras"]`),
+`RB_PLAN_GUIDES` (the layer outlines as curves at z 0, not rendered).
+
+**`CAM_B8`.** The calibration solve only closes if the centre bay sits 1.5 m behind the front corners (with the plan's
+45° chamfers; the sweep is in `reference_points.json`), but b8 itself shows the bands and rails level on both sides of the
+right pilaster, so the front is flat and the step is b8's AI perspective. The plan's camera is therefore fitted to the
+plan: 17 picks (pilaster edges, front corner, chamfer end, centre-bay band bottoms, podium and roof tops, base,
+chamfer-end rails) give 2.9 px RMS (max 5.5) against 7.8 px for the calibration camera. Every layer is judged from it.
+
+**`RB_STRUCTURE` (AI 643).** Face sets are material slots, the contract later layers use:
+
+| Object | What | Face sets |
+| --- | --- | --- |
+| `rb_slab_ground` | −0.25…0.15 on the podium outline + entrance | floor, fascia, hidden |
+| `rb_slab_upper_podium` | top 5.79; podium + entrance canopy | floor / ceiling inside, canopy top `TM_RB_roof_top` / soffit, fascia |
+| `rb_slab_podium_roof` | top 10.17, balcony edge, split at the wall line | terrace `TM_RB_slab_top`, floor, ceiling, fascia |
+| `rb_slab_floor2`…`5` | 0.41 thick, notched round the pilasters | balcony `TM_RB_slab_top` / `TM_RB_soffit` outside the wall line, `TM_RB_floor` / `TM_RB_ceiling` inside, fascia |
+| `rb_slab_roof` | 26.57–27.25 | `TM_RB_roof_top`, soffit outside, ceiling inside, fascia |
+| `rb_pilaster_left/right` | 0.83 m, 0.05 proud of the slab edge, back face on the wall line, podium roof to roof slab | `TM_RB_pilaster` |
+| `rb_column_B1 H1 D1 D2 F1 F2` | rounded casings 0.9 × 0.48 (0.18 proud of the wall line, front radius 0.4), storey by storey | `TM_RB_column` |
+| `rb_core` | stair + two lift shafts, −0.25 to the penthouse roof (30.75), under the penthouse | `TM_RB_core` |
+| `rb_entrance_jamb_left/right` | 0.4 m jambs under the entrance canopy | `TM_RB_pilaster` |
+
+`TM_RB_hidden` marks faces in contact (slab hole at the core, notch against a pilaster, column ends). Interior floor
+plates are the `TM_RB_floor` faces, interior ceilings the `TM_RB_ceiling` faces. The rear-chamfer columns use three bays
+(4.77 m) because two (7.16 m) would be far from the front chamfers' 5.39 m. The core is hidden from b8: 0 red pixels over
+the roof with stand-in walls (it rises 3.5 m above the roof, hidden up to 6.47 m).
+
+**Audit (rebuild switch, AI 643).** On the rebuild file `audit_collisions.py` audits `TERRAMAR_REBUILD` and writes
+`terramar_rebuild.audit.json`. Its classes are split so abutting pieces read correctly: coplanar = z-fight (same facing)
+or contact (opposed); crossing = penetrating (the faces' common line runs strictly inside both) or touching. A synthetic
+check (rotated cubes sunk into each other → 7 penetrating; offset stacked cubes → touching only) proves the split. The
+structure: 19 objects, 0 z-fights, 0 penetrations (2394 touching pairs: columns on slabs, slabs against the core and
+pilasters).
+
+**Poses.** `render_poses.py` tags the rebuild `rebuild`; a pose may name a plan camera (`"plan_camera": "b8" | "rear" |
+"top"`, with lens shift and orthographic support) and `"reference": "b8"` puts b8.png beside its sheets. New poses:
+`b8_calibrated`, `rebuild_rear`, `rebuild_top`.
+
+Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure/` (`check_sheet.png`,
+`check_b8_overlay.png`, `check_b8_sightline.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).

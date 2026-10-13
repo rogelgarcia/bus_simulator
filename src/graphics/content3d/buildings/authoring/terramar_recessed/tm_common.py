@@ -43,6 +43,15 @@ POSES_JSON = os.path.join(HERE, "poses.json")                       # AI 639 com
 POSES_DIR = os.path.join(ROOT, "tests", "artifacts", "screens", "buildings", BUILDING_ID, "poses")
 B8 = os.path.join(REFERENCES, "b8.png")
 
+# The from-scratch rebuild (AI 642+): layered model generated from rebuild/terramar_plan.json.
+REBUILD_SRC = os.path.join(HERE, "rebuild")
+REBUILD_PLAN = os.path.join(REBUILD_SRC, "terramar_plan.json")
+REBUILD_DIR = os.path.join(ROOT, "tests", "artifacts", "blender", BUILDING_ID, "rebuild")
+REBUILD_BLEND = os.path.join(REBUILD_DIR, "terramar_rebuild.blend")
+REBUILD_AUDIT = os.path.join(REBUILD_DIR, "terramar_rebuild.audit.json")
+REBUILD_SCREENS = os.path.join(ROOT, "tests", "artifacts", "screens", "buildings", BUILDING_ID, "rebuild")
+REBUILD_CALIBRATION = os.path.join(REBUILD_SCREENS, "plan", "calibration.json")
+
 
 def load_json(path):
     with open(path, "r", encoding="utf-8") as f:

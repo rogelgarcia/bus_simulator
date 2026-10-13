@@ -1,15 +1,24 @@
-# audit_collisions.py -- overlap / z-fight audit of the Terra & Mar baseline (AI 614). REPORT ONLY: changes nothing.
+# audit_collisions.py -- overlap / z-fight audit of a Terra & Mar file (AI 614; rebuild switch AI 643). REPORT ONLY.
 #
-#   blender -b <file.blend> -P audit_collisions.py [-- out=<report.json>]
+#   blender -b <file.blend> -P audit_collisions.py [-- out=<report.json>] [root=<collection>]
 #
-# Default report: terramar_recessed_before.audit.json beside the baseline; pass out= when auditing the edit copy.
+# The switch is the file: on the rebuild (terramar_rebuild.blend) it audits TERRAMAR_REBUILD and writes
+# terramar_rebuild.audit.json beside it; on the baseline or edit copy it audits TERRAMAR (default report
+# terramar_recessed_before.audit.json beside the baseline; pass out= for the edit copy).
 #
 # The Bradbury audit's method, as a script: one world-space BVH per TERRAMAR mesh (hidden shades excluded, the game
 # never draws them), candidate pairs from bounding boxes grown by 3 mm, BVHTree.overlap for the intersecting
 # triangle pairs, and each pair classified as COPLANAR (|n_a . n_b| > 0.999 and the planes within 3 mm: a z-fight
 # candidate) or CROSSING (the faces cut through or touch each other). Designed overlaps show up too (a guard post
 # sunk into its platform, a frame seated in a wall), so the report groups pairs by element and role for reading,
-# not counting. Writes terramar_recessed_before.audit.json beside the baseline.
+# not counting.
+#
+# AI 643 splits both classes, so a model built of abutting pieces (a column standing on a slab, a slab notched round
+# a pilaster) can be read: COPLANAR is a z-fight only when the two faces face the same way (n_a . n_b > 0.999); facing
+# each other it is a CONTACT, two solids touching face to face, never visible. CROSSING is PENETRATING only when the
+# two faces' common line runs strictly inside both faces somewhere (more than 0.2 mm from either boundary); when
+# their meeting lies on an edge of either face they merely TOUCH. A clean layered model has zero z-fights and zero
+# penetrations. The original totals are kept for comparison.
 import json
 import os
 import sys
@@ -26,6 +35,7 @@ import tm_common as C  # noqa: E402
 
 GROW = 0.003
 COPLANAR_DOT, COPLANAR_DIST = 0.999, 0.003
+STRADDLE_EPS = 0.0002
 
 
 def world_mesh(o):
@@ -43,18 +53,76 @@ def world_mesh(o):
             "bvh": BVHTree.FromPolygons(verts, polys, epsilon=0.0)}
 
 
+def _section_points(pts, n, p0):
+    """Where the polygon meets the plane (n, p0): vertices on it and edge crossings."""
+    d = [n.dot(v - p0) for v in pts]
+    out = []
+    m = len(pts)
+    for i in range(m):
+        a, b, da, db = pts[i], pts[(i + 1) % m], d[i], d[(i + 1) % m]
+        if abs(da) <= STRADDLE_EPS:
+            out.append(a)
+        elif (da > STRADDLE_EPS and db < -STRADDLE_EPS) or (da < -STRADDLE_EPS and db > STRADDLE_EPS):
+            out.append(a + (b - a) * (da / (da - db)))
+    return out
+
+
+def _strictly_inside(q, pts, n):
+    """q (on the polygon's plane) inside the polygon and more than STRADDLE_EPS from its boundary."""
+    ax = max(range(3), key=lambda i: abs(n[i]))
+    u, v = [i for i in range(3) if i != ax]
+    inside = False
+    m = len(pts)
+    for i in range(m):
+        a, b = pts[i], pts[(i + 1) % m]
+        ab = b - a
+        t = max(0.0, min(1.0, (q - a).dot(ab) / ab.length_squared)) if ab.length_squared > 1e-18 else 0.0
+        if (a + ab * t - q).length <= STRADDLE_EPS:
+            return False
+        if (a[v] > q[v]) != (b[v] > q[v]):
+            x = a[u] + (q[v] - a[v]) * (b[u] - a[u]) / (b[v] - a[v])
+            if x > q[u]:
+                inside = not inside
+    return inside
+
+
+def penetrates(va, poly_a, na, vb, poly_b, nb):
+    """True when the faces cut through each other: some stretch of their common line lies strictly inside both."""
+    pa = [va[i] for i in poly_a]
+    pb = [vb[i] for i in poly_b]
+    u = na.cross(nb)
+    if u.length_squared < 1e-12:
+        return False
+    d1, d2 = na.dot(pa[0]), nb.dot(pb[0])
+    origin = (nb.cross(u) * d1 + u.cross(na) * d2) / u.length_squared
+    direction = u.normalized()
+    ts = sorted({round((q - origin).dot(direction), 6) for q in _section_points(pa, nb, pb[0]) + _section_points(pb, na, pa[0])})
+    for t0, t1 in zip(ts, ts[1:]):
+        if t1 - t0 <= 2 * STRADDLE_EPS:
+            continue
+        mid = origin + direction * ((t0 + t1) / 2)
+        if _strictly_inside(mid, pa, na) and _strictly_inside(mid, pb, nb):
+            return True
+    return False
+
+
 def boxes_overlap(a, b):
     return all(a["lo"][i] <= b["hi"][i] and b["lo"][i] <= a["hi"][i] for i in range(3))
 
 
 def main():
     bpy.context.view_layer.update()
-    root = bpy.data.collections["TERRAMAR"]
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    opts = dict(a.split("=", 1) for a in argv if "=" in a)
+    is_rebuild = bool(bpy.data.filepath) and os.path.normcase(os.path.abspath(bpy.data.filepath)) == os.path.normcase(os.path.abspath(C.REBUILD_BLEND))
+    root_name = opts.get("root", "TERRAMAR_REBUILD" if is_rebuild else "TERRAMAR")
+    root = bpy.data.collections[root_name]
     hidden = set(bpy.data.collections["TM_WINDOWS_SHADES_HIDDEN"].objects) if "TM_WINDOWS_SHADES_HIDDEN" in bpy.data.collections else set()
     objs = [o for o in root.all_objects if o.type == 'MESH' and o not in hidden and len(o.data.polygons)]
     data = [world_mesh(o) for o in objs]
     pairs_checked = 0
-    groups = defaultdict(lambda: {"object_pairs": 0, "coplanar_faces": 0, "crossing_faces": 0, "examples": []})
+    groups = defaultdict(lambda: {"object_pairs": 0, "coplanar_faces": 0, "crossing_faces": 0, "zfight_faces": 0,
+                                  "contact_faces": 0, "touching_faces": 0, "penetrating_faces": 0, "examples": []})
     per_pair = []
     for i in range(len(data)):
         a = data[i]
@@ -66,15 +134,23 @@ def main():
             hits = a["bvh"].overlap(b["bvh"])
             if not hits:
                 continue
-            cop = cross = 0
+            cop = cross = zfight = contact = touch = pen = 0
             for fa, fb in hits:
                 na, nb = a["normals"][fa], b["normals"][fb]
                 pa = a["verts"][a["polys"][fa][0]]
                 pb = b["verts"][b["polys"][fb][0]]
                 if abs(na.dot(nb)) > COPLANAR_DOT and abs(na.dot(pb - pa)) < COPLANAR_DIST:
                     cop += 1
+                    if na.dot(nb) > 0:
+                        zfight += 1
+                    else:
+                        contact += 1
                 else:
                     cross += 1
+                    if penetrates(a["verts"], a["polys"][fa], na, b["verts"], b["polys"][fb], nb):
+                        pen += 1
+                    else:
+                        touch += 1
             oa, ob = a["obj"], b["obj"]
             ka = (oa.get("tm_element", "?"), oa.get("tm_role", "?"))
             kb = (ob.get("tm_element", "?"), ob.get("tm_role", "?"))
@@ -83,30 +159,46 @@ def main():
             g["object_pairs"] += 1
             g["coplanar_faces"] += cop
             g["crossing_faces"] += cross
+            g["zfight_faces"] += zfight
+            g["contact_faces"] += contact
+            g["touching_faces"] += touch
+            g["penetrating_faces"] += pen
             if len(g["examples"]) < 4:
                 g["examples"].append([oa.name, ob.name, cop, cross])
-            per_pair.append({"a": oa.name, "b": ob.name, "coplanar": cop, "crossing": cross})
+            per_pair.append({"a": oa.name, "b": ob.name, "coplanar": cop, "crossing": cross, "zfight": zfight,
+                             "contact": contact, "touching": touch, "penetrating": pen})
     ranked = sorted(groups.items(), key=lambda kv: (-kv[1]["coplanar_faces"], -kv[1]["crossing_faces"]))
     report = {
+        "file": os.path.relpath(bpy.data.filepath, C.ROOT).replace("\\", "/") if bpy.data.filepath else None,
+        "root": root_name,
         "objects_audited": len(objs),
         "hidden_shades_skipped": len(hidden),
         "bbox_candidate_pairs": pairs_checked,
         "intersecting_object_pairs": len(per_pair),
         "coplanar_face_pairs_total": sum(p["coplanar"] for p in per_pair),
         "crossing_face_pairs_total": sum(p["crossing"] for p in per_pair),
-        "thresholds": {"bbox_grow_m": GROW, "coplanar_dot": COPLANAR_DOT, "coplanar_plane_distance_m": COPLANAR_DIST},
+        "zfight_face_pairs": sum(p["zfight"] for p in per_pair),
+        "contact_face_pairs": sum(p["contact"] for p in per_pair),
+        "touching_face_pairs": sum(p["touching"] for p in per_pair),
+        "penetrating_face_pairs": sum(p["penetrating"] for p in per_pair),
+        "thresholds": {"bbox_grow_m": GROW, "coplanar_dot": COPLANAR_DOT, "coplanar_plane_distance_m": COPLANAR_DIST,
+                       "straddle_m": STRADDLE_EPS},
         "groups": [{"elements": k, **v} for k, v in ranked],
         "top_coplanar_pairs": sorted(per_pair, key=lambda p: -p["coplanar"])[:25],
+        "top_problem_pairs": sorted([p for p in per_pair if p["zfight"] or p["penetrating"]],
+                                    key=lambda p: -(p["zfight"] + p["penetrating"]))[:25],
     }
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    out = dict(a.split("=", 1) for a in argv if "=" in a).get("out", C.AUDIT_REPORT)
+    out = opts.get("out", C.REBUILD_AUDIT if is_rebuild else C.AUDIT_REPORT)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
-    print(f"AUDIT {len(objs)} objects, {pairs_checked} candidate pairs, {len(per_pair)} intersecting pairs, "
+    print(f"AUDIT {root_name}: {len(objs)} objects, {pairs_checked} candidate pairs, {len(per_pair)} intersecting pairs, "
           f"{report['coplanar_face_pairs_total']} coplanar / {report['crossing_face_pairs_total']} crossing face pairs -> {out}")
+    print(f"      z-fight {report['zfight_face_pairs']}, contact {report['contact_face_pairs']}, "
+          f"touching {report['touching_face_pairs']}, penetrating {report['penetrating_face_pairs']}")
     for k, v in ranked[:15]:
-        print(f"   {v['object_pairs']:4d} pairs  coplanar {v['coplanar_faces']:6d}  crossing {v['crossing_faces']:6d}  {k}")
+        print(f"   {v['object_pairs']:4d} pairs  coplanar {v['coplanar_faces']:6d} (z-fight {v['zfight_faces']})  "
+              f"crossing {v['crossing_faces']:6d} (penetrating {v['penetrating_faces']})  {k}")
 
 
 if __name__ == "__main__":
