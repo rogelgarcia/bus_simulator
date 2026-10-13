@@ -1,0 +1,535 @@
+{
+    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check. Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right).",
+    "poses": [
+        {
+            "name": "b8_target",
+            "group": "target",
+            "label": "b8 target stand: street front, the frame b8.png is judged in",
+            "items": [
+                615,
+                616,
+                617,
+                618,
+                619,
+                620,
+                621,
+                622,
+                624,
+                625,
+                627,
+                628,
+                629,
+                631,
+                632,
+                633
+            ],
+            "location": [
+                0.0,
+                -71.0,
+                1.7
+            ],
+            "target": [
+                0.0,
+                -11.0,
+                15.0
+            ],
+            "vfov_deg": 41.0,
+            "resolution": [
+                1122,
+                1402
+            ]
+        },
+        {
+            "name": "full_front_left",
+            "group": "full",
+            "label": "Full building, three-quarter from the front left",
+            "items": [
+                615,
+                616,
+                619,
+                620,
+                621,
+                627,
+                629,
+                631
+            ],
+            "location": [
+                -46.0,
+                -52.0,
+                10.0
+            ],
+            "target": [
+                0.0,
+                0.0,
+                15.5
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1440,
+                1800
+            ]
+        },
+        {
+            "name": "full_rear_right_aerial",
+            "group": "full",
+            "label": "Full building, elevated from the rear right (rear facade, roof terrace, penthouse)",
+            "items": [
+                616,
+                620,
+                622,
+                623,
+                629,
+                630
+            ],
+            "location": [
+                38.0,
+                46.0,
+                44.0
+            ],
+            "target": [
+                0.0,
+                0.0,
+                14.0
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1440,
+                1800
+            ]
+        },
+        {
+            "name": "corner_slabs_front_right",
+            "group": "exterior",
+            "label": "A-B corner of the residential floors: slab fascias, curved balconies, soffits, roof edge",
+            "items": [
+                615,
+                616,
+                617,
+                620,
+                627
+            ],
+            "location": [
+                24.0,
+                -32.0,
+                6.0
+            ],
+            "target": [
+                8.5,
+                -8.5,
+                19.0
+            ],
+            "vfov_deg": 35.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "chamfer_left_balconies",
+            "group": "exterior",
+            "label": "H chamfer face-on: projecting balconies, guards, plants, curtains",
+            "items": [
+                616,
+                617,
+                627,
+                637
+            ],
+            "location": [
+                -27.1,
+                -24.1,
+                14.0
+            ],
+            "target": [
+                -9.45,
+                -6.45,
+                18.5
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "soffits_worms_eye",
+            "group": "exterior",
+            "label": "Looking up the B chamfer from the sidewalk: slab undersides and soffits",
+            "items": [
+                617,
+                616,
+                615
+            ],
+            "location": [
+                19.0,
+                -16.0,
+                1.6
+            ],
+            "target": [
+                9.5,
+                -6.0,
+                22.0
+            ],
+            "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "front_centre_bays",
+            "group": "exterior",
+            "label": "Front A centre bays, floors 2-4 straight on: wood reveal panels, sliders, loggias",
+            "items": [
+                618,
+                624,
+                627,
+                637,
+                615
+            ],
+            "location": [
+                0.0,
+                -34.0,
+                17.0
+            ],
+            "target": [
+                0.0,
+                -9.5,
+                17.0
+            ],
+            "vfov_deg": 32.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "stone_cladding_closeup",
+            "group": "exterior",
+            "label": "Front podium pier, storefront and band at eye level: limestone panel joints",
+            "items": [
+                619,
+                624
+            ],
+            "location": [
+                -6.5,
+                -20.0,
+                3.5
+            ],
+            "target": [
+                -5.5,
+                -11.0,
+                4.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "roof_edge_street",
+            "group": "exterior",
+            "label": "Roofline from the b8 stand, telephoto: roof slab, glass guard, trees, penthouse visibility",
+            "items": [
+                620,
+                622,
+                629,
+                615
+            ],
+            "location": [
+                0.0,
+                -71.0,
+                1.7
+            ],
+            "target": [
+                0.0,
+                -10.0,
+                29.0
+            ],
+            "vfov_deg": 14.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "roof_terrace_aerial",
+            "group": "exterior",
+            "label": "Roof terrace from above the front left: guard, planters, furniture, penthouse",
+            "items": [
+                620,
+                622,
+                623,
+                629,
+                630
+            ],
+            "location": [
+                -14.0,
+                -20.0,
+                44.0
+            ],
+            "target": [
+                0.0,
+                1.0,
+                28.0
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "podium_top_chamfer_right",
+            "group": "exterior",
+            "label": "B chamfer podium: top-edge guard, upper-podium window-base guard and planters, canopy",
+            "items": [
+                621,
+                628,
+                631,
+                624
+            ],
+            "location": [
+                24.6,
+                -21.6,
+                4.0
+            ],
+            "target": [
+                10.5,
+                -7.5,
+                7.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "entrance_sign",
+            "group": "exterior",
+            "label": "Entrance, sign and upper-podium centre at eye level",
+            "items": [
+                624,
+                625,
+                628,
+                635,
+                636
+            ],
+            "location": [
+                0.0,
+                -24.0,
+                2.5
+            ],
+            "target": [
+                0.0,
+                -12.0,
+                5.0
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "storefront_canopies_left",
+            "group": "props",
+            "label": "H chamfer ground floor face-on from the sidewalk, front A receding: storefronts, canopies, lanterns, cafe",
+            "items": [
+                631,
+                624,
+                632,
+                633
+            ],
+            "location": [
+                -16.0,
+                -24.0,
+                1.7
+            ],
+            "target": [
+                -9.0,
+                -9.0,
+                3.6
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "street_frontage",
+            "group": "props",
+            "label": "Street frontage at eye level from across the street: cafe, palms, canopies",
+            "items": [
+                632,
+                633,
+                631
+            ],
+            "location": [
+                4.0,
+                -30.0,
+                1.7
+            ],
+            "target": [
+                0.0,
+                -11.0,
+                6.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "penthouse_closeup",
+            "group": "exterior",
+            "label": "Penthouse from above the front-right roof edge",
+            "items": [
+                622,
+                623,
+                638,
+                630
+            ],
+            "location": [
+                14.0,
+                -16.0,
+                36.0
+            ],
+            "target": [
+                0.0,
+                1.5,
+                29.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "interior_ground_glass",
+            "group": "interior",
+            "label": "Into the ground-floor restaurant through the B chamfer storefront, eye level",
+            "items": [
+                634,
+                635
+            ],
+            "location": [
+                13.33,
+                -10.33,
+                1.7
+            ],
+            "target": [
+                9.0,
+                -6.0,
+                2.2
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "interior_podium_glass",
+            "group": "interior",
+            "label": "Into the upper-podium dining room through the B chamfer glazing",
+            "items": [
+                636,
+                634,
+                621
+            ],
+            "location": [
+                16.0,
+                -13.0,
+                7.2
+            ],
+            "target": [
+                9.5,
+                -6.5,
+                7.2
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "interior_residential_glass",
+            "group": "interior",
+            "label": "Into a front A centre unit (floor 3) across its loggia",
+            "items": [
+                637,
+                634,
+                618
+            ],
+            "location": [
+                0.0,
+                -15.5,
+                18.9
+            ],
+            "target": [
+                0.0,
+                -8.0,
+                18.6
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "check_corner_platform",
+            "group": "check",
+            "label": "Audit site: A-H linked-corner platform on the residential wall (balcony_platform__567, floor 3)",
+            "items": [
+                626,
+                616
+            ],
+            "location": [
+                -8.5,
+                -14.5,
+                15.5
+            ],
+            "target": [
+                -6.4,
+                -9.3,
+                17.3
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "check_rear_ground_window",
+            "group": "check",
+            "label": "Audit site: rear-right ground storefront frame on the ground wall (mesh__85)",
+            "items": [
+                626,
+                624
+            ],
+            "location": [
+                14.0,
+                19.0,
+                2.5
+            ],
+            "target": [
+                7.5,
+                10.1,
+                2.1
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        }
+    ]
+}

@@ -1,0 +1,38 @@
+# Problem
+
+Terra & Mar (exterior): In the reference, the walls, piers, podium and fascias are clad in a pale, warm, travertine-like limestone with visible large-format panel joints and soft veining, and no grime (`b8.png`, aerial). The extracted model uses smooth `limestone_smooth` tinted `e3d7bd` (`TM_limestone`, `TM_limestone_plain`), with no joints.
+
+# Request
+
+Give the stone surfaces a limestone cladding with the reference's large-format panel joints and pale warm tone.
+
+Tasks:
+- Read the panel module off the reference: joint spacing relative to the storey height and pier widths, and the joint width and contrast.
+- Build the cladding material. Use box or world mapping so joints line up with floor lines and pier edges and stay continuous across adjacent faces. Use a pale warm tone near `0xD3C5BA` with subtle veining. Take an existing PBR set, or generate a new tileable PBR asset following the project asset rules.
+- Keep the joints subtle: readable in the close-ups, not a grid that dominates the 60 m street view. No grime or weathering noise.
+- Apply it to the limestone users in the edit copy, including new parts from other items. This is a material change only, with no geometry.
+- Evidence: the AI 639 comparison poses tagged with this item. Render them from the edit copy with `render_poses.py -- items=619` (the baseline "before" set already exists in `poses/baseline/`), then compose them with `compose_pose_sheets.py --items 619`; `b8_target` is judged first, beside `b8.png`. If a pose that this item needs is missing, add it to `poses.json` and render it for the baseline too. Copy the final sheets into the evidence directory, and run the audit after geometry changes.
+
+## Context
+- Work file: `tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, the editable copy of the model extracted from the game (`terramar_recessed`). The baseline `tests/artifacts/blender/terramar_recessed/before/terramar_recessed_before.blend` is never edited. The work adjusts the extracted model; it is not a rebuild.
+- **The target is `b8.png`** (user, 2026-10-12), in `tests/artifacts/screens/buildings/terramar_recessed/references/`. The result is judged against it, mainly from the `ref_front_b8` camera.
+- The aerial (`aerial-unannotated.png`) and the annotated aerials are supplementary. They only fill in what b8 cannot show (the roof, the rear, face letters); where they disagree with b8, b8 wins.
+- The user's AI-generated 3D models are for consultation only: `REF_AI_SMART`, hidden in the edit copy, and `REF_AI_DENSE` in `tests/artifacts/blender/terramar_recessed/reference_models/terramar_ai_reference_models.blend`. They were made automatically and are not sharp. Never copy their geometry.
+- Follow `src/graphics/content3d/buildings/authoring/terramar_recessed/README.md`, section "Editing: the copy, the references and the rules (AI 615+)":
+  - one idempotent piece script under `pieces/`, building into its own collection;
+  - game parts that get replaced go to `TM_REPLACED`, never deleted;
+  - copy shared meshes before editing them;
+  - new meshes get UVs, and materials use the `TM_*` families;
+  - before/after evidence from the rig cameras, plus close-ups;
+  - run the audit after geometry changes.
+- Frame: metres, z up, front run A faces −Y, street z 0, building base z 0.201. Runs: A front, B/H front chamfers, C/G sides, D/F rear chamfers, E rear. Level tops: ground 5.412, upper podium 10.012, residential 27.862 (5 floors), penthouse 31.662.
+- Blender only: no engine code, building config or catalog change. Nothing of the Bradbury's is edited. Prefer the headed Blender through MCP.
+- Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/edit/619_exterior_limestone_panel_joints_and_tone/`. It holds the [reference | before | after] composites and the audit report.
+
+## On completion
+- Mark the AI document as DONE in the first line
+- Rename in `prompts/` to:
+  - `prompts/AI_DONE_buildings_619_MATERIAL_terramar_exterior_limestone_panel_joints_and_tone_DONE.md`
+- Do not move to `prompts/archive/` automatically
+- Move to `prompts/archive/` only when explicitly requested
+- Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result

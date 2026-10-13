@@ -1,0 +1,60 @@
+{
+    "comment": "AI 614 inspection rig, shared by the Blender rig (import_baseline.py) and the game capture (tests/headless/visual/specs/terramar_recessed_blender_export_capture.pwtest.js). Blender config frame: metres, z up, front run A faces -Y, street z 0. vfov_deg is the vertical field of view (three.js fov; Blender sensor_fit VERTICAL). Plain look-at cameras, no lens shift, so the game and Blender frames are identical; matching the reference photos' own perspective (parallel verticals, exact stand) is a later calibration step.",
+    "lighting": {
+        "comment": "The game's own defaults since 2026-09-10 (src/graphics/lighting/CalibratedDaylight.js, CALIBRATED_DAYLIGHT): the game capture passes no lighting overrides, and the Blender rig mirrors them. The calibrated sky is disc-free (generated in Blender 5.2.1, see its .json sidecar); the sun is one directional light. Sun direction in the three.js convention dir = (cos az cos el, sin el, sin az cos el).",
+        "sun_azimuth_deg": 45,
+        "sun_elevation_deg": 55,
+        "sun_angular_diameter_deg": 0.53,
+        "sun_normal_rgb": [162.714329883607, 139.737956495609, 109.946178772385],
+        "exposure": 0.0511001705221839,
+        "hdri": "assets/public/lighting/calibrated/clear-afternoon-55.hdr",
+        "hdri_strength": 1.0
+    },
+    "cameras": [
+        {
+            "name": "ref_front_b8",
+            "label": "Street-level front (b8.png framing)",
+            "reference": "b8.png",
+            "location": [0.0, -71.0, 1.7],
+            "target": [0.0, -11.0, 15.0],
+            "vfov_deg": 41.0,
+            "resolution": [1122, 1402]
+        },
+        {
+            "name": "ref_aerial",
+            "label": "Aerial from the front (unannotated aerial framing)",
+            "reference": "aerial-unannotated.png",
+            "location": [0.0, -52.1, 55.4],
+            "target": [0.0, -1.5, 13.0],
+            "vfov_deg": 40.0,
+            "resolution": [1122, 1402]
+        },
+        {
+            "name": "front",
+            "label": "Front",
+            "reference": null,
+            "location": [0.0, -66.0, 16.0],
+            "target": [0.0, 0.0, 16.0],
+            "vfov_deg": 40.0,
+            "resolution": [1920, 1080]
+        },
+        {
+            "name": "three_quarter",
+            "label": "Three-quarter from the front-left",
+            "reference": null,
+            "location": [-40.7, -56.5, 22.3],
+            "target": [0.0, 0.0, 15.5],
+            "vfov_deg": 40.0,
+            "resolution": [1920, 1080]
+        },
+        {
+            "name": "low_closeup",
+            "label": "Low close-up from the base toward the top",
+            "reference": null,
+            "location": [-7.5, -19.5, 1.6],
+            "target": [-2.0, -10.5, 22.0],
+            "vfov_deg": 60.0,
+            "resolution": [1920, 1080]
+        }
+    ]
+}
