@@ -22,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import plan_options as P  # noqa: E402  (shares the geometry helpers and the measured constants)
 import b8_camera_fit  # noqa: E402
+import envelope_layout  # noqa: E402
 
 C = P.C
 APPROVED = "E"
@@ -39,6 +40,11 @@ CORE = {"outer": {"x": [-3.6, 3.6], "y": [0.8, 6.0]}, "wall": 0.3, "partition": 
                          {"name": "lift_1", "x": [-0.5, 1.4], "y": [1.1, 5.7]},
                          {"name": "lift_2", "x": [1.6, 3.3], "y": [1.1, 5.7]}]}
 ENTRANCE_SIDE_WALL = 0.4
+# Envelope layer (AI 644): b8's black-framed sliders, ~1.0 m panes, transom ~0.4 m below the head; the front centre
+# bay's wood reveals (~0.66 m) on floors 1-4 with four panes between, glazed on floor 5
+ENVELOPE = {"frame_depth": 0.12, "member": 0.06, "head": 0.08, "sill": 0.05, "transom": 0.06, "transom_below_head": 0.40,
+            "glass": 0.024, "post_ext": 0.03, "column_gap": 0.003, "pane_target": 1.0, "wood_reveal": 0.66,
+            "wood_floors": [1, 2, 3, 4], "centre_panes": 4}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -88,6 +94,19 @@ def structure(lv, slab_tops, podium_top, roof_bot, roof_top, ph, cal, y_front, y
                          "roof edge at the core's front wall only above hidden_from_b8_up_to_m"},
         "entrance": {"side_wall": ENTRANCE_SIDE_WALL, "z": [GROUND_FLOOR_LEVEL, round(gft - t, 3)]},
     }
+
+
+def envelope(plan, wall_sharp, columns):
+    """The envelope layer's layout (envelope_layout.py): storeys, bays and panes per run, door panes, corner posts."""
+    env = dict(ENVELOPE)
+    env["storeys"] = plan["structure"]["columns"]["storeys"]
+    bays, corners = envelope_layout.layout([tuple(p) for p in wall_sharp], 0.25, P.PIERS, columns,
+                                           plan["structure"]["columns"], env, RUNS)
+    return {**env, "comment": "AI 644 glazing on the tower wall line: positions in metres along each bay from a; v = offset "
+                              "from the wall line (outward +). Floors 1-5 = the storeys above the podium roof. Panes listed "
+                              "in doors slide (the balconies layer puts thresholds there).",
+            "floors": {str(i + 1): z for i, z in enumerate(env["storeys"])}, "bays": bays, "corners": corners,
+            "wall_radius": 0.25}
 
 
 def cameras(cal, plan):
@@ -208,6 +227,7 @@ def main():
         "game_comparison": {"podium_m": [28, 22], "tower_m": [25, 19], "depth_difference_m": round(max(ys) - min(ys) - 22, 2)},
     }
     plan["cameras"] = cameras(cal, plan)
+    plan["envelope"] = envelope(plan, wall_sharp, columns)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

@@ -29,7 +29,7 @@ import rb_lib as L  # noqa: E402
 importlib.reload(L)
 
 C = L.C
-LAYERS = ["structure"]          # build order; a later layer may stand on an earlier one
+LAYERS = ["structure", "envelope"]          # build order; a later layer may stand on an earlier one
 
 
 def guard():

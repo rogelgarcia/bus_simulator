@@ -35,7 +35,12 @@ MATERIALS = {
     "TM_RB_column": (0.74, 0.72, 0.68),
     "TM_RB_core": (0.60, 0.60, 0.58),
     "TM_RB_hidden": (0.35, 0.35, 0.35),
+    "TM_RB_frame": (0.025, 0.025, 0.028),
+    "TM_RB_glass": (0.80, 0.86, 0.90),
+    "TM_RB_wood": (0.42, 0.22, 0.10),
 }
+# Placeholder surface settings until the materials layer (AI 648): (roughness, metallic, transmission)
+SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0)}
 
 
 def args(argv=None):
@@ -98,9 +103,14 @@ def material(name):
         mat = bpy.data.materials.new(name)
         mat.use_nodes = True
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        rough, metal, trans = SURFACE.get(name, (0.8, 0.0, 0.0))
         bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.8
-        mat.diffuse_color = (*rgb, 1.0)
+        bsdf.inputs["Roughness"].default_value = rough
+        bsdf.inputs["Metallic"].default_value = metal
+        if trans:
+            bsdf.inputs["Transmission Weight"].default_value = trans
+            bsdf.inputs["IOR"].default_value = 1.45
+        mat.diffuse_color = (*rgb, 0.35 if trans else 1.0)
     return mat
 
 
@@ -178,7 +188,27 @@ def _split(outer, holes, axis, c):
 
 
 def solid(name, coll, spans, boundary, regions, tags):
-    """A closed solid for every (z0, z1) in spans, all in one object (e.g. a column's storey-high segments).
+    """One object holding a closed solid for every (z0, z1) in spans (see pieces())."""
+    return pieces(name, coll, [(spans, boundary, regions)], tags)
+
+
+def piece(loop, spans, mat, mat_top=None, mat_bottom=None):
+    """A prism item for pieces(): a footprint loop extruded over each (z0, z1) span."""
+    loop = [tuple(p) for p in loop]
+    return (spans, [(loop, mat)], [([loop], mat_top or mat, mat_bottom or mat)])
+
+
+def pieces(name, coll, items, tags):
+    """One object holding many closed solids (islands); each item is (spans, boundary, regions) as in _add_solid()."""
+    bm = bmesh.new()
+    slots = []
+    for spans, boundary, regions in items:
+        _add_solid(bm, slots, spans, boundary, regions)
+    return finish(name, coll, bm, slots, tags)
+
+
+def _add_solid(bm, slots, spans, boundary, regions):
+    """A closed solid for every (z0, z1) in spans, added to bm (e.g. a column's storey-high segments).
 
     boundary -- [(loop, side_material or [per-edge materials])]: the outer loop and every hole loop; side faces follow
                 each loop's edges.
@@ -204,26 +234,23 @@ def solid(name, coll, spans, boundary, regions, tags):
         pts = [r for axis, c in cuts for r in _crossings(loop, axis, c)]
         return _insert_tracked(loop, mats, pts)
 
-    pieces = []
+    parts = []
     for loops, mt, mb in regions:
         loops = [with_cuts(lp)[0] for lp in loops]
         if len(loops) == 1:
-            pieces.append((loops[0], mt, mb))
+            parts.append((loops[0], mt, mb))
             continue
         hx = [q[0] for q in loops[1]]
         hy = [q[1] for q in loops[1]]
         x_mid, y_mid = round((min(hx) + max(hx)) / 2, 6), round((min(hy) + max(hy)) / 2, 6)
         axis, c = (0, x_mid) if (0, x_mid) in cuts else (1, y_mid)
-        for piece in _split(loops[0], loops[1:], axis, c):
-            pieces.append((piece, mt, mb))
+        for half in _split(loops[0], loops[1:], axis, c):
+            parts.append((half, mt, mb))
     bounds = []
     for loop, side in boundary:
         loop = list(map(tuple, loop))
         mats = list(side) if isinstance(side, (list, tuple)) else [side] * len(loop)
         bounds.append(with_cuts(loop, mats))
-
-    bm = bmesh.new()
-    slots = []
 
     def vert(table, p, z):
         k = _key(p)
@@ -239,7 +266,7 @@ def solid(name, coll, spans, boundary, regions, tags):
 
     for z0, z1 in spans:
         top, bot = {}, {}
-        for loop, mt, mb in pieces:
+        for loop, mt, mb in parts:
             loop = [q for i, q in enumerate(loop) if _key(q) != _key(loop[i - 1])]
             if _area(loop) < 0:
                 loop.reverse()
@@ -252,7 +279,6 @@ def solid(name, coll, spans, boundary, regions, tags):
                 if _key(p) == _key(q):
                     continue
                 bm.faces.new([vert(bot, p, z0), vert(bot, q, z0), vert(top, q, z1), vert(top, p, z1)]).material_index = slot(mats[i])
-    return finish(name, coll, bm, slots, tags)
 
 
 def finish(name, coll, bm, slots, tags, smooth_deg=30.0):

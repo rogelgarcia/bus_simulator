@@ -352,7 +352,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
 | rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
 | rebuild | 643 | DONE: structure layer (slabs with face sets, pilasters, rounded columns, podium, core), `build.py`, `CAM_B8` fitted to the plan, rebuild switches in the pose renderer, composer and audit |
-| rebuild | 644 | Envelope: glazing line, black frames, front centre wood reveal panels, glazed sides and rear |
+| rebuild | 644 | DONE: envelope layer (16 bays of black-framed sliders with transoms, corner posts, column-hugging jambs, centre-bay wood reveals on floors 1–4), layout and door panes in `plan["envelope"]` |
 | rebuild | 645 | Balconies: walking surfaces, curved glass guards, warm wood soffits, podium-edge guards |
 | rebuild | 646 | Podium: storefronts, entrance portal, kit lettering, upper-podium guard, lanterns |
 | rebuild | 647 | Roof: deep rounded edge, glass guard, terrace, penthouse with annex and solar (out of b8's view) |
@@ -500,6 +500,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `build.py` | the entry: refuses any file but the rebuild (or an unsaved session); refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under `TERRAMAR_REBUILD` |
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
+| `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
 
@@ -545,3 +546,29 @@ pilasters).
 
 Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure/` (`check_sheet.png`,
 `check_b8_overlay.png`, `check_b8_sightline.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).
+
+**`RB_ENVELOPE` (AI 644).** The glazing on the tower wall line, from b8: black-framed sliders with panes of about 1.0 m
+and a transom 0.4 m below the head. The glazing wraps the corners on rounded posts and meets the pilasters and the
+rounded chamfer columns. In the front centre bay, warm wood reveal panels (0.66 m) flank four panes on floors 1–4;
+on floor 5 they are glazed. The sides and the rear repeat the chamfer glazing (neither reference sees them; no run is
+closed with solid wall). The layout is computed by `rebuild/envelope_layout.py` and written to `plan["envelope"]`:
+- frame dimensions;
+- the storeys (floors 1–5 above the podium roof);
+- 16 bays, each with its run, start point, direction, length, end kinds (corner / pilaster / column) and per-floor
+  variants: pane spans, door panes and wood spans;
+- the 8 corner posts.
+
+The door panes (the middle pane or pair of each bay; single-pane bays are fixed) are the balconies layer's thresholds.
+
+| Object | What |
+| --- | --- |
+| `rb_frames_f1`…`f5` | `TM_RB_frame`: rounded corner posts on the wall-line fillets; full-height jambs against the pilasters and against the columns (shaped to the column arc, 3 mm clear); head and sill rails; mullions; a transom across every pane |
+| `rb_glass_f1`…`f5` | `TM_RB_glass`: a lower light (the slider) and an upper light per pane, 24 mm, centred on the wall line |
+| `rb_wood_f1`…`f4` | `TM_RB_wood`: the centre bay's reveal panels |
+
+Frame depth 0.12 (centred on the wall line), members 0.06, head 0.08, sill 0.05. The audit stays clean: 0 z-fights and
+0 penetrations. The contacts are glass against frame members; the frames rest on the slabs and touch the pilasters.
+`rb_lib.pieces()` builds many closed solids into one object (one frames object per storey).
+
+Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/644_envelope/` (`check_sheet.png`,
+`check_b8_overlay.png`, `zoom_centre_chamfer_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).
