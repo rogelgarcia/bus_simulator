@@ -354,7 +354,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | rebuild | 643 | DONE: structure layer (slabs with face sets, pilasters, rounded columns, podium, core), `build.py`, `CAM_B8` fitted to the plan, rebuild switches in the pose renderer, composer and audit |
 | rebuild | 644 | DONE: envelope layer (16 bays of black-framed sliders with transoms, corner posts, column-hugging jambs, centre-bay wood reveals on floors 1–4), layout and door panes in `plan["envelope"]` |
 | rebuild | 645 | DONE: balconies layer (paving, frameless glass guards with rail and shoe, door thresholds, downlights, soffit tone matched to b8), planter slots reserved in the plan |
-| rebuild | 646 | Podium: storefronts, entrance portal, kit lettering, upper-podium guard, lanterns |
+| rebuild | 646 | DONE: podium layer (stone piers and bands, storefronts, deep upper recesses with guards, entrance portal and loggia, lanterns, kit lettering traced into real letters), prop slots reserved |
 | rebuild | 647 | Roof: deep rounded edge, glass guard, terrace, penthouse with annex and solar (out of b8's view) |
 | rebuild | 648 | Materials: kit limestone with panel joints in geometry, wood, black steel, glass, bronze (needs 640) |
 
@@ -502,6 +502,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
 | `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots) |
+| `layer_podium.py` / `podium_layout.py` / `trace_sign.py` | the podium layer, `RB_PODIUM`, its layout, and the sign tracer (kit masks -> letter outlines) |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
 
@@ -602,3 +603,50 @@ right chamfer 106/77/51 vs 102/72/49, left 74/57/32 vs 76/53/34.
 Audit: 53 objects, 0 z-fights, 0 penetrations. Evidence:
 `tests/artifacts/screens/buildings/terramar_recessed/rebuild/645_balconies/` (`check_sheet.png`, `check_b8_overlay.png`,
 `zoom_corner_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).
+
+**`RB_PODIUM` (AI 646).** From b8 (heights through `CAM_B8`):
+- **Piers and bays:** stone piers at the corners, wrapping the rounded corners, and one under every chamfer column. On the front the corner piers reach the entrance volume. Each chamfer gets two bays, the sides and rear follow the same pattern, and there are 13 bays in all.
+- **Storefronts:** black steel, 0.30 m back, with 2–3 panes, a transom band at 3.40–4.00 m and a head panel up to 4.75 m. A stone band runs up to the upper podium slab.
+- **Upper recesses:** glazing 0.90 m back, from 5.79 to 9.15 m with a transom at 8.55 m. A glass guard stands at the front, and a paving strip reserved for planter boxes sits behind it.
+- **Entrance:** the structure's jambs widen to b8's 0.57 m.
+  - The stone sign band (lintel) runs from 4.0 m, with a wood soffit.
+  - A warm-wood-lined vestibule has black-framed double doors, sidelights and a transom on a 1 m grid, with wood panels to the jambs.
+  - The entrance roof is a terrace with one mitred guard run, in front of a wood-lined loggia with the same grid.
+- **Lanterns:** small dark lanterns on the entrance jambs and the chamfers' outer piers.
+
+`rebuild/podium_layout.py` computes the piers and bays into `plan["podium"]`, along with the entrance and loggia grids, the lantern positions and the prop reservations:
+- awnings per storefront bay (AI 631);
+- upper planter strips (AI 628);
+- café zones in front of the chamfers (AI 632);
+- planters beside the entrance (AI 633).
+
+**Sign.** `rebuild/trace_sign.py` traces the kit's opacity masks into letter outlines and writes them to
+`tests/artifacts/blender/terramar_recessed/rebuild/sign/<line>.json`. It uses sub-pixel marching squares at the 0.5 cutoff, with saddles
+resolved by the cell centre, Douglas-Peucker simplification and holes nested into their glyphs: 9 glyphs and 7 holes
+for TERRA & MAR, 14 and 3 for COASTAL KITCHEN. It needs only numpy and Pillow; run it before building the podium. The
+layer fills and extrudes the letters 30 mm deep, 15 mm off the sign band, with the kit's base colour, roughness,
+metallic and OpenGL normal maps planar-mapped from the card. Sizes come from b8 through `CAM_B8`: visible glyph widths of
+3.85 and 2.54 m, centres at z 5.01 and 4.47. The kit's 3.2 / 2.1 m are its suggested working scale, not a survey. The maps
+come from the PBR sets AI 640 installs (`assets/public/pbr/terramar_sign_*`) when present, otherwise from the extracted kit
+under `tests/artifacts/blender/terramar_recessed/pbr_kit_source/`. AI 640 has not run yet, and nothing under `assets/` was touched.
+
+| Object | What |
+| --- | --- |
+| `rb_podium_piers` / `rb_podium_lintels` | `TM_RB_podium_stone`: corner and column piers; storefront and recess lintels; the sign band; the front centre's upper jambs and loggia lintel (wood undersides) |
+| `rb_storefront_frames` / `_glass`, `rb_upper_frames` / `_glass`, `rb_entrance_frames` / `_glass` | black frames and 24 mm glass |
+| `rb_podium_guards`, `rb_podium_paving`, `rb_podium_wood`, `rb_podium_lanterns` | guards, recess and terrace paving, wood linings and panels, lanterns |
+| `rb_sign_terra_and_mar`, `rb_sign_coastal_kitchen` | the letters, `TM_RB_sign_<line>` with the kit maps |
+
+**Audit, sharpened (AI 646).**
+- `BVHTree.overlap()` never reports exactly coplanar triangles, so the audit now hashes every face by its plane and compares same-plane faces of the two objects directly.
+- Same-plane faces are classed as z-fight (facing the same way and overlapping), adjacent (facing the same way, only sharing an edge) or contact (facing each other).
+- Overlap means a vertex or a triangle centroid of one face lies strictly inside the other. Triangle centroids are used because a concave face's centroid can lie outside it.
+- The synthetic self-test checks all classes:
+  - twin cubes: 6 z-fights;
+  - flush neighbours: 1 contact and 4 adjacent;
+  - stacked cubes: contact and touching;
+  - sunk cubes: 7 penetrating.
+- The full rebuild audits to 67 objects, 0 z-fights, 0 penetrations. The first run caught a real bug: the podium glass had the frames' full depth.
+
+Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/646_podium/` (`check_sheet.png`, `check_b8_overlay.png`,
+`zoom_podium_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).

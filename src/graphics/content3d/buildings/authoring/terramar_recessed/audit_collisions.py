@@ -15,7 +15,11 @@
 #
 # AI 643 splits both classes, so a model built of abutting pieces (a column standing on a slab, a slab notched round
 # a pilaster) can be read: COPLANAR is a z-fight only when the two faces face the same way (n_a . n_b > 0.999); facing
-# each other it is a CONTACT, two solids touching face to face, never visible. CROSSING is PENETRATING only when the
+# each other it is a CONTACT, two solids touching face to face, never visible; facing the same way but only sharing an
+# edge (no point of one strictly inside the other) it is ADJACENT, e.g. two pieces' bottoms side by side, and does not
+# flicker either. BVHTree.overlap() never reports exactly coplanar triangles (a face doubled by a twin, two flush
+# neighbours), so a second pass hashes every face by its plane and compares same-plane faces of the two objects
+# directly (plane_pairs). CROSSING is PENETRATING only when the
 # two faces' common line runs strictly inside both faces somewhere (more than 0.2 mm from either boundary); when
 # their meeting lies on an edge of either face they merely TOUCH. A clean layered model has zero z-fights and zero
 # penetrations. The original totals are kept for comparison.
@@ -25,7 +29,7 @@ import sys
 from collections import defaultdict
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, geometry
 from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +38,69 @@ if HERE not in sys.path:
 import tm_common as C  # noqa: E402
 
 GROW = 0.003
+BVH_EPS = 0.0            # BVHTree.overlap() never reports exactly coplanar triangles: plane_pairs() finds those
+PLANE_BUCKET = 0.002
 COPLANAR_DOT, COPLANAR_DIST = 0.999, 0.003
 STRADDLE_EPS = 0.0002
+
+
+def plane_key(n, p):
+    """A canonical plane (normal sign fixed, 3-decimal normal, 2 mm offset bucket) for hashing same-plane faces."""
+    c = (round(n.x, 3), round(n.y, 3), round(n.z, 3))
+    sign = 1.0
+    for v in c:
+        if abs(v) > 1e-9:
+            sign = 1.0 if v > 0 else -1.0
+            break
+    c = tuple(round(v * sign, 3) + 0.0 for v in c)
+    return c, int(round(sign * n.dot(p) / PLANE_BUCKET))
+
+
+def plane_buckets(m):
+    buckets = defaultdict(list)
+    for i, poly in enumerate(m["polys"]):
+        n = m["normals"][i]
+        if n.length < 0.5:
+            continue
+        buckets[plane_key(n, m["verts"][poly[0]])].append(i)
+    return buckets
+
+
+def bbox2(verts, poly, n):
+    ax = max(range(3), key=lambda i: abs(n[i]))
+    u, v = [i for i in range(3) if i != ax]
+    xs = [verts[i][u] for i in poly]
+    ys = [verts[i][v] for i in poly]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def plane_pairs(a, b, seen):
+    """Same-plane face pairs of two objects that touch: (zfight, contact, adjacent) counts, skipping pairs in seen."""
+    zfight = contact = adjacent = 0
+    for (nrm, off), fa_list in a["buckets"].items():
+        fb_list = [fb for d in (-1, 0, 1) for fb in b["buckets"].get((nrm, off + d), [])]
+        for fa in fa_list:
+            na = a["normals"][fa]
+            ba = bbox2(a["verts"], a["polys"][fa], na)
+            for fb in fb_list:
+                if (fa, fb) in seen:
+                    continue
+                nb = b["normals"][fb]
+                pa, pb = a["verts"][a["polys"][fa][0]], b["verts"][b["polys"][fb][0]]
+                if abs(na.dot(nb)) <= COPLANAR_DOT or abs(na.dot(pb - pa)) >= COPLANAR_DIST:
+                    continue
+                bb = bbox2(b["verts"], b["polys"][fb], na)
+                if ba[0] > bb[1] + GROW or bb[0] > ba[1] + GROW or ba[2] > bb[3] + GROW or bb[2] > ba[3] + GROW:
+                    continue
+                over = overlaps(a["verts"], a["polys"][fa], na, b["verts"], b["polys"][fb])
+                if na.dot(nb) > 0:
+                    if over:
+                        zfight += 1
+                    else:
+                        adjacent += 1
+                elif over:
+                    contact += 1
+    return zfight, contact, adjacent
 
 
 def world_mesh(o):
@@ -50,7 +115,7 @@ def world_mesh(o):
     lo = Vector((min(v.x for v in verts), min(v.y for v in verts), min(v.z for v in verts))) - Vector((GROW,) * 3)
     hi = Vector((max(v.x for v in verts), max(v.y for v in verts), max(v.z for v in verts))) + Vector((GROW,) * 3)
     return {"obj": o, "verts": verts, "polys": polys, "normals": normals, "lo": lo, "hi": hi,
-            "bvh": BVHTree.FromPolygons(verts, polys, epsilon=0.0)}
+            "bvh": BVHTree.FromPolygons(verts, polys, epsilon=BVH_EPS)}
 
 
 def _section_points(pts, n, p0):
@@ -84,6 +149,22 @@ def _strictly_inside(q, pts, n):
             if x > q[u]:
                 inside = not inside
     return inside
+
+
+def _inner_points(pts):
+    """Points surely inside a (possibly concave) planar polygon: its triangles' centroids."""
+    if len(pts) == 3:
+        return [(pts[0] + pts[1] + pts[2]) / 3]
+    tris = geometry.tessellate_polygon([[Vector(p) for p in pts]])
+    return [(pts[i] + pts[j] + pts[k]) / 3 for i, j, k in tris]
+
+
+def overlaps(va, poly_a, n, vb, poly_b):
+    """Same-plane faces that really overlap: a vertex or an inner point of one lies strictly inside the other."""
+    pa = [va[i] for i in poly_a]
+    pb = [vb[i] for i in poly_b]
+    return (any(_strictly_inside(q, pb, n) for q in pa + _inner_points(pa)) or
+            any(_strictly_inside(q, pa, n) for q in pb + _inner_points(pb)))
 
 
 def penetrates(va, poly_a, na, vb, poly_b, nb):
@@ -120,9 +201,12 @@ def main():
     hidden = set(bpy.data.collections["TM_WINDOWS_SHADES_HIDDEN"].objects) if "TM_WINDOWS_SHADES_HIDDEN" in bpy.data.collections else set()
     objs = [o for o in root.all_objects if o.type == 'MESH' and o not in hidden and len(o.data.polygons)]
     data = [world_mesh(o) for o in objs]
+    for m in data:
+        m["buckets"] = plane_buckets(m)
     pairs_checked = 0
     groups = defaultdict(lambda: {"object_pairs": 0, "coplanar_faces": 0, "crossing_faces": 0, "zfight_faces": 0,
-                                  "contact_faces": 0, "touching_faces": 0, "penetrating_faces": 0, "examples": []})
+                                  "contact_faces": 0, "adjacent_faces": 0, "touching_faces": 0, "penetrating_faces": 0,
+                                  "examples": []})
     per_pair = []
     for i in range(len(data)):
         a = data[i]
@@ -132,25 +216,29 @@ def main():
                 continue
             pairs_checked += 1
             hits = a["bvh"].overlap(b["bvh"])
-            if not hits:
-                continue
-            cop = cross = zfight = contact = touch = pen = 0
+            cop = cross = zfight = contact = adjacent = touch = pen = 0
             for fa, fb in hits:
                 na, nb = a["normals"][fa], b["normals"][fb]
                 pa = a["verts"][a["polys"][fa][0]]
                 pb = b["verts"][b["polys"][fb][0]]
                 if abs(na.dot(nb)) > COPLANAR_DOT and abs(na.dot(pb - pa)) < COPLANAR_DIST:
                     cop += 1
-                    if na.dot(nb) > 0:
+                    if na.dot(nb) <= 0:
+                        contact += 1
+                    elif overlaps(a["verts"], a["polys"][fa], na, b["verts"], b["polys"][fb]):
                         zfight += 1
                     else:
-                        contact += 1
+                        adjacent += 1
                 else:
                     cross += 1
                     if penetrates(a["verts"], a["polys"][fa], na, b["verts"], b["polys"][fb], nb):
                         pen += 1
                     else:
                         touch += 1
+            pz, pc, padj = plane_pairs(a, b, set(hits))
+            zfight, contact, adjacent, cop = zfight + pz, contact + pc, adjacent + padj, cop + pz + pc + padj
+            if not (hits or pz or pc or padj):
+                continue
             oa, ob = a["obj"], b["obj"]
             ka = (oa.get("tm_element", "?"), oa.get("tm_role", "?"))
             kb = (ob.get("tm_element", "?"), ob.get("tm_role", "?"))
@@ -161,12 +249,13 @@ def main():
             g["crossing_faces"] += cross
             g["zfight_faces"] += zfight
             g["contact_faces"] += contact
+            g["adjacent_faces"] += adjacent
             g["touching_faces"] += touch
             g["penetrating_faces"] += pen
             if len(g["examples"]) < 4:
                 g["examples"].append([oa.name, ob.name, cop, cross])
             per_pair.append({"a": oa.name, "b": ob.name, "coplanar": cop, "crossing": cross, "zfight": zfight,
-                             "contact": contact, "touching": touch, "penetrating": pen})
+                             "contact": contact, "adjacent": adjacent, "touching": touch, "penetrating": pen})
     ranked = sorted(groups.items(), key=lambda kv: (-kv[1]["coplanar_faces"], -kv[1]["crossing_faces"]))
     report = {
         "file": os.path.relpath(bpy.data.filepath, C.ROOT).replace("\\", "/") if bpy.data.filepath else None,
@@ -179,6 +268,7 @@ def main():
         "crossing_face_pairs_total": sum(p["crossing"] for p in per_pair),
         "zfight_face_pairs": sum(p["zfight"] for p in per_pair),
         "contact_face_pairs": sum(p["contact"] for p in per_pair),
+        "adjacent_face_pairs": sum(p["adjacent"] for p in per_pair),
         "touching_face_pairs": sum(p["touching"] for p in per_pair),
         "penetrating_face_pairs": sum(p["penetrating"] for p in per_pair),
         "thresholds": {"bbox_grow_m": GROW, "coplanar_dot": COPLANAR_DOT, "coplanar_plane_distance_m": COPLANAR_DIST,
@@ -194,7 +284,7 @@ def main():
         json.dump(report, f, indent=2)
     print(f"AUDIT {root_name}: {len(objs)} objects, {pairs_checked} candidate pairs, {len(per_pair)} intersecting pairs, "
           f"{report['coplanar_face_pairs_total']} coplanar / {report['crossing_face_pairs_total']} crossing face pairs -> {out}")
-    print(f"      z-fight {report['zfight_face_pairs']}, contact {report['contact_face_pairs']}, "
+    print(f"      z-fight {report['zfight_face_pairs']}, contact {report['contact_face_pairs']}, adjacent {report['adjacent_face_pairs']}, "
           f"touching {report['touching_face_pairs']}, penetrating {report['penetrating_face_pairs']}")
     for k, v in ranked[:15]:
         print(f"   {v['object_pairs']:4d} pairs  coplanar {v['coplanar_faces']:6d} (z-fight {v['zfight_faces']})  "

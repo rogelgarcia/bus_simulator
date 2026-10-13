@@ -41,6 +41,7 @@ MATERIALS = {
     "TM_RB_paving": (0.58, 0.56, 0.52),
     "TM_RB_threshold": (0.70, 0.68, 0.63),
     "TM_RB_downlight": (0.90, 0.90, 0.88),
+    "TM_RB_podium_stone": (0.80, 0.77, 0.71),
 }
 # Placeholder surface settings until the materials layer (AI 648): (roughness, metallic, transmission)
 SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0)}
@@ -357,6 +358,66 @@ def insert_points(loop, points, eps=1e-6):
                 on.append((t, tuple(r)))
         out += [r for _, r in sorted(on)]
     return out
+
+
+def band(path, v0, v1):
+    """Footprint of the strip between offsets v0 and v1 (outward = right of the direction of travel) of an open
+    polyline, mitred at the joints."""
+    pts = [tuple(p) for i, p in enumerate(path) if i == 0 or math.dist(p, path[i - 1]) > 1e-6]
+    n = len(pts)
+    dirs = []
+    for a, b in zip(pts, pts[1:]):
+        ln = math.dist(a, b)
+        dirs.append(((b[0] - a[0]) / ln, (b[1] - a[1]) / ln))
+    normals = [(dy, -dx) for dx, dy in dirs]
+    miters = []
+    for i in range(n):
+        if i == 0:
+            miters.append(normals[0])
+        elif i == n - 1:
+            miters.append(normals[-1])
+        else:
+            a, b = normals[i - 1], normals[i]
+            k = 1.0 + a[0] * b[0] + a[1] * b[1]
+            miters.append(((a[0] + b[0]) / k, (a[1] + b[1]) / k))
+    side = lambda v: [(p[0] + mt[0] * v, p[1] + mt[1] * v) for p, mt in zip(pts, miters)]  # noqa: E731
+    return side(v1) + list(reversed(side(v0)))
+
+
+def sub_path(path, s0, s1):
+    """The part of an open polyline between arc lengths s0 and s1."""
+    out, acc = [], 0.0
+    for a, b in zip(path, path[1:]):
+        seg = math.dist(a, b)
+        if seg > 0 and acc + seg >= s0 and acc <= s1:
+            lerp = lambda s, a=a, b=b, acc=acc, seg=seg: (a[0] + (b[0] - a[0]) * (s - acc) / seg, a[1] + (b[1] - a[1]) * (s - acc) / seg)  # noqa: E731
+            if not out:
+                out.append(lerp(max(s0, acc)))
+            if acc + seg <= s1:
+                out.append(tuple(b))
+            else:
+                out.append(lerp(s1))
+                break
+        acc += seg
+    return [q for i, q in enumerate(out) if i == 0 or math.dist(q, out[i - 1]) > 1e-6]
+
+
+def panels(path, max_len, gap):
+    """Equal panels of at most max_len along an open polyline, gap between them."""
+    total = sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+    n = max(1, math.ceil(total / max_len))
+    w = total / n
+    return [sub_path(path, k * w + (gap / 2 if k else 0.0), (k + 1) * w - (gap / 2 if k < n - 1 else 0.0)) for k in range(n)]
+
+
+def guard_along(path, z, g, out):
+    """A frameless glass guard on an open polyline at floor level z (g = plan["balconies"] dimensions): dark shoe and
+    top rail as mitred strips, glass panels of at most g["panel_max"] with g["panel_gap"] joints."""
+    rail_top = z + g["paving"] + g["guard_height"]
+    out.append(piece(band(path, -g["shoe"]["width"] / 2, g["shoe"]["width"] / 2), [(z, z + g["shoe"]["height"])], "TM_RB_frame"))
+    out.append(piece(band(path, -g["rail"]["width"] / 2, g["rail"]["width"] / 2), [(rail_top - g["rail"]["height"], rail_top)], "TM_RB_frame"))
+    for pan in panels(path, g["panel_max"], g["panel_gap"]):
+        out.append(piece(band(pan, -g["glass"] / 2, g["glass"] / 2), [(z + g["shoe"]["height"], rail_top - g["rail"]["height"])], "TM_RB_glass"))
 
 
 def index_of(loop, p):

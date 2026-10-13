@@ -24,6 +24,7 @@ import plan_options as P  # noqa: E402  (shares the geometry helpers and the mea
 import b8_camera_fit  # noqa: E402
 import envelope_layout  # noqa: E402
 import balcony_layout  # noqa: E402
+import podium_layout  # noqa: E402
 
 C = P.C
 APPROVED = "E"
@@ -40,7 +41,7 @@ CORE = {"outer": {"x": [-3.6, 3.6], "y": [0.8, 6.0]}, "wall": 0.3, "partition": 
         "compartments": [{"name": "stair", "x": [-3.3, -0.7], "y": [1.1, 5.7]},
                          {"name": "lift_1", "x": [-0.5, 1.4], "y": [1.1, 5.7]},
                          {"name": "lift_2", "x": [1.6, 3.3], "y": [1.1, 5.7]}]}
-ENTRANCE_SIDE_WALL = 0.4
+ENTRANCE_SIDE_WALL = 0.57    # b8: the portal's stone jambs (AI 646; was 0.4)
 # Envelope layer (AI 644): b8's black-framed sliders, ~1.0 m panes, transom ~0.4 m below the head; the front centre
 # bay's wood reveals (~0.66 m) on floors 1-4 with four panes between, glazed on floor 5
 ENVELOPE = {"frame_depth": 0.12, "member": 0.06, "head": 0.08, "sill": 0.05, "transom": 0.06, "transom_below_head": 0.40,
@@ -53,6 +54,21 @@ BALCONIES = {"guard_inset": GUARD_INSET, "shoe": {"width": 0.06, "height": 0.10}
              "paving": 0.03, "threshold": {"depth": 0.28, "height": 0.015}, "column_gap": 0.003,
              "downlight": {"radius": 0.06, "height": 0.012, "spacing": 2.2},
              "soffit_rgb": [0.31, 0.125, 0.085]}
+# Podium layer (AI 646): b8's stone piers and bands, black-steel storefronts, deep upper recesses with guards, the
+# entrance portal, lanterns and the kit sign; heights read through the plan-fitted CAM_B8
+PODIUM = {"depth": 0.95, "pier_ext": 0.45, "column_pier": 0.9, "member": 0.06, "frame_depth": 0.12,
+          "storefront_pane": 1.8, "upper_pane": 1.5,
+          "storefront": {"plane_v": -0.30, "sill": 0.05, "transom_bar": [3.40, 3.46], "panel": [4.00, 4.65], "head": [4.65, 4.75]},
+          "ground_lintel": [4.75, None], "upper": {"plane_v": -0.90, "head": 9.15, "transom_bar": [8.52, 8.58], "sill": 0.05},
+          "guard_v": -0.08, "paving": 0.03,
+          "entrance_detail": {"lintel_bottom": 4.0, "vestibule_y": [-11.12, -11.0], "grid_x": [-2.0, -1.0, 0.0, 1.0, 2.0],
+                              "doors": [[-1.0, 0.0], [0.0, 1.0]], "transom_bar": [2.92, 2.98], "wood_lining": 0.03,
+                              "loggia": {"half_width": 2.95, "back_y": [-10.06, -9.94], "head": 9.37, "transom_bar": [8.76, 8.82]}},
+          "lantern": {"z": [2.70, 3.02], "body": 0.16, "offset": 0.10, "bracket": 0.04},
+          "sign": {"depth": 0.03, "standoff": 0.015, "lines": [
+              {"name": "terra_and_mar", "kit": "01_TERRA_AND_MAR", "installed": "terramar_sign_terra_and_mar", "card_width": 4.12, "centre_z": 5.01},
+              {"name": "coastal_kitchen", "kit": "02_COASTAL_KITCHEN", "installed": "terramar_sign_coastal_kitchen", "card_width": 2.73, "centre_z": 4.47}],
+              "note": "sized from b8 through CAM_B8 (visible glyph widths 3.85 and 2.54 m); the kit's 3.2 / 2.1 m are its suggested working scale, not a survey"}}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -160,6 +176,36 @@ def balconies(plan, poly, radii):
             "paving_pieces": [rd(long_piece), rd(centre)], "guard_runs": [rd(long_run), rd(centre_run)],
             "downlight_points": lights, "planter_slots": slots,
             "podium_planter_strips": [{**st, "floor": 1, "depth": 0.45} for st in strips]}
+
+
+def podium(plan, poly, radii):
+    """The podium layer's layout (podium_layout.py): piers, bays, the entrance, lanterns, the sign and prop slots."""
+    cfg = dict(PODIUM)
+    st, lv = plan["structure"], plan["levels_m"]
+    slabs = {sl["name"]: sl for sl in st["slabs"]}
+    e = plan["layers"]["entrance"]["outline"]
+    entrance = {"half_width": max(x for x, _ in e), "y_front": min(y for _, y in e), "y_back": max(y for _, y in e),
+                "jamb": st["entrance"]["side_wall"]}
+    cols = [{**c, "at": [c["at"][0] + c["outward"][0] * P.BALCONY, c["at"][1] + c["outward"][1] * P.BALCONY]}
+            for c in plan["markers"]["chamfer_columns"]]                  # the columns projected onto the podium outline
+    lay = podium_layout.layout([tuple(q) for q in poly], radii, RUNS, cols, entrance, cfg)
+    ground = [st["ground_floor_level"], slabs["upper_podium"]["z"][0]]
+    upper = [slabs["upper_podium"]["z"][1], slabs["podium_roof"]["z"][0]]
+    cfg["ground_lintel"] = [cfg["storefront"]["head"][1], ground[1]]
+    props = {
+        "awnings_ai631": [{"run": b["run"], "bay": b["id"], "s": b["s"], "z": [cfg["storefront"]["panel"][0], cfg["storefront"]["head"][1]],
+                           "projection": 1.2} for b in lay["bays"]],
+        "upper_planter_boxes_ai628": [{"run": b["run"], "bay": b["id"], "s": b["s"], "v": [round(cfg["upper"]["plane_v"] + 0.12, 3), round(cfg["guard_v"] - 0.06, 3)],
+                                       "z": upper[0] + cfg["paving"]} for b in lay["bays"]],
+        "sidewalk_cafe_ai632": [{"run": b["run"], "bay": b["id"], "s": b["s"], "v": [0.4, 4.0]} for b in lay["bays"] if b["run"] in ("B", "H")],
+        "street_planters_ai633": [{"at": [round(sgn * (entrance["half_width"] + 0.6), 3), round(entrance["y_front"] - 0.5, 3)], "radius": 0.45}
+                                  for sgn in (-1, 1)],
+    }
+    return {**cfg, **lay, "entrance": entrance, "storeys": {"ground": ground, "upper": upper}, "props": props,
+            "comment": "AI 646 podium on the podium outline (the balcony-edge line): positions along each run from its "
+                       "sharp start corner, v from the outline (outward +, the walls go to -depth). Corner piers wrap the "
+                       "rounded corners; on run A they reach the entrance volume. The props lists are reservations for "
+                       "AI 628, 631, 632 and 633."}
 
 
 def cameras(cal, plan):
@@ -282,6 +328,7 @@ def main():
     plan["cameras"] = cameras(cal, plan)
     plan["envelope"] = envelope(plan, wall_sharp, columns)
     plan["balconies"] = balconies(plan, poly, radii)
+    plan["podium"] = podium(plan, poly, radii)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)
