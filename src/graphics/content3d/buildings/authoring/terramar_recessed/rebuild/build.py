@@ -112,9 +112,14 @@ def main():
         importlib.reload(mod)
         t0 = time.time()
         summary[name] = {**mod.build(plan), "seconds": round(time.time() - t0, 2)}
+    for img in list(bpy.data.images):                  # images a rebuilt layer no longer uses
+        if img.users == 0:
+            bpy.data.images.remove(img)
     if opts.get("save", "1") == "1":
         os.makedirs(C.REBUILD_DIR, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=C.REBUILD_BLEND)
+        bpy.ops.file.make_paths_relative()          # image paths relative to the file (kit maps, the sky), then save again
+        bpy.ops.wm.save_mainfile()
     for name, s in summary.items():
         s = dict(s)
         s.pop("names", None)

@@ -43,6 +43,10 @@ Tasks:
   - prefer the headed Blender through MCP; scripts must also run headless.
 - Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/648_materials/`, holding
   [b8 | before | after] composites.
+- Installed by AI 640 (2026-10-13): `assets/public/pbr/terramar_continuous_limestone/` (basecolor, normal_gl, arm =
+  AO/roughness/metallic, 16-bit height; 4 x 4 m repeat, OpenGL +Y normals, displacement 1.5 mm total at midpoint 0.5),
+  and the two sign sets the podium layer already uses. Not registered in the game catalog; see the authoring README,
+  "The Terra & Mar PBR kit sets".
 
 ## On completion
 - Mark the AI document as DONE in the first line

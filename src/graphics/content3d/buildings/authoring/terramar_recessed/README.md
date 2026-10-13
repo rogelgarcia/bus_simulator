@@ -348,7 +348,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
 | interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
 | interior | 638 | Penthouse interior (retargeted to the rebuild) |
-| material | 640 | Install the Terra & Mar PBR kit (user-supplied) as PBR sets with provenance; no game catalog registration yet |
+| material | 640 | DONE: the user's PBR kit installed as three sets (byte-exact, provenance in `source.json`), configs committed, not registered in the catalog (see "The Terra & Mar PBR kit sets") |
 | exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
 | rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
 | rebuild | 643 | DONE: structure layer (slabs with face sets, pilasters, rounded columns, podium, core), `build.py`, `CAM_B8` fitted to the plan, rebuild switches in the pose renderer, composer and audit |
@@ -675,3 +675,40 @@ over the roof edge; the tightest is the units, 4.6 m against a 5.43 m limit. `ch
 Audit: 81 objects, 0 z-fights, 0 penetrations. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/647_roof/`
 (`check_sheet.png`, `check_b8_overlay.png`, `check_b8_sightline.png`, `check_aerial_overlay.png`, `checks.json`,
 `terramar_rebuild.audit.json`, `poses/`).
+
+## The Terra & Mar PBR kit sets (AI 640)
+
+`make_terramar_kit_pbr.py` installs the user's kit (`Terra_Mar_PBR_Kit.zip` in Downloads, md5
+`cc7c7315fd820fa6b1b5b43e602b9f91`, delivered 2026-10-12) as three PBR sets in the shared asset store. The maps are
+byte-exact copies of the kit's own, so each installed map carries the kit's md5:
+- `basecolor.png`;
+- `normal_opengl.png` as `normal_gl.png`;
+- `orm.png` as `arm.png` (R AO, G roughness, B metallic);
+- `height_16bit.png` as `height.png`.
+
+Beside them go the set's `material.json` and the kit's `README.txt`, `validation.json` and `GENERATION_PROMPTS.json`, a
+`pbr.material.config.js` and a `source.json` (archive name and md5, folder, date, an md5 per file, the AI-generated
+appearance-estimate note). Before installing, the script re-checks the kit:
+- every map is the same size;
+- the sign opacity equals the base colour's alpha;
+- the ORM equals the separate AO, roughness and metallic maps;
+- the height is 16-bit.
+
+```
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/make_terramar_kit_pbr.py [--zip <kit.zip>]
+```
+
+| Set | Size | Use | Conventions |
+| --- | --- | --- | --- |
+| `assets/public/pbr/terramar_continuous_limestone/` | 4096 × 4096, 4 × 4 m repeat (`tileMeters` 4) | the walls, pilasters, podium and slab edges (AI 648) | seamless; NO joints by design: make the gaps and bevels in geometry and vary the UV region per block; displacement 1.5 mm total, midpoint 0.5; mean RGB (227, 215, 202), roughness 0.73 |
+| `assets/public/pbr/terramar_sign_terra_and_mar/` | 4096 × 512 card (kit's suggested 3.2 m) | the sign's first line (the rebuild's traced letters, AI 646) | clamp; cutout at alpha 0.5; face-bevel normal, 2.0 mm relief; metallic 0.82 |
+| `assets/public/pbr/terramar_sign_coastal_kitchen/` | 4096 × 512 card (kit's suggested 2.1 m) | the second line | as above, 1.4 mm relief; metallic 0.78 |
+
+The normal maps are OpenGL +Y, for Blender and three.js.
+
+Storage and status:
+- **Resolution:** full resolution. PBR packs are outside the asset suite's size checks and the largest map is 4096, so there are no reduced copies.
+- **Git:** only the three `pbr.material.config.js` files are tracked (plain Git, LF, guarded by `pbr_config_storage.test.js`). The images, the docs and `source.json` stay in the gitignored shared store.
+- **Catalog:** the sets are NOT registered in `_catalog_index.js` or `_manifest.json`. Both are shared, and another session has edits in the index. Registering them is a separate step for when the game needs these materials.
+- **Rebuild:** the rebuild's sign picks the sets up automatically, and `build.py` now saves every image path relative to the file.
+- **Prompts:** the superseded AI 619 (stone) and AI 625 (lettering) pass to AI 648 and AI 646, which use these sets.

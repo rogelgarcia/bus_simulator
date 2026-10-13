@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The user supplied a material kit made for this building: `Terra_Mar_PBR_Kit.zip` in their Downloads folder (109.6 MB,
@@ -53,3 +55,23 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change
+
+## Summary (2026-10-13)
+- **Install script** `src/graphics/content3d/buildings/authoring/terramar_recessed/make_terramar_kit_pbr.py` (a Terra & Mar copy of the Bradbury's `make_flowers_pbr.py`; nothing of the Bradbury's touched):
+  - reads `Terra_Mar_PBR_Kit.zip` from the user's Downloads and verifies its md5 (`cc7c7315fd820fa6b1b5b43e602b9f91`);
+  - re-checks the kit: one canvas per set, sign opacity equal to the base colour alpha, ORM equal to the separate AO / roughness / metallic maps, 16-bit height;
+  - installs byte-exact copies in the project's naming: `basecolor`, `normal_gl` (from `normal_opengl`), `arm` (from `orm`), `height` (from `height_16bit`), plus the set's `material.json` and the kit's `README.txt`, `validation.json` and `GENERATION_PROMPTS.json`;
+  - writes a `pbr.material.config.js` in the existing sets' format (with a provenance block) and a `source.json` (archive name, md5 and bytes, folder, date, an md5 per installed file, the AI-generated appearance-estimate note, conventions).
+- **Three sets** in the shared store:
+  - `assets/public/pbr/terramar_continuous_limestone/` (4096², 4 × 4 m, stone, building-eligible);
+  - `terramar_sign_terra_and_mar/` and `terramar_sign_coastal_kitchen/` (4096 × 512 cards, metal, clamp, cutout at 0.5).
+  - Measured: limestone mean RGB (227, 215, 202), roughness 0.73; signs roughness 0.52 / 0.57 and metallic 0.82 / 0.78, matching their `material.json`.
+- **Full resolution:** PBR packs are outside the asset suite's size checks and the largest map is 4096, so no reduced copies were made. The asset suite passes (24 pass, 0 fail, 32 skipped review assets).
+- **Not registered** in `_catalog_index.js` or `_manifest.json`: both are shared and stayed untouched (md5-verified before and after). Registering is a separate step for when the game needs the materials, as the README records.
+- **Committed:** only the three `pbr.material.config.js` files (plain Git, LF; `pbr_config_storage.test.js` passes). Images, docs and `source.json` stay in the gitignored store, the rules in force (no `source.json` is tracked under `assets/public/pbr`).
+- **The rebuild uses the sets:**
+  - the podium layer's sign materials now load the installed maps;
+  - `build.py` saves every image path relative to the file and drops unused images;
+  - a Cycles render of `entrance_sign` matches the kit-source render within noise (mean 0.006 levels).
+- **Prompts:** the superseded AI 619 and AI 625 pass to AI 648 (pointed at the installed limestone and its conventions) and AI 646 (already using the sign sets).
+- **Evidence:** `tests/artifacts/screens/buildings/terramar_recessed/pbr_kit_install/entrance_sign.png`.
