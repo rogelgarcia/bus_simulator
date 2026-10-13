@@ -42,9 +42,14 @@ MATERIALS = {
     "TM_RB_threshold": (0.70, 0.68, 0.63),
     "TM_RB_downlight": (0.90, 0.90, 0.88),
     "TM_RB_podium_stone": (0.80, 0.77, 0.71),
+    "TM_RB_penthouse_stone": (0.82, 0.79, 0.73),
+    "TM_RB_solar": (0.04, 0.05, 0.08),
+    "TM_RB_unit": (0.55, 0.56, 0.57),
+    "TM_RB_louvre": (0.10, 0.10, 0.11),
 }
 # Placeholder surface settings until the materials layer (AI 648): (roughness, metallic, transmission)
-SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0)}
+SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0),
+           "TM_RB_solar": (0.15, 0.4, 0.0), "TM_RB_unit": (0.45, 0.5, 0.0)}
 
 
 def args(argv=None):
@@ -418,6 +423,43 @@ def guard_along(path, z, g, out):
     out.append(piece(band(path, -g["rail"]["width"] / 2, g["rail"]["width"] / 2), [(rail_top - g["rail"]["height"], rail_top)], "TM_RB_frame"))
     for pan in panels(path, g["panel_max"], g["panel_gap"]):
         out.append(piece(band(pan, -g["glass"] / 2, g["glass"] / 2), [(z + g["shoe"]["height"], rail_top - g["rail"]["height"])], "TM_RB_glass"))
+
+
+def glass_frame(spans, lo, hi, z0, z1, member, sill, head, transom, box, gbox, frames, glass):
+    """A glazed wall between lo and hi: end jambs, sill and head rails, mullions between the pane spans, a transom bar
+    (None for none) and the lights per pane. box(s0, s1) / gbox(s0, s1) give frame / glass footprints at the plane."""
+    frames.append(piece(box(lo, lo + member), [(z0, z1)], "TM_RB_frame"))
+    frames.append(piece(box(hi - member, hi), [(z0, z1)], "TM_RB_frame"))
+    rails = [(z0, z0 + sill)] + ([(z1 - head, z1)] if head > 0 else [])
+    frames.append(piece(box(lo + member, hi - member), rails, "TM_RB_frame"))
+    prev = lo + member
+    for s0, s1 in spans:
+        if s0 - prev > 1e-6:
+            frames.append(piece(box(prev, s0), [(z0 + sill, z1 - head)], "TM_RB_frame"))
+        if transom:
+            frames.append(piece(box(s0, s1), [tuple(transom)], "TM_RB_frame"))
+            glass.append(piece(gbox(s0, s1), [(z0 + sill, transom[0]), (transom[1], z1 - head)], "TM_RB_glass"))
+        else:
+            glass.append(piece(gbox(s0, s1), [(z0 + sill, z1 - head)], "TM_RB_glass"))
+        prev = s1
+    if hi - member - prev > 1e-6:
+        frames.append(piece(box(prev, hi - member), [(z0 + sill, z1 - head)], "TM_RB_frame"))
+
+
+def equal_spans(lo, hi, n, member):
+    """n equal pane spans between lo and hi with end jambs and mullions of `member`."""
+    w = (hi - lo - (n + 1) * member) / n
+    return [(lo + member + k * (w + member), lo + member + k * (w + member) + w) for k in range(n)]
+
+
+def boxes(name, coll, hexas, mat, tags):
+    """One object of closed hexahedra, each given as 8 points: the bottom 4 counter-clockwise from above, then the top 4."""
+    bm = bmesh.new()
+    for pts in hexas:
+        v = [bm.verts.new(p) for p in pts]
+        for f in ((3, 2, 1, 0), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+            bm.faces.new([v[i] for i in f]).material_index = 0
+    return finish(name, coll, bm, [mat], tags)
 
 
 def index_of(loop, p):

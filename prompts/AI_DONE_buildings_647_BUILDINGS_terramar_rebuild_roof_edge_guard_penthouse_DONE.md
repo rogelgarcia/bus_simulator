@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 In `b8.png`, the residential roof ends in a deep pale slab with rounded corners, thicker than the floor fascias. A
@@ -56,3 +58,35 @@ Tasks:
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the layer script, its collections, the penthouse
   sightline check, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **References read:**
+  - b8: the deep rounded roof edge with a frameless glass guard and slim rail, and no penthouse in view;
+  - the aerial (gridded crop): a pale stone penthouse with a parapet lip, a wood door and a black-framed slider on its front, a tall side window, slatted dark panels over its roof, three mechanical units, and a darker glazed annex with a louvred roof on its −X side.
+- **Roof layout in the plan** (`make_plan.py` `roof()`, written to `plan["roof"]`):
+  - the guard halves on the roof guard line and the terrace outline;
+  - the penthouse rectangle, openings, cap and roof slab; the annex; four solar rows clear of the units' corner; the units;
+  - the CAM_B8 sightline margins for every part above the roof;
+  - the terrace prop zones (planter ring for AI 629, three furniture zones for AI 630).
+  - The core now ends under the penthouse roof slab (30.45), which covers it.
+- **Roof layer** (`rebuild/layer_roof.py` -> `RB_ROOF`, 14 objects, 1884 faces, all manifold):
+  - the guard all round, two mitred halves meeting at the front and rear centres;
+  - the flat 50 mm terrace deck, with the falls left in the slab;
+  - penthouse walls with a 3.8 m parapet and the aerial's openings, frames, glass and wood doors; its roof slab and cap;
+  - the annex: posts, beams, 17 louvre blades and three glazed sides;
+  - 28 tilted solar modules on edge rails, and the units.
+  - `rb_lib` gains `glass_frame` (now shared with the podium), `equal_spans` and `boxes()`; new placeholder materials for penthouse stone, solar, units and louvres; `build.py` registers the layer.
+- **Out of b8's view:**
+  - every part above the roof carries `rb_hide_from_b8`;
+  - the plan's sightline table passes them all: penthouse wall 3.86 / 5.15 m, front solar row 3.86 / 5.46, units 4.6 / 5.43, annex 3.05 / 5.66;
+  - `check_layers.py` renders them red from `CAM_B8` beside stand-in walls: 0 pixels;
+  - in the lit b8 frame only the guard shows over the roof edge, as in b8.
+- **Aerial roof comparison** (new `check_aerial` render, roof level only, from `CAM_AERIAL`):
+  - the roof's front edge and guard line sit on the aerial's;
+  - the penthouse lands behind the aerial's, because the approved plan is deeper than the aerial's roof plane;
+  - moving it to the aerial's spot (about 7 m behind the roof front) would put its cap 0.1 m into b8's view, so b8 wins and it stays.
+- **Audit:** 81 objects, 0 z-fights, 0 penetrations.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/647_roof/`:
+  - `check_sheet.png`, `check_b8_overlay.png`, `check_b8_sightline.png`, `check_aerial_overlay.png`, `checks.json`;
+  - `terramar_rebuild.audit.json`;
+  - `poses/`: Cycles [b8 | edit | rebuild] for `b8_calibrated`, and [edit | rebuild] for `penthouse_closeup`, `roof_terrace_aerial`, `roof_edge_street`, `full_rear_right_aerial`, `rebuild_rear`, `rebuild_top`.

@@ -52,22 +52,7 @@ def rect(x0, x1, y0, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
-def glass_frame(spans, lo, hi, z0, z1, member, sill, head, transom, box, gbox, frames, glass):
-    """A glazed wall between lo and hi: end jambs, sill and head rails, mullions between the pane spans, a transom bar
-    and lower/upper lights per pane. box(s0, s1) / gbox(s0, s1) return frame / glass footprints at the glazing plane."""
-    frames.append(L.piece(box(lo, lo + member), [(z0, z1)], "TM_RB_frame"))
-    frames.append(L.piece(box(hi - member, hi), [(z0, z1)], "TM_RB_frame"))
-    rails = [(z0, z0 + sill)] + ([(z1 - head, z1)] if head > 0 else [])
-    frames.append(L.piece(box(lo + member, hi - member), rails, "TM_RB_frame"))
-    prev = lo + member
-    for s0, s1 in spans:
-        if s0 - prev > 1e-6:
-            frames.append(L.piece(box(prev, s0), [(z0 + sill, z1 - head)], "TM_RB_frame"))
-        frames.append(L.piece(box(s0, s1), [tuple(transom)], "TM_RB_frame"))
-        glass.append(L.piece(gbox(s0, s1), [(z0 + sill, transom[0]), (transom[1], z1 - head)], "TM_RB_glass"))
-        prev = s1
-    if hi - member - prev > 1e-6:
-        frames.append(L.piece(box(prev, hi - member), [(z0 + sill, z1 - head)], "TM_RB_frame"))
+glass_frame = L.glass_frame                                         # shared with the roof layer (rb_lib)
 
 
 def sign_material(line):

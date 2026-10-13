@@ -355,7 +355,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | rebuild | 644 | DONE: envelope layer (16 bays of black-framed sliders with transoms, corner posts, column-hugging jambs, centre-bay wood reveals on floors 1–4), layout and door panes in `plan["envelope"]` |
 | rebuild | 645 | DONE: balconies layer (paving, frameless glass guards with rail and shoe, door thresholds, downlights, soffit tone matched to b8), planter slots reserved in the plan |
 | rebuild | 646 | DONE: podium layer (stone piers and bands, storefronts, deep upper recesses with guards, entrance portal and loggia, lanterns, kit lettering traced into real letters), prop slots reserved |
-| rebuild | 647 | Roof: deep rounded edge, glass guard, terrace, penthouse with annex and solar (out of b8's view) |
+| rebuild | 647 | DONE: roof layer (guard all round, terrace deck, penthouse with the aerial's openings, louvred annex, solar rows, units), all out of b8's view (0 px), terrace prop zones reserved |
 | rebuild | 648 | Materials: kit limestone with panel joints in geometry, wood, black steel, glass, bronze (needs 640) |
 
 ## Comparison poses (AI 639)
@@ -503,6 +503,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
 | `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots) |
 | `layer_podium.py` / `podium_layout.py` / `trace_sign.py` | the podium layer, `RB_PODIUM`, its layout, and the sign tracer (kit masks -> letter outlines) |
+| `layer_roof.py` | the roof layer, `RB_ROOF` (its layout is `plan["roof"]`, written by `make_plan.py`) |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
 
@@ -650,3 +651,27 @@ under `tests/artifacts/blender/terramar_recessed/pbr_kit_source/`. AI 640 has no
 
 Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/646_podium/` (`check_sheet.png`, `check_b8_overlay.png`,
 `zoom_podium_b8_vs_overlay.png`, `checks.json`, `terramar_rebuild.audit.json`, `poses/`).
+
+**`RB_ROOF` (AI 647).** The deep rounded roof edge (0.68 m) is the structure's slab. This layer adds:
+- **Guard:** b8's frameless glass guard with a slim top rail, all round the roof guard line, as two mitred halves meeting at the front and rear centres. One closed band would be a single face that touches itself.
+- **Terrace:** a flat 50 mm deck, with the drainage falls left in the slab below, running from the guard shoe to the penthouse walls.
+- **Penthouse:** the user kept it, set back out of b8's view (10 × 7.5 m at x ±5, y −1…6.5):
+  - pale stone walls 0.25 m thick, with a parapet 3.8 m above the roof and a cap;
+  - the aerial's openings: a wood door and a two-pane slider on the front, a tall side window, a door into the annex, two rear windows, all in black frames;
+  - its roof slab covers the core, whose top now ends under it at 30.45;
+  - four rows of tilted solar modules (28 modules, 10°) on edge rails, kept clear of the three mechanical units.
+- **Annex:** the aerial's glazed pavilion on the −X side, with four posts, beams, 17 louvre blades and glazing on three sides.
+- **Reserved props:** the terrace planter ring (AI 629) and three furniture zones (AI 630) in `plan["roof"]["props"]`.
+
+Everything above the roof carries `rb_hide_from_b8`. `plan["roof"]["sightline"]` checks each part against `CAM_B8`'s line
+over the roof edge; the tightest is the units, 4.6 m against a 5.43 m limit. `check_layers.py` renders them all red from
+`CAM_B8` beside stand-in walls and finds 0 pixels. It also renders the roof level from `CAM_AERIAL` over the aerial:
+- the roof's front edge and guard sit on the aerial's;
+- the penthouse lands behind the aerial's, because the plan is deeper than the aerial's inconsistent roof plane;
+- at the aerial's position, about 7 m behind the roof front, b8 would see anything over 3.76 m, and the penthouse with its cap is 3.86 m.
+
+`rb_lib` gains `glass_frame` (shared with the podium), `equal_spans` and `boxes()` (hexahedra, for the tilted panels).
+
+Audit: 81 objects, 0 z-fights, 0 penetrations. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/647_roof/`
+(`check_sheet.png`, `check_b8_overlay.png`, `check_b8_sightline.png`, `check_aerial_overlay.png`, `checks.json`,
+`terramar_rebuild.audit.json`, `poses/`).

@@ -69,6 +69,24 @@ PODIUM = {"depth": 0.95, "pier_ext": 0.45, "column_pier": 0.9, "member": 0.06, "
               {"name": "terra_and_mar", "kit": "01_TERRA_AND_MAR", "installed": "terramar_sign_terra_and_mar", "card_width": 4.12, "centre_z": 5.01},
               {"name": "coastal_kitchen", "kit": "02_COASTAL_KITCHEN", "installed": "terramar_sign_coastal_kitchen", "card_width": 2.73, "centre_z": 4.47}],
               "note": "sized from b8 through CAM_B8 (visible glyph widths 3.85 and 2.54 m); the kit's 3.2 / 2.1 m are its suggested working scale, not a survey"}}
+# Roof layer (AI 647): b8's deep rounded roof edge with a frameless glass guard all round; the penthouse kept out of
+# b8's view (AI 642) with the aerial's openings, louvred annex, solar array and mechanical units
+ROOF = {"paving": 0.05,
+        "penthouse": {"wall": 0.25, "parapet_top": 3.8, "roof_slab": [3.2, 3.5], "cap": {"overhang": 0.03, "height": 0.06},
+                      "openings": [{"wall": "front", "kind": "door", "s": [-3.6, -2.6], "z": [0.0, 2.4]},
+                                   {"wall": "front", "kind": "slider", "s": [0.5, 3.8], "z": [0.0, 2.6]},
+                                   {"wall": "right", "kind": "window", "s": [1.5, 2.7], "z": [0.0, 2.6]},
+                                   {"wall": "left", "kind": "door", "s": [1.5, 2.5], "z": [0.0, 2.4]},
+                                   {"wall": "rear", "kind": "window", "s": [-3.0, -1.0], "z": [0.9, 2.6]},
+                                   {"wall": "rear", "kind": "window", "s": [1.0, 3.0], "z": [0.9, 2.6]}],
+                      "frame": {"member": 0.06, "depth": 0.08}},
+        "annex": {"x": [-8.5, -5.0], "y": [0.0, 5.5], "height": 2.75, "post": 0.15, "beam": 0.25,
+                  "louvre": {"width": 0.15, "thickness": 0.03, "spacing": 0.30}, "pane": 1.5},
+        "solar": {"margin": 0.35, "panel": 1.0, "gap": 0.45, "tilt_deg": 10.0, "clearance": 0.15, "thickness": 0.04,
+                  "module": 1.0, "module_gap": 0.02, "rail": 0.05},
+        "units": [{"x": [-4.3, -2.7], "y": [-0.45, 0.55], "h": 1.1}, {"x": [-2.5, -1.1], "y": [-0.45, 0.45], "h": 0.95},
+                  {"x": [-4.3, -3.3], "y": [0.75, 1.45], "h": 0.7}],
+        "units_zone": {"x": [-4.4, -0.9], "y": [-0.45, 1.5]}}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -101,7 +119,7 @@ def structure(lv, slab_tops, podium_top, roof_bot, roof_top, ph, cal, y_front, y
     storeys = [[podium_top, round(slab_tops[0] - t, 3)]]
     storeys += [[slab_tops[i], round(slab_tops[i + 1] - t, 3)] for i in range(len(slab_tops) - 1)]
     storeys.append([slab_tops[-1], roof_bot])
-    core_top = round(roof_top + ph["height_m"], 3)
+    core_top = round(roof_top + ROOF["penthouse"]["roof_slab"][0], 3)      # under the penthouse roof slab (AI 647)
     core_hidden = penthouse_hidden_up_to(cal, y_front, y_wall, roof_top, CORE["outer"]["y"][0])
     return {
         "comment": "AI 643 structure layer. Slab kinds: ground (podium outline + entrance), podium_floor (podium + entrance "
@@ -114,8 +132,8 @@ def structure(lv, slab_tops, podium_top, roof_bot, roof_top, ph, cal, y_front, y
         "columns": {**COLUMN, "storeys": storeys, "rear_bay_check": rear_bay_check},
         "core": {**CORE, "z": [GROUND_SLAB_BOTTOM, core_top],
                  "hidden_from_b8_up_to_m": round(core_hidden, 2),
-                 "note": "stair + two lifts under the penthouse rectangle, rising to the penthouse roof; CAM_B8 sees over the "
-                         "roof edge at the core's front wall only above hidden_from_b8_up_to_m"},
+                 "note": "stair + two lifts under the penthouse rectangle, rising to the underside of the penthouse roof slab, "
+                         "which covers it; CAM_B8 sees over the roof edge at the core's front wall only above hidden_from_b8_up_to_m"},
         "entrance": {"side_wall": ENTRANCE_SIDE_WALL, "z": [GROUND_FLOOR_LEVEL, round(gft - t, 3)]},
     }
 
@@ -206,6 +224,62 @@ def podium(plan, poly, radii):
                        "sharp start corner, v from the outline (outward +, the walls go to -depth). Corner piers wrap the "
                        "rounded corners; on run A they reach the entrance volume. The props lists are reservations for "
                        "AI 628, 631, 632 and 633."}
+
+
+def roof(plan, poly, radii):
+    """The roof layer: guard halves on the roof guard line, the terrace outline, the penthouse, annex, solar rows and
+    units, the b8 sightline limits they must stay under, and the terrace prop zones (AI 629 / 630)."""
+    cfg = json.loads(json.dumps(ROOF))
+    b = plan["balconies"]
+    lv = plan["levels_m"]
+    top = lv["roof_slab_top"]
+    shoe = b["shoe"]["width"]
+
+    def loop(inset_m):
+        return P.dedupe(P.rounded(P.inset(poly, inset_m), [max(r - inset_m, 0.25) if r > 0 else 0.0 for r in radii]))
+    guard = loop(b["guard_inset"])
+    yf = min(y for _, y in guard)
+    yr = max(y for _, y in guard)
+    guard = balcony_layout._insert(guard, [(0.0, yf), (0.0, yr)])
+    halves = [balcony_layout._path(guard, (0.0, yf), (0.0, yr)), balcony_layout._path(guard, (0.0, yr), (0.0, yf))]
+    pr = plan["layers"]["penthouse"]["outline"]
+    px = sorted({q[0] for q in pr})
+    py = sorted({q[1] for q in pr})
+    ph = cfg["penthouse"]
+    sol, zone = cfg["solar"], cfg["units_zone"]
+    inner = [px[0] + ph["wall"] + sol["margin"], px[1] - ph["wall"] - sol["margin"],
+             py[0] + ph["wall"] + sol["margin"], py[1] - ph["wall"] - sol["margin"]]
+    depth = sol["panel"] * math.cos(math.radians(sol["tilt_deg"]))
+    rows, y = [], inner[2]
+    while y + depth <= inner[3] + 1e-6:
+        x0, x1 = inner[0], inner[1]
+        if y < zone["y"][1] and y + depth > zone["y"][0]:
+            x0 = zone["x"][1] + 0.1                       # leave the units' corner free
+        rows.append({"x": [round(x0, 4), round(x1, 4)], "y": [round(y, 4), round(y + depth, 4)]})
+        y += depth + sol["gap"]
+    cam = plan["cameras"]["b8"]
+    y_c, z_c = cam["location"][1], cam["location"][2]
+    y_edge = P.Y_FRONT
+    limit = lambda yy: round(z_c + (top - z_c) * (yy - y_c) / (y_edge - y_c) - top, 3)  # noqa: E731
+    tilt = math.radians(sol["tilt_deg"])
+    highest = {"penthouse_front_wall": [py[0], ph["parapet_top"] + ph["cap"]["height"]],
+               "solar_front_row": [rows[0]["y"][0], ph["roof_slab"][1] + sol["clearance"] + depth * math.tan(tilt) + sol["thickness"]],
+               "units": [min(u["y"][0] for u in cfg["units"]), ph["roof_slab"][1] + max(u["h"] for u in cfg["units"])],
+               "annex": [cfg["annex"]["y"][0], cfg["paving"] + cfg["annex"]["height"] + cfg["annex"]["beam"]]}
+    sightline = {k: {"y": round(v[0], 3), "height_above_roof_m": round(v[1], 3), "hidden_up_to_m": limit(v[0]),
+                     "hidden": v[1] < limit(v[0])} for k, v in highest.items()}
+    rd = lambda pts: [[round(x, 4), round(y, 4)] for x, y in pts]  # noqa: E731
+    planter_ring = loop(b["guard_inset"] + shoe / 2 + 0.7)
+    return {**cfg, "comment": "AI 647 roof: heights are above the roof slab top (z %.3f). Guard halves meet at the front "
+                              "and rear centres; the terrace runs from the guard shoe to the penthouse walls; every part "
+                              "above the roof stays under CAM_B8's sightline over the roof edge (sightline)." % top,
+            "roof_top": top, "guard_halves": [rd(h) for h in halves], "terrace_outer": rd(loop(b["guard_inset"] + shoe / 2)),
+            "penthouse_rect": {"x": px, "y": py}, "solar_rows": rows, "sightline": sightline,
+            "props": {"terrace_planters_ai629": {"outer": rd(loop(b["guard_inset"] + shoe / 2)), "inner": rd(planter_ring),
+                                                 "note": "planters and small trees behind the guard (b8), all round"},
+                      "terrace_furniture_ai630": [{"name": "dining", "x": [-10.0, -6.0], "y": [-8.5, -4.5]},
+                                                  {"name": "lounge", "x": [6.0, 10.0], "y": [-8.5, -4.5]},
+                                                  {"name": "front_centre", "x": [-3.0, 3.0], "y": [-8.5, -5.5]}]}}
 
 
 def cameras(cal, plan):
@@ -329,6 +403,7 @@ def main():
     plan["envelope"] = envelope(plan, wall_sharp, columns)
     plan["balconies"] = balconies(plan, poly, radii)
     plan["podium"] = podium(plan, poly, radii)
+    plan["roof"] = roof(plan, poly, radii)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

@@ -4,9 +4,11 @@
 #           [cams=b8,top,rear]
 #
 #   check_b8.png    CAM_B8, transparent, no shadows, flat colours per element (the edges compose_checks.py lays on b8)
-#   check_b8_sightline.png  CAM_B8 with only the roof and ground slabs, the red core and stand-in walls (the tower wall line up to
-#                   the roof slab, the podium outline up to the podium top) in place of the envelope still to come:
-#                   every red pixel left is core seen over the roof -- compose_checks.py counts them, it must be 0
+#   check_b8_sightline.png  CAM_B8 with only the roof and ground slabs, stand-in walls (the tower wall line up to the roof
+#                   slab, the podium outline up to the podium top) and, in red, everything that must stay out of b8's view:
+#                   the core and every object tagged rb_hide_from_b8 (the penthouse, its annex, solar rows, units).
+#                   Every red pixel left is seen over the roof -- compose_checks.py counts them, it must be 0
+#   check_aerial.png  CAM_AERIAL (fitted to the aerial's roof plane) with only the roof-level objects
 #   check_top.png   CAM_TOP with the roof slab cut away (onto the top residential floor) and the plan outlines drawn
 #                   above it: balcony edge blue, tower wall line green, roof guard orange, penthouse magenta
 #   check_rear.png  CAM_REAR with shadows
@@ -71,8 +73,12 @@ def sightline(scene, cam, path):
     plan = L.load_plan()
     st, lay = plan["structure"], plan["layers"]
     keep = {"core"}
-    hidden = []
+    hidden, recoloured = [], []
     for ob in bpy.data.collections[L.ROOT].all_objects:
+        if ob.get("rb_hide_from_b8"):
+            recoloured.append((ob, tuple(ob.color)))
+            ob.color = ELEMENT_COLORS["core"]
+            continue
         if not (ob.get("rb_element") in keep or (ob.get("rb_element") == "slab" and ob.get("rb_name") in ("roof", "ground"))):
             if not ob.hide_render:
                 ob.hide_render = True
@@ -91,6 +97,22 @@ def sightline(scene, cam, path):
     bpy.data.collections.remove(tmp)
     for ob in hidden:
         ob.hide_render = False
+    for ob, col in recoloured:
+        ob.color = col
+
+
+def roof_level(scene, cam, path, z_min):
+    """Only what stands at roof level or above, from the given camera."""
+    hidden = []
+    for ob in bpy.data.collections[L.ROOT].all_objects:
+        top = max((ob.matrix_world @ v.co).z for v in ob.data.vertices) if ob.type == "MESH" and ob.data.vertices else -1e9
+        if top < z_min and not ob.hide_render:
+            ob.hide_render = True
+            hidden.append(ob)
+    workbench(scene, shadows=False)
+    render(scene, cam, path)
+    for ob in hidden:
+        ob.hide_render = False
 
 
 def main():
@@ -98,7 +120,7 @@ def main():
         raise SystemExit("check_layers.py changes visibility and render settings: run it headless (it never saves)")
     opts = L.args()
     out = os.path.abspath(opts.get("out") or os.path.join(L.C.REBUILD_SCREENS, "checks"))
-    cams_wanted = [c for c in opts.get("cams", "b8,top,rear").split(",") if c]
+    cams_wanted = [c for c in opts.get("cams", "b8,top,rear,aerial").split(",") if c]
     os.makedirs(out, exist_ok=True)
     scene = bpy.context.scene
     vl = bpy.context.view_layer
@@ -106,12 +128,14 @@ def main():
         vl.layer_collection.children["INSPECTION_RIG"].exclude = True
     for ob in bpy.data.collections[L.ROOT].all_objects:
         ob.color = ELEMENT_COLORS.get(ob.get("rb_element"), (0.7, 0.7, 0.7, 1))
-    cams = {k: bpy.data.objects[f"CAM_{k.upper()}"] for k in ("b8", "top", "rear")}
+    cams = {k: bpy.data.objects[f"CAM_{k.upper()}"] for k in ("b8", "top", "rear", "aerial")}
     if "b8" in cams_wanted:
         workbench(scene, shadows=False)
         render(scene, cams["b8"], os.path.join(out, "check_b8.png"))
     if "b8" in cams_wanted:
         sightline(scene, cams["b8"], os.path.join(out, "check_b8_sightline.png"))
+    if "aerial" in cams_wanted:
+        roof_level(scene, cams["aerial"], os.path.join(out, "check_aerial.png"), L.load_plan()["levels_m"]["roof_slab_top"] - 0.01)
     if "rear" in cams_wanted:
         workbench(scene, shadows=True)
         render(scene, cams["rear"], os.path.join(out, "check_rear.png"))

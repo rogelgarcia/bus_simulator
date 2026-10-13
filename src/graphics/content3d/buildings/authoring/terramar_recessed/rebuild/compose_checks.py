@@ -3,8 +3,9 @@
 #   python -I compose_checks.py <dir> [--title "..."]
 #
 # Writes into <dir>: check_b8_overlay.png (the layer's edges in magenta over b8.png, from CAM_B8), check_sheet.png
-# ([b8 overlay | top cut-away with the plan outlines | rear]) and checks.json, which counts the red (core) pixels
-# CAM_B8 sees over the roof with stand-in walls in place (check_b8_sightline.png) -- the core must stay out of b8's view.
+# ([b8 overlay | top cut-away with the plan outlines | rear | roof level over the aerial]), check_aerial_overlay.png
+# and checks.json, which counts the red pixels CAM_B8 sees over the roof with stand-in walls in place
+# (check_b8_sightline.png): the core and every rb_hide_from_b8 object must stay out of b8's view.
 import argparse
 import json
 import os
@@ -40,15 +41,18 @@ def main():
         ov.save(os.path.join(d, "check_b8_overlay.png"))
         tiles.append(labelled(ov, "CAM_B8 over b8.png (edges)", 0.6))
     if os.path.exists(os.path.join(d, "check_b8_sightline.png")):
-        checks["core_pixels_visible_from_b8_over_the_roof"] = red_pixels(os.path.join(d, "check_b8_sightline.png"))
+        checks["hidden_parts_visible_from_b8_px"] = red_pixels(os.path.join(d, "check_b8_sightline.png"))
     if os.path.exists(os.path.join(d, "check_top.png")):
         top = on_white(os.path.join(d, "check_top.png"))
         tiles.append(labelled(top, "CAM_TOP, roof cut away; plan outlines", 0.6 * b8.height / top.height))
     if os.path.exists(os.path.join(d, "check_rear.png")):
         rear = on_white(os.path.join(d, "check_rear.png"))
         tiles.append(labelled(rear, "CAM_REAR", 0.6 * b8.height / rear.height))
-    if os.path.exists(os.path.join(d, "check_rear.png")):
-        checks["rear_core_pixels"] = red_pixels(os.path.join(d, "check_rear.png"))
+    if os.path.exists(os.path.join(d, "check_aerial.png")):
+        aerial = Image.open(os.path.join(C.REFERENCES, "aerial-unannotated.png")).convert("RGB")
+        ov = overlay(aerial, Image.open(os.path.join(d, "check_aerial.png")))
+        ov.save(os.path.join(d, "check_aerial_overlay.png"))
+        tiles.append(labelled(ov, "CAM_AERIAL roof level over the aerial", 0.6 * b8.height / ov.height))
     sheet = row(tiles)
     if args.title:
         framed = Image.new("RGB", (sheet.width, sheet.height + 56), (255, 255, 255))
