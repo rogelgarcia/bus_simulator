@@ -1,15 +1,19 @@
 # Problem
 
-Terra & Mar (exterior): In the reference, `TERRA & MAR` is set in an uppercase serif (classic Roman capitals) in dark bronze or charcoal letters, with `COASTAL KITCHEN` smaller beneath it, centred on the entrance volume's stone band (`b8.png`, aerial). The extracted letters (`TM_SIGNAGE`) are a sans-serif-looking extrusion in copper-brown (`TM_lettering`, `8b5a3c`).
+Terra & Mar (exterior): in `b8.png`, `TERRA & MAR` is set in upright serif capitals in dark bronze or charcoal letters, with `COASTAL KITCHEN` smaller beneath it, centred on the entrance volume's stone band. The extracted letters (`TM_SIGNAGE`) are a sans-serif-looking extrusion in copper-brown (`TM_lettering`, `8b5a3c`).
+
+The user has supplied the lettering itself: `01_TERRA_AND_MAR` and `02_COASTAL_KITCHEN` from the Terra & Mar PBR kit, installed by AI 640 as `assets/public/pbr/terramar_sign_terra_and_mar/` and `assets/public/pbr/terramar_sign_coastal_kitchen/`. Each line is an alpha-masked card, 4096 × 512 (suggested 3.20 × 0.40 m and 2.10 × 0.2625 m including padding), drawn from b8 in bespoke upright lettering with subtle wedge serifs. The maps carry the dark patinated metal (colour, roughness, metal, a shallow face-bevel normal, 2.0 and 1.4 mm relief). It is an artistic reconstruction, not a font file. The kit's README says to use real letter geometry for close side views, sampling the kit's maps onto it.
 
 # Request
 
-Rebuild the sign in serif capitals and dark bronze, as the reference shows.
+Rebuild the sign with the kit's lettering: real extruded letters shaped by the kit's masks and finished with its maps, sized and placed as `b8.png` shows.
 
 Tasks:
-- Pick an installed serif font closest to the reference's capitals and record the choice.
-- Build both lines as extruded letters: about 0.50 m and 0.22 m tall, 0.04–0.07 m deep, with spacing, line gap and position from `b8.png`, centred over the entrance. Convert the text curves to meshes from the evaluated object.
-- Use a dark bronze metal material. Set the game letters aside in `TM_REPLACED`.
+- Depends on AI 640 (kit installed). Use only the +Y (OpenGL) normal.
+- Turn each line's opacity mask into letter outlines (trace the mask at the 0.5 cutoff into clean curves or polygons), and extrude them 0.04–0.07 m. Map the kit's colour, roughness, metal and normal maps onto the letter faces through the card's own UVs, so the faces show exactly the kit's lettering. Give the returns a matching dark metal.
+- Size and place both lines from `b8.png`: about 0.50 m and 0.22 m cap height (check against the kit's suggested card sizes), with b8's line gap, centred over the entrance on the stone band, standing just proud of the wall with no coplanar faces.
+- If the traced letters lose detail at the street distance, compare them with a plain alpha card (`alphaTest` 0.5, slightly in front of the wall) and record which reads closer to b8.
+- Set the game letters aside in `TM_REPLACED`.
 - Evidence: the AI 639 comparison poses tagged with this item. Render them from the edit copy with `render_poses.py -- items=625` (the baseline "before" set already exists in `poses/baseline/`), then compose them with `compose_pose_sheets.py --items 625`; `b8_target` is judged first, beside `b8.png`. If a pose that this item needs is missing, add it to `poses.json` and render it for the baseline too. Copy the final sheets into the evidence directory, and run the audit after geometry changes.
 
 ## Context
@@ -26,12 +30,12 @@ Tasks:
   - run the audit after geometry changes.
 - Frame: metres, z up, front run A faces −Y, street z 0, building base z 0.201. Runs: A front, B/H front chamfers, C/G sides, D/F rear chamfers, E rear. Level tops: ground 5.412, upper podium 10.012, residential 27.862 (5 floors), penthouse 31.662.
 - Blender only: no engine code, building config or catalog change. Nothing of the Bradbury's is edited. Prefer the headed Blender through MCP.
-- Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/edit/625_exterior_sign_lettering_serif_dark_bronze/`. It holds the [reference | before | after] composites and the audit report.
+- Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/edit/625_exterior_sign_lettering_pbr_kit/`. It holds the [reference | before | after] composites and the audit report.
 
 ## On completion
 - Mark the AI document as DONE in the first line
 - Rename in `prompts/` to:
-  - `prompts/AI_DONE_buildings_625_BUILDINGS_terramar_exterior_sign_lettering_serif_dark_bronze_DONE.md`
+  - `prompts/AI_DONE_buildings_625_BUILDINGS_terramar_exterior_sign_lettering_pbr_kit_DONE.md`
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result

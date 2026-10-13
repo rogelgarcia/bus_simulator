@@ -384,6 +384,32 @@
             ]
         },
         {
+            "name": "side_right_faceon",
+            "group": "exterior",
+            "label": "Right side (C) face-on with the B and D chamfers: wrap-around balconies, side bay",
+            "items": [
+                616,
+                617,
+                627,
+                637
+            ],
+            "location": [
+                44.0,
+                0.0,
+                16.5
+            ],
+            "target": [
+                12.5,
+                0.0,
+                16.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
             "name": "penthouse_closeup",
             "group": "exterior",
             "label": "Penthouse from above the front-right roof edge",

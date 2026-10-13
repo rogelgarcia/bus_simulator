@@ -326,13 +326,13 @@ Rules for every edit prompt:
 | exterior | 616 | Chamfer balconies as projecting curved slabs |
 | exterior | 617 | Warm wood soffits under balconies and slab overhangs |
 | exterior | 618 | Warm wood reveal panels at the front centre bays (the brick reveals go) |
-| exterior | 619 | Limestone cladding: panel joints and pale travertine tone |
+| exterior | 619 | Limestone cladding with the PBR kit stone, panel joints in geometry (needs 640) |
 | exterior | 620 | Roof edge: deep top slab, rounded corners, perimeter glass guard |
 | exterior | 621 | Podium glass guards: the top-edge line and the upper-podium window-base line |
 | exterior | 622 | Penthouse against b8 (b8 shows none: user decision), then the aerial's louvred annex |
 | exterior | 623 | Penthouse roof: mechanical units and solar panels (aerial only, if 622 keeps it) |
 | exterior | 624 | Glazing frames (storefronts, entrance, residential sliders), pier lanterns |
-| exterior | 625 | Sign lettering: serif, dark bronze |
+| exterior | 625 | Sign lettering from the PBR kit masks and maps (needs 640) |
 | exterior | 626 | Coplanar face fixes from the audit |
 | props | 627 | Balcony planters and plants |
 | props | 628 | Podium planter boxes (window-base line, top edge, entrance terrace) |
@@ -346,6 +346,9 @@ Rules for every edit prompt:
 | interior | 636 | Upper-podium dining room |
 | interior | 637 | Residential units: sheer curtains and furniture |
 | interior | 638 | Penthouse interior |
+| material | 640 | Install the Terra & Mar PBR kit (user-supplied) as PBR sets with provenance; no game catalog registration yet |
+| exterior | 641 | Open the side bays (C, G): the game buried the side windows behind solid brick prows |
+| rebuild | 642 | **Restart from scratch** (user, 2026-10-12): layered parametric build; phase 1 is the top-view silhouette (front from b8, sides and rear redefined); the edit copy stays as reference and fallback |
 
 ## Comparison poses (AI 639)
 
@@ -394,6 +397,7 @@ prompts copy their final sheets into their own evidence folder under `.../terram
 | Id | Piece | Builds | Sets aside |
 | --- | --- | --- | --- |
 | 615 | `pieces/exterior_615_slab_edge_fascia.py` | `TM_EDIT_EXTERIOR/615_SLAB_EDGE_FASCIA`: five residential slab rings (floors 2–5 and the roof line), and the podium top band | `REPLACED_615_SLAB_EDGE_FASCIA`: belts `mesh__553`, `mesh__558` … `mesh__562` |
+| 616 | `pieces/exterior_616_chamfer_balconies.py` | `TM_EDIT_EXTERIOR/616_CHAMFER_BALCONIES`: one continuous deep balcony per side, front pier to rear pier (floors 2–5 slabs and guards, roof-line overhangs), four rounded chamfer columns | `REPLACED_616_CHAMFER_BALCONIES`: the 88 game guard parts on floors 2–5 except the front and rear centre loggias |
 
 **615.** Each residential ring:
 - is 0.50 m tall (b8: about 16 px of a 110 px storey), with its top 5 mm under the walking surface (under the roof surface for the roof line);
@@ -404,3 +408,22 @@ prompts copy their final sheets into their own evidence folder under `.../terram
 The podium top band keeps the game belt's height (9.712 … 10.007) and its 0.12 m projection, because two tall upper-podium windows reach 9.712; it is rounded at all eight podium corners.
 
 The audit is unchanged: 26 coplanar pairs before and after, none involving the new parts. The rings cross the game's interior shells (19 object pairs), because they reach 1.51 m inside; AI 634 replaces those shells. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/edit/615_exterior_slab_edge_fascia_bands/`.
+
+**616.** b8 read at 3.5×:
+- The front side bay, the A–B corner and B's front-adjacent bay form one shallow curved balcony (the game's linked corner, kept).
+- Beyond a rounded column, B's outer bay is a deep projecting balcony. Its wood soffit reads 4–5× deeper (about 2.8 m from slab edge to glazing), and its front turns the B–C corner on about a 1 m radius. The supplementary aerial shows these balconies wrapping onto the sides, and the roof slab overhangs the top one.
+
+What was built, per side (right: B's outer half → B–C → C → C–D → D's outer half; left mirrored on H, G, F):
+- Floors 2–5: a slab projecting 1.5 m beyond the facade line, its edge on the podium silhouette. It is 0.509 m deep with its top at the walking surface (top faces in `TM_limestone_plain`), rounded at the side corners with a 1.2 m radius at the slab edge, and ends square against the columns.
+- The same slab at the roof line (top 4 mm above the roof surface) as an overhang.
+- A guard on floors 2–5: 0.012 m glass, 0.96 m tall, with a charcoal top rail 0.05 m inside the edge, glass returns to the columns at both ends, and posts at no more than 1.6 m apart on the straight parts only.
+- Rounded casings on the B, D, F and H piers: 0.90 m wide, 0.18 m proud, front corner radius 0.40, from the podium roof to the roof line. The 615 bands die into them.
+
+The glazing stays at the back of the loggias: the loggia (1.5 m) plus the projection gives b8's deep bays. Floor 1 is the podium roof (its guards are AI 621's). The buried side windows on C and G are AI 641. The audit is unchanged at 26 coplanar pairs, none involving the new parts. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/edit/616_exterior_chamfer_balconies_projecting_curved/` (8 poses, including the new `side_right_faceon`).
+
+**616, user correction (2026-10-12): "the balcony should be same depth around the building".** Each side's deep balcony is now one continuous run from the front pier to the rear pier: A → A–B → B → B–C → C → C–D → D → D–E → E on the right, and A → H → G → F → E on the left.
+- One slab-edge line (1.5 m beyond the facade line) and one glazing line (the back of the loggias) all around.
+- The run replaces the game's shallow linked-corner balconies too, and passes in front of the rounded chamfer columns.
+- The front and rear centre loggias between the full-height piers stay flush, as b8 shows them.
+- Set aside: 88 guard parts. Still in place: floor 1's guards (AI 621), the centre loggias' guards, and the two podium terraces.
+- The audit drops to 18 coplanar pairs (some of the replaced guard glass carried them), none involving the new parts.

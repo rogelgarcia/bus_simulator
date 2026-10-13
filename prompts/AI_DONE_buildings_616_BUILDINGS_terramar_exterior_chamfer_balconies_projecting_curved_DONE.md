@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (exterior): In `b8.png`, the balconies on the chamfers project beyond the facade as slabs whose fronts curve around the corners. The glass guards bend with them, and the piers between the chamfer balconies read rounded. The front A balconies sit between the two tall piers, loggia-like. In the extracted model every residential bay is a 1.5 m recessed loggia, with its guard on the facade line (`TM_BALCONIES_LOGGIAS`). Only the three linked corners (A–B, A–H, E–D, `TM_BALCONIES_LINKED_CORNERS`) curve, and only through 0.42 m runouts.
@@ -39,3 +41,31 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Completion summary (2026-10-12)
+
+- Piece: `src/graphics/content3d/buildings/authoring/terramar_recessed/pieces/exterior_616_chamfer_balconies.py` (on `pieces/edit_lib.py`, after AI 615). Two consecutive runs give the same result: 22 objects and 48 parts set aside.
+- Read on `b8.png` at 3.5×:
+  - the front side bay, the A–B corner and B's front-adjacent bay are one shallow curved balcony (the game's linked corner, kept as extracted);
+  - beyond a rounded column, B's outer bay is a deep projecting balcony whose wood soffit reads 4–5× deeper (about 2.8 m slab edge to glazing), turning the B–C corner on about a 1 m radius;
+  - the supplementary aerial shows these balconies wrapping onto the sides, and the roof slab overhangs the top one.
+- Builds `TERRAMAR/TM_EDIT_EXTERIOR/616_CHAMFER_BALCONIES`, per side (right: B's outer half → B–C → C → C–D → D's outer half; left mirrored on H, G, F):
+  - floors 2–5: slabs projecting 1.5 m to the podium silhouette, 0.509 m deep, with their tops at the walking surface (`TM_limestone_plain` on top, `TM_limestone` elsewhere), rounded at the side corners (1.2 m radius) and square against the columns;
+  - roof-line overhang slabs over the top floor's balconies;
+  - floors 2–5: continuous guards of 0.012 m glass with a charcoal top rail, glass returns to the columns, and posts only on the straight parts (none on the curves);
+  - four rounded column casings on the B, D, F and H piers (0.90 m wide, 0.18 m proud, front radius 0.40), into which the 615 bands die.
+- Glazing decision: it stays at the back of the loggias; loggia (1.5 m) plus projection (1.5 m) matches b8's deep outer bays. The front A and rear E loggias between the piers, and the linked-corner shallow balconies, are unchanged.
+- Set aside in `TM_REPLACED/REPLACED_616_CHAMFER_BALCONIES`: the 24 game railings and 24 guard-glass parts on the deep runs at floors 2–5.
+- Not done here:
+  - floor 1 is the podium roof, whose guards are AI 621's;
+  - the side bays (C, G) are solid brick prows with the side windows buried behind them, so the deep balcony there fronts a wall; filed as AI 641.
+- Evidence: `tests/artifacts/screens/buildings/terramar_recessed/edit/616_exterior_chamfer_balconies_projecting_curved/` holds 8 pose sheets (`b8_target` beside `b8.png`, `full_front_left`, `full_rear_right_aerial`, `corner_slabs_front_right`, `chamfer_left_balconies`, `soffits_worms_eye`, the new `side_right_faceon`, `check_corner_platform`) and `audit.json`. The `side_right_faceon` pose was added to `poses.json` and rendered for the baseline too.
+- Audit: 26 coplanar face pairs before and after (the pre-existing linked-corner and ground-window ones, AI 626); none involve the new parts.
+
+## Revision (2026-10-12, user correction: "the balcony should be same depth around the building")
+
+- Each side's deep balcony is now one continuous run from the front pier to the rear pier: right A → A–B → B → B–C → C → C–D → D → D–E → E; left A → H → G → F → E.
+- There is one slab-edge line (1.5 m) and one glazing line (the back of the loggias) all around. The run replaces the shallow linked-corner balconies and passes in front of the rounded chamfer columns.
+- The front and rear centre loggias between the full-height piers stay flush, as `b8.png` shows them.
+- Set aside: 88 game guard parts (floors 2–5, everything except the centre loggias); floor 1, the centre loggias and the podium terraces keep theirs.
+- The evidence sheets were re-rendered in the same folder; the audit now finds 18 coplanar pairs (26 before), none involving the new parts.
