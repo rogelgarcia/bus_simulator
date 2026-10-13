@@ -356,7 +356,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | rebuild | 645 | DONE: balconies layer (paving, frameless glass guards with rail and shoe, door thresholds, downlights, soffit tone matched to b8), planter slots reserved in the plan |
 | rebuild | 646 | DONE: podium layer (stone piers and bands, storefronts, deep upper recesses with guards, entrance portal and loggia, lanterns, kit lettering traced into real letters), prop slots reserved |
 | rebuild | 647 | DONE: roof layer (guard all round, terrace deck, penthouse with the aerial's openings, louvred annex, solar rows, units), all out of b8's view (0 px), terrace prop zones reserved |
-| rebuild | 648 | Materials: kit limestone with panel joints in geometry, wood, black steel, glass, bronze (needs 640) |
+| rebuild | 648 | DONE: materials pass (kit limestone through one node group, panel joints cut as bevelled grooves with a UV offset per panel, teak reveals, b8 soffit tone, black steel, clear glass, the kit's bronze letters), tones from b8 boxes; audit still 0 / 0 |
 
 ## Comparison poses (AI 639)
 
@@ -506,6 +506,9 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_roof.py` | the roof layer, `RB_ROOF` (its layout is `plan["roof"]`, written by `make_plan.py`) |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
+| `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
+| `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
+| `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 
 Base scene: `INSPECTION_RIG` (appended once from the baseline: the calibrated sky, sun, ground and rig cameras, with
 AgX and the game's exposure), `RB_CAMERAS` (`CAM_B8`, `CAM_AERIAL`, `CAM_REAR`, `CAM_TOP` from `plan["cameras"]`),
@@ -629,7 +632,7 @@ layer fills and extrudes the letters 30 mm deep, 15 mm off the sign band, with t
 metallic and OpenGL normal maps planar-mapped from the card. Sizes come from b8 through `CAM_B8`: visible glyph widths of
 3.85 and 2.54 m, centres at z 5.01 and 4.47. The kit's 3.2 / 2.1 m are its suggested working scale, not a survey. The maps
 come from the PBR sets AI 640 installs (`assets/public/pbr/terramar_sign_*`) when present, otherwise from the extracted kit
-under `tests/artifacts/blender/terramar_recessed/pbr_kit_source/`. AI 640 has not run yet, and nothing under `assets/` was touched.
+under `tests/artifacts/blender/terramar_recessed/pbr_kit_source/`. Since AI 640 the installed sets are used.
 
 | Object | What |
 | --- | --- |
@@ -675,6 +678,62 @@ over the roof edge; the tightest is the units, 4.6 m against a 5.43 m limit. `ch
 Audit: 81 objects, 0 z-fights, 0 penetrations. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/647_roof/`
 (`check_sheet.png`, `check_b8_overlay.png`, `check_b8_sightline.png`, `check_aerial_overlay.png`, `checks.json`,
 `terramar_rebuild.audit.json`, `poses/`).
+
+**Materials and stone joints (AI 648).** `layer_materials.py` is a pass, not a layer: it owns no collection. `build.py`
+appends it whenever it rebuilds a geometry layer (`materials=0` skips it; `layers=materials` alone re-dresses the
+materials of a file already cut). Every `TM_RB_*` slot is re-dressed by name from its family in `plan["materials"]`
+(`make_plan.py`):
+
+| Family | Slots | Look |
+| --- | --- | --- |
+| stone | slab fascia, pilaster, column, podium stone, penthouse stone | the kit limestone through the node group `TM_RB_limestone` (basecolor, arm = AO / roughness / metallic, `normal_gl`; UV / 4 m); tone (1.24, 1.113, 1.115) on the base colour |
+| paving | paving, threshold, slab top | the same group, tone 0.86 |
+| wood | `TM_RB_wood` (front reveals, entrance and loggia linings) | warm teak (0.46, 0.25, 0.10), flat: no wood texture is installed |
+| soffit | `TM_RB_soffit` | AI 645's b8-matched tone (0.31, 0.125, 0.085), flat |
+| steel | frame, louvre | black powder coat (0.018), roughness 0.38 |
+| glass | glass | clear, IOR 1.5, a faint green-grey tint |
+| plaster / interior floor / concrete | ceiling; floor; roof top, core, hidden | plain Principled |
+
+The sign letters keep the kit's own bronze sets (the podium layer's `TM_RB_sign_*`).
+
+The joints are geometry, as the kit asks:
+- **Grooves:** 8 mm wide, 6 mm deep, with a 3 mm bevel each side. The groove floor takes `TM_RB_stone_joint`; the bevels stay stone and catch the light.
+- **Courses:** z-planes from 15 datums: the podium's storey and band levels (0.15, 4.0, 4.75, 5.38, 5.79, 9.15, 9.76), the slab tops, the roof slab and the penthouse parapet. Each band is split into equal courses near 0.67 m, so the tower has five per storey (b8's pilasters) and the sign band reads as three courses with the slab edge (as in b8). A course plane cuts only the faces whose height holds the groove with clearance, so a lintel whose soffit sits on a plane is not cut there.
+- **Vertical joints:** per flat face at least 0.2 m tall, equal panels of at most 1.2 m (1200 × 670 large format), carried over the stone soffit or top they meet. They stack-bond with the courses. The curved corners are one piece each.
+- **Which slots get which:** pilasters and the podium get both, the columns courses only, the slab fascias vertical joints only.
+- **Repeat:** every panel, a region bounded by groove floors, gets its own seeded UV offset, so the 4 m repeat never lines up.
+
+Each object is cut once and tagged `rb_joints`; a layer rebuild makes new, uncut objects. The cutter tracks every
+original face through its splits with an int face layer. It pushes each strip vertex by the least-squares direction of
+the faces whose joint it lies on, so a groove keeps its depth round a corner. It splits the twisted corners where two
+bevels cross along their mitre. Its self-checks (degenerate, non-planar, non-manifold faces) are all 0. Two bugs the
+audit caught are fixed:
+- a 1 µm strip tolerance missed float32 vertices about 10 m from the origin (now 0.2 mm);
+- a soffit got the same plane from both of its faces.
+
+The full build is 22 objects jointed, 779 vertical joints, 1284 panels, in 1.9 s.
+
+**Tones** (`sample_tones.py`, b8 boxes against the `CAM_B8` Cycles render):
+
+| Box | b8 | Render |
+| --- | --- | --- |
+| soffit | 86/53/26 | 89/53/27 |
+| shaded teak reveal | 100/69/45 | 101/69/33 |
+| podium stone | 203/193/187 | 200/191/181 |
+| lit pilasters and fascia | 215–220 | 205–206 |
+
+On the lit stone the hue matches (R−G 10 vs 12), but the brightness stays about 12 levels short. The kit's red albedo is
+already about 0.95, and AgX's shoulder needs albedo above 1 to go further. b8's lit stone is brighter than the
+calibrated rig can render with a physical albedo. No weathering or soiling noise.
+
+Audit: 81 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 px. The new poses are `pilaster_closeup`
+and `joint_detail_pilaster`. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/648_materials/`:
+- `poses/rebuild_pre648_vs_rebuild/`: [b8 | before | after] for `b8_calibrated`, and [before | after] for 8 close and full poses;
+- `joint_layout.png` and `joint_layout_summary.json`;
+- `tone_boxes.png` and `tone_samples.json`;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre648.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

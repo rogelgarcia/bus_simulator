@@ -70,7 +70,8 @@
                 643,
                 644,
                 645,
-                646
+                646,
+                648
             ],
             "location": [
                 -46.0,
@@ -129,7 +130,8 @@
                 617,
                 620,
                 627,
-                645
+                645,
+                648
             ],
             "location": [
                 24.0,
@@ -183,7 +185,8 @@
                 617,
                 616,
                 615,
-                645
+                645,
+                648
             ],
             "location": [
                 19.0,
@@ -211,7 +214,8 @@
                 627,
                 637,
                 615,
-                644
+                644,
+                648
             ],
             "location": [
                 0.0,
@@ -236,7 +240,8 @@
             "items": [
                 619,
                 624,
-                646
+                646,
+                648
             ],
             "location": [
                 -6.5,
@@ -347,7 +352,8 @@
                 628,
                 635,
                 636,
-                646
+                646,
+                648
             ],
             "location": [
                 0.0,
@@ -614,6 +620,52 @@
             "items": [
                 643,
                 647
+            ]
+        },
+        {
+            "name": "pilaster_closeup",
+            "group": "exterior",
+            "label": "Left front pilaster from the street, telephoto: its stone courses (five per storey) against the slab edges",
+            "items": [
+                648
+            ],
+            "location": [
+                -7.0,
+                -24.0,
+                1.7
+            ],
+            "target": [
+                -3.07,
+                -11.05,
+                15.5
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "joint_detail_pilaster",
+            "group": "exterior",
+            "label": "Close detail from the podium roof: the left pilaster's corner, a course joint and the slab fascia's vertical joints",
+            "items": [
+                648
+            ],
+            "location": [
+                -5.2,
+                -11.9,
+                11.6
+            ],
+            "target": [
+                -3.35,
+                -11.05,
+                12.0
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
             ]
         }
     ]

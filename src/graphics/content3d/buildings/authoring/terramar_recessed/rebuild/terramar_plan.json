@@ -10158,5 +10158,348 @@
         }
       ]
     }
+  },
+  "materials": {
+    "stone": {
+      "set": "terramar_continuous_limestone",
+      "repeat_m": 4.0,
+      "tone": [
+        1.24,
+        1.113,
+        1.115
+      ],
+      "ao_strength": 0.5,
+      "roughness_gain": 1.0,
+      "normal_strength": 1.0,
+      "slots": [
+        "TM_RB_slab_fascia",
+        "TM_RB_pilaster",
+        "TM_RB_column",
+        "TM_RB_podium_stone",
+        "TM_RB_penthouse_stone"
+      ]
+    },
+    "paving": {
+      "set": "terramar_continuous_limestone",
+      "repeat_m": 4.0,
+      "tone": [
+        0.86,
+        0.86,
+        0.86
+      ],
+      "ao_strength": 0.5,
+      "roughness_gain": 1.0,
+      "normal_strength": 1.0,
+      "slots": [
+        "TM_RB_paving",
+        "TM_RB_threshold",
+        "TM_RB_slab_top"
+      ]
+    },
+    "joints": {
+      "width": 0.008,
+      "bevel": 0.003,
+      "depth": 0.006,
+      "panel_max": 1.2,
+      "course_target": 0.67,
+      "margin": 0.004,
+      "vertical_min_height": 0.2,
+      "seed": 648,
+      "rgb": [
+        0.2,
+        0.185,
+        0.165
+      ],
+      "roughness": 0.9,
+      "rules": {
+        "TM_RB_pilaster": {
+          "courses": true,
+          "verticals": true
+        },
+        "TM_RB_column": {
+          "courses": true,
+          "verticals": false
+        },
+        "TM_RB_slab_fascia": {
+          "courses": false,
+          "verticals": true
+        },
+        "TM_RB_podium_stone": {
+          "courses": true,
+          "verticals": true
+        },
+        "TM_RB_penthouse_stone": {
+          "courses": true,
+          "verticals": true
+        }
+      },
+      "datums": [
+        0.15,
+        4.0,
+        4.75,
+        5.38,
+        5.79,
+        9.15,
+        9.76,
+        10.17,
+        13.52,
+        16.87,
+        20.22,
+        23.57,
+        26.57,
+        27.25,
+        31.05
+      ],
+      "bands": [
+        {
+          "z": [
+            0.15,
+            4.0
+          ],
+          "courses": 6,
+          "course_m": 0.6417
+        },
+        {
+          "z": [
+            4.0,
+            4.75
+          ],
+          "courses": 1,
+          "course_m": 0.75
+        },
+        {
+          "z": [
+            4.75,
+            5.38
+          ],
+          "courses": 1,
+          "course_m": 0.63
+        },
+        {
+          "z": [
+            5.38,
+            5.79
+          ],
+          "courses": 1,
+          "course_m": 0.41
+        },
+        {
+          "z": [
+            5.79,
+            9.15
+          ],
+          "courses": 5,
+          "course_m": 0.672
+        },
+        {
+          "z": [
+            9.15,
+            9.76
+          ],
+          "courses": 1,
+          "course_m": 0.61
+        },
+        {
+          "z": [
+            9.76,
+            10.17
+          ],
+          "courses": 1,
+          "course_m": 0.41
+        },
+        {
+          "z": [
+            10.17,
+            13.52
+          ],
+          "courses": 5,
+          "course_m": 0.67
+        },
+        {
+          "z": [
+            13.52,
+            16.87
+          ],
+          "courses": 5,
+          "course_m": 0.67
+        },
+        {
+          "z": [
+            16.87,
+            20.22
+          ],
+          "courses": 5,
+          "course_m": 0.67
+        },
+        {
+          "z": [
+            20.22,
+            23.57
+          ],
+          "courses": 5,
+          "course_m": 0.67
+        },
+        {
+          "z": [
+            23.57,
+            26.57
+          ],
+          "courses": 4,
+          "course_m": 0.75
+        },
+        {
+          "z": [
+            26.57,
+            27.25
+          ],
+          "courses": 1,
+          "course_m": 0.68
+        },
+        {
+          "z": [
+            27.25,
+            31.05
+          ],
+          "courses": 6,
+          "course_m": 0.6333
+        }
+      ],
+      "course_planes": [
+        0.15,
+        0.7917,
+        1.4333,
+        2.075,
+        2.7167,
+        3.3583,
+        4.0,
+        4.75,
+        5.38,
+        5.79,
+        6.462,
+        7.134,
+        7.806,
+        8.478,
+        9.15,
+        9.76,
+        10.17,
+        10.84,
+        11.51,
+        12.18,
+        12.85,
+        13.52,
+        14.19,
+        14.86,
+        15.53,
+        16.2,
+        16.87,
+        17.54,
+        18.21,
+        18.88,
+        19.55,
+        20.22,
+        20.89,
+        21.56,
+        22.23,
+        22.9,
+        23.57,
+        24.32,
+        25.07,
+        25.82,
+        26.57,
+        27.25,
+        27.8833,
+        28.5167,
+        29.15,
+        29.7833,
+        30.4167,
+        31.05
+      ]
+    },
+    "wood": {
+      "rgb": [
+        0.46,
+        0.25,
+        0.1
+      ],
+      "roughness": 0.5,
+      "slots": [
+        "TM_RB_wood"
+      ],
+      "note": "warm teak reveals and linings, flat: no wood texture is installed"
+    },
+    "soffit": {
+      "roughness": 0.5,
+      "slots": [
+        "TM_RB_soffit"
+      ],
+      "note": "the soffits keep AI 645's tone calibrated on b8's soffits (balconies.soffit_rgb), flat",
+      "rgb": [
+        0.31,
+        0.125,
+        0.085
+      ]
+    },
+    "steel": {
+      "rgb": [
+        0.018,
+        0.018,
+        0.02
+      ],
+      "roughness": 0.38,
+      "metallic": 0.0,
+      "slots": [
+        "TM_RB_frame",
+        "TM_RB_louvre"
+      ],
+      "note": "black powder-coated steel"
+    },
+    "glass": {
+      "rgb": [
+        0.94,
+        0.97,
+        0.97
+      ],
+      "roughness": 0.02,
+      "ior": 1.5,
+      "slots": [
+        "TM_RB_glass"
+      ]
+    },
+    "plaster": {
+      "rgb": [
+        0.8,
+        0.78,
+        0.74
+      ],
+      "roughness": 0.9,
+      "slots": [
+        "TM_RB_ceiling"
+      ]
+    },
+    "interior_floor": {
+      "rgb": [
+        0.42,
+        0.33,
+        0.24
+      ],
+      "roughness": 0.55,
+      "slots": [
+        "TM_RB_floor"
+      ]
+    },
+    "concrete": {
+      "rgb": [
+        0.48,
+        0.47,
+        0.45
+      ],
+      "roughness": 0.85,
+      "slots": [
+        "TM_RB_roof_top",
+        "TM_RB_core",
+        "TM_RB_hidden"
+      ]
+    },
+    "comment": "AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone (assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d with a bevel b each side, its floor in the joint material; course planes from the datums' bands, vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show."
   }
 }

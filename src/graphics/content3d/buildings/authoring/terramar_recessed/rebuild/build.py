@@ -1,12 +1,15 @@
 # build.py -- build the Terra & Mar rebuild file from the plan: the base scene, then the layers in order (AI 643+).
 #
-#   blender -b --factory-startup --python build.py -- [layers=structure] [save=1]        first time: creates the file
+#   blender -b --factory-startup --python build.py -- [layers=structure] [save=1] [materials=0]   first time: creates the file
 #   blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python build.py -- layers=structure
 #   headed (MCP): open the rebuild file (or File > New), then exec this file with the same argv after "--"
 #
 # Writes tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend. Every layer is
 # rebuild/layer_<name>.py with build(plan) and owns one collection under TERRAMAR_REBUILD, which a rerun empties and
-# rebuilds; nothing else is touched. The base scene is refreshed each run:
+# rebuilds; nothing else is touched. The materials pass (layer_materials.py, AI 648) owns no collection: it re-dresses
+# the TM_RB_* slots and cuts the stone joints into the objects, so it runs after any geometry layer rebuilt (append
+# materials=0 to skip it; layers=materials alone re-dresses the materials of a file already cut). The base scene is
+# refreshed each run:
 #   INSPECTION_RIG    the baseline's calibrated sky, sun, ground and rig cameras, appended once from the baseline .blend,
 #                     with its film settings (AgX, the game's calibrated exposure) -- the lighting render_poses.py uses
 #   RB_CAMERAS        CAM_B8 (fitted to the plan), CAM_AERIAL, CAM_REAR, CAM_TOP, from plan["cameras"]
@@ -29,7 +32,8 @@ import rb_lib as L  # noqa: E402
 importlib.reload(L)
 
 C = L.C
-LAYERS = ["structure", "envelope", "balconies", "podium", "roof"]          # build order; a later layer may stand on an earlier one
+LAYERS = ["structure", "envelope", "balconies", "podium", "roof", "materials"]   # build order; a later layer may stand on an earlier one
+FINISHING = "materials"                                                         # dresses (and cuts joints into) what the others built
 
 
 def guard():
@@ -98,6 +102,10 @@ def main():
     unknown = [s for s in layers if s not in LAYERS]
     if unknown:
         raise SystemExit(f"unknown layer(s) {unknown}; known: {LAYERS}")
+    if opts.get("materials", "1") == "1" and FINISHING not in layers and any(s != FINISHING for s in layers):
+        layers.append(FINISHING)
+    elif opts.get("materials", "1") == "0" and FINISHING in layers:
+        layers.remove(FINISHING)
     guard()
     plan = L.load_plan()
     scene = bpy.context.scene

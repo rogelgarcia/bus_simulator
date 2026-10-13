@@ -6,7 +6,8 @@
 # from it: podium + entrance, tower wall line, balcony slab edge (with the flush front centre loggia), roof edge and its
 # guard line, the penthouse kept out of b8's view, and the plan markers for the front pilasters and the rounded chamfer
 # columns. Also draws the dimensioned approved plan: tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/
-# plan_approved.png.
+# plan_approved.png. The layers' own parameters follow in the same file: structure, envelope, balconies, podium, roof
+# (AI 643-647) and materials with the stone joint layout (AI 648).
 #
 # Runs (faces) of the approved plan, counter-clockwise from the front (the game's lettering): A front, B front-right
 # chamfer, C right side, D right rear chamfer, E rear, F left rear chamfer, G left side, H front-left chamfer.
@@ -87,6 +88,36 @@ ROOF = {"paving": 0.05,
         "units": [{"x": [-4.3, -2.7], "y": [-0.45, 0.55], "h": 1.1}, {"x": [-2.5, -1.1], "y": [-0.45, 0.45], "h": 0.95},
                   {"x": [-4.3, -3.3], "y": [0.75, 1.45], "h": 0.7}],
         "units_zone": {"x": [-4.4, -0.9], "y": [-0.45, 1.5]}}
+# Materials layer (AI 648): the kit limestone (AI 640) on every stone face set, its panel joints cut as geometry
+# (b8: courses of storey / 5 on the pilasters, three courses across the sign band; large-format 1200 x ~670 mm panels),
+# warm wood, black steel, clear glass. tone = linear multiplier on the kit's base colour, calibrated against b8 boxes
+# under the calibrated rig (sample_tones.py): the stone's red is held at albedo ~0.95 (b8's lit stone is brighter
+# than the rig's AgX shoulder allows a physical albedo to reach) and green / blue set b8's warm hue
+MATERIALS = {
+    "stone": {"set": "terramar_continuous_limestone", "repeat_m": 4.0, "tone": [1.24, 1.113, 1.115], "ao_strength": 0.5,
+              "roughness_gain": 1.0, "normal_strength": 1.0,
+              "slots": ["TM_RB_slab_fascia", "TM_RB_pilaster", "TM_RB_column", "TM_RB_podium_stone", "TM_RB_penthouse_stone"]},
+    "paving": {"set": "terramar_continuous_limestone", "repeat_m": 4.0, "tone": [0.86, 0.86, 0.86], "ao_strength": 0.5,
+               "roughness_gain": 1.0, "normal_strength": 1.0, "slots": ["TM_RB_paving", "TM_RB_threshold", "TM_RB_slab_top"]},
+    "joints": {"width": 0.008, "bevel": 0.003, "depth": 0.006, "panel_max": 1.2, "course_target": 0.67, "margin": 0.004,
+               "vertical_min_height": 0.2,
+               "seed": 648, "rgb": [0.20, 0.185, 0.165], "roughness": 0.9,
+               "rules": {"TM_RB_pilaster": {"courses": True, "verticals": True},
+                         "TM_RB_column": {"courses": True, "verticals": False},
+                         "TM_RB_slab_fascia": {"courses": False, "verticals": True},
+                         "TM_RB_podium_stone": {"courses": True, "verticals": True},
+                         "TM_RB_penthouse_stone": {"courses": True, "verticals": True}}},
+    "wood": {"rgb": [0.46, 0.25, 0.10], "roughness": 0.5, "slots": ["TM_RB_wood"],
+             "note": "warm teak reveals and linings, flat: no wood texture is installed"},
+    "soffit": {"roughness": 0.5, "slots": ["TM_RB_soffit"],
+               "note": "the soffits keep AI 645's tone calibrated on b8's soffits (balconies.soffit_rgb), flat"},
+    "steel": {"rgb": [0.018, 0.018, 0.020], "roughness": 0.38, "metallic": 0.0, "slots": ["TM_RB_frame", "TM_RB_louvre"],
+              "note": "black powder-coated steel"},
+    "glass": {"rgb": [0.94, 0.97, 0.97], "roughness": 0.02, "ior": 1.5, "slots": ["TM_RB_glass"]},
+    "plaster": {"rgb": [0.80, 0.78, 0.74], "roughness": 0.9, "slots": ["TM_RB_ceiling"]},
+    "interior_floor": {"rgb": [0.42, 0.33, 0.24], "roughness": 0.55, "slots": ["TM_RB_floor"]},
+    "concrete": {"rgb": [0.48, 0.47, 0.45], "roughness": 0.85, "slots": ["TM_RB_roof_top", "TM_RB_core", "TM_RB_hidden"]},
+}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -282,6 +313,36 @@ def roof(plan, poly, radii):
                                                   {"name": "front_centre", "x": [-3.0, 3.0], "y": [-8.5, -5.5]}]}}
 
 
+def materials(plan):
+    """The materials layer: the families and their slots, and the stone's joint layout. Course joints are z-planes:
+    the datums (podium storey and band levels, the slab tops, the roof slab, the penthouse parapet) split the height
+    into bands, each band divided into equal courses near course_target. Vertical joints are laid per flat stone face
+    by layer_materials.py (equal panels of at most panel_max)."""
+    cfg = json.loads(json.dumps(MATERIALS))
+    lv, st, pd, rf = plan["levels_m"], plan["structure"], plan["podium"], plan["roof"]
+    slabs = {s["name"]: s["z"] for s in st["slabs"]}
+    datums = [st["ground_floor_level"], pd["entrance_detail"]["lintel_bottom"], pd["ground_lintel"][0],
+              slabs["upper_podium"][0], slabs["upper_podium"][1], pd["upper"]["head"], slabs["podium_roof"][0],
+              lv["podium_top"]] + lv["balcony_slab_tops"] + [lv["roof_slab_bottom"], lv["roof_slab_top"],
+                                                             round(rf["roof_top"] + rf["penthouse"]["parapet_top"], 3)]
+    datums = sorted({round(z, 4) for z in datums})
+    jt = cfg["joints"]
+    planes, bands = [], []
+    for a, b in zip(datums, datums[1:]):
+        n = max(1, round((b - a) / jt["course_target"]))
+        bands.append({"z": [a, b], "courses": n, "course_m": round((b - a) / n, 4)})
+        planes += [round(a + (b - a) * k / n, 4) for k in range(n + 1)]
+    jt["datums"] = datums
+    jt["bands"] = bands
+    jt["course_planes"] = sorted(set(planes))
+    cfg["soffit"]["rgb"] = plan["balconies"]["soffit_rgb"]
+    cfg["comment"] = ("AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone "
+                      "(assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d "
+                      "with a bevel b each side, its floor in the joint material; course planes from the datums' bands, "
+                      "vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show.")
+    return cfg
+
+
 def cameras(cal, plan):
     """The comparison cameras every layer renders its evidence from. CAM_B8 is fitted to this plan (b8_camera_fit.py),
     starting from calibrate_references.py's camera; the aerial camera fits the aerial's roof plane only."""
@@ -404,6 +465,7 @@ def main():
     plan["balconies"] = balconies(plan, poly, radii)
     plan["podium"] = podium(plan, poly, radii)
     plan["roof"] = roof(plan, poly, radii)
+    plan["materials"] = materials(plan)
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)
