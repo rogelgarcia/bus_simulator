@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 The Terra & Mar Blender work so far edits the model extracted from the game (`terramar_recessed`, AI 614–616). That
@@ -96,3 +98,19 @@ Tasks:
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, including the approved plan's key dimensions, the
   decisions the user made, and the list of follow-up layer prompts
+
+## Summary (2026-10-12)
+- **Calibration** (`rebuild/calibrate_references.py`, `rebuild/reference_points.json`): a pinhole camera fitted to b8 (horizon 1143.5 px from the pedestrians' heads, focal 1636.5 px from the chamfer rails' vanishing point, 48.4 m to the pilaster plane at eye height 1.53 m, lens shift 0.316) measured the front (10.0 m at the balcony edge, pilasters 0.83 m at ±3.07), the chamfers (44°, to 27.0 m wide), the front corner radius (0.64) and the levels (podium top 10.17, roof slab top 27.25); the aerial's roof plane was rectified by homography and given a fitted roof-plane camera (`calibration.json`, overlays).
+- **Finding:** the aerial is an AI image with an impossible perspective (roof seen from almost straight above, facades almost level), so only its roof plane is usable; its rear roof guard turns inward right behind the chamfer ends.
+- **Options** (`rebuild/plan_options.py` -> `rebuild/terramar_plan_options.json`): A mirrored octagon, B squared rear, C rounded rear, D aerial-literal shallow (11 m), and E from the user's annotated top views; each as a dimensioned top view over the game outline and the rectified aerial edges.
+- **Approved plan, option E** (user, three sketches the same day): A's octagon with longer rear chamfers and a short rear face as long as a side, "more aligned to the aerial view"; no sharp point; every junction with the same small curvature. At the balcony edge (= podium = roof edge): 27.0 × 24.5 m; runs A 10.0, B/H 12.0 (45°), C/G 5.0, D/F 15.6, E 5.0 m; corners R 1.0 (front 0.64); the tower wall line 1.5 m inside (uniform balcony depth), corners R 0.25.
+- **The plan file** (`rebuild/make_plan.py` -> `rebuild/terramar_plan.json`): levels (podium top 10.17, five storeys of 3.35, slab edge 0.41, roof slab 26.57–27.25), runs, and the outlines of every phase-1 layer (podium, entrance 6.9 × 1.15 m, tower wall line, balcony edge with the flush centre bay, roof edge, roof guard line 0.15 m in, penthouse), markers for the front pilasters and the rounded chamfer columns (B/H from b8, D/F proposed in three bays), decisions and provenance; `plan_approved.png`.
+- **Massing check** (`rebuild/massing.py`, headed Blender through MCP, also headless; `rebuild/compose_massing.py`): `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_massing.blend` with plain blocks per option and the `CAM_B8` / `CAM_AERIAL` / `CAM_REAR` cameras. E's slab bands, pilasters, chamfer ends and podium land on b8 within about 10 px; the kept penthouse shows 0 pixels from `CAM_B8` (27,865 in the rear view).
+- **Decisions:**
+  - penthouse kept, set back out of b8's view (10 × 7.5 m at the rear; hidden up to 5.49 m above the roof top);
+  - front centre bay a flush loggia between the pilasters, as in b8;
+  - the rebuild keeps its own footprint (the game's 28 × 22 m is comparison only; no city spec places Terra & Mar yet);
+  - exterior AI 617–626 and 641 superseded (renamed DONE with a "Superseded" section pointing at the layer that takes each finding); props AI 627–633 and interiors AI 634–638 retargeted to the rebuild; AI 639 and 640 unchanged.
+- **Follow-up layer prompts:** AI 643 structure (slabs, floor plates, pilasters, rounded columns, podium, core, tooling switches), AI 644 envelope (glazing, frames, wood reveals), AI 645 balconies (surfaces, curved glass guards, wood soffits), AI 646 podium (storefronts, entrance, kit lettering, guard, lanterns), AI 647 roof (edge, guard, terrace, penthouse with annex and solar), AI 648 materials (kit limestone with joints in geometry, wood, steel, glass, bronze); then the retargeted props, interiors and site.
+- Generated file name: the plan phase writes `terramar_rebuild_massing.blend` (all options, regenerable); `terramar_rebuild.blend`, the layered model, is created by AI 643.
+- Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/` (calibration overlay, rectified aerial, `plan_option_<A-E>.png`, `plan_approved.png`, `massing_b8_sheet.png`, `massing_aerial_sheet.png`, `massing_rear_sheet.png`, `option_E_sheet.png`).

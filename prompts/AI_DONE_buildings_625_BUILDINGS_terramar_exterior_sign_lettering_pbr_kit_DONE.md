@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): in `b8.png`, `TERRA & MAR` is set in upright serif capitals in dark bronze or charcoal letters, with `COASTAL KITCHEN` smaller beneath it, centred on the entrance volume's stone band. The extracted letters (`TM_SIGNAGE`) are a sans-serif-looking extrusion in copper-brown (`TM_lettering`, `8b5a3c`).
@@ -39,3 +41,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 646 (podium): the kit lettering on the entrance band, as real letter geometry with the kit maps; AI 648 (materials): its bronze. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

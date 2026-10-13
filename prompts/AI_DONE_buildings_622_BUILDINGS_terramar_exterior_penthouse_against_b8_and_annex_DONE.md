@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): `b8.png`, the target, shows no penthouse from the street: above the roof edge there are only the glass guard, planters and small trees. The extracted model has a 3.8 m penthouse box (`wall__36`, its roofs and windows; x −5 … 5, y −2.25 … 5.25). It was authored from the user's annotated aerial, and it shows above the roof in the `ref_front_b8` render. The aerial also shows a darker annex with a louvred, slatted roof beside the box, on its −X side.
@@ -35,3 +37,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 647 (roof): the penthouse, which the user kept and set back out of b8's view (AI 642 decision), and the aerial's louvred annex. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

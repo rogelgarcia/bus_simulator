@@ -320,35 +320,43 @@ Rules for every edit prompt:
 
 ### Prompt index (2026-10-12)
 
+The rebuild (AI 642) superseded the exterior edit items; the props and interiors now target the rebuild file.
+
 | Area | Id | Item |
 | --- | --- | --- |
 | exterior | 615 | Slab edge fascia bands, deep and rounded at the chamfers |
 | exterior | 616 | Chamfer balconies as projecting curved slabs |
-| exterior | 617 | Warm wood soffits under balconies and slab overhangs |
-| exterior | 618 | Warm wood reveal panels at the front centre bays (the brick reveals go) |
-| exterior | 619 | Limestone cladding with the PBR kit stone, panel joints in geometry (needs 640) |
-| exterior | 620 | Roof edge: deep top slab, rounded corners, perimeter glass guard |
-| exterior | 621 | Podium glass guards: the top-edge line and the upper-podium window-base line |
-| exterior | 622 | Penthouse against b8 (b8 shows none: user decision), then the aerial's louvred annex |
-| exterior | 623 | Penthouse roof: mechanical units and solar panels (aerial only, if 622 keeps it) |
-| exterior | 624 | Glazing frames (storefronts, entrance, residential sliders), pier lanterns |
-| exterior | 625 | Sign lettering from the PBR kit masks and maps (needs 640) |
-| exterior | 626 | Coplanar face fixes from the audit |
-| props | 627 | Balcony planters and plants |
-| props | 628 | Podium planter boxes (window-base line, top edge, entrance terrace) |
-| props | 629 | Roof terrace planters and small trees |
-| props | 630 | Roof terrace furniture and paving (aerial only, lower priority) |
-| props | 631 | Storefront canopies |
-| props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) |
-| props | 633 | Street palms and entrance planters (site) |
-| interior | 634 | Interior base: floor plates, ceilings, partitions |
-| interior | 635 | Ground-floor restaurant |
-| interior | 636 | Upper-podium dining room |
-| interior | 637 | Residential units: sheer curtains and furniture |
-| interior | 638 | Penthouse interior |
+| exterior | 617 | ~~Warm wood soffits under balconies and slab overhangs~~ superseded by the rebuild → 645 |
+| exterior | 618 | ~~Warm wood reveal panels at the front centre bays (the brick reveals go)~~ superseded by the rebuild → 644 |
+| exterior | 619 | ~~Limestone cladding with the PBR kit stone, panel joints in geometry (needs 640)~~ superseded by the rebuild → 648 |
+| exterior | 620 | ~~Roof edge: deep top slab, rounded corners, perimeter glass guard~~ superseded by the rebuild → 647 |
+| exterior | 621 | ~~Podium glass guards: the top-edge line and the upper-podium window-base line~~ superseded by the rebuild → 645, 646 |
+| exterior | 622 | ~~Penthouse against b8 (b8 shows none: user decision), then the aerial's louvred annex~~ superseded by the rebuild → 647 |
+| exterior | 623 | ~~Penthouse roof: mechanical units and solar panels (aerial only, if 622 keeps it)~~ superseded by the rebuild → 647 |
+| exterior | 624 | ~~Glazing frames (storefronts, entrance, residential sliders), pier lanterns~~ superseded by the rebuild → 644, 646 |
+| exterior | 625 | ~~Sign lettering from the PBR kit masks and maps (needs 640)~~ superseded by the rebuild → 646, 648 |
+| exterior | 626 | ~~Coplanar face fixes from the audit~~ superseded by the rebuild → none (game geometry) |
+| props | 627 | Balcony planters and plants (retargeted to the rebuild) |
+| props | 628 | Podium planter boxes (window-base line, top edge, entrance terrace) (retargeted to the rebuild) |
+| props | 629 | Roof terrace planters and small trees (retargeted to the rebuild) |
+| props | 630 | Roof terrace furniture and paving (aerial only, lower priority) (retargeted to the rebuild) |
+| props | 631 | Storefront canopies (retargeted to the rebuild) |
+| props | 632 | Sidewalk cafe: umbrellas, tables, chairs (site) (retargeted to the rebuild) |
+| props | 633 | Street palms and entrance planters (site) (retargeted to the rebuild) |
+| interior | 634 | Interior base: floor plates, ceilings, partitions (retargeted to the rebuild) |
+| interior | 635 | Ground-floor restaurant (retargeted to the rebuild) |
+| interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
+| interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
+| interior | 638 | Penthouse interior (retargeted to the rebuild) |
 | material | 640 | Install the Terra & Mar PBR kit (user-supplied) as PBR sets with provenance; no game catalog registration yet |
-| exterior | 641 | Open the side bays (C, G): the game buried the side windows behind solid brick prows |
-| rebuild | 642 | **Restart from scratch** (user, 2026-10-12): layered parametric build; phase 1 is the top-view silhouette (front from b8, sides and rear redefined); the edit copy stays as reference and fallback |
+| exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
+| rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
+| rebuild | 643 | Structure: slabs, floor plates, front pilasters, rounded chamfer columns, podium, core; tooling switches for the rebuild file |
+| rebuild | 644 | Envelope: glazing line, black frames, front centre wood reveal panels, glazed sides and rear |
+| rebuild | 645 | Balconies: walking surfaces, curved glass guards, warm wood soffits, podium-edge guards |
+| rebuild | 646 | Podium: storefronts, entrance portal, kit lettering, upper-podium guard, lanterns |
+| rebuild | 647 | Roof: deep rounded edge, glass guard, terrace, penthouse with annex and solar (out of b8's view) |
+| rebuild | 648 | Materials: kit limestone with panel joints in geometry, wood, black steel, glass, bronze (needs 640) |
 
 ## Comparison poses (AI 639)
 
@@ -427,3 +435,47 @@ The glazing stays at the back of the loggias: the loggia (1.5 m) plus the projec
 - The front and rear centre loggias between the full-height piers stay flush, as b8 shows them.
 - Set aside: 88 guard parts. Still in place: floor 1's guards (AI 621), the centre loggias' guards, and the two podium terraces.
 - The audit drops to 18 coplanar pairs (some of the replaced guard glass carried them), none involving the new parts.
+
+## Rebuild from scratch (AI 642+)
+
+The game-extracted model carried too many engine decisions (recessed loggias everywhere, brick prows, faceted corners,
+one shell per level), so the user restarted Terra & Mar as a clean, layered Blender model (2026-10-12). The baseline and
+the 615/616 edit copy stay as references. Scripts live in `rebuild/`; the single source of the plan is
+`rebuild/terramar_plan.json`.
+
+```
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/calibrate_references.py   # b8 camera, aerial roof homography
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/plan_options.py           # options A-E -> terramar_plan_options.json
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/make_plan.py              # approved option -> terramar_plan.json
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/massing.py -- options=EABCD
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose_massing.py
+```
+
+| Script | Does |
+| --- | --- |
+| `reference_points.json` | points picked on gridded crops of b8 and the aerial, each with where it was read |
+| `calibrate_references.py` | calibrates a pinhole camera to b8 (horizon from the pedestrians' heads, focal from the chamfer rails' vanishing point, scale from the 3.35 m storey); measures the front, chamfers, corner radius and levels; rectifies the aerial's roof plane and fits a camera to it; writes `calibration.json` and overlays |
+| `plan_options.py` | the silhouette options as dimensioned top views over the game outline and the rectified aerial edges |
+| `make_plan.py` | the approved plan: every phase-1 layer outline, levels, runs, markers, decisions, provenance; `plan_approved.png` |
+| `massing.py` | Blender: plain blocks per option, `CAM_B8` / `CAM_AERIAL` / `CAM_REAR`, Workbench renders; saves `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_massing.blend`; refuses to run inside any other saved file |
+| `compose_massing.py` | massing edges (magenta) over b8 and the aerial, the rear sheet, the chosen-option sheet, and the count of penthouse pixels visible from `CAM_B8` (must be 0) |
+
+**Approved plan (option E, the user's annotated top views):** the front from b8, then A's octagon with longer rear
+chamfers and a short rear face as long as a side. At the balcony edge (= podium = roof edge): 27.0 × 24.5 m; runs A 10.0,
+B/H 12.0 (45°), C/G 5.0, D/F 15.6, E 5.0 m; every corner R 1.0, the two front corners 0.64 (b8); the tower wall line
+1.5 m inside (balcony depth, uniform), its corners R 0.25. Levels: podium top 10.17, five storeys of 3.35, roof slab
+26.57–27.25. Decisions: the penthouse is kept but out of b8's view (10 × 7.5 m at the rear; hidden up to 5.49 m above the
+roof top at its front wall, 0 pixels in `CAM_B8`); the front centre bay is a flush loggia between the pilasters; the
+rebuild keeps its own footprint (the game's 28 × 22 m is comparison only); the exterior edit prompts are superseded.
+
+Gotchas:
+- b8 and the aerial are AI images (±5–10 %). The aerial cannot be one camera: its roof reads as seen from almost
+  straight above and its facades as seen almost level (foreshortenings 0.97 and 0.92, impossible together). Use its
+  roof plane only (homography / roof-plane camera fit); its rear guard lines turn inward right behind the chamfer ends.
+- Workbench edges from shadows read as false lines in overlays: the reference cameras render without shadows.
+- Never offset a fillet by more than its radius (it folds into swallowtails): offset the sharp polygon, then round.
+
+Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/` (`calibration.json`,
+`b8_calibration_overlay.png`, `aerial_rectified_overlay.png`, `plan_option_<A-E>.png`, `plan_options_sheet.png`,
+`plan_approved.png`, `massing_b8_sheet.png`, `massing_aerial_sheet.png`, `massing_rear_sheet.png`, `option_E_sheet.png`,
+`massing/`).

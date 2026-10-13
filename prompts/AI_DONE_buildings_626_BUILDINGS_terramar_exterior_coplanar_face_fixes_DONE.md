@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): The baseline audit (`tests/artifacts/blender/terramar_recessed/before/terramar_recessed_before.audit.json`) found 26 coplanar face pairs, which flicker as z-fighting: 22 between the linked-corner balcony platforms or guard glass and the residential wall `wall__14` (for example `balcony_platform__567`/`__569`, `balcony_infill_glass__479` … `__483`), and 4 between the ground window part `mesh__85` and the ground wall `wall__0`.
@@ -35,3 +37,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Nothing carries over: the coplanar faces belong to the game's geometry, which the rebuild does not use; the rebuild runs the audit on its own geometry (AI 643 onward). The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

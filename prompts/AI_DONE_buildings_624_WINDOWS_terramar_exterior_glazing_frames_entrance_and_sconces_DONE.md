@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): In `b8.png`:
@@ -43,3 +45,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 644 (envelope): the black-framed residential sliders; AI 646 (podium): the storefront grids, the entrance portal and the lanterns. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): in `b8.png`, the walls, piers, podium and slab edges are clad in a pale, warm, travertine-like limestone, with visible large-format panel joints, soft veining and no grime. The extracted model uses smooth `limestone_smooth` tinted `e3d7bd` (`TM_limestone`, `TM_limestone_plain`), with no joints.
@@ -40,3 +42,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 648 (materials): the kit limestone with its large-format panel joints made in geometry. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

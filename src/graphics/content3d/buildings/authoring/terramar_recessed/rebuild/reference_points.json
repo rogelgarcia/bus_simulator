@@ -1,0 +1,64 @@
+{
+    "comment": "AI 642 phase 1: image points picked on gridded crops (2026-10-12). Pixel coordinates in the original images. b8.png = the target (1122 x 1402); aerial-unannotated.png = supplementary (1122 x 1402).",
+    "scale": {
+        "storey_m": 3.35,
+        "balcony_projection_m": 1.5,
+        "plan_front_y": -11.0,
+        "comment": "storey height from the spec (b8's own centre bay then reads 5.3 m against the spec's 5.5 m); balcony projection = the uniform depth the user asked for; the plan's front (balcony edge / podium line) placed at y = -11 like the game podium"
+    },
+    "b8": {
+        "image_size": [1122, 1402],
+        "horizon_heads_y": [1140, 1142, 1145, 1147],
+        "front_band_bottoms_y": [405, 515, 630, 745],
+        "band_px": 14,
+        "roof_band_px": 23,
+        "front_piers_x": [[441, 469], [649, 677]],
+        "front_corner_x": 736,
+        "corner_tangent_px": 9,
+        "right_chamfer_lines": [
+            [[841.7, 411.7], [958.3, 468.3]],
+            [[841.7, 516.7], [958.3, 570.0]],
+            [[841.7, 621.7], [958.3, 665.0]],
+            [[841.7, 728.3], [958.3, 766.7]],
+            [[750.0, 505.0], [800.0, 523.75]]
+        ],
+        "far_end_x": 962,
+        "far_end_rail_y": [468.3, 570.0, 665.0, 766.7],
+        "base_y": 1197,
+        "podium_top_y": 842,
+        "upper_podium_floor_y": 995,
+        "roof_top_y": 264,
+        "where": {
+            "horizon_heads_y": "pedestrians' heads at every distance (eye-height camera)",
+            "front_band_bottoms_y": "bottom edges of the floor slab bands in the front centre bay, floors 5..2 (brightness profile, x 500-620)",
+            "front_piers_x": "the two full-height front piers, outer edges",
+            "front_corner_x": "intersection of the front band line with the right chamfer band line (balcony edge, sharp corner)",
+            "corner_tangent_px": "the front band runs level to x 727, then curves (tangent length on the front)",
+            "right_chamfer_lines": "guard top rails of the deep outer bay on the right chamfer (4 floors) and the band just past the corner",
+            "far_end_x": "the outer bay's slab end at the chamfer-to-side corner",
+            "podium_top_y": "top of the podium, where the first residential floor's guard stands",
+            "upper_podium_floor_y": "band between the ground storefronts and the upper podium (rough)"
+        }
+    },
+    "aerial": {
+        "front_left": [435, 603],
+        "front_right": [690, 603],
+        "chamfer_end_left": [143, 398],
+        "chamfer_end_right": [1033, 410],
+        "left_side_edge": [[147, 362], [200, 352], [250, 346], [300, 339], [335, 332]],
+        "right_side_edge": [[1010, 372], [1000, 366], [960, 352], [925, 341], [885, 330]],
+        "rear_hints": {
+            "left_edge_reaches_annex": [335, 332],
+            "right_edge_visible_end": [885, 330]
+        },
+        "where": {
+            "front_left/right": "sharp corners of the roof slab's front edge with the front chamfers (the front edge runs y 600-605 between the piers)",
+            "chamfer_end_left/right": "the front chamfers' outer ends, where the roof edge rounds onto the sides",
+            "side edges": "the roof guard beyond those corners, followed back until planters or the penthouse annex hide it"
+        }
+    },
+    "notes": [
+        "b8 and the aerial are AI-generated images: their perspective is only approximately consistent; numbers carry roughly +/-5-10 % uncertainty.",
+        "The rear is visible in neither reference: the rear outline is a design choice."
+    ]
+}

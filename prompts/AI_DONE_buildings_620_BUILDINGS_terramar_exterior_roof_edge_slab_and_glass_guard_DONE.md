@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): In `b8.png`, the residential roof ends in a deep pale slab with rounded corners, thicker than the floor fascias. A continuous frameless glass guard with a slim top rail runs along it, with planters and small trees behind (the aerial shows the guard all the way round). The extracted model has cap and soffit bands plus a low pale parapet ring (`TM_ROOFS`, `mesh__694`, 0.5 m), faceted at the corners.
@@ -36,3 +38,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 647 (roof): the deep rounded roof slab edge and the frameless glass guard all the way round. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.

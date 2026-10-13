@@ -29,6 +29,17 @@ Tasks:
 - Blender only: no engine code, building config or catalog change. Nothing of the Bradbury's is edited. Prefer the headed Blender through MCP.
 - Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/edit/627_props_balcony_planters_and_plants/`. It holds the [reference | before | after] composites and the audit report.
 
+## Retargeted to the rebuild (2026-10-12, AI 642)
+The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642). This item stays valid but now targets
+the rebuild, not the game-extracted edit copy; where this section and the text above disagree, this section wins:
+- Work file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend` (created by AI 643), with one
+  idempotent script under `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/` building its own
+  collection. Nothing goes to `TM_REPLACED`: there is no game geometry to replace.
+- Outlines, runs and levels come from `rebuild/terramar_plan.json` (approved plan option E, 27.0 x 24.5 m): runs A front,
+  B/H front chamfers, C/G sides, D/F rear chamfers, E a short rear face; its levels replace the level tops above.
+- Wait for the layers this item stands on: AI 645 (balconies) for the reserved planter positions.
+- Evidence directory: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/627_props_balcony_planters_and_plants/`.
+
 ## On completion
 - Mark the AI document as DONE in the first line
 - Rename in `prompts/` to:

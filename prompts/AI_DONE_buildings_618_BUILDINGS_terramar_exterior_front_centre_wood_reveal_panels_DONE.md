@@ -1,3 +1,5 @@
+DONE (SUPERSEDED)
+
 # Problem
 
 Terra & Mar (exterior): On front A in `b8.png`, the centre bay's glazing is flanked by vertical warm wood panels on some floors (read them floor by floor), under the wood loggia ceiling. The other openings show pale stone or dark frames. In the extracted model every opening has a reddish sandstone-brick reveal (`TM_warm_reveal_brick`, on three of the wall shells), which reads as red brick around all the windows.
@@ -36,3 +38,9 @@ Tasks:
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Superseded (2026-10-12, by the owner's decision)
+Not implemented as written. The user restarted Terra & Mar as a from-scratch, layered Blender model (AI 642: approved
+plan option E, `src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/terramar_plan.json`), so this edit
+to the game-extracted copy will not be made. Its findings carry over to AI 644 (envelope): the front centre bay's wood reveal panels, read floor by floor. The edit copy
+(`tests/artifacts/blender/terramar_recessed/edit/terramar_recessed_edit.blend`, with AI 615/616) stays as a reference.
