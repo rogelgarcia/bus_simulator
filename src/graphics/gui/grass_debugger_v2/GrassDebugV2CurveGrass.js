@@ -21,7 +21,8 @@ export function createGrassDebugV2CurveGrass({ curve, assets, near, bridge, land
         const mesh = new THREE.Mesh(source.geometry, material(source.material)); mesh.userData = source.userData;
         return [id, mesh];
     }));
-    const representation = source => ({ templates: source.templates.cards, material: material(source.material), textureBytes: source.getSnapshot().textureBytes });
+    const representation = source => ({ templates: source.templates.cards ?? source.templates, material: material(source.material),
+        textureBytes: source.getSnapshot?.().textureBytes ?? source.textureBytes });
     const fields = createGrassDebugV2TransitionFields({ ...assets, sources,
         canopy: { ...assets.canopy, materials: { all: material(assets.canopy.materials.all) } },
         soilMaterial: material(assets.soilMaterial), litterMaterial: material(assets.litterMaterial),

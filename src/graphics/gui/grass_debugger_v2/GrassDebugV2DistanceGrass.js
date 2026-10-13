@@ -8,14 +8,16 @@ import { createGrassDebugV2ViewCards } from './GrassDebugV2ViewCards.js?v=card-d
 import { configureGrassDebugV2TransitionAppearance } from './GrassDebugV2DistanceAppearance.js';
 import { createGrassDebugV2CanopyShadows } from './GrassDebugV2CanopyShadows.js?v=canopy-cached-1';
 import { GRASS_FIELD_BUS_CAMERA } from './GrassDebugV2BusCamera.js';
-import { createGrassDebugV2BakedLightingAssets } from './GrassDebugV2BakedLightingAssets.js?v=canopy-palette-17';
+import { loadGrassRuntimeAsset } from '../../engine3d/grass/runtime/GrassRuntimeAsset.js';
 import { createGrassDebugV2CurveGrass } from './GrassDebugV2CurveGrass.js';
+import { createGrassDebugV2PatchGrass } from './GrassDebugV2PatchGrass.js';
+import { configureGrassDebugV2FieldShadows } from './GrassDebugV2FieldShadows.js';
 
-/** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera,lighting:object,road:object,bus:THREE.Object3D,land:object,curve?:object|null,strategy?:'baked'|'current',onProgress?:Function}} options */
+/** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera,lighting:object,road:object,bus:THREE.Object3D,land:object,curve?:object|null,strategy?:'baked'|'current'|'patches',onProgress?:Function}} options */
 export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera, lighting, road, bus, land, curve = null, strategy = 'baked', onProgress = () => {} }) {
-    if (!['baked', 'current'].includes(strategy)) throw new Error('Unknown roadside grass strategy: ' + strategy);
+    if (!['baked', 'current', 'patches'].includes(strategy)) throw new Error('Unknown roadside grass strategy: ' + strategy);
     const useBaked = strategy === 'baked';
-    if (curve && !useBaked) throw new Error('The curved grass experiment requires the latest baked strategy.');
+    if (curve && strategy === 'current') throw new Error('The curved grass experiment requires a baked strategy.');
     renderer.localClippingEnabled = true;
     const sidewalk = new THREE.Box3().setFromObject(road.sidewalk);
     const columns = 8, rows = 36, gap = 1;
@@ -32,18 +34,23 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
     const bounds = { minX: Math.min(...placements.map(p => p.minX)), maxX: Math.max(...placements.map(p => p.maxX)),
         minZ: Math.min(...placements.map(p => p.minZ)), maxZ: Math.max(...placements.map(p => p.maxZ)) };
     if (curve) for (const key of Object.keys(bounds)) bounds[key] = (key.startsWith('min') ? Math.min : Math.max)(bounds[key], curve.layout.bounds[key]);
-    const assets = await loadGrassDebugV2TransitionAssets({ renderer, lighting, externalShadows: true, extraCardBaseDensity: useBaked ? .6 : 0, onProgress });
+    if (strategy === 'patches') return createGrassDebugV2PatchGrass({ renderer, scene, camera, lighting, land, curve, placements, placement, bounds, onProgress });
+    const assets = useBaked ? await loadGrassRuntimeAsset({ renderer })
+        : await loadGrassDebugV2TransitionAssets({ renderer, lighting, externalShadows: true, extraCardBaseDensity: 0, onProgress });
     let nearCards, bridgeCards, bakedAssets, fields, externalShadows, curveGrass;
     const shadowTarget = new THREE.WebGLRenderTarget(1, 1);
     const shadowReceiver = useBaked ? new THREE.ShadowMaterial({ color: 0, side: THREE.DoubleSide }) : null;
     try {
-        if (useBaked) bakedAssets = await createGrassDebugV2BakedLightingAssets({ renderer, assets, lighting, onProgress, appearance: 'detailed' });
+        if (useBaked) {
+            bakedAssets = assets;
+            assets.settings.brightness.value = lighting.sunRef.intensity / (assets.manifest.leafColor[0] * 2 * Math.PI);
+        }
         else {
             nearCards = await createGrassDebugV2ViewCards({ renderer, source: assets.sources.LOD2, onProgress });
             bridgeCards = await createGrassDebugV2ViewCards({ renderer, source: assets.sources.LOD2, profile: 'bridge', onProgress });
         }
-        const [near, bridge] = bakedAssets?.blades ?? [nearCards, bridgeCards];
-        const representation = cards => ({ templates: cards.templates.cards, material: cards.material, textureBytes: cards.getSnapshot().textureBytes });
+        const [near, bridge] = useBaked ? [assets.lod3, assets.bridge] : [nearCards, bridgeCards];
+        const representation = cards => useBaked ? cards : ({ templates: cards.templates.cards, material: cards.material, textureBytes: cards.getSnapshot().textureBytes });
         fields = createGrassDebugV2TransitionFields({ ...assets, ...bakedAssets, fieldSize: placement.columns, fieldDepth: placement.rows,
             origins: placements.map(p => [p.minX, p.minZ]), gap, bridge: representation(bridge) });
         fields.setLod3Representation(representation(near)); fields.setEdgeStrips(true);
@@ -62,21 +69,7 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
         land.setGrassPatches(placements); land.setGrassVisible(true);
         lighting.applyEnvironment();
         const sun = lighting.sun;
-        sun.shadow.mapSize.set(8192, 8192);
-        sun.shadow.normalBias = .0005; sun.shadow.bias = -.00001;
-        // Include the expanded fields in the fixed shadow camera without changing the game sun.
-        sun.updateMatrixWorld(true); sun.target.updateMatrixWorld(true); sun.shadow.updateMatrices(sun);
-        const shadowCamera = sun.shadow.camera, shadowBounds = new THREE.Box3();
-        for (const x of [bounds.minX - 2, bounds.maxX + 2]) for (const z of [bounds.minZ - 2, bounds.maxZ + 2])
-            for (const y of [0, 16]) shadowBounds.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(shadowCamera.matrixWorldInverse));
-        shadowCamera.left = Math.min(shadowCamera.left, shadowBounds.min.x);
-        shadowCamera.right = Math.max(shadowCamera.right, shadowBounds.max.x);
-        shadowCamera.bottom = Math.min(shadowCamera.bottom, shadowBounds.min.y);
-        shadowCamera.top = Math.max(shadowCamera.top, shadowBounds.max.y);
-        shadowCamera.near = Math.min(shadowCamera.near, Math.max(.1, -shadowBounds.max.z - 16));
-        shadowCamera.far = Math.max(shadowCamera.far, -shadowBounds.min.z + 16);
-        shadowCamera.updateProjectionMatrix();
-        renderer.shadowMap.autoUpdate = false;
+        configureGrassDebugV2FieldShadows({ sun, renderer, bounds });
         const allLod2 = new Uint8Array(fields.cells.length).fill(2), allCanopy = new Uint8Array(fields.cells.length).fill(5);
         const noSides = new Uint8Array(fields.cells.length), forcedLevels = new Uint8Array(fields.cells.length);
         let mode = 'AUTO', shadowGenerations = 0, disposed = false;
@@ -102,7 +95,7 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
         }
         onProgress('Preparing grass lighting and scene shadows…');
         fields.applyLevels(allCanopy, noSides);
-        externalShadows = createGrassDebugV2CanopyShadows({ renderer, scene, sun, canopy: assets.canopy, receiverMaterial: shadowReceiver, fields: {
+        externalShadows = createGrassDebugV2CanopyShadows({ renderer, scene, sun, canopy: useBaked ? { ...assets.canopy, shadowUniforms: assets.shadowUniforms } : assets.canopy, receiverMaterial: shadowReceiver, fields: {
             getSnapshot: () => ({ bounds }),
             getCanopyMeshes: () => {
                 const receivers = [];
@@ -135,7 +128,7 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
             },
             getSnapshot() {
                 const field = fields.getSnapshot(), visible = mode !== 'OFF';
-                return { mode, system: 'distance-lod', strategy, appearance: bakedAssets?.getSnapshot() ?? null, placement, placements, fieldCount: placements.length, columnsPerSide: 3, rowsPerSide: 5, gapMeters: gap, patches: fields.cells.length,
+                return { mode, system: 'distance-lod', strategy, appearance: bakedAssets?.manifest.appearance ?? null, placement, placements, fieldCount: placements.length, columnsPerSide: 3, rowsPerSide: 5, gapMeters: gap, patches: fields.cells.length,
                     triangles: visible ? field.triangles : 0, levels: visible ? field.levels : [0, 0, 0, 0, 0, 0],
                     field, curve: curveGrass?.getSnapshot() ?? null, selection: selection.getSnapshot(), canopy: assets.canopy.getSnapshot(),
                     cards: useBaked ? null : { near: nearCards.getSnapshot(), bridge: bridgeCards.getSnapshot() },
@@ -144,12 +137,12 @@ export async function createGrassDebugV2DistanceGrass({ renderer, scene, camera,
             dispose() {
                 if (disposed) return;
                 disposed = true; land.setGrassVisible(false); curveGrass?.dispose(); fields.dispose(); externalShadows.dispose();
-                nearCards?.dispose(); bridgeCards?.dispose(); bakedAssets?.dispose(); assets.dispose(); shadowTarget.dispose(); shadowReceiver?.dispose();
+                nearCards?.dispose(); bridgeCards?.dispose(); assets.dispose(); shadowTarget.dispose(); shadowReceiver?.dispose();
             }
         });
     } catch (error) {
         land.setGrassVisible(false); curveGrass?.dispose(); fields?.dispose(); externalShadows?.dispose();
-        nearCards?.dispose(); bridgeCards?.dispose(); bakedAssets?.dispose(); assets.dispose(); shadowTarget.dispose(); shadowReceiver?.dispose();
+        nearCards?.dispose(); bridgeCards?.dispose(); assets.dispose(); shadowTarget.dispose(); shadowReceiver?.dispose();
         throw error;
     }
 }

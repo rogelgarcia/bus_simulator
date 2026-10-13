@@ -85,6 +85,14 @@ export class GrassDebugV2View {
             onChange: this._onBenchmarkChange
         });
         if (content.curve) this.setCamera('curve');
+        const savedCamera = new URLSearchParams(location.search).get('camera');
+        if (savedCamera !== null) {
+            const values = JSON.parse(savedCamera);
+            if (!Array.isArray(values) || values.length !== 6 || values.some(value => !Number.isFinite(value) || Math.abs(value) > 10000))
+                throw new Error('Grass comparison camera must contain six finite coordinates.');
+            this.controls.setLookAt({ position: new THREE.Vector3().fromArray(values), target: new THREE.Vector3().fromArray(values, 3) });
+            this.grass.update(this.camera.position, performance.now(), true);
+        }
         this.renderer.setAnimationLoop(this._onFrame);
     }
 

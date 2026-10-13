@@ -32,7 +32,7 @@ export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROO
     const texture = record => {
         const mipmaps = record.mipmaps.map(mip => ({ width: mip.width, height: mip.height, data: array(mip) }));
         const result = new THREE.DataTexture(mipmaps[0].data, record.width, record.height, THREE.RGBAFormat); textures.push(result);
-        result.mipmaps = mipmaps; result.generateMipmaps = mipmaps.length === 1; result.colorSpace = THREE.NoColorSpace;
+        result.mipmaps = mipmaps.length > 1 ? mipmaps : []; result.generateMipmaps = mipmaps.length === 1; result.colorSpace = THREE.NoColorSpace;
         result.minFilter = THREE.LinearMipmapLinearFilter; result.magFilter = THREE.LinearFilter;
         result.wrapS = result.wrapT = THREE.RepeatWrapping;
         result.anisotropy = Math.min(record.anisotropy, renderer.capabilities.getMaxAnisotropy()); result.needsUpdate = true;
@@ -57,7 +57,7 @@ export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROO
             const mesh = new THREE.Mesh(geometry(record), leaf); mesh.userData.grassLeafRanges = record.ranges; return [level, mesh];
         }));
         const [lod3, bridge] = manifest.blades.map(group => ({ templates: group.map(geometry), material: leaf, textureBytes: 0 }));
-        return Object.freeze({ sources, lod3, bridge, settings, shadowUniforms, materials, manifest,
+        return Object.freeze({ sources, lod3, bridge, settings, shadowUniforms, materials, manifest, maps: { canopy: canopyMaps, litter: litterMaps },
             canopy: { materials: { all: canopyMaterial }, rootShade: .32, getSnapshot: () => ({ definition: manifest.definition }) },
             soilMaterial: litterMaterial, litterMaterial, soilUv: new THREE.Matrix3(), litterUv: new THREE.Matrix3(), tileVariation: true,
             dispose });

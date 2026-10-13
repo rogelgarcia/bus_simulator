@@ -47,3 +47,18 @@ export function createGrassDebugV2FieldShadows({ renderer, scene, camera, sun, f
         dispose: () => { lighting.render = originalRender; target.dispose(); }
     });
 }
+
+/** @param {{sun:THREE.DirectionalLight,renderer:THREE.WebGLRenderer,bounds:object}} input */
+export function configureGrassDebugV2FieldShadows({ sun, renderer, bounds }) {
+    sun.shadow.mapSize.set(8192, 8192);
+    sun.shadow.normalBias = .0005; sun.shadow.bias = -.00001;
+    sun.updateMatrixWorld(true); sun.target.updateMatrixWorld(true); sun.shadow.updateMatrices(sun);
+    const camera = sun.shadow.camera, shadowBounds = new THREE.Box3();
+    for (const x of [bounds.minX - 2, bounds.maxX + 2]) for (const z of [bounds.minZ - 2, bounds.maxZ + 2])
+        for (const y of [0, 16]) shadowBounds.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(camera.matrixWorldInverse));
+    camera.left = Math.min(camera.left, shadowBounds.min.x); camera.right = Math.max(camera.right, shadowBounds.max.x);
+    camera.bottom = Math.min(camera.bottom, shadowBounds.min.y); camera.top = Math.max(camera.top, shadowBounds.max.y);
+    camera.near = Math.min(camera.near, Math.max(.1, -shadowBounds.max.z - 16));
+    camera.far = Math.max(camera.far, -shadowBounds.min.z + 16); camera.updateProjectionMatrix();
+    renderer.shadowMap.autoUpdate = false;
+}

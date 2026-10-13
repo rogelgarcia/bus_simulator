@@ -21,6 +21,15 @@ batching, transitions and selection. The bus lab imports compatibility re-export
 and retains both its default baked strategy and the previous `?grass=current`
 comparison. Gameplay imports no lab scene, diagnostic UI or authoring assets.
 
+The bus lab also exposes the [immutable patch experiment](GRASS_RUNTIME_REDESIGN.md)
+at `?grass=patches`. Its implementation lives in this shared runtime directory,
+but gameplay has not adopted it. The lab's baked reference and patch experiment
+both consume the same authenticated gameplay package.
+
+The runtime loader generates mipmaps for textures containing only a base level
+and preserves supplied multi-level mip chains. A lone base level must not be
+passed as a complete manual chain; otherwise minified litter can sample black.
+
 Gameplay and the [bus lab's curved layout experiment](GRASS_DEBUG_V2.md#curved-boundary-experiment-ai-613-2026-10-12)
 share `GrassBoundaryMask` for filtered vector-contour coverage. The gameplay
 adapter combines the city's final road contours with building and slab exclusions.

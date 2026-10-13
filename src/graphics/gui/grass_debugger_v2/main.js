@@ -71,11 +71,16 @@ function updateGrassPanel() {
     for (const button of grassButtons) button.setAttribute('aria-pressed', String(button.dataset.grassMode === grass.mode));
     grassCounts.textContent = `${(grass.triangles + (grass.curve?.mode === 'OFF' ? 0 : grass.curve?.field.triangles ?? 0)).toLocaleString('en-US')} triangles\n`
         + grass.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
-    if (grass.curve) grassCounts.textContent += '\nCurve: ' + grass.curve.field.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
+    if (grass.curve && grass.strategy !== 'patches') grassCounts.textContent += '\nCurve: ' + grass.curve.field.levels.map((count, level) => `L${level}: ${count}`).join(' · ');
     fadeSelect.value = grass.field.fadeStyle;
     fadeSelect.querySelector('[value="canopy"]').disabled = grass.strategy !== 'baked';
-    fadeSelect.disabled = !view.ready || view.benchmark.active;
-    document.getElementById('grass-ranges').textContent = `${grass.strategy === 'baked' ? 'Baked grass' : 'Original lit grass'} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
+    fadeSelect.disabled = !view.ready || view.benchmark.active || grass.strategy === 'patches';
+    const label = { baked: 'Baked grass', current: 'Original lit grass', patches: 'Fixed patches · experiment' }[grass.strategy];
+    document.getElementById('grass-ranges').textContent = `${label} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
+    if (grass.strategy === 'patches') {
+        grassCounts.title = `Shared immutable 2 / ${grass.field.patchSize} m patches. Counts include adjacent LODs in transition bands. Ground uses ${grass.field.surfacePatches} coarse surfaces. Forced LODs cover the full visible field; AUTO keeps bounded distance selection. Curve and roadside counts are combined.`;
+        return;
+    }
     grassCounts.title = [
         `${grass.fieldCount} fields · ${grass.placement.columns} × ${grass.placement.rows} m each · ${grass.gapMeters} m gaps · ${grass.patches} × 1 m² cells`,
         grass.strategy === 'baked' ? 'LOD0–4: individual blades with baked shading · LOD5: detailed 1K canopy with shaded roots.'
@@ -153,13 +158,19 @@ window.__grassDebugV2 = Object.freeze({
 });
 
 busButton.addEventListener('click', () => view.setCamera('bus'));
+for (const link of document.querySelectorAll('[data-grass-strategy]')) link.addEventListener('click', () => {
+    const url = new URL(location.href); url.searchParams.set('grass', link.dataset.grassStrategy);
+    if (link.dataset.grassStrategy === 'current') url.searchParams.delete('curve');
+    url.searchParams.set('camera', JSON.stringify([...view.camera.position.toArray(), ...view.controls.target.toArray()]));
+    link.href = url.href;
+});
 overviewButton.addEventListener('click', () => view.setCamera('overview'));
 grassCameraButton.addEventListener('click', () => view.setCamera('grass'));
 for (const button of curveCameras) button.addEventListener('click', () => view.setCamera(button.dataset.curveCamera));
 curveRadius.addEventListener('change', () => {
     const url = new URL(location.href);
     if (curveRadius.value === 'off') url.searchParams.delete('curve');
-    else { url.searchParams.set('curve', curveRadius.value); url.searchParams.set('grass', 'baked'); }
+    else { url.searchParams.set('curve', curveRadius.value); if (view.grass.getSnapshot().strategy !== 'patches') url.searchParams.set('grass', 'baked'); }
     location.assign(url.href);
 });
 for (const button of grassButtons) button.addEventListener('click', () => {

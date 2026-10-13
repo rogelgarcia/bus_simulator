@@ -8,13 +8,13 @@ import { grassBoundaryShader } from '../../../shaders/materials/grass/GrassBound
 const sections = source => Object.fromEntries([...source.matchAll(/\/\/ @section (\w+)\s*\n([\s\S]*?)(?=\/\/ @section|$)/g)].map(match => [match[1], match[2]]));
 const vertex = sections(grassBoundaryShader.vertexSource), fragment = sections(grassBoundaryShader.fragmentSource);
 
-/** @param {{bounds:{minX:number,minZ:number,maxX:number,maxZ:number},outline:{x:number,z:number}[],exclusions:{x:number,z:number}[][],exclusionGroups?:{loops:{x:number,z:number}[][],margin:number}[],resolution?:number}} input */
-export function createGrassBoundaryMask({ bounds, outline, exclusions, exclusionGroups = [], resolution = 4096 }) {
+/** @param {{bounds:{minX:number,minZ:number,maxX:number,maxZ:number},outline?:{x:number,z:number}[],outlines?:{x:number,z:number}[][],exclusions:{x:number,z:number}[][],exclusionGroups?:{loops:{x:number,z:number}[][],margin:number}[],resolution?:number}} input */
+export function createGrassBoundaryMask({ bounds, outline, outlines = [outline], exclusions, exclusionGroups = [], resolution = 4096 }) {
     const width = bounds.maxX - bounds.minX, depth = bounds.maxZ - bounds.minZ;
     if (![bounds.minX, bounds.minZ, width, depth].every(Number.isFinite) || width <= 0 || depth <= 0
         || !Number.isInteger(resolution) || resolution < 64 || resolution > 4096
         || exclusionGroups.some(group => !Number.isFinite(group.margin) || group.margin < 0)
-        || ![outline, ...exclusions, ...exclusionGroups.flatMap(group => group.loops)].every(loop => loop.length >= 3 && loop.every(p => Number.isFinite(p.x) && Number.isFinite(p.z))))
+        || !outlines.length || ![...outlines, ...exclusions, ...exclusionGroups.flatMap(group => group.loops)].every(loop => loop?.length >= 3 && loop.every(p => Number.isFinite(p.x) && Number.isFinite(p.z))))
         throw new Error('[GrassBoundary] Expected finite contours, positive bounds and a 64–4096 resolution.');
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = resolution;
     const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -29,7 +29,8 @@ export function createGrassBoundaryMask({ bounds, outline, exclusions, exclusion
     };
     context.fillStyle = '#000'; context.fillRect(0, 0, resolution, resolution);
     context.setTransform(resolution / width, 0, 0, resolution / depth, -bounds.minX / width * resolution, -bounds.minZ / depth * resolution);
-    draw([outline], '#fff'); draw(exclusions, '#000');
+    for (const loop of outlines) draw([loop], '#fff');
+    draw(exclusions, '#000');
     for (const group of exclusionGroups) draw(group.loops, '#000', group.margin);
     const rgba = context.getImageData(0, 0, resolution, resolution).data, pixels = new Uint8Array(resolution * resolution);
     for (let i = 0; i < pixels.length; i++) pixels[i] = rgba[i * 4];

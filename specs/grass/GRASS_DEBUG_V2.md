@@ -11,10 +11,41 @@ retains its isolated scene and comparison controls.
 There are no additional setup, quality or lighting configuration panels or saved
 scene settings.
 
+## Fixed patch experiment (2026-10-13)
+
+`debug_tools/grass_debug_v2.html?grass=patches` selects the shared immutable patch
+renderer. **Fixed patches** compares with **Latest baked**, and both links retain
+the camera and curved layout. The default remains the baked reference. Both baked
+paths now load the authenticated gameplay runtime package; the original lit
+comparison still uses the authoring exports.
+
+Fixed patches retain real blades nearby, shorten the geometric ranges to
+0.6 / 0.8 / 8 / 16 / 24 m, and use one continuous litter/canopy surface in the
+distance. Selection includes camera height. Patch geometry and placement buffers
+stay immutable while the camera moves. LOD0/1 use 2 m patches, other blades use
+4 m patches, and ground uses static 32 m quads. Existing runtime blade assets and
+palette are retained; this experiment does not generate new bake assets.
+
+The fixed path matches coarse blade and ground color to the projected canopy
+over 16–21.6 m, before the opaque dissolve at 21.6–24 m. Forced LOD0–4 cover the
+full visible field with the selected geometry; LOD5 shows the continuous canopy.
+Returning to AUTO releases extra forced-mode mesh objects and restores bounded
+distance selection. Counts combine the
+straight and curved layouts and include overlapping detail patches. OFF restores
+the terrain. Curve radius changes preserve the fixed strategy. The game remains
+on its existing renderer pending this lab evaluation and gameplay pass validation.
+
+Implementation, remaining targets and validation are recorded in
+[GRASS_RUNTIME_REDESIGN.md](GRASS_RUNTIME_REDESIGN.md). Automated coverage includes
+movement without GPU buffer uploads, curved exclusions, external shadows,
+disposal and camera-preserving comparisons. Hardware route tests and screenshots
+remain gitignored under `tests/artifacts/screens/grass/runtime_redesign/`.
+
 ## Curved boundary experiment (AI 613, 2026-10-12)
 
 In the bus lab, **Curved layout → Road radius** selects an **18 m bend** or
-**30 m bend**. The selection reloads the scene with the latest baked grass.
+**30 m bend**. The selection reloads the scene with baked grass, retaining the
+fixed patch strategy when it is selected.
 Direct entry points are `debug_tools/grass_debug_v2.html?curve=18` and
 `debug_tools/grass_debug_v2.html?curve=30`. **Straight reference only** removes
 the experiment; the default URL and `?grass=current` comparison retain the

@@ -52,7 +52,7 @@
             <button type="button" data-grass-mode="LOD5" aria-pressed="false" disabled>LOD5</button>
         </div>
         <p id="grass-ranges" class="grass-v2-ranges">Baked grass · Switches: 0.6 / 0.8 / 20 / 30 / 40 m</p>
-        <div class="grass-v2-version-links"><a href="?grass=baked" data-grass-strategy="baked">Latest baked</a><a href="?grass=current" data-grass-strategy="current">Original lit</a></div>
+        <div class="grass-v2-version-links"><a href="?grass=patches" data-grass-strategy="patches">Fixed patches</a><a href="?grass=baked" data-grass-strategy="baked">Latest baked</a><a href="?grass=current" data-grass-strategy="current">Original lit</a></div>
         <label class="grass-v2-fade">Blend
             <select id="grass-fade" disabled>
                 <option value="canopy">Continuous canopy</option>
@@ -84,10 +84,17 @@
 <script type="importmap">
 {
     "imports": {
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=curved-boundary-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2DistanceGrass.js?v=immutable-patches-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2CurveGrass.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2CurveGrass.js?v=immutable-patches-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2FieldShadows.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2FieldShadows.js?v=immutable-patches-1",
+        "../src/graphics/engine3d/grass/runtime/GrassBoundaryMask.js": "../src/graphics/engine3d/grass/runtime/GrassBoundaryMask.js?v=immutable-patches-1",
+        "../src/graphics/engine3d/grass/runtime/GrassRuntimeAsset.js": "../src/graphics/engine3d/grass/runtime/GrassRuntimeAsset.js?v=canopy-handoff-2",
+        "../src/graphics/engine3d/grass/runtime/GrassPatchRenderer.js": "../src/graphics/engine3d/grass/runtime/GrassPatchRenderer.js?v=canopy-handoff-2",
+        "../src/graphics/engine3d/grass/runtime/GrassPatchMaterials.js": "../src/graphics/engine3d/grass/runtime/GrassPatchMaterials.js?v=canopy-handoff-2",
+        "../src/graphics/shaders/materials/grass/GrassPatchShaderLoader.js": "../src/graphics/shaders/materials/grass/GrassPatchShaderLoader.js?v=canopy-handoff-2",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js?v=roadside-flight-smooth-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js?v=roadside-flight-smooth-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=curved-boundary-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=immutable-patches-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js?v=canopy-seam-2",
@@ -99,6 +106,6 @@
     }
 }
 </script>
-<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=curved-boundary-1"></script>
+<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=canopy-handoff-2"></script>
 </body>
 </html>
