@@ -51,9 +51,16 @@ Each PBR entry must be assigned to exactly one `classId` from this first-pass li
 - `roof_tiles` — roof tile surfaces
 - `pavers` — paving stones/pavers/crosswalk bricks
 - `grass` — grass surfaces (non-ORM sets)
-- `foliage` — botanical leaf surfaces; eligibility remains defined by each material
+- `foliage` — botanical leaf surfaces, including separate front/back sets; eligibility remains defined by each material
 - `bark` — botanical trunk and branch surfaces; eligibility remains defined by each material
 - `ground` — sand/gravel/dirt/rocky terrain ground
+
+The enhanced tree import installs fifteen `pbr.tree_ai_<species>_<role>` entries.
+These use neither building nor ground eligibility. Provenance identifies the
+source as `AI generated`; source hashes, inferred data-map status and approximate
+physical scales are preserved. Leaf opacity and translucency use the existing
+`auxiliaryMapFiles` inventory. Supplied PNG bytes are retained exactly for this
+import, including opaque bark color, rather than introducing a lossy conversion.
 
 UI ordering:
 - UIs should present classes in a consistent, human-friendly order (not alphabetical).

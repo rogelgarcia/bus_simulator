@@ -1,5 +1,41 @@
 # Offline bake framework
 
+`vegetation/enhanced-reference` includes a staging-only `posture` phase for
+authenticated v9 London planes. It preserves mature_01, raises the marked
+scaffold families in mature_02/03 with attached foliage, and regenerates their
+wood through the existing mesh/PBR pipeline. Its review adds paired leafy/bare
+views. Candidate isolation, input authentication and publication gates apply.
+
+`vegetation/enhanced-reference` preserves the current reference index and builds
+a separate botanical collection from supplied studies. Its material phase stages,
+validates and optionally publishes new AI-generated PBR catalog entries. All model
+and comparison outputs remain ignored review artifacts. See the
+[enhanced reference contract](../graphics/vegetation_enhanced_reference.md).
+Its explicit `structure` phase reviews bare scaffold geometry before foliage
+generation. A `previous` manifest authenticates an earlier enhanced collection
+and adds before/after and final-mesh clay comparisons. Selected-species galleries
+retain all three mature forms per selected species.
+The staging-only `refine` phase authenticates a preserved v2 candidate directory,
+relaxes local fork surfaces once, and writes v3 files into a separate output. It
+checks retained foliage/twig data, unchanged topology and bounded displacement.
+The read-only `inspect` phase rejects out-of-bounds saved wood/branchlets and
+oversized mesh edges. Gallery/validate require this Blender audit for every model.
+Builds isolate each specimen in a separate process and check each wood modifier.
+`structure-surface=clay` is an optional bare-shape diagnostic with whole-scaffold,
+fork and root-crown views. It skips bark transfer only in `structure`; full builds
+retain their material and mesh validation gates.
+London plane diagnostics also include the fine leaf-bearing shoot graph and an
+outer branchlet close-up. Its v8 three-form gallery authenticates nineteen renders
+when supplied with a previous collection, including matched old/new twig views.
+Its staging-only `foliage` phase authenticates a v8 candidate and replaces leaf
+instances while retaining wood mesh positions, topology and UVs. `foliage-study`
+records the supplied branchlet image. `views=shoot` extracts an actual saved shoot
+for inspection; a complete v9 three-form review requires twenty frames.
+`foliage-layout=spatial` instead authenticates the later v9/v10 wood and generates
+v11 leaves with length-based nodes and oriented-volume spacing. It preserves
+the same wood/UV audit gates and adds a matched previous isolated-shoot view;
+the three-form review requires 21 frames.
+
 `vegetation/hybrid-lod0` derives all mature canopies from authenticated natural
 reference indices, preserving accepted structural wood. It authors flat PBR
 branchlets and two geometric leaf detail levels, validates actual exported
@@ -728,3 +764,15 @@ structure. Core placement allocates 50,000 foliage triangles across all 15
 mature specimens and targets half of each preceding woody mesh. Shared tool
 configuration, declared source/input hashes, reference authentication and the
 no-publication gate are unchanged. See `tools/bake_vegetation/lod0/README.md`.
+
+The vegetation/enhanced-reference foliage phase also accepts foliage-layout=dome for shallow outward-facing London plane sprays from authenticated v11 models. views=canopy provides matched road-height views and foliage-only coverage masks. Existing isolated staging, input stability and publication gates apply; no runtime model publication is added.
+
+`foliage-layout=organic` accepts authenticated v12 London plane models, restores
+curved leaf tissue and applies coherent, bounded leaf tilt while preserving both
+woody meshes and exact attachment nodes. The existing 35-view gallery, matched
+coverage masks, preserved reference hashes and publication gates still apply.
+
+For v13 references, `views=poses` adds fixed side/rear angles for each mature
+specimen and an in-canopy/isolated branchlet pair. The gallery verifies complete
+pose groups and matched cameras and lighting, then embeds them in the same page.
+This is a render-only extension; model files and reference hashes stay intact.

@@ -1,3 +1,18 @@
+import enhancedTreeMaterial14 from './tree_ai_arrowwood_viburnum_leaf_back/pbr.material.config.js';
+import enhancedTreeMaterial13 from './tree_ai_arrowwood_viburnum_leaf_front/pbr.material.config.js';
+import enhancedTreeMaterial12 from './tree_ai_arrowwood_viburnum_bark/pbr.material.config.js';
+import enhancedTreeMaterial11 from './tree_ai_american_elm_leaf_back/pbr.material.config.js';
+import enhancedTreeMaterial10 from './tree_ai_american_elm_leaf_front/pbr.material.config.js';
+import enhancedTreeMaterial9 from './tree_ai_american_elm_bark/pbr.material.config.js';
+import enhancedTreeMaterial8 from './tree_ai_northern_red_oak_leaf_back/pbr.material.config.js';
+import enhancedTreeMaterial7 from './tree_ai_northern_red_oak_leaf_front/pbr.material.config.js';
+import enhancedTreeMaterial6 from './tree_ai_northern_red_oak_bark/pbr.material.config.js';
+import enhancedTreeMaterial5 from './tree_ai_silver_linden_leaf_back/pbr.material.config.js';
+import enhancedTreeMaterial4 from './tree_ai_silver_linden_leaf_front/pbr.material.config.js';
+import enhancedTreeMaterial3 from './tree_ai_silver_linden_bark/pbr.material.config.js';
+import enhancedTreeMaterial2 from './tree_ai_london_plane_leaf_back/pbr.material.config.js';
+import enhancedTreeMaterial1 from './tree_ai_london_plane_leaf_front/pbr.material.config.js';
+import enhancedTreeMaterial0 from './tree_ai_london_plane_bark/pbr.material.config.js';
 import landscapeUniform0 from './landscape_soil_uniform_v1/pbr.material.config.js';
 import landscapeUniform1 from './landscape_forest_soil_uniform_v1/pbr.material.config.js';
 import landscapeUniform2 from './landscape_grass_uniform_v1/pbr.material.config.js';
@@ -75,6 +90,21 @@ import whitewashedBrick from './whitewashed_brick/pbr.material.config.js';
 import wornMossyPlasterwall from './worn_mossy_plasterwall/pbr.material.config.js';
 
 export const PBR_MATERIAL_CATALOG = Object.freeze([
+    enhancedTreeMaterial14,
+    enhancedTreeMaterial13,
+    enhancedTreeMaterial12,
+    enhancedTreeMaterial11,
+    enhancedTreeMaterial10,
+    enhancedTreeMaterial9,
+    enhancedTreeMaterial8,
+    enhancedTreeMaterial7,
+    enhancedTreeMaterial6,
+    enhancedTreeMaterial5,
+    enhancedTreeMaterial4,
+    enhancedTreeMaterial3,
+    enhancedTreeMaterial2,
+    enhancedTreeMaterial1,
+    enhancedTreeMaterial0,
     landscapeUniform0,
     landscapeUniform1,
     landscapeUniform2,

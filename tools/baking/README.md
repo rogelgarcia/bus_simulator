@@ -46,6 +46,7 @@ The first implementation executes sequentially, including Blender and browser jo
 
 | Branch | Offline responsibility | Default/release behavior |
 | --- | --- | --- |
+| `vegetation/enhanced-reference` | Species-specific enhanced reference architecture, shared fork growth, supplied AI PBR and visual comparisons | Explicit materials/structure/build/refine/foliage/posture/inspect/render/gallery/validate; saved-mesh audit before gallery validation; only validated new materials can publish; [workflow](../bake_vegetation/enhanced_reference/README.md) |
 | `vegetation/hybrid-lod0` | Three-zone canopies from updated references: detailed edges, simple curved leaves, flat interior cards | Explicit atlas/build/compress/render/variants/gallery/validate leaf; CPU review only; [workflow](../bake_vegetation/hybrid_lod0/README.md) |
 | `vegetation/natural-foliage` | Curved connected reference shoots, species leaf arrangement and crowding-aware placement | Explicit study/build/render/all/consolidate/coverage review leaf; no publication; [workflow](../bake_vegetation/natural_foliage/README.md) |
 | `vegetation/turntable` | Labeled species orbits and matched reference/LOD0 leaf close-ups in Eevee | Explicit artifact-only proof/render/assemble/closeups leaf; [workflow](../bake_vegetation/turntable/README.md) |
