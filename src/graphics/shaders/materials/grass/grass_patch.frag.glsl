@@ -47,9 +47,17 @@ float grassPatchColorFade = grassPatchMode < 0 ? smoothstep(grassPatchHandoffBan
 if (grassPatchMode < 0) {
     float grassPatchDistance = distance(vec3(vBakedGrassWorld.x, grassPatchGroundY, vBakedGrassWorld.y), grassPatchCamera);
     float grassPatchIncoming = smoothstep(grassPatchBand.x, grassPatchBand.y, grassPatchDistance);
+#ifdef GRASS_PATCH_RISE
+    // Only the LOD3 -> LOD4 entrance keeps its existing complementary dissolve.
+    if (grassPatchIncoming < 1.0) {
+        float grassPatchSample = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));
+        if (grassPatchSample >= grassPatchIncoming) discard;
+    }
+#else
     float grassPatchOutgoing = smoothstep(grassPatchBand.z, grassPatchBand.w, grassPatchDistance);
     float grassPatchSample = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));
     if (grassPatchSample >= grassPatchIncoming || grassPatchSample < grassPatchOutgoing) discard;
+#endif
 }
 #endif
 // @section map

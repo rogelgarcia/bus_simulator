@@ -1,4 +1,4 @@
-// Hardware-only, full-scene forward bus-camera comparison of current and offline-filled grass.
+// Hardware-only, full-scene forward bus-camera comparisons of grass appearance strategies.
 import test, { expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 
 const recordingResolution = process.env.GRASS_LEAF_BUS_VIEWPORT === 'recording';
+const riseStudy = process.env.GRASS_LEAF_BUS_TRANSITION === 'rise';
 const rounds = Number(process.env.GRASS_LEAF_BUS_ROUNDS || 3);
 if (!Number.isInteger(rounds) || rounds < 1 || rounds > 3) throw new Error('GRASS_LEAF_BUS_ROUNDS must be 1, 2 or 3.');
 test.use({ viewport: recordingResolution ? { width: 2147, height: 884 } : { width: 1600, height: 1000 }, deviceScaleFactor: 2, video: 'off', trace: 'off',
@@ -22,12 +23,15 @@ async function gpuStatus() {
     catch (error) { return `Unavailable: ${error.message}`; }
 }
 
-test('Bus camera: matched forward laps compare offline LOD4 and Auto against the existing grass', async ({ page, browser }) => {
+test('Bus camera: matched forward laps compare experimental and existing grass', async ({ page, browser }) => {
     test.skip(process.env.GRASS_LEAF_BUS_BENCHMARK !== '1', 'Opt in with GRASS_LEAF_BUS_BENCHMARK=1 and a hardware Chrome executable.');
     test.setTimeout(600000);
-    const output = path.resolve('tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark', new Date().toISOString().replace(/[:.]/g, '-'));
+    const root = riseStudy ? 'tests/artifacts/screens/grass/lod4_rise_transition/benchmark' : 'tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark';
+    const output = path.resolve(root, new Date().toISOString().replace(/[:.]/g, '-'));
     await mkdir(output, { recursive: true });
-    const blocks = [], telemetry = [], errors = [], cases = {
+    const blocks = [], telemetry = [], errors = [], cases = riseStudy ? {
+        auto: { mode: 'AUTO' }, autoRise: { mode: 'AUTO', rise: true }
+    } : {
         lod3: { mode: 'LOD3', baked: false }, lod4: { mode: 'LOD4', baked: false },
         lod4Baked: { mode: 'LOD4', baked: true }, auto: { mode: 'AUTO', baked: false }, autoBaked: { mode: 'AUTO', baked: true }
     };
@@ -37,14 +41,15 @@ test('Bus camera: matched forward laps compare offline LOD4 and Auto against the
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('let copyFeedbackTimer;', 'window.__grassTestView = view;\nlet copyFeedbackTimer;') });
     });
-    const orders = [ ['lod3', 'lod4', 'lod4Baked', 'auto', 'autoBaked'],
-        ['autoBaked', 'auto', 'lod4Baked', 'lod4', 'lod3'], ['lod4', 'lod4Baked', 'lod3', 'autoBaked', 'auto'] ].slice(0, rounds);
+    const orders = (riseStudy ? [['auto', 'autoRise'], ['autoRise', 'auto'], ['auto', 'autoRise']] :
+        [ ['lod3', 'lod4', 'lod4Baked', 'auto', 'autoBaked'], ['autoBaked', 'auto', 'lod4Baked', 'lod4', 'lod3'],
+            ['lod4', 'lod4Baked', 'lod3', 'autoBaked', 'auto'] ]).slice(0, rounds);
     const metadata = { date: new Date().toISOString(), browser: browser.version(), orders, output, viewportProfile: recordingResolution ? 'recording' : 'comparison',
         scope: 'Full bus lab including lighting/postprocessing. Fixed bus height, pitch and heading; 71.06 m forward, 360 matched poses per pass.' };
     console.log(`[BusGrass] Output: ${output}`);
     for (const [round, order] of orders.entries()) for (const name of order) {
         const config = cases[name];
-        await page.goto('/debug_tools/grass_debug_v2.html?grass=patches' + (config.baked ? '&leafFill=baked' : ''));
+        await page.goto('/debug_tools/grass_debug_v2.html?grass=patches' + (config.baked ? '&leafFill=baked' : '') + (config.rise ? '&handoff=rise' : ''));
         await page.waitForFunction(() => !!window.__grassDebugV2);
         await page.evaluate(() => window.__grassDebugV2.readiness);
         telemetry.push({ round, name, before: await gpuStatus() });
@@ -81,10 +86,10 @@ test('Bus camera: matched forward laps compare offline LOD4 and Auto against the
             framesOver50ms: selected.reduce((sum, block) => sum + block.summary.framesOver50ms, 0) }];
     }));
     const paired = {};
-    for (const [previous, baked] of [['lod4', 'lod4Baked'], ['auto', 'autoBaked']]) {
+    for (const [previous, candidate] of (riseStudy ? [['auto', 'autoRise']] : [['lod4', 'lod4Baked'], ['auto', 'autoBaked']])) {
         const deltas = [], rounds = [];
         for (let round = 0; round < orders.length; round++) {
-            const a = blocks.find(block => block.name === previous && block.round === round), b = blocks.find(block => block.name === baked && block.round === round);
+            const a = blocks.find(block => block.name === previous && block.round === round), b = blocks.find(block => block.name === candidate && block.round === round);
             expect(a.origin).toEqual(b.origin); expect(a.quaternion).toEqual(b.quaternion); expect(a.viewport).toEqual(b.viewport);
             const values = a.rows.map((row, i) => {
                 expect(row.distance).toBe(b.rows[i].distance); expect(row.triangles).toBe(b.rows[i].triangles); expect(row.calls).toBe(b.rows[i].calls);
@@ -96,7 +101,7 @@ test('Bus camera: matched forward laps compare offline LOD4 and Auto against the
     }
     telemetry.push({ phase: 'end', value: await gpuStatus() });
     await writeFile(path.join(output, 'results.json'), JSON.stringify({ metadata, results, paired, telemetry, blocks, errors }, null, 2));
-    await writeFile(path.resolve('tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark/latest.json'), JSON.stringify({ output }, null, 2));
+    await writeFile(path.resolve(root, 'latest.json'), JSON.stringify({ output }, null, 2));
     console.log(`[BusGrass] Summary: ${JSON.stringify({ results, paired })}`);
     expect(errors).toEqual([]);
 });

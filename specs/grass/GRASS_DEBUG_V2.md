@@ -1,5 +1,20 @@
 # Grass Debug v2
 
+## Geometric LOD4 exit comparison
+
+`?grass=patches&handoff=rise` enables the lab prototype that lowers opaque LOD4
+blades into the soil across 16–24 m, reversing continuously as the camera
+approaches. The sidebar identifies it as “Rising LOD4 → 5”. Forced LOD4 stays
+full height at every distance. The normal lab and gameplay retain the existing
+handoff until the prototype is visually accepted.
+
+The canopy underneath reaches its distant appearance during the incoming
+13.6–16 m band. Across 16–24 m, visible blades retain their normal colors;
+their height changes instead of terminal color blending and pixel dissolution.
+The incoming LOD3→4 dissolve is unchanged. This uses the existing geometry and
+assets, with no new bake. See [the runtime experiment](GRASS_RUNTIME_REDESIGN.md)
+and `tests/headless/e2e/grass_patch_rise_transition.pwtest.js` for its contract.
+
 ## Offline leaf-fill comparison
 
 `?grass=patches&leafFill=baked` loads the optional eight-direction texture bake

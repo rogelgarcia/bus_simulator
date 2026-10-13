@@ -18,7 +18,8 @@ export async function createGrassDebugV2PatchGrass({ renderer, scene, camera, li
         coverage = createGrassBoundaryMask({ bounds, outlines: [...placements.map(outline), ...(curve ? [curve.layout.outline] : [])],
             exclusions: curve?.road.sidewalkOuterBoundaryLoops ?? [] });
         asset.settings.brightness.value = lighting.sunRef.intensity / (asset.manifest.leafColor[0] * 2 * Math.PI);
-        patches = createGrassPatchRenderer({ asset, coverage, bounds }); scene.add(patches.group);
+        patches = createGrassPatchRenderer({ asset, coverage, bounds,
+            terminalTransition: new URLSearchParams(location.search).get('handoff') === 'rise' ? 'rise' : 'dissolve' }); scene.add(patches.group);
         land.setGrassPatches(placements); land.setGrassBoundary(coverage); land.setGrassVisible(true);
         lighting.applyEnvironment(); configureGrassDebugV2FieldShadows({ sun: lighting.sun, renderer, bounds }); scene.updateMatrixWorld(true);
         shadows = new GrassSceneShadows({ renderer, groundY: 0, resolution: 2048 });

@@ -5,16 +5,17 @@ import { createGrassPatchGeometry } from './GrassPatchGeometry.js';
 import { createGrassPatchMaterials } from './GrassPatchMaterials.js';
 import { createGrassPatchGrid } from './GrassPatchGrid.js';
 
-/** @param {{asset:object,coverage:object,bounds:object,groundY?:number,patchSize?:number,distances?:number[]}} options */
-export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0, patchSize = 4, distances = [.6, .8, 8, 16, 24] }) {
+/** @param {{asset:object,coverage:object,bounds:object,groundY?:number,patchSize?:number,distances?:number[],terminalTransition?:'dissolve'|'rise'}} options */
+export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0, patchSize = 4, distances = [.6, .8, 8, 16, 24], terminalTransition = 'dissolve' }) {
     if (!Number.isInteger(patchSize) || patchSize < 2 || patchSize > 8 || patchSize % 2
         || ![bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ, groundY].every(Number.isFinite)
         || bounds.maxX <= bounds.minX || bounds.maxZ <= bounds.minZ || distances.length !== 5
-        || distances.some((value, i) => !Number.isFinite(value) || value <= (distances[i - 1] ?? 0)) || distances[4] > 48)
+        || distances.some((value, i) => !Number.isFinite(value) || value <= (distances[i - 1] ?? 0)) || distances[4] > 48
+        || !['dissolve', 'rise'].includes(terminalTransition))
         throw new Error('[Grass] Invalid immutable patch bounds or distances.');
     const group = new THREE.Group(); group.name = 'GrassImmutablePatches'; group.position.y = groundY;
     const geometry = createGrassPatchGeometry(asset, patchSize);
-    const material = createGrassPatchMaterials({ asset, distances, groundY });
+    const material = createGrassPatchMaterials({ asset, distances, groundY, terminalTransition });
     material.materials.forEach(value => coverage.bind(value));
     const grids = new Map([...new Set(geometry.sizes)].map(size => [size, createGrassPatchGrid(bounds, size, coverage)]));
     const radius = distances[4], poolRadii = distances.map((distance, level) => Math.max(distance, level < 2 ? 4 : radius));
@@ -91,7 +92,7 @@ export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0,
             capacityPerLevel: pools.map(pool => pool.length), autoCapacityPerLevel: capacities, forcedCoverage: 'full-field',
             occupiedPatches: grids.get(patchSize).count,
             triangles: mode === 'OFF' ? 0 : triangles, levels: mode === 'OFF' ? [0, 0, 0, 0, 0, 0] : [...levels],
-            fadeStyle: 'dissolve', surfacePatches: surfaces.length, scans, updateMs, distances: [...distances],
+            fadeStyle: 'dissolve', terminalTransition, surfacePatches: surfaces.length, scans, updateMs, distances: [...distances],
             placementBytes: geometry.placementBytes }; },
         async prewarm(renderer, scene, camera) {
             const warm = new THREE.Scene(); warm.fog = scene.fog;

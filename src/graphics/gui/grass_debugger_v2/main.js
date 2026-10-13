@@ -76,7 +76,7 @@ function updateGrassPanel() {
     fadeSelect.querySelector('[value="canopy"]').disabled = grass.strategy !== 'baked';
     fadeSelect.disabled = !view.ready || view.benchmark.active || grass.strategy === 'patches';
     const label = { baked: 'Baked grass', current: 'Original lit grass', patches: 'Fixed patches · experiment' }[grass.strategy];
-    document.getElementById('grass-ranges').textContent = `${label}${grass.leafFill ? ' · Offline leaf fill' : ''} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
+    document.getElementById('grass-ranges').textContent = `${label}${grass.leafFill ? ' · Offline leaf fill' : ''}${grass.field?.terminalTransition === 'rise' ? ' · Rising LOD4 → 5' : ''} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
     if (grass.strategy === 'patches') {
         grassCounts.title = `Shared immutable 2 / ${grass.field.patchSize} m patches. Counts include adjacent LODs in transition bands. Ground uses ${grass.field.surfacePatches} coarse surfaces. Forced LODs lock geometry and shading across the full visible field; AUTO keeps bounded distance selection and canopy blending. Curve and roadside counts are combined.`;
         return;

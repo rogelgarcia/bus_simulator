@@ -1,5 +1,50 @@
 # Gameplay grass redesign
 
+## Geometric LOD4 exit prototype (2026-10-13)
+
+The opt-in lab URL `?grass=patches&handoff=rise` passes `terminalTransition: 'rise'`
+to the shared patch renderer. Existing callers default to `'dissolve'`, including
+gameplay. This is an appearance experiment, not a production promotion.
+
+In Auto, the LOD4 vertex shader lowers the geometry by
+`(tallest LOD4 vertex + 0.01 m) * smoothstep(16, 24, distance)` using the same
+ground-anchor distance and camera height as selection. The soil depth-occludes
+the buried parts. At 24 m even the tallest tip is below ground; patch selection
+can release it without an exposed tip popping. The field requires opaque terrain
+underneath, as in the bus lab and supported flat gameplay terrain. Forced LOD4
+bypasses lowering and preserves its existing pixels and full-field coverage.
+
+The LOD4 shader excludes the outgoing screen-door mask and the two projected
+canopy color samples. It retains the incoming LOD3→4 dissolve over 13.6–16 m.
+Ground changes from litter to canopy in that incoming band and then remains
+stable underneath the rising blades. Ordinary leaf coloring and external shadow
+shading remain; this is not a shading-free technique. Buried vertices still cost
+vertex work within selected patches. GPU cost must be measured rather than
+inferred from the missing dissolve alone.
+
+`grass_patch_rise_transition.pwtest.js` compares the default and prototype from
+identical bus, field and close cameras, verifies pixel-identical forced LOD4,
+checks the fully buried endpoint against LOD5 over opaque soil, and checks
+movement after prewarming for buffer/texture uploads and memory growth.
+Evidence lives under `tests/artifacts/screens/grass/lod4_rise_transition/`.
+The comparison removes the hazy terminal blend but still changes apparent blade
+height/density and eventually becomes a flat canopy. Moving visual acceptance
+is required before replacing the default.
+
+At 3814 × 1672 on an RTX 3060, three alternating forward bus-camera passes per
+variant measured mean whole-frame GPU times of 5.64 ms for dissolve and 5.47 ms
+for rise (p95 6.67 / 6.68 ms). The paired mean differences by repeat were
++0.09, -0.58 and -0.001 ms; variability and changing GPU load prevent an isolated
+speedup claim. All 2,160 GPU samples were valid, no recorded animation interval
+exceeded 33.5 ms, and movement caused no geometry/texture uploads or resource
+growth. Triangle and draw counts matched at every paired pose. Reproduce with
+`GRASS_LEAF_BUS_TRANSITION=rise` in the shared bus performance spec; see
+`tests/headless/perf/README.md`. Timestamped data is under
+`tests/artifacts/screens/grass/lod4_rise_transition/benchmark/`.
+The adjacent `comparison.html` contains matched screenshots and motion clips.
+Set `GRASS_RISE_CAPTURE_MOTION=1` when running the rise E2E spec to regenerate
+the optional 24 m, 8-second field-side clips. Encoding is outside the benchmark.
+
 ## Offline omitted-leaf experiment (2026-10-13)
 
 The bus lab can load `?grass=patches&leafFill=baked`. A separate authenticated

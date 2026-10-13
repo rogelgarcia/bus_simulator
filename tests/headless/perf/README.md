@@ -25,6 +25,12 @@ frame intervals are measured, and paired GPU differences use matching poses.
 Reports are timestamped under
 `tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark/`.
 
+Set `GRASS_LEAF_BUS_TRANSITION=rise` to compare ordinary Auto with the geometric
+LOD4 exit instead of the five leaf-fill cases. Both runs use the ordinary
+textures and identical poses, geometry counts and draw counts. This study saves
+results under `tests/artifacts/screens/grass/lod4_rise_transition/benchmark/`.
+Other settings and timing/upload validation are shared with the leaf-fill study.
+
 This suite measures deterministic performance metrics in a headless browser using the harness (`window.__testHooks.measurePerformance`) and enforces budgets.
 
 ## Layout
