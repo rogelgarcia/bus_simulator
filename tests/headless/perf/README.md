@@ -1,5 +1,30 @@
 # Performance budgets
 
+## Forward bus camera: offline grass leaf fill
+
+The hardware-only `specs/grass_patch_bus_forward.pwtest.js` replays 360 identical
+camera poses over the bus benchmark's 71.06 m straight segment. Bus height,
+pitch and heading stay fixed. It measures the complete lab renderer, lighting
+and postprocessing with LOD3, existing LOD4, offline-filled LOD4 and both Auto
+variants. Three ordered/reversed passes per case warm the complete route first;
+they record asynchronous GPU timings matched by submission, CPU render time,
+frame intervals, long tasks, uploads and resource counts. GPU results require
+complete coverage and no timer disjoint event. Texture compilation/loading is
+outside the measurement.
+
+Set `GRASS_LEAF_BUS_BENCHMARK=1`, `PERF_BASE_URL` to the project server and
+`PLAYWRIGHT_EXECUTABLE_PATH` to hardware Chrome. Select the spec with
+`node tools/run_selected_test/run.mjs --set <path>`, then invoke that runner
+without `--set`. The test overrides the normal software renderer. Default
+canvas resolution is 2720 × 1904 at DPR 2, matching the comparison captures.
+`GRASS_LEAF_BUS_VIEWPORT=recording` selects the original 3814 × 1672 recording
+resolution. `GRASS_LEAF_BUS_ROUNDS=1|2|3` selects how many of the three orders
+to run (default 3); retain at least the first two for forward/reversed order.
+Each frame advances one pose, so wall-clock travel time can vary across cases;
+frame intervals are measured, and paired GPU differences use matching poses.
+Reports are timestamped under
+`tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark/`.
+
 This suite measures deterministic performance metrics in a headless browser using the harness (`window.__testHooks.measurePerformance`) and enforces budgets.
 
 ## Layout

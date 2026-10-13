@@ -11,7 +11,7 @@ import { configureGrassDebugV2FieldShadows } from './GrassDebugV2FieldShadows.js
 /** @param {{renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera,lighting:object,land:object,curve:object|null,placements:object[],placement:object,bounds:object,onProgress:Function}} input */
 export async function createGrassDebugV2PatchGrass({ renderer, scene, camera, lighting, land, curve, placements, placement, bounds, onProgress }) {
     onProgress('Loading shared grass patches…');
-    const asset = await loadGrassRuntimeAsset({ renderer });
+    const asset = await loadGrassRuntimeAsset({ renderer, leafFill: new URLSearchParams(location.search).get('leafFill') === 'baked' });
     let coverage, patches, shadows, disposed = false;
     try {
         const outline = p => [{ x: p.minX, z: p.minZ }, { x: p.maxX, z: p.minZ }, { x: p.maxX, z: p.maxZ }, { x: p.minX, z: p.maxZ }];
@@ -56,6 +56,7 @@ export async function createGrassDebugV2PatchGrass({ renderer, scene, camera, li
                     selection: { effectiveDistances: field.distances, distances: field.distances, scans: field.scans },
                     curve: curve ? { radius: curve.layout.radius, field: { triangles: 0, levels: [0, 0, 0, 0, 0, 0] } } : null,
                     shadows: { generations: shadows.generations, externalCasters: casters.length },
+                    leafFill: asset.leafFill ? { source: 'offline', views: asset.leafFill.manifest.views, bytes: asset.leafFill.manifest.bytes } : null,
                     packageHash: asset.manifest.sha256 };
             },
             dispose() {

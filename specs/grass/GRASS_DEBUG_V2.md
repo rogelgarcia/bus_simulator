@@ -1,5 +1,17 @@
 # Grass Debug v2
 
+## Offline leaf-fill comparison
+
+`?grass=patches&leafFill=baked` loads the optional eight-direction texture bake
+of leaves omitted from LOD4, enabled only on the sparse ground contribution.
+The sidebar says “Offline leaf fill” when the authenticated package is loaded.
+Use forced LOD3 and LOD4 to compare from an identical camera. The package is
+created by `node tools/bake.mjs --target materials/grass/lod4-leaf-fill --publish`;
+missing/stale packages fail visibly. The normal lab and gameplay stay unchanged.
+This experiment improves correspondence at baked views but interpolated angles
+and different elevations can misplace leaf highlights; it is not accepted for
+production. See [the workflow](../../tools/bake_materials/grass/lod4_leaf_fill/README.md).
+
 ## Scope
 
 Grass Debug v2 is the isolated scene for developing and comparing 3D grass. It
@@ -26,9 +38,14 @@ stay immutable while the camera moves. LOD0/1 use 2 m patches, other blades use
 4 m patches, and ground uses static 32 m quads. Existing runtime blade assets and
 palette are retained; this experiment does not generate new bake assets.
 
-The fixed path matches coarse blade and ground color to the projected canopy
+In Auto, the fixed path matches coarse blade and ground color to the projected canopy
 over 16–21.6 m, before the opaque dissolve at 21.6–24 m. Forced LOD0–4 cover the
-full visible field with the selected geometry; LOD5 shows the continuous canopy.
+full visible field with the selected geometry and its own shading over litter.
+They disable distance-based color blending as well as geometric transitions;
+forced LOD4 never shades toward LOD5. LOD4 fills some of its exposed litter with
+bright leaf shapes sampled from the existing canopy maps, without adding blades.
+Auto introduces this detail during the incoming LOD4 band (13.6–16 m); forced
+LOD4 keeps the leaf fill fixed regardless of distance. LOD5 shows the continuous canopy.
 Returning to AUTO releases extra forced-mode mesh objects and restores bounded
 distance selection. Counts combine the
 straight and curved layouts and include overlapping detail patches. OFF restores
@@ -407,8 +424,9 @@ Validation:
   bus view; `2` selects Overview at XYZ `(19, 22, -22)` and yaw/pitch/roll
   `(138°, -38°, 0°)` using the stats row's YXZ convention. The orbit target is
   where this view direction meets the ground. Escape returns to the game.
-- `W`/`S` move forward/backward along the view direction, `A`/`D` strafe left/right,
-  and `Q`/`E` move down/up in world space. Movement translates the camera and its
+- `W`/`S` move forward/backward along the view direction projected onto the horizontal
+  ground plane, keeping camera height fixed regardless of pitch. `A`/`D` strafe
+  horizontally, and `Q`/`E` move down/up in world space. Movement translates the camera and its
   orbit target together at 8 m/s (24 m/s while holding Shift), preserving the view
   direction and the Y = 0.01 floor. Releasing keys or losing focus stops movement;
   text fields and browser shortcuts do not trigger camera movement.
@@ -1586,12 +1604,13 @@ pair experiment, so compare controls within this run. Artifacts are kept under
   `(138°, -38°, 0°)`. The first path tangent matches that viewing direction.
   After a two-second stationary warmup, the measured flight descends smoothly
   through the game-derived bus camera position. It then travels straight along
-  the bus's +Z direction, preserving the bus camera's height and tilt, until it
-  is 10 m beyond the loaded bus model's front bound (6 m beyond the previous
-  clearance point). Only then does it turn toward
+  the bus's +Z direction, preserving the bus camera's height and tilt for twice
+  the original cruise distance. The original distance runs from the bus camera
+  position to 10 m beyond the loaded bus model's front bound; the new turn point
+  is `busCameraZ + 2 * (busFrontZ + 10 - busCameraZ)`. Only then does it turn toward
   the center of the left grass fields and descend to 1.258 m. The low pass starts
-  6 m beyond that clearance point and follows all three fields and their gaps to
-  the last field's far edge (Z = 108 m). The final destination stays unchanged at
+  6 m beyond that clearance point and follows the remaining fields and gaps to
+  the last field's far edge (Z = 143 m). The final destination stays unchanged at
   `(14.39, 8.247, 48.256)`.
 - Quintic Hermite legs share tangent directions and zero endpoint curvature.
   The 24-second base duration retains the extra allowance for the Overview
@@ -1616,7 +1635,7 @@ pair experiment, so compare controls within this run. Artifacts are kept under
   before ending measurement; the final pose remains after the run. The hover details
   separate flight and final-stop durations. Frame, CPU and GPU statistics include
   that stop, and controls remain suspended during it. Snapshot/result `route`
-  diagnostics include the waypoints, measured bus front, clearance/grass bounds,
+  diagnostics include the waypoints, measured bus front, bus cruise distance, clearance/grass bounds,
   bus look target and the four-second look-back interval.
 - Frame intervals include VSync and scheduling delays; CPU measures JavaScript
   work in the frame; GPU timer queries cover the full scene rendering. Warmup and
@@ -1665,7 +1684,7 @@ v1 boot. Evidence is gitignored under `tests/artifacts/screens/grass_debug_v2/`.
 and startup when old unversioned scene/catalog responses remain cached.
 `tests/headless/e2e/grass_debug_v2_benchmark.pwtest.js` verifies route waypoints,
 the unchanged Overview start and final position, continuous bus-camera join,
-10 m bus-front clearance, straight cruise/grass pass, bus-camera orientation and
+the doubled bus-camera cruise distance, straight cruise/grass pass, bus-camera orientation and
 four-second bus look-back, two accumulated results, timing collection
 and interruption recovery without losing history.
 `tests/headless/e2e/grass_debug_v2_benchmark_timing.pwtest.js` checks late GPU

@@ -25,6 +25,9 @@ vec3 grassPatchCanopy(vec2 world, vec2 dx, vec2 dy, vec3 ray) {
 uniform sampler2D grassPatchLitterA;
 uniform sampler2D grassPatchLitterB;
 uniform vec3 grassPatchLitterGain;
+#ifdef GRASS_PATCH_LEAF_FILL
+#include <shaderlib:grass/leaf_fill.glsl>
+#endif
 #endif
 // @section mask
 #if defined(GRASS_PATCH_SURFACE) || defined(GRASS_PATCH_HANDOFF)
@@ -37,8 +40,8 @@ vec3 grassPatchRay = vec3(vBakedGrassWorld.x, grassPatchGroundY + 0.005, vBakedG
 vec2 grassPatchGround = vBakedGrassWorld;
 #endif
 vec2 grassPatchGroundDx = dFdx(grassPatchGround), grassPatchGroundDy = dFdy(grassPatchGround);
-float grassPatchColorFade = smoothstep(grassPatchHandoffBand.x, grassPatchHandoffBand.y,
-    distance(vec3(grassPatchGround.x, grassPatchGroundY, grassPatchGround.y), grassPatchCamera));
+float grassPatchColorFade = grassPatchMode < 0 ? smoothstep(grassPatchHandoffBand.x, grassPatchHandoffBand.y,
+    distance(vec3(grassPatchGround.x, grassPatchGroundY, grassPatchGround.y), grassPatchCamera)) : 0.0;
 #endif
 #ifndef GRASS_PATCH_SURFACE
 if (grassPatchMode < 0) {
@@ -50,7 +53,17 @@ if (grassPatchMode < 0) {
 }
 #endif
 // @section map
-float grassSurfaceFade = grassPatchMode == 5 ? 1.0 : grassPatchMode >= 0 && grassPatchMode < 4 ? 0.0 : grassPatchColorFade;
+float grassSurfaceFade = grassPatchMode == 5 ? 1.0 : grassPatchColorFade;
+float grassSurfaceLeafFill = grassPatchMode == 4 ? 1.0 : (grassPatchMode < 0 ? smoothstep(grassPatchBand.x, grassPatchBand.y,
+    distance(vec3(grassPatchGround.x, grassPatchGroundY, grassPatchGround.y), grassPatchCamera)) : 0.0);
+#ifdef GRASS_PATCH_LEAF_FILL
+vec3 grassSurfaceCanopy = grassSurfaceFade > 0.0
+    ? grassPatchCanopy(grassPatchGround, grassPatchGroundDx, grassPatchGroundDy, grassPatchRay) : vec3(0.0);
+#else
+vec3 grassSurfaceCanopy = grassSurfaceFade > 0.0 || grassSurfaceLeafFill > 0.0
+    ? grassPatchCanopy(grassPatchGround, grassPatchGroundDx, grassPatchGroundDy, grassPatchRay) : vec3(0.0);
+float grassSurfaceLeafHighlight = smoothstep(0.02, 0.055, dot(grassSurfaceCanopy, vec3(0.2126, 0.7152, 0.0722)));
+#endif
 vec2 grassSurfaceCenter = floor(vBakedGrassWorld) + 0.5;
 vec2 grassSurfaceDx = dFdx(vBakedGrassWorld), grassSurfaceDy = dFdy(vBakedGrassWorld);
 vec3 grassSurfaceColor = vec3(0.0);
@@ -60,10 +73,19 @@ if (grassSurfaceFade < 1.0) {
     vec3 grassLitter = grassLitterUv.z > 0.5
         ? textureGrad(grassPatchLitterB, grassLitterUv.xy, grassLitterTransform * grassSurfaceDx, grassLitterTransform * grassSurfaceDy).rgb
         : textureGrad(grassPatchLitterA, grassLitterUv.xy, grassLitterTransform * grassSurfaceDx, grassLitterTransform * grassSurfaceDy).rgb;
-    grassSurfaceColor += grassLitter * grassPatchLitterGain * (1.0 - grassSurfaceFade);
+    grassLitter *= grassPatchLitterGain;
+#ifdef GRASS_PATCH_LEAF_FILL
+    if (grassSurfaceLeafFill > 0.0) {
+        vec4 grassLeaves = grassLeafFill(grassPatchGround, grassPatchGroundDx, grassPatchGroundDy);
+        grassLitter = mix(grassLitter, grassLeaves.rgb, grassLeaves.a * grassSurfaceLeafFill);
+    }
+#else
+    grassLitter += max(grassSurfaceCanopy - grassLitter, vec3(0.0)) * 0.25 * grassSurfaceLeafFill * grassSurfaceLeafHighlight;
+#endif
+    grassSurfaceColor += grassLitter * (1.0 - grassSurfaceFade);
 }
 if (grassSurfaceFade > 0.0) {
-    grassSurfaceColor += grassPatchCanopy(grassPatchGround, grassPatchGroundDx, grassPatchGroundDy, grassPatchRay) * grassSurfaceFade;
+    grassSurfaceColor += grassSurfaceCanopy * grassSurfaceFade;
 }
 diffuseColor.rgb *= grassSurfaceColor;
 // @section handoff

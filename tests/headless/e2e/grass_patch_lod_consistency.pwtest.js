@@ -2,7 +2,7 @@
 import test, { expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-test('fixed grass renders forced detail beyond automatic range and matches its canopy', async ({ page }) => {
+test('fixed grass locks forced detail and shading while Auto matches its canopy', async ({ page }) => {
     test.setTimeout(120000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -43,7 +43,16 @@ test('fixed grass renders forced detail beyond automatic range and matches its c
         };
         const distantLod2 = capture('LOD2');
         camera.position.set(0, 6, -6); camera.lookAt(0, 0, 18); camera.updateMatrixWorld(true);
-        const lod4 = capture('LOD4'), lod5 = capture('LOD5');
+        const lod4 = capture('LOD4');
+        grass.material.camera.value.y += 1000;
+        renderer.render(scene, camera);
+        const forcedFarPixels = new Uint8Array(lod4.pixels.length), gl = renderer.getContext();
+        gl.readPixels(0, 0, 640, 480, gl.RGBA, gl.UNSIGNED_BYTE, forcedFarPixels);
+        let forcedShadingChangedPixels = 0;
+        for (let i = 0; i < forcedFarPixels.length; i += 4) {
+            if ([0, 1, 2].some(channel => forcedFarPixels[i + channel] !== lod4.pixels[i + channel])) forcedShadingChangedPixels++;
+        }
+        const lod5 = capture('LOD5');
         const auto = capture('AUTO');
         const point = new THREE.Vector3(); let terminalError = 0, terminalLight = 0, terminalPixels = 0;
         for (let y = 0; y < 480; y++) for (let x = 0; x < 640; x++) {
@@ -59,7 +68,8 @@ test('fixed grass renders forced detail beyond automatic range and matches its c
         for (const capture of [distantLod2, lod4, lod5, auto]) delete capture.pixels;
         const restoredPool = grass.getSnapshot();
         grass.dispose(); coverage.dispose(); asset.dispose(); renderer.dispose();
-        return { forced, visible, restoredPool, distantLod2, lod4, lod5, auto, terminalPixels, terminalRelativeError: terminalError / terminalLight };
+        return { forced, visible, restoredPool, distantLod2, lod4, lod5, auto, forcedShadingChangedPixels,
+            terminalPixels, terminalRelativeError: terminalError / terminalLight };
     });
     const output = 'tests/artifacts/screens/grass/runtime_redesign/lod_consistency';
     await mkdir(output, { recursive: true });
@@ -73,7 +83,9 @@ test('fixed grass renders forced detail beyond automatic range and matches its c
     expect(result.restoredPool.capacityPerLevel).toEqual(result.restoredPool.autoCapacityPerLevel);
     expect(result.restoredPool.levels[4]).toBeGreaterThan(0);
     expect(result.distantLod2.darkFraction).toBeLessThan(.15);
+    expect(result.forcedShadingChangedPixels, 'Forced LOD4 must ignore the automatic shading distance').toBe(0);
     expect(Math.abs(result.lod4.luma / result.lod5.luma - 1), 'Coarse blades and canopy should have comparable brightness').toBeLessThan(.10);
+    expect(Math.abs(result.auto.luma / result.lod5.luma - 1), 'Automatic coarse blades and canopy should have comparable brightness').toBeLessThan(.10);
     expect(result.terminalPixels).toBeGreaterThan(100);
     expect(result.terminalRelativeError, 'Fading blades should already match the underlying canopy').toBeLessThan(.04);
     expect(errors).toEqual([]);

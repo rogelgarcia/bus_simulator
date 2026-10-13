@@ -18,6 +18,7 @@ export function createGrassPatchMaterials({ asset, distances, groundY }) {
         const material = createSharedUniformMaterialVariant(source);
         if (handoff) material.defines.GRASS_PATCH_HANDOFF = 1;
         if (surface) {
+            if (asset.leafFill) material.defines.GRASS_PATCH_LEAF_FILL = 1;
             material.map = null;
             delete material.defines.BAKED_GRASS_PAIR;
             delete material.defines.BAKED_GRASS_TILE_VARIATION;
@@ -32,6 +33,8 @@ export function createGrassPatchMaterials({ asset, distances, groundY }) {
         });
         if (surface) {
             const litterHook = asset.litterMaterial;
+            if (asset.leafFill) Object.assign(uniforms, { grassLeafFillMap: { value: asset.leafFill.texture },
+                grassLeafFillExtent: { value: asset.leafFill.manifest.extent }, grassLeafFillStrength: { value: 1 } });
             Object.assign(uniforms, { grassPatchLitterA: { value: asset.maps.litter[0] }, grassPatchLitterB: { value: asset.maps.litter[1] },
                 grassPatchLitterGain: { value: new THREE.Vector3(litterHook.color.r / source.color.r, litterHook.color.g / source.color.g, litterHook.color.b / source.color.b) } });
         }

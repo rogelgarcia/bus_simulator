@@ -1,5 +1,14 @@
 # Offline bake framework
 
+`materials/grass/lod4-leaf-fill` is an explicit browser experiment outside the
+default material/master parents. It projects the installed runtime package's
+omitted LOD3 leaves into eight padded ground texture layers and authenticates
+the source, payload, leaf counts and view diversity. A fresh loader/all-LOD
+render and stable-input check gate rollback-preserving publication to the
+separate `assets/public/grass/lod4_leaf_fill/` folder. It reuses the shared
+`browserExecutable` setting. No gameplay adoption is implied by publication;
+see the [workflow and limitations](../../tools/bake_materials/grass/lod4_leaf_fill/README.md).
+
 `materials/grass/gameplay-runtime` is an explicit browser leaf outside the
 default `materials` traversal. It packages the current bus lab's prepared detailed
 appearance for production gameplay under `assets/public/grass/gameplay/`, using

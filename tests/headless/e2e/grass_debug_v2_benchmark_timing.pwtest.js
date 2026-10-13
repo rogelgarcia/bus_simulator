@@ -149,7 +149,7 @@ test('camera keeps a smooth heading, extends the bus cruise and only turns left 
         const returning = samples.filter(s => s.time >= orientation.lookBackStartMs + stepMs);
         const tracking = returning.filter(s => s.time >= orientation.lookBackEndMs);
         const degrees = THREE.MathUtils.radToDeg;
-        return { clearance: route.flight.clearanceZ - route.flight.busFrontZ,
+        return { busCruiseMeters: route.curves[1].getLength(),
             minReturnTurn: degrees(Math.min(...returning.map(s => s.turn))),
             maxStep: degrees(Math.max(...samples.map(s => Math.abs(s.turn)))),
             maxRoll: degrees(Math.max(...samples.map(s => Math.abs(s.roll)))),
@@ -161,7 +161,7 @@ test('camera keeps a smooth heading, extends the bus cruise and only turns left 
     const artifacts = 'tests/artifacts/screens/grass_debug_v2/flight_smoothing';
     await mkdir(artifacts, { recursive: true });
     await writeFile(`${artifacts}/motion.json`, JSON.stringify(motion, null, 2));
-    expect(motion.clearance).toBeCloseTo(10, 6);
+    expect(motion.busCruiseMeters).toBeCloseTo(71.06, 6);
     expect(motion.minReturnTurn).toBeGreaterThanOrEqual(-0.00001);
     expect(motion.maxStep).toBeLessThan(1);
     expect(motion.maxRoll).toBeLessThan(0.001);

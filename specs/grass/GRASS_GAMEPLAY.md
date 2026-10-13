@@ -85,7 +85,10 @@ transforms place selected patches on a stable world grid; reversing or crossing
 boundaries preserves the same grass at each position. No lab rectangles are used.
 
 Static 32 m quads, 5 mm above the authored ground, blend litter into canopy
-appearance. Over 16–21.6 m, LOD4 color and the ground approach the same projected
+appearance. During the incoming LOD4 band (13.6–16 m), bright leaf shapes from the
+existing canopy maps fill some of the exposed litter beneath the sparse blades.
+This positive-only blend preserves dark soil and adds no geometry or texture assets.
+Over 16–21.6 m, LOD4 color and the ground approach the same projected
 canopy sample before blades dissolve at 21.6–24 m. Adjacent blade levels use
 complementary opaque dissolve. Every representation uses the shared coverage mask.
 Loading prewarms all five blade levels and the surface, including invisible levels.

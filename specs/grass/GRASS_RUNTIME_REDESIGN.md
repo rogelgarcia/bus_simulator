@@ -1,5 +1,43 @@
 # Gameplay grass redesign
 
+## Offline omitted-leaf experiment (2026-10-13)
+
+The bus lab can load `?grass=patches&leafFill=baked`. A separate authenticated
+eight-view texture package projects the 525 omitted LOD3 leaves per 2 m tile
+onto LOD4's ground, following the same tile rotations. Bake it using
+`node tools/bake.mjs --target materials/grass/lod4-leaf-fill --publish`.
+This flag does not enable the experiment in gameplay. Existing forced-LOD
+behavior and Auto transition distances remain in force.
+
+The shader adds up to eight texture reads and about 10.7 MiB of mipmapped GPU
+storage, with no added geometry, captures, or movement-time texture uploads.
+The controlled 20-degree orthographic fixture improves luminance MAE against
+LOD3 by about 25% at the eight baked azimuths. At intermediate azimuths the MAE
+is about 13% worse than unfilled LOD4: interpolation blends leaf images instead
+of moving their projections. Bus perspective and different elevations further
+limit correspondence. This is not visually accepted for production. See the
+[bake workflow](../../tools/bake_materials/grass/lod4_leaf_fill/README.md) and
+`tests/headless/e2e/grass_patch_offline_leaf_fill.pwtest.js` for the experiment.
+
+The subsequent forward bus-camera benchmark uses the full lab pipeline over
+71.06 m with fixed height/tilt and identical pose sequences. At 2720 × 1904,
+three passes per case measured mean GPU times of 6.78 ms / 6.93 ms for existing
+and offline-filled forced LOD4, and 4.59 ms / 4.72 ms in Auto. At the recording's
+3814 × 1672 resolution, two ordered/reversed passes measured 9.88 ms / 9.94 ms
+for LOD4 and 5.72 ms / 5.48 ms for Auto. Across both resolutions, all 9,000 GPU
+samples were valid; none of the recorded frame intervals exceeded 33.5 ms,
+and no geometry/texture uploads occurred after warmup. GPU utilization remained
+98% after the benchmark browser closed, so small timing differences are
+provisional and the apparent Auto improvement is not an isolated speedup.
+Animation cadence was about 60 Hz; this does not measure uncapped throughput
+or direct display presentation. Reproduce with the opt-in
+`tests/headless/perf/specs/grass_patch_bus_forward.pwtest.js`; see
+`tests/headless/perf/README.md` for the hardware settings. Timestamped raw data
+and a report are under the gitignored
+`tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark/`.
+
+## Adopted runtime
+
 Status: shared immutable patches adopted by gameplay and the bus lab's fixed-patch
 strategy, 2026-10-13. The production contract is [GRASS_GAMEPLAY.md](GRASS_GAMEPLAY.md).
 The sections below distinguish the implemented path from remaining design targets.
@@ -46,7 +84,11 @@ Prepared grass samples cached external visibility. The lab has a stationary bus;
 gameplay retains its separate static-city and moving-vehicle shadow caches.
 
 Forced LOD0–4 cover the full visible field, regardless of automatic distance or
-camera height. Explicit mode switches expand the selected mesh pool to the finite
+camera height. Forced modes lock shading too: blades retain their own color over
+litter, with no distance-based canopy color handoff. LOD4 adds a fixed amount of
+bright leaf detail to that litter to compensate for its reduced blade count;
+forced LOD5 uses canopy only.
+Explicit mode switches expand the selected mesh pool to the finite
 occupied grid and release the extra objects on returning to AUTO or another mode.
 Geometry and placement buffers remain shared and immutable. AUTO retains its
 bounded selection. The patch path exposes only its supported dissolve blend;
@@ -147,6 +189,15 @@ checks all five forced blade levels above their former height cutoff, rendered
 LOD2 ground coverage, matching terminal appearance and pool restoration. Images
 and measurements are in `tests/artifacts/screens/grass/runtime_redesign/lod_consistency/`.
 
+The forced-LOD4 follow-up found that geometry stayed fixed while blade and ground
+colors still blended toward the canopy with distance. Canopy color blending now
+runs only in Auto. A fixed-camera pixel check that changes only the LOD-distance
+uniform reproduced 126,765 changed pixels before the fix and zero afterward.
+Before the leaf-ground correction below, forced LOD4/LOD5 mean brightness differed
+by about 7.6% in this controlled
+region; Auto retains the approximately 0.1% terminal-band error above. Forced
+shading invariance and both brightness checks are required regressions.
+
 The corrected hardware comparison passed with the same submitted triangle count
 and grass-update p95 of 0.1 ms. Patch CPU means were 0.83 / 1.05 ms versus
 6.45 / 7.99 ms for baked. GPU means varied: patches 5.85 / 6.35 ms versus baked
@@ -154,6 +205,27 @@ and grass-update p95 of 0.1 ms. Patch CPU means were 0.83 / 1.05 ms versus
 and 6.27 ms for baked. This run does not establish a reliable GPU speedup or an
 isolated cost for the additional color sample; retain the complete controls in
 `moving/` rather than extrapolating the earlier GPU result to this correction.
+
+### LOD4 leaf-ground correction, 2026-10-13
+
+LOD4's sparse geometry exposes more dark litter than LOD3. Its surface now reuses
+the existing paired canopy textures for bright leaf shapes over the litter.
+A luminance mask selects the highlights; a 25% positive-only blend leaves the
+dark gaps and soil intact. Texture scale, tile variation, mip filtering and
+external shadows remain shared with the prepared canopy. No geometry, draw calls
+or texture assets are added. The canopy sample is reused by the terminal blend.
+
+Auto introduces the leaf fill over the incoming LOD4 band (13.6–16 m), before the
+existing terminal color match. Forced LOD4 holds its fill constant at every
+distance; forced LOD0–3 retain plain litter. The shader is shared by lab and game.
+
+`grass_patch_lod4_ground.pwtest.js` compares two camera poses against LOD3 and a
+control with the same LOD4 geometry over plain litter. Mean brightness error
+falls from 3.4% / 2.7% to 0.6% / 0.5%, and dark pixels fall by 18% / 25%.
+The test also checks preserved soil, no darkening, unchanged geometry/draw/texture
+counts, and fewer triangles than LOD3. Captures and measurements are under
+`tests/artifacts/screens/grass/runtime_redesign/lod4_ground/`. These are controlled
+appearance checks, not GPU timing measurements or a claim of identical geometry.
 
 ## Evidence and limits
 

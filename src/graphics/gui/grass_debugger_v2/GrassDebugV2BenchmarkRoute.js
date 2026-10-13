@@ -38,7 +38,8 @@ class FlightLeg extends THREE.Curve {
 /** @param {THREE.Vector3} busPosition
  * @param {{busFrontZ:number,grassBounds:{minX:number,maxX:number,minZ:number,maxZ:number}}} options */
 export function createBenchmarkRoute(busPosition, { busFrontZ, grassBounds }) {
-    const clearanceZ = busFrontZ + 10;
+    const busCruiseMeters = 2 * (busFrontZ + 10 - busPosition.z);
+    const clearanceZ = busPosition.z + busCruiseMeters;
     const grassEntryZ = clearanceZ + 6;
     if (!Number.isFinite(busFrontZ) || !(grassBounds.minX < grassBounds.maxX && grassBounds.minZ < grassEntryZ && grassEntryZ + 5 < grassBounds.maxZ))
         throw new Error('Benchmark requires a grass run extending beyond the front of the bus.');
@@ -61,7 +62,7 @@ export function createBenchmarkRoute(busPosition, { busFrontZ, grassBounds }) {
         route.add(new FlightLeg(points[i], points[i + 1], i === 0 ? startDirection : forward, i === points.length - 2 ? finishDirection : forward));
     }
     route.updateArcLengths();
-    return Object.assign(route, { flight: Object.freeze({ busFrontZ, clearanceZ, grassEntryZ, grassExitZ: grassBounds.maxZ,
+    return Object.assign(route, { flight: Object.freeze({ busFrontZ, busCruiseMeters, clearanceZ, grassEntryZ, grassExitZ: grassBounds.maxZ,
         waypoints: points.map(point => point.toArray()) }) });
 }
 

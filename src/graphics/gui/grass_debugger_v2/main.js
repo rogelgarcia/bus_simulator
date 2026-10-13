@@ -38,7 +38,7 @@ function updateBenchmarkPanel(state) {
     benchmarkButton.textContent = state.active ? (['running', 'holding'].includes(state.phase) ? `Stop · ${Math.floor(state.progress * 100)}%` : 'Stop') : 'Run';
     benchmarkStatus.hidden = !state.active && state.phase !== 'cancelled';
     benchmarkStatus.textContent = { warmup: 'Preparing…', running: 'Measuring…', holding: 'Measuring final stop…', settling: 'Collecting GPU results…', cancelled: `Cancelled · ${state.message}` }[state.phase] ?? '';
-    benchmarkStatus.title = state.active ? '2 s warmup at Overview, bus camera, straight ahead to 10 m past the bus front, half-speed grass pass, then a smooth 4 s left turn toward the bus during the final pullback. Camera controls resume when the run finishes or stops.' : state.message;
+    benchmarkStatus.title = state.active ? '2 s warmup at Overview, then hold the bus camera height and tilt for twice the original cruise distance, half-speed grass pass, then a smooth 4 s left turn toward the bus during the final pullback. Camera controls resume when the run finishes or stops.' : state.message;
     for (const result of state.results.slice(benchmarkResults.childElementCount)) {
         const row = document.createElement('output');
         row.className = 'grass-v2-benchmark-result';
@@ -76,9 +76,9 @@ function updateGrassPanel() {
     fadeSelect.querySelector('[value="canopy"]').disabled = grass.strategy !== 'baked';
     fadeSelect.disabled = !view.ready || view.benchmark.active || grass.strategy === 'patches';
     const label = { baked: 'Baked grass', current: 'Original lit grass', patches: 'Fixed patches · experiment' }[grass.strategy];
-    document.getElementById('grass-ranges').textContent = `${label} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
+    document.getElementById('grass-ranges').textContent = `${label}${grass.leafFill ? ' · Offline leaf fill' : ''} · Switches: ${grass.selection.effectiveDistances.join(' / ')} m`;
     if (grass.strategy === 'patches') {
-        grassCounts.title = `Shared immutable 2 / ${grass.field.patchSize} m patches. Counts include adjacent LODs in transition bands. Ground uses ${grass.field.surfacePatches} coarse surfaces. Forced LODs cover the full visible field; AUTO keeps bounded distance selection. Curve and roadside counts are combined.`;
+        grassCounts.title = `Shared immutable 2 / ${grass.field.patchSize} m patches. Counts include adjacent LODs in transition bands. Ground uses ${grass.field.surfacePatches} coarse surfaces. Forced LODs lock geometry and shading across the full visible field; AUTO keeps bounded distance selection and canopy blending. Curve and roadside counts are combined.`;
         return;
     }
     grassCounts.title = [

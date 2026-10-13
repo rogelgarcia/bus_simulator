@@ -33,7 +33,10 @@ test('Grass Debug benchmark follows the route and reports a compact result', asy
     expect(routeChecks.waypoints[0]).toEqual([19, 22, -22]);
     expect(routeChecks.waypoints[1]).toEqual(routeChecks.busPosition);
     expect(routeChecks.waypoints.at(-1)).toEqual([14.39, 8.247, 48.256]);
-    expect(routeChecks.clearanceZ - routeChecks.busFrontZ).toBeCloseTo(10, 6);
+    const originalCruiseMeters = routeChecks.busFrontZ + 10 - routeChecks.busPosition[2];
+    expect(routeChecks.busCruiseMeters).toBeCloseTo(originalCruiseMeters * 2, 6);
+    expect(routeChecks.clearanceZ - routeChecks.busPosition[2]).toBeCloseTo(originalCruiseMeters * 2, 6);
+    expect(routeChecks.grassEntryZ - routeChecks.clearanceZ).toBeCloseTo(6, 6);
     expect(routeChecks.busTangentDot).toBeGreaterThan(0.99999);
     routeChecks.cruise.forEach(point => {
         expect(point[0]).toBeCloseTo(routeChecks.busPosition[0], 6);
@@ -62,7 +65,7 @@ test('Grass Debug benchmark follows the route and reports a compact result', asy
         await page.screenshot({ path: `${artifacts}/${name}.png` });
     }
     const run = page.getByRole('button', { name: 'Run', exact: true });
-    await page.getByRole('button', { name: 'Overview', exact: false }).click();
+    await page.getByRole('button', { name: /^Overview/ }).click();
     const overview = await page.evaluate(() => window.__grassDebugV2.getSnapshot().camera);
     await page.getByRole('button', { name: 'Bus camera' }).click();
     await run.click();

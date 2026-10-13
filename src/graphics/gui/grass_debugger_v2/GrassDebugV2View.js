@@ -72,7 +72,7 @@ export class GrassDebugV2View {
             lighting: this.lighting, road: content.road, bus: content.bus, land: content.land, curve: content.curve,
             strategy: new URLSearchParams(location.search).get('grass') || 'baked', onProgress: this._onProgress });
         await this.renderer.compileAsync(this.scene, this.camera);
-        this.keyboard = new GrassDebugV2CameraInput(this.controls);
+        this.keyboard = new GrassDebugV2CameraInput(this.controls, { horizontal: true });
         const grassLayout = this.grass.getSnapshot();
         const grassBounds = { ...grassLayout.placement, maxZ: Math.max(...grassLayout.placements.filter(p => p.side === -1).map(p => p.maxZ)) };
         this.benchmark = new GrassDebugV2Benchmark({

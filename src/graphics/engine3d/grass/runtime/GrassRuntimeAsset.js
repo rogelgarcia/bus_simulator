@@ -2,12 +2,13 @@
 // @ts-check
 import * as THREE from 'three';
 import { createBakedGrassMaterial } from './GrassDebugV2BakedAppearance.js';
+import { loadGrassLeafFillAsset } from './GrassLeafFillAsset.js';
 
 const TYPES = Object.freeze({ Float32Array, Uint32Array, Uint16Array, Int16Array, Uint8Array });
 export const GRASS_RUNTIME_ROOT = '/assets/public/grass/gameplay/';
 
-/** @param {{renderer:THREE.WebGLRenderer,root?:string}} options */
-export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROOT }) {
+/** @param {{renderer:THREE.WebGLRenderer,root?:string,leafFill?:boolean}} options */
+export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROOT, leafFill = false }) {
     const responses = await Promise.all(['manifest.json', 'grass.bin'].map(name => fetch(root + name)));
     if (responses.some(response => !response.ok)) throw new Error('[Grass] Runtime assets unavailable. Run the materials/grass/gameplay-runtime bake with --publish.');
     const manifest = await responses[0].json(), bytes = await responses[1].arrayBuffer();
@@ -38,8 +39,10 @@ export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROO
         result.anisotropy = Math.min(record.anisotropy, renderer.capabilities.getMaxAnisotropy()); result.needsUpdate = true;
         return result;
     };
-    const dispose = () => { geometries.forEach(g => g.dispose()); textures.forEach(t => t.dispose()); materials.forEach(m => m.dispose()); };
+    let leafFillAsset = null;
+    const dispose = () => { geometries.forEach(g => g.dispose()); textures.forEach(t => t.dispose()); materials.forEach(m => m.dispose()); leafFillAsset?.dispose(); };
     try {
+        if (leafFill) leafFillAsset = await loadGrassLeafFillAsset({ renderer, sourceHash: manifest.sha256 });
         const white = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat); textures.push(white); white.needsUpdate = true;
         const shadowUniforms = { grassCanopyShadowVisibility: { value: white }, grassCanopyShadowBounds: { value: new THREE.Vector4(0, 0, 1, 1) }, grassCanopyShadowPass: { value: 2 } };
         const settings = { brightness: { value: 1 }, shadows: { value: 1 } };
@@ -57,7 +60,7 @@ export async function loadGrassRuntimeAsset({ renderer, root = GRASS_RUNTIME_ROO
             const mesh = new THREE.Mesh(geometry(record), leaf); mesh.userData.grassLeafRanges = record.ranges; return [level, mesh];
         }));
         const [lod3, bridge] = manifest.blades.map(group => ({ templates: group.map(geometry), material: leaf, textureBytes: 0 }));
-        return Object.freeze({ sources, lod3, bridge, settings, shadowUniforms, materials, manifest, maps: { canopy: canopyMaps, litter: litterMaps },
+        return Object.freeze({ sources, lod3, bridge, settings, shadowUniforms, materials, manifest, leafFill: leafFillAsset, maps: { canopy: canopyMaps, litter: litterMaps },
             canopy: { materials: { all: canopyMaterial }, rootShade: .32, getSnapshot: () => ({ definition: manifest.definition }) },
             soilMaterial: litterMaterial, litterMaterial, soilUv: new THREE.Matrix3(), litterUv: new THREE.Matrix3(), tileVariation: true,
             dispose });
