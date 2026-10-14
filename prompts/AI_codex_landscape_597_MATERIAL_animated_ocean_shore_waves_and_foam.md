@@ -153,7 +153,7 @@ queries.
 
 ### D6. Inland water
 
-- [ ] **Calm water.** If AI 596 published ponds or creek water, render them with calm presets of the
+- [x] **Calm water.** If AI 596 published ponds or creek water, render them with calm presets of the
   same system: ripples, colour and reflections. Their flow direction comes from the drainage channels.
   If AI 596 published no inland water, record that and close this deliverable.
 
@@ -465,6 +465,23 @@ reads darker than its display-space calibration; NW-01 and NW-02 see the sea onl
 little water (the sand-versus-rock comparison is OS-04).
 
 **Artifacts.** `tests/artifacts/screens/landscape/ai597/d5/` (README.md).
+
+### D6. Inland water — closed 2026-10-14 (nothing to render)
+
+**Finding.** AI 596 published no inland water surface on coastal-city-v3 (`specs/landscape/LANDSCAPE_AI596_HANDOFF.md` §7): the
+land-cover class 0 is exactly the 4,447,457 samples below sea level (the drainage class `sea`), no drainage channel carries a water
+level above Y = 0, and the hydrology products are data only: the `drainage` classes (hillslope 10,080,384, rill 213,646, gully
+119,628, channel 12,831, flat-pond 1,911,463 samples) and the terrain fields' depression analysis (1,911,391 samples filled in
+1,080 flats, a maximum fill depth of 9.70 m), where a pond candidate is a flat-pond sample with a positive fill depth outside
+planning cover. The prompt closes the deliverable in that case; this record is the closure.
+
+**What the system holds for it.** The `calm` sea state (a 3 m/s breeze over 15 km of fetch with a low long swell) is the preset such
+water would use. The surface, the water column and the light are bound to the sea level and the extent field, so an inland body
+would need its own published surface (a water level per body, a raster or polygons, which AI 596 did not derive: its own data-only
+product, never a terrain edit) and a second instance of the surface at that level with the flow direction from the drainage
+channels; nothing of that is built, and the spec (§2f) records the gap for the product that would need it.
+
+**Artifacts.** None: there is no inland water to capture. The finding is recorded in the spec and the roadmap.
 
 ## On completion
 

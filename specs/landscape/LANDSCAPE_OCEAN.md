@@ -1,7 +1,8 @@
 # Landscape ocean (AI 597)
 
 Status: D1 (spectral ocean surface), D2 (depth-aware shore waves), D3 (foam lifecycle) and D4 (swash and wet beach) delivered
-2026-10-12, D5 (water colour, refraction and light) 2026-10-14 on `codex/landscape`; D6–D7 pending (inland water, acceptance). This page is the canonical contract of the animated sea of the landscape
+2026-10-12, D5 (water colour, refraction and light) 2026-10-14, D6 (inland water) closed 2026-10-14 with no inland water published on
+`codex/landscape`; D7 pending (acceptance). This page is the canonical contract of the animated sea of the landscape
 viewer: what it is, how it is encoded and driven, how it integrates with the AI577 water optics and the AI 596 terrain,
 and what it costs. Every number is copied from a receipt under `tests/artifacts/screens/landscape/ai597/` (paths given).
 
@@ -248,6 +249,16 @@ constants `LANDSCAPE_OCEAN.water` and `.light`).
   (a ONE / ZERO blend) with alpha 0, the pipeline's sentinel: the final pass passes those pixels through untouched (the frame target
   clears to alpha 1), so the unitless views keep their raw values; the radiance views (3, 4, 11, 12) keep alpha 1 and are tone-mapped
   by the final pass with the scene (`oceanDisplay` compiles to the identity under the target).
+
+## 2f. Inland water (D6)
+
+AI 596 published no inland water surface on coastal-city-v3 (`LANDSCAPE_AI596_HANDOFF.md` §7: the land-cover class 0 is exactly the
+4,447,457 samples below sea level, no drainage channel carries a water level above Y = 0; the hydrology is data only: the drainage
+classes and the terrain fields' fill depths, 1,080 flats filled to 9.70 m at most, a pond candidate being a flat-pond sample with a
+positive fill depth outside planning cover). D6 closed with that record on 2026-10-14. A future inland water product would publish a
+water level per body (a raster or polygons, derived from the pond candidates as its own data-only product) and the ocean system would
+draw it as a second instance of the surface at that level with the `calm` sea state and the flow direction from the drainage channels;
+today the surface, the water column and the light are bound to the sea level and the extent field.
 
 ## 3. Runtime (D1–D5)
 
