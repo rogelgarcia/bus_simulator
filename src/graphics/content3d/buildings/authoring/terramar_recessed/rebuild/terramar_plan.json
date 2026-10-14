@@ -25781,7 +25781,7 @@
             12.6811
           ],
           "z": 27.56,
-          "height": 2.447,
+          "height": 2.173,
           "radius": 0.496,
           "rot_deg": 183.9
         },
@@ -25794,7 +25794,7 @@
             7.8133
           ],
           "z": 27.56,
-          "height": 2.248,
+          "height": 2.007,
           "radius": 0.495,
           "rot_deg": 307.6
         },
@@ -26045,7 +26045,7 @@
             -10.2095
           ],
           "z": 27.56,
-          "height": 2.586,
+          "height": 2.289,
           "radius": 0.489,
           "rot_deg": 0.1
         },
@@ -26110,7 +26110,7 @@
             -10.2262
           ],
           "z": 27.56,
-          "height": 2.264,
+          "height": 2.02,
           "radius": 0.527,
           "rot_deg": 149.1
         },
@@ -26297,7 +26297,7 @@
             7.7958
           ],
           "z": 27.56,
-          "height": 2.376,
+          "height": 2.113,
           "radius": 0.494,
           "rot_deg": 41.4
         },
@@ -26368,7 +26368,7 @@
             12.6528
           ],
           "z": 27.56,
-          "height": 2.066,
+          "height": 1.855,
           "radius": 0.508,
           "rot_deg": 89.8
         },
@@ -26394,7 +26394,7 @@
             -2.45
           ],
           "z": 27.76,
-          "height": 2.964,
+          "height": 2.623,
           "radius": 0.807,
           "rot_deg": 175.0
         },
@@ -26452,7 +26452,7 @@
             -4.0
           ],
           "z": 27.76,
-          "height": 2.796,
+          "height": 2.483,
           "radius": 0.766,
           "rot_deg": 131.5
         },
@@ -26985,8 +26985,8 @@
         "kinds": {
           "palm": {
             "height": [
-              2.0,
-              2.6
+              1.8,
+              2.3
             ],
             "radius": [
               0.48,
@@ -27512,8 +27512,8 @@
             -8.12
           ],
           "face": [
-            -0.0,
-            1.0
+            0.0,
+            -1.0
           ],
           "size": [
             0.7,
@@ -27529,8 +27529,8 @@
             -8.12
           ],
           "face": [
-            -0.0,
-            1.0
+            0.0,
+            -1.0
           ],
           "size": [
             0.7,
@@ -28008,7 +28008,7 @@
       ]
     },
     "sidewalk_cafe": {
-      "comment": "AI 632 sidewalk caf\u00e9 (site dressing): sets of a square market umbrella over a round table and its chairs, 2 per reserved bay, v from the podium outline; a sidewalk slab along the front runs, its top at the ground floor level",
+      "comment": "AI 632 sidewalk caf\u00e9 (site dressing): sets of an octagonal market umbrella over a round table and its chairs, 2 per reserved bay, v from the podium outline; a sidewalk slab along the front runs, its top at the ground floor level",
       "seed": 632,
       "z": 0.15,
       "config": {
@@ -28033,9 +28033,8 @@
         "umbrella": {
           "half": 1.1,
           "rim_z": 2.25,
-          "apex_z": 2.75,
-          "shell": 0.015,
-          "valance": 0.12,
+          "apex_z": 2.66,
+          "valance": 0.06,
           "pole_r": 0.025
         },
         "table": {
@@ -28046,8 +28045,8 @@
         "chair": {
           "w": 0.44,
           "d": 0.44,
-          "seat": 0.47,
-          "back": 0.84
+          "seat": 0.45,
+          "back": 0.9
         }
       },
       "sets": [
@@ -28939,8 +28938,8 @@
             -15.26
           ],
           "z": 0.51,
-          "height": 12.403,
-          "radius": 2.875,
+          "height": 8.9,
+          "radius": 2.247,
           "rot_deg": 355.7
         },
         {
@@ -28951,8 +28950,8 @@
             -15.26
           ],
           "z": 0.51,
-          "height": 11.527,
-          "radius": 2.933,
+          "height": 10.4,
+          "radius": 2.3,
           "rot_deg": 176.4
         },
         {
@@ -28963,8 +28962,8 @@
             -6.8841
           ],
           "z": 0.51,
-          "height": 12.31,
-          "radius": 3.008,
+          "height": 10.629,
+          "radius": 2.368,
           "rot_deg": 304.9
         },
         {
@@ -28975,8 +28974,8 @@
             -6.8988
           ],
           "z": 0.51,
-          "height": 11.527,
-          "radius": 2.723,
+          "height": 9.924,
+          "radius": 2.111,
           "rot_deg": 13.7
         }
       ],

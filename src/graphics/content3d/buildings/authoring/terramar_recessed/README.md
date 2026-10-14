@@ -553,8 +553,16 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
-| `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
-| `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
+| `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks; `fit_scales` fits every instance to its target (the detailed palms within 10 % xy / z) |
+| `palm_frond.py` | one detailed feather-palm frond into a caller's bmesh (petiole, tapering rachis, individual creased leaflets; young / mature / old / dead), and its three materials (`RBP_palm_leaflet_foliage`, `RBP_palm_rachis`, `RBP_palm_dead_foliage`); test renders with `-- out=` |
+| `palm_trunk.py` | the palm trunk with its leaf-scar rings and crown boot zone into a caller's bmesh (`rbp_*` attributes, cylindrical UVs), and `RBP_palm_bark` / `RBP_palm_boot`; test renders with `-- out=` |
+| `palm_base.py` | the root base (boss, adventitious roots, root initials) welded under the trunk, and `RBP_palm_root` (the bark blended into the root zone); test renders with `-- out=` |
+| `palm_tree.py` | the whole palm as one mesh (2026-10-14): trunk, base welded on its ring, a crown of 20-30 fronds on the boot zone; `build_palm(bm, rng, scale="street" \| "roof")`, used by `proc_plants.py` for `street_palm` and `palm`; test renders with `-- out=` |
+| `furniture_materials.py` | the furniture's shared materials (2026-10-14), one source for both furniture modules: `TM_RB_furn_teak`, `TM_RB_furn_metal`, `TM_RB_furn_fabric_<offwhite\|ecru\|greige>` (procedural, UV driven, shifted per object so linked duplicates differ), and the plain `TM_RB_teak` / `TM_RB_charcoal_metal` of the box-built bar, ceiling, kitchen, poles and lamps |
+| `furniture_chairs.py` | detailed chairs into a caller's bmesh (2026-10-14): `dining_chair` (teak, slat / cane / band backs, a seat pad), `cafe_chair` (rattan bistro, arm / side, woven seat and back), `bar_stool`; `build(bm, item, z, slot)`, `materials()` (adds the rattan, wrap, weave and cane materials); test renders with `-- out=` |
+| `furniture_tables_seating.py` | detailed tables and soft seating into a caller's bmesh (2026-10-14): `dining_table`, `coffee_table`, `low_table`, `side_table`, `cafe_table` (the pole's hole), `sofa` / `armchair` (upholstered or `frame: "teak"`), `lounger`; `build(bm, item, z, slot)`; test renders with `-- out=` |
+| `cafe_umbrella.py` | the café's octagonal market umbrella into a caller's bmesh (2026-10-14): 8 sagging canvas panels with seam ridges and a turned hem, the vent cap and finial, 8 valance flaps, wood ribs and struts on a runner, a two-section pole with its sleeve, pulley, halyard and cleat; `build(bm, slot, centre, axis_u, cfg, z0, seed)`, `materials()` (`TM_RB_cafe_canopy` canvas, `TM_RB_cafe_wood`, `TM_RB_cafe_metal`, `TM_RB_cafe_rope`), `to_object()`; test renders and checks with `-- out=` |
+| `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`); and `furnish()`, the placement every furnished layer shares (one object per item, identical pieces sharing one mesh), with `clear()` and `materials()` |
 | `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
 | `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
 | `layer_dining_l1.py` | the upper-podium dining room (AI 636), `RB_INTERIOR/RB_DINING_L1`: furniture, sideboard, pendants, plants, fill and ceiling-wash lights, from `plan["interior"]["dining_l1"]` (`props_layout.py`); reuses `layer_restaurant_l0.py`'s pieces |
@@ -1273,6 +1281,140 @@ against the references, whose originals are in `references/`:
 ```
 blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- groups=final samples=256 out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/final_4k
 ```
+
+**Detailed palms (2026-10-14).** The street palms (`street_palm`) and the roof palms (`palm`) are now built by
+`palm_tree.py` instead of the folded-strip palms of AI 629/633 (cycads and spiky rosettes are unchanged). One mesh per
+tree, built into one bmesh, not through `rb_lib.finish`:
+- **Trunk** (`palm_trunk.py`): the leaf-scar rings and the boot zone.
+- **Root base** (`palm_base.py`, street palms only): welded to the trunk's ring 0. A roof palm stands 5 cm from its trough's inner rim, so its trunk (r 0.044–0.048) is capped on the soil instead.
+- **Crown** (`palm_frond.py` fronds on the boot zone):
+  - street: 26–30 live fronds on a golden-angle spiral, from 1–2 near-upright spears through arching mature fronds to old ones drooping below level (the older ones shorter), plus 1–2 dead fronds hanging under the crown;
+  - roof: a compact fan of 20–24 fronds with wider, denser leaflets;
+  - both: seeded lengths, angles, jitter and a slight asymmetry, the frond bases inside the upper boots.
+
+Changes measured on b8 through `CAM_B8`:
+- **Sizes.** b8's two front palms stand 8.9 and 10.4 m above the pit soil, with crowns 4.0 and 4.6 m across (radius ÷ height 0.21–0.23) and trunks about 0.27 m across. The old targets (10.5–12.5 m tall, radius 2.6–3.1 m) stood taller than b8. `props_layout.py` now has street heights (9.0, 10.8) and radius (2.0, 2.45), with `b8_heights` pinning the two front palms; roof palm heights are (1.8, 2.3).
+- **Fit.** The old fit squashed the roof palm to 0.55 in xy, which made it read like an agave. `layer_roof_planters.fit_scales` now keeps a prototype that carries `rb_fit_aniso` (the detailed palms, 10 %) within ±10 % xy ÷ z, never past either target. Achieved: street 0.98–1.10, roof 0.90–1.10. The `row_3` island palm gets a crown 11 % narrower than planned.
+- **Leaflet tone** (`palm_frond.py`, a scoped fix): a darker, less blue low end, translucency 0.22 → 0.14 and an underside value of 1.08 (was 1.18). The crowns were pale and flat against the stone. Foliage pixels in the `CAM_B8` frame now average (100, 86, 53) and (92, 83, 49), against b8's (96, 83, 50) and (97, 87, 50).
+- **Budget.** Street prototypes are 76.8k–79.2k triangles (×3), roof prototypes 16.1k–17.8k (×3). `terramar_site.blend` grew from 74.0 to 78.7 MB and `terramar_props.blend` from 137.9 to 139.0 MB. The ten evidence poses render in 152.8 s instead of 148.7 s (+3 %).
+
+Checks:
+- the audit: 120 objects, 0 z-fights, 0 penetrations; the site: 7 objects, 0 / 0;
+- hidden parts visible from b8: 0 px;
+- roof foliage outside the guard: 0 (closest 3.2 cm);
+- a fresh `target=all save=0` build runs clean.
+
+`audit_collisions.py` skips collection instances, so the palm instances were also checked against every mesh (`palm_detail/palm_clearance.json`). Nothing overlaps above the foot: the feet sit on the soil, and the street roots dive into it. One limit remains in the AI 629 layout: the corner-cluster roof plants (cycads as well as palms) stand 1–14 mm from trough walls or end caps, so their trunks cross the 4 cm rim there.
+
+New poses: `street_palm_closeup` and `roof_palm_closeup`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/palm_detail/`:
+- `poses/pre_palms_vs_rebuild/`: 10 sheets;
+- `tree/`: the composer's test renders and the b8 crops;
+- `frond/`, `trunk/`, `base/`: the part modules' renders;
+- the checks, both audits and `palm_clearance.json`.
+
+**Detailed furniture (2026-10-14).** Every piece of furniture is now real furniture, no longer prisms: the roof terrace,
+the restaurant, the upper dining room, the residential units, the penthouse and the sidewalk café. `furniture_chairs.py`
+and `furniture_tables_seating.py` build the pieces; `layer_roof_furniture.furnish()` places them for every layer.
+- **Placement.** One object per item. Its mesh is built at the origin in the item's frame and placed by the object's
+  location and turn, so the plan's footprint checks stay valid.
+- **Shared meshes.** Items with the same geometry (kind, size, variant, cushion, heights, frame) share one mesh as linked
+  duplicates. Seeded upholstery (sofa, armchair and lounger cushions) keeps one mesh per item, seeded by its place.
+  - Why share: one object per group would have stored all 0.90 M triangles. One object per item also lets the audit
+    pair pieces with each other, which it never could inside a merged object.
+  - They stay MESH objects (not collection instances), so the audit checks every one.
+  - `clear()` removes each shared mesh once. `rb_lib.clear_collection` would touch a mesh again after removing it.
+- **No `rb_lib.finish`.** It would dissolve the rounded sections and overwrite the grain and weave UVs.
+- **Materials, one source.** `furniture_materials.py` defines the teak, the powder-coated metal and the three fabrics.
+  The chair pads and stool cushions now use the sofas' `TM_RB_furn_fabric_<colour>`, so a chair and a sofa in one room
+  match. `TM_RB_cushion_*` and `TM_RB_cafe_rattan` are no longer used. The box-built pieces keep the plain `TM_RB_teak` /
+  `TM_RB_charcoal_metal`, defined there too. Every node material shifts its UVs by the object's random value, so linked
+  duplicates do not repeat their grain.
+- **Choices per room:**
+
+  | Room | Chairs | Other |
+  | --- | --- | --- |
+  | restaurant | slat-back teak dining chairs | six `bar_stool`s at 0.76 m replace the bar's stool discs |
+  | dining room | caned teak dining chairs | |
+  | residential | each set's chairs match, seeded by the set | |
+  | roof | slat-back teak dining chairs | sofa and armchairs on open teak frames |
+  | penthouse | | three stools at 0.66 m at the island |
+  | café | rattan armchairs; one set in four seeded to side chairs; the chairs at one table match | the café table with the pole's hole |
+
+- **Layout:** the roof loungers now face `"out"`. The detailed lounger's raised back is at −v, so its feet still point
+  towards the view. The café chairs take b8's 0.45 / 0.90 m seat / back.
+
+| | Before | After |
+| --- | --- | --- |
+| furniture | prisms in 13 merged objects (one per group or floor) | 602 objects, 118 meshes, 0.90 M triangles placed, 0.28 M stored |
+| `terramar_interiors.blend` | 39.8 MB | 42.0 MB |
+| `terramar_props.blend` | 139.0 MB | 139.1 MB |
+| `terramar_site.blend` | 78.7 MB | 78.7 MB |
+| 13 evidence poses | 273 s | 281 s (+3 %) |
+| audit | 120 objects, 1188 candidate pairs | 680 objects, 6319 candidate pairs, 68 s with loading |
+
+Checks:
+- the audit: 0 z-fights, 0 penetrations; the site: 36 objects, 0 / 0;
+- hidden parts visible from b8: 0 px;
+- a fresh `target=all save=0` build runs clean;
+- a second in-place rebuild of every furniture layer leaves no orphan or duplicated meshes.
+
+New pose: `cafe_chairs_closeup`. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/furniture_detail/`:
+- `poses/pre_furniture_vs_rebuild/`: 13 sheets;
+- `chairs/` and `tables_seating/`: the modules' renders;
+- `module_retest/`: the test entries after the materials merge;
+- the checks and `site.audit.json`.
+
+**Detailed café umbrellas (2026-10-14).** The user asked for detailed covers: "not squared", "several parts", "made of
+fabric". b8's umbrellas are octagonal market umbrellas: cream canvas in 8 panels, a raised vent cap with a finial, a short
+straight valance, a natural-wood pole, wood ribs and struts underneath. `cafe_umbrella.py` builds one, all of it real
+geometry; `layer_site_cafe.py` places one per café set as its own object, `rb_cafe_umbrella_<n>`. They replace AI 632's
+square pyramid shells (`rb_cafe_canopies`) and plain poles (`rb_cafe_poles`).
+- **Canvas:** the 8 panels as one smooth sheet. Each panel sags between its ribs (seeded 2.2-3.4 % of the chord), with a
+  soft seam ridge over every rib, a hem scalloped between the rib tips and turned under, and the vent opening turned
+  under too. The octagon's flats face the run and the facade, 25 mm inside the old square (largest reach 1.078 of 1.1).
+- **Vent cap:** a small 8-panel canopy lifted 75 mm over the vent, with short flaps, rods underneath and a turned finial.
+- **Valance:** 8 flaps hanging from the hem's fold, a gap at each rib tip. Each flap is seeded: lean, belly, flutter, a
+  sagging and turned bottom edge.
+- **Frame:** 8 wood ribs under the seams with metal ferrules; 8 struts from lugs on the runner to brackets under the ribs,
+  pinned at both ends; the hub. The pole has two sections joined by a metal sleeve, the runner above its locking pin, a
+  pulley under the hub, and the halyard down to the runner and to a cleat. The lower section (r 25 mm) runs through the
+  café table's 35 mm hole to the sidewalk, as before.
+- **Materials** (procedural, shifted per object):
+  - `TM_RB_cafe_canopy`: a fine woven canvas with slubs and sheen, 16 % translucent, so the sunlit canopy glows a little
+    from below and the doubled hems and seam bands read darker;
+  - `TM_RB_cafe_wood`: varnished natural hardwood, lighter than the teak, as b8's poles;
+  - `TM_RB_cafe_metal` (satin stainless) and `TM_RB_cafe_rope`.
+- **Layout** (`props_layout.CAFE["umbrella"]`, the umbrella config only):
+  - apex 2.75 -> 2.66: b8's canopies rise 0.27-0.28 of their half-width to the vent cap; the square shells' 2.75 read
+    steep;
+  - valance 0.12 -> 0.06: b8 shows only a thin rim;
+  - `shell` dropped. The rim stays at 2.25 above the sidewalk.
+
+Clearances, measured in the composition against every mesh and instance within 1.5 m (`umbrella_clearance.json`):
+- the closest neighbouring umbrellas (2.28 m apart): 121 mm (the squares kept 77 mm);
+- chairs 0.36 m, the palms 1.20 m, the facade's lanterns and piers 1.42 m, the awnings 1.49 m, the lamps over 1.5 m;
+- the table: the pole keeps 9 mm inside the hole, no triangle crossing;
+- the sidewalk: the pole's foot stands on it.
+
+| | Before | After |
+| --- | --- | --- |
+| umbrellas | 2 merged objects, 800 triangles | 8 objects, 113 248 triangles (14 156 each) |
+| `terramar_site.blend` | 78.7 MB | 80.4 MB |
+| 8 evidence poses | 163.1 s | 164.7 s (+1 %) |
+
+Checks:
+- the audit: 680 objects, 0 z-fights, 0 penetrations; the site: 42 objects, 0 / 0;
+- hidden parts visible from b8: 0 px;
+- a fresh `target=all save=0` build runs clean.
+
+New poses: `umbrella_closeup` and `umbrella_underside`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/umbrella_detail/`:
+- `poses/pre_umbrellas_vs_rebuild/`: 8 sheets;
+- `module/`: the module's test renders and `sheet_*_v3.png` beside b8 (v1: before the flatter canopy and the shorter
+  valance; v2: before the straighter ribs);
+- `ref/`: the b8 crops; `b8_cafe_strip_b8_pre_post.png`: b8, before and after in `CAM_B8`;
+- the checks, both audits and `umbrella_clearance.json`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

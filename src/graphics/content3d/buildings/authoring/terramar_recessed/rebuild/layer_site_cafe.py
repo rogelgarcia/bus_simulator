@@ -5,89 +5,79 @@
 #   RB_SITE_GROUND/rb_site_sidewalk   the sidewalk slab along the front runs (H, A, B), 6 m wide, from the street (z 0) up
 #                                     to the ground floor level; its inner edge follows the balcony edge and the
 #                                     entrance's bump; its top is TM_RB_site_paving (the materials pass lays the pavers)
-#   RB_SITE_CAFE/rb_cafe_umbrellas    square market umbrellas: a thin pyramid shell canopy with a short valance
-#                                     (TM_RB_cafe_canopy, cream) on a wood pole (TM_RB_teak)
-#   RB_SITE_CAFE/rb_cafe_tables       round wood tables on a charcoal pedestal and base, each with a hole the pole runs
-#                                     through
-#   RB_SITE_CAFE/rb_cafe_chairs       woven bistro chairs (TM_RB_cafe_rattan), facing their table
+#   RB_SITE_CAFE/rb_cafe_umbrella_<n> cafe_umbrella.py's octagonal market umbrella (2026-10-14), one object per set:
+#                                     8 sagging canvas panels with seam ridges and a turned hem, a raised vent cap
+#                                     and finial, 8 valance flaps, wood ribs and struts on a runner, a two-section
+#                                     wood pole (sleeve, pulley, halyard, cleat) down through the table's hole to the
+#                                     sidewalk; each seeded by its set (sag, scallop, flaps, the halyard's side)
+#   RB_SITE_CAFE/rb_cafe_table_<n>_cafe_table   furniture_tables_seating.py's café table: a round teak top with an open
+#                                     centre hole the pole runs through, a hollow charcoal column, four cast arms
+#   RB_SITE_CAFE/rb_cafe_chair_<n>_cafe_chair   furniture_chairs.py's rattan bistro chairs facing their table (b8:
+#                                     mostly armchairs; a seeded one set in four side chairs), a table's chairs matching
+# The tables and chairs are placed by layer_roof_furniture.furnish: one object each, identical ones sharing a mesh.
 # The audit's rebuild root does not see the site; audit it with root=RB_SITE.
 import importlib
-import math
 import os
 import sys
+import zlib
 
 import bmesh
-import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
-import layer_balcony_plants as BP  # noqa: E402  (plain materials)
-import layer_roof_furniture as RF  # noqa: E402  (item frames)
+import cafe_umbrella as CU  # noqa: E402  (the detailed market umbrella)
+import layer_roof_furniture as RF  # noqa: E402  (the detailed furniture's placement and materials)
 
 importlib.reload(L)
-importlib.reload(BP)
+importlib.reload(CU)
 importlib.reload(RF)
 
 SITE = "RB_SITE"
 LAYER = "site_cafe"
-LOOKS = {"TM_RB_cafe_canopy": ((0.80, 0.77, 0.69), 0.90), "TM_RB_cafe_rattan": ((0.30, 0.19, 0.10), 0.80),
-         "TM_RB_teak": ((0.30, 0.165, 0.085), 0.55), "TM_RB_charcoal_metal": ((0.045, 0.045, 0.05), 0.40)}
+SIDE_CHAIRS_EVERY = 4                                                  # one set in this many has side chairs (seeded)
 
 
 def tags(element, name):
     return {"rb_layer": LAYER, "rb_element": element, "tm_element": SITE, "tm_role": element, "rb_name": name}
 
 
-def disc(c, r, n=24):
-    return [(c[0] + r * math.cos(2 * math.pi * k / n), c[1] + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
+def umbrellas(cafe, c):
+    """One cafe_umbrella per set, its own object (the audit pairs it with its table, chairs and neighbours), seeded by
+    the café's seed and the set; returns (objects, stats)."""
+    z0, um = c["z"], c["config"]["umbrella"]
+    obs, tris, worst = [], 0, 0.0
+    for i, s in enumerate(c["sets"]):
+        bm = bmesh.new()
+        slots = []
+
+        def slot(name, slots=slots):
+            if name not in slots:
+                slots.append(name)
+            return slots.index(name)
+        res = CU.build(bm, slot, s["at"], s["along"], um, z0, seed=f"{c['seed']}:{i}")
+        obs.append(CU.to_object(f"rb_cafe_umbrella_{i}", cafe, bm, slots, tags("umbrella", f"umbrella_{i}")))
+        tris += res["tris"]
+        worst = max(worst, res["extent_u"], res["extent_v"])
+        if res["low_r"] >= c["config"]["table"]["hole"]:
+            raise SystemExit(f"layer_site_cafe: umbrella {i} is {res['low_r']:.4f} m wide in the table's hole")
+    return obs, {"umbrella_tris": tris, "umbrella_extent": round(worst, 4)}
 
 
-def ring(c, r_out, r_in, spans, mat):
-    """A round slab with a hole in its middle (the umbrella pole runs through)."""
-    outer, inner = disc(c, r_out), disc(c, r_in, 12)
-    return (spans, [(outer, mat), (inner, mat)], [([outer, inner], mat, mat)])
-
-
-def canopy(bm, slot, centre, U, cfg, z0):
-    """A square pyramid shell: outer and inner surfaces `shell` apart, joined at the rim; then the valance below the rim."""
-    h, t = cfg["half"], cfg["shell"]
-    V = (-U[1], U[0])
-    corners = [(su, sv) for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-    pt = lambda su, sv, z: (centre[0] + (U[0] * su + V[0] * sv) * h, centre[1] + (U[1] * su + V[1] * sv) * h, z)  # noqa: E731
-    rim, apex = z0 + cfg["rim_z"], z0 + cfg["apex_z"]
-    o_apex, i_apex = bm.verts.new((centre[0], centre[1], apex)), bm.verts.new((centre[0], centre[1], apex - t))
-    o_rim = [bm.verts.new(pt(su, sv, rim)) for su, sv in corners]
-    i_rim = [bm.verts.new(pt(su, sv, rim - t)) for su, sv in corners]
-    for k in range(4):
-        a, b = k, (k + 1) % 4
-        bm.faces.new((o_apex, o_rim[a], o_rim[b])).material_index = slot
-        bm.faces.new((i_apex, i_rim[b], i_rim[a])).material_index = slot
-        bm.faces.new((o_rim[a], i_rim[a], i_rim[b], o_rim[b])).material_index = slot
-    # the valance: four thin bands hanging from the rim's underside, flush with its outer edge
-    d, vh = 0.006, cfg["valance"]
-    for k in range(4):
-        a, b = corners[k], corners[(k + 1) % 4]
-        inset = 1.0 - d / h
-        pts = [pt(a[0], a[1], rim - t - vh), pt(b[0], b[1], rim - t - vh), pt(b[0] * inset, b[1] * inset, rim - t - vh),
-               pt(a[0] * inset, a[1] * inset, rim - t - vh)]
-        bottom = [bm.verts.new(q) for q in pts]
-        top = [bm.verts.new((q[0], q[1], rim - t)) for q in pts]
-        for f in ((3, 2, 1, 0), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
-            bm.faces.new([(bottom + top)[i] for i in f]).material_index = slot
-
-
-def chair(item, z0, cfg, out):
-    fr = RF.Frame({"at": item["at"], "face": item["face"]})
-    w, d = cfg["w"], cfg["d"]
-    m = "TM_RB_cafe_rattan"
-    for su in (-1, 1):                                                 # woven legs
-        for sv in (-1, 1):
-            cu, cv = su * (w / 2 - 0.03), sv * (d / 2 - 0.03)
-            out.append(L.piece(fr.box(cu - 0.015, cu + 0.015, cv - 0.015, cv + 0.015), [(z0, z0 + cfg["seat"] - 0.03)], m))
-    out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, d / 2), [(z0 + cfg["seat"] - 0.03, z0 + cfg["seat"])], m))
-    out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, -d / 2 + 0.035), [(z0 + cfg["seat"], z0 + cfg["back"])], m))
+def furniture_items(c):
+    """The café's tables and chairs as furniture items: (tables, chairs). A set's chairs share its seed key, so they
+    match; one set in SIDE_CHAIRS_EVERY (seeded) has side chairs, the rest b8's armchairs."""
+    tc, ch = c["config"]["table"], c["config"]["chair"]
+    tables, chairs = [], []
+    for i, s in enumerate(c["sets"]):
+        tables.append({"kind": "cafe_table", "at": s["at"], "face": s["along"], "size": [2 * tc["r"], 2 * tc["r"]],
+                       "top_r": tc["r"], "hole_r": tc["hole"], "h": tc["h"]})
+        variant = "side" if zlib.crc32(f"cafe:{c['seed']}:{i}".encode()) % SIDE_CHAIRS_EVERY == 0 else "arm"
+        for it in s["chairs"]:
+            chairs.append({"kind": "cafe_chair", "at": it["at"], "face": it["face"], "size": [ch["w"], ch["d"]],
+                           "seat_h": ch["seat"], "back_h": ch["back"], "variant": variant, "set": f"cafe_{i}"})
+    return tables, chairs
 
 
 def build(plan):
@@ -95,31 +85,24 @@ def build(plan):
     ground = L.ensure_collection("RB_SITE_GROUND", site)
     cafe = L.ensure_collection("RB_SITE_CAFE", site)
     L.clear_collection(ground)
-    L.clear_collection(cafe)
-    for name, (rgb, rough) in LOOKS.items():
-        if bpy.data.materials.get(name) is None or name.startswith("TM_RB_cafe"):
-            BP.plain_material(name, rgb, rough)
+    RF.clear(cafe)
+    CU.materials()                                                     # the canvas, wood, metal and rope
+    RF.materials()                                                     # the furniture's
     c = plan["props"]["sidewalk_cafe"]
     sw = c["sidewalk"]
     foot = [tuple(q) for q in sw["footprint"]]
     walk = L.solid("rb_site_sidewalk", ground, [tuple(sw["z"])], [(foot, "TM_RB_site_paving")],
                    [([foot], "TM_RB_site_paving", "TM_RB_hidden")], tags("sidewalk", "sidewalk"))
-    z0, cfg = c["z"], c["config"]
-    um, tc = cfg["umbrella"], cfg["table"]
-    poles, tables, chairs = [], [], []
-    bm = bmesh.new()
-    for s in c["sets"]:
-        canopy(bm, 0, s["at"], s["along"], um, z0)
-        poles.append(L.piece(disc(s["at"], um["pole_r"], 10), [(z0, z0 + um["apex_z"] - um["shell"] - 0.03)], "TM_RB_teak"))
-        tables.append(ring(s["at"], tc["r"], tc["hole"], [(z0 + tc["h"] - 0.03, z0 + tc["h"])], "TM_RB_teak"))
-        tables.append(ring(s["at"], tc["hole"] + 0.012, tc["hole"], [(z0 + 0.03, z0 + tc["h"] - 0.03)], "TM_RB_charcoal_metal"))
-        tables.append(ring(s["at"], 0.26, tc["hole"], [(z0, z0 + 0.03)], "TM_RB_charcoal_metal"))
-        for ch in s["chairs"]:
-            chair(ch, z0, cfg["chair"], chairs)
-    canopies = L.finish("rb_cafe_canopies", cafe, bm, ["TM_RB_cafe_canopy"], tags("umbrella", "umbrella_canopies"), smooth_deg=5.0)
-    made = [walk, canopies,
-            L.pieces("rb_cafe_poles", cafe, poles, tags("umbrella", "umbrella_poles")),
-            L.pieces("rb_cafe_tables", cafe, tables, tags("table", "cafe_tables")),
-            L.pieces("rb_cafe_chairs", cafe, chairs, tags("chair", "cafe_chairs"))]
-    return {"collection": SITE, "objects": len(made), "sets": len(c["sets"]),
-            "chairs": sum(len(s["chairs"]) for s in c["sets"]), "sidewalk_points": len(foot), "names": [o.name for o in made]}
+    z0 = c["z"]
+    obs_u, st_u = umbrellas(cafe, c)
+    made = [walk] + obs_u
+    tables, chairs = furniture_items(c)
+    obs_t, st_t = RF.furnish(cafe, tables, "rb_cafe_table", lambda e, n: tags("table", n), z0)
+    obs_c, st_c = RF.furnish(cafe, chairs, "rb_cafe_chair", lambda e, n: tags("chair", n), z0)
+    made += obs_t + obs_c
+    return {"collection": SITE, "objects": len(made), "sets": len(c["sets"]), "chairs": len(chairs),
+            "variants": {v: sum(1 for it in chairs if it["variant"] == v) for v in ("arm", "side")},
+            "furniture_meshes": st_t["meshes"] + st_c["meshes"],
+            "tris_placed": st_t["tris_placed"] + st_c["tris_placed"],
+            "tris_stored": st_t["tris_stored"] + st_c["tris_stored"], **st_u, "sidewalk_points": len(foot),
+            "names": [o.name for o in made]}

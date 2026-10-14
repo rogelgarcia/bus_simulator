@@ -6,7 +6,9 @@
 #                          seeded positions; each panel is a folded sheet (more gathered = deeper, tighter folds) in
 #                          TM_RB_sheer (part transparent, part diffuse and translucent, so daylight shines through)
 #   rb_res_tracks          the ceiling tracks the panels hang from, one per glazed span (TM_RB_curtain_track)
-#   rb_res_furniture_f<n>  the seeded lounge, dining and reading sets near the windows (AI 630's teak / cushion pieces)
+#   RB_RESIDENTIAL_FURNITURE/rb_res_furn_f<n>_<k>_<kind>  the seeded lounge, dining and reading sets near the windows:
+#                          one object per item, the detailed furniture placed by layer_roof_furniture.furnish (identical
+#                          pieces share one mesh; each set's dining chairs match, seeded by the set)
 #   rb_res_lamps           a floor lamp with each set: charcoal base and pole, a warm glowing linen drum shade
 import importlib
 import math
@@ -21,7 +23,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
 import layer_balcony_plants as BP  # noqa: E402  (plain materials)
-import layer_roof_furniture as RF  # noqa: E402  (furniture pieces)
+import layer_roof_furniture as RF  # noqa: E402  (the detailed furniture's placement and materials)
 
 for mod in (L, BP, RF):
     importlib.reload(mod)
@@ -67,9 +69,7 @@ def materials():
     bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     bsdf.inputs["Emission Color"].default_value = (*glow, 1.0)
     bsdf.inputs["Emission Strength"].default_value = strength
-    for name, (rgb, rough) in RF.LOOKS.items():
-        if bpy.data.materials.get(name) is None:
-            BP.plain_material(name, rgb, rough)
+    RF.materials()                                                    # the furniture's (and the plain charcoal)
 
 
 def disc(c, r, n=16):
@@ -117,7 +117,7 @@ def lamp_pieces(lamp, cfg):
 def build(plan):
     root = L.ensure_collection(L.ROOT)
     coll = L.ensure_collection(COLLECTION, L.ensure_collection(PARENT, root))
-    L.clear_collection(coll)
+    RF.clear(coll)
     materials()
     rs = plan["interior"]["residential"]
     cfg = rs["config"]
@@ -139,17 +139,21 @@ def build(plan):
         tracks.append(L.piece([pt(s0, cv - d), pt(s1, cv - d), pt(s1, cv + d), pt(s0, cv + d)],
                               [(t["z"] - tr["height"], t["z"])], TRACK[0]))
     made.append(L.pieces("rb_res_tracks", coll, tracks, tags("track", "tracks")))
+    furn, stats = L.ensure_collection(f"{COLLECTION}_FURNITURE", coll), []
     for floor in floors:
-        items = [it for it in rs["items"] if it["group"].startswith(f"f{floor}_")]
+        items = [dict(it, set=it["group"]) for it in rs["items"] if it["group"].startswith(f"f{floor}_")]
         if items:
-            made.append(L.pieces(f"rb_res_furniture_f{floor}", coll, [p for it in items for p in RF.model(it, it["z"])],
-                                 tags("furniture", f"furniture_f{floor}")))
+            obs, st = RF.furnish(furn, items, f"rb_res_furn_f{floor}", tags)
+            made += obs
+            stats.append(st)
     made.append(L.pieces("rb_res_lamps", coll, [p for lamp in rs["lamps"] for p in lamp_pieces(lamp, cfg["lamp"])],
                          tags("lamp", "lamps")))
     kinds = {}
     for it in rs["items"]:
         kinds[it["kind"]] = kinds.get(it["kind"], 0) + 1
     return {"collection": COLLECTION, "objects": len(made), "curtain_panels": len(rs["curtains"]), "tracks": len(rs["tracks"]),
-            "kinds": kinds, "lamps": len(rs["lamps"]), "skipped_sets": len(rs["skipped_sets"]),
+            "kinds": kinds, "furniture_meshes": sum(s["meshes"] for s in stats),
+            "tris_placed": sum(s["tris_placed"] for s in stats), "tris_stored": sum(s["tris_stored"] for s in stats),
+            "lamps": len(rs["lamps"]), "skipped_sets": len(rs["skipped_sets"]),
             "patterns_distinct": len({tuple(v) for v in rs["patterns"].values()}) == len(rs["patterns"]),
             "names": [o.name for o in made]}

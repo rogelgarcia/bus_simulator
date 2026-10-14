@@ -7,8 +7,10 @@
 #                          module per corner arc), each a body with thin rim walls and end caps, and the islands'
 #                          dark-metal boxes (TM_RB_planter_metal, a body and a rim with a hole)
 #   rb_roof_plant_<place>_<n>  collection instances: the ring's low viburnum, the feature clusters and fill plants
-#                          (procedural cycads, palms and spiky rosettes from proc_plants.py, linden olives with a
-#                          companion form) and the islands' plants
+#                          (procedural cycads, detailed palms (palm_tree.py) and spiky rosettes from proc_plants.py,
+#                          linden olives with a companion form) and the islands' plants
+# Instances are fitted to their target height and crown radius (fit_scales); the detailed palms keep their xy / z scale
+# ratio within rb_fit_aniso (10 %), never past either target, and the summary lists their scales.
 # The perimeter foliage must stay inside the guard shoe's inner line (plan "keep_inside"): the layer counts every point
 # outside it.
 import importlib
@@ -78,6 +80,18 @@ def prototype(model):
     return proto
 
 
+def fit_scales(proto, height, radius):
+    """(s_z, s_xy) fitting the prototype to the target height and crown radius. A prototype with rb_fit_aniso (the
+    detailed palms) keeps s_xy / s_z within 1 -+ it, never past either target: the crown is narrowed first, then the
+    height lowered, so a palm is never squashed into a shuttlecock nor its trunk stretched."""
+    s_z, s_xy = height / proto["rb_height"], radius / proto["rb_radius"]
+    cap = proto.get("rb_fit_aniso")
+    if cap:
+        s_xy = min(s_xy, s_z * (1.0 + cap))
+        s_z = min(s_z, s_xy / (1.0 - cap))
+    return s_z, s_xy
+
+
 def instances(coll, p, protos, name):
     forms = [(p["model"], p["rot_deg"], p["height"], p["radius"], "")]
     if "companion" in p:
@@ -86,8 +100,8 @@ def instances(coll, p, protos, name):
     made = []
     for model, rot, height, radius, suffix in forms:
         proto = protos[model]
-        s_z, s_xy = height / proto["rb_height"], radius / proto["rb_radius"]
-        M = (Matrix.Translation((p["at"][0], p["at"][1], p["z"])) @ Matrix.Rotation(math.radians(rot), 4, "Z")
+        s_z, s_xy = fit_scales(proto, height, radius)
+        M =(Matrix.Translation((p["at"][0], p["at"][1], p["z"])) @ Matrix.Rotation(math.radians(rot), 4, "Z")
              @ Matrix.Diagonal((s_xy, s_xy, s_z, 1.0)))
         ob = bpy.data.objects.new(name + suffix, None)
         ob.instance_type = "COLLECTION"
@@ -99,6 +113,12 @@ def instances(coll, p, protos, name):
         coll.objects.link(ob)
         made.append((ob, M, proto))
     return made
+
+
+def palm_fit(M):
+    """An instance's (s_xy, s_z) from its matrix, rounded."""
+    m = M.to_3x3()
+    return [round(m.col[0].length, 3), round(m.col[2].length, 3)]
 
 
 def outside(loop, pts):
@@ -147,6 +167,7 @@ def build(plan):
         counts[f["place"]] = counts.get(f["place"], 0) + 1
         perimeter = not f["place"].startswith(("penthouse", "row_", "lounge"))
         placed += [(perimeter, x) for x in instances(coll, f, protos, f"rb_roof_plant_{f['place']}_{counts[f['place']]}")]
+    fits = {ob.name: palm_fit(M) for _, (ob, M, proto) in placed if proto.get("rb_fit_aniso")}
     loop = [tuple(q) for q in rp["keep_inside"]]
     worst, crossing = -1e9, []
     for perimeter, (ob, M, proto) in placed:
@@ -161,4 +182,6 @@ def build(plan):
             "features": len(rp["features"]), "feature_kinds": rp["feature_counts"], "instances": len(placed),
             "perimeter_foliage_outside_guard": len(crossing), "closest_m": round(-worst, 3), "crossing": crossing[:10],
             "prototypes": {m: [round(c["rb_height"], 2), round(c["rb_radius"], 2)] for m, c in protos.items()},
+            "palm_fit": fits,
+            "palm_aniso_max": round(max((abs(f[0] / f[1] - 1.0) for f in fits.values()), default=0.0), 3),
             "names": [o.name for o in made]}

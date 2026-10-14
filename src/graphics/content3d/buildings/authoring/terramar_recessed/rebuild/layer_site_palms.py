@@ -4,7 +4,8 @@
 # Run through build.py (layers=site_palms; needs site_cafe for the sidewalk). Builds RB_SITE/RB_SITE_PALMS beside the
 # building (the street, not the building):
 #   rb_site_tree_pits        raised limestone tree-pit planters (TM_RB_paving, soil TM_RB_soil 40 mm below the rim)
-#   rb_site_palm_<n>         tall procedural street palms (proc_plants.py "street_palm") in the pits, low viburnum round
+#   rb_site_palm_<n>         tall detailed street palms (proc_plants.py "street_palm", palm_tree.py since 2026-10-14)
+#                            in the pits, fitted within 10 % xy / z (layer_roof_planters.fit_scales), low viburnum round
 #                            each trunk (rb_site_pit_green_<n>)
 #   rb_site_entrance_pots    charcoal pots at the entrance (AI 627's tapered pot) with cycads (rb_site_entrance_plant_<n>)
 #   rb_site_lamp_<n>         the installed CC0 street_lamp_01 (assets/props, Poly Haven, read-only), imported once as the
@@ -103,12 +104,15 @@ def build(plan):
     models = sorted({p["model"] for p in sd["palms"] + sd["pit_greens"] + sd["entrance_plants"]})
     protos = {m: RP.prototype(m) for m in models}
     BP.exclude(BP.PROTOTYPES)
+    fits = {}
     for group, items in (("palm", sd["palms"]), ("pit_green", sd["pit_greens"]), ("entrance_plant", sd["entrance_plants"])):
         for i, p in enumerate(items):
-            for ob, _, _ in RP.instances(coll, p, protos, f"rb_site_{group}_{i + 1}"):
+            for ob, M, proto in RP.instances(coll, p, protos, f"rb_site_{group}_{i + 1}"):
                 for k, v in tags(group, ob.name).items():
                     ob[k] = v
                 made.append(ob)
+                if proto.get("rb_fit_aniso"):
+                    fits[ob.name] = RP.palm_fit(M)
     lamp = lamp_prototype(sd["lamp_model"])
     for i, lp in enumerate(sd["lamps"]):
         ob = bpy.data.objects.new(f"rb_site_lamp_{i + 1}", None)
@@ -124,4 +128,5 @@ def build(plan):
             "entrance_pots": len(sd["pots"]), "lamps": len(sd["lamps"]), "lamp_height": round(lamp["rb_height"], 2),
             "palm_prototypes": {m: [round(protos[m]["rb_height"], 2), round(protos[m]["rb_radius"], 2)] for m in models
                                 if "street_palm" in m},
+            "palm_fit": fits, "palm_tris": {m: protos[m].get("rb_tris") for m in models if "street_palm" in m},
             "names": [o.name for o in made]}

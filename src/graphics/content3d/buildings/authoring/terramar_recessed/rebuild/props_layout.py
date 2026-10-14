@@ -288,7 +288,8 @@ ROOF_BOX = {"depth": 0.63, "height": 0.30, "guard_gap": 0.03, "island_height": 0
             "inner_greens": {"height": (0.45, 0.80), "radius": (0.32, 0.42), "spacing": 0.55, "v": -0.62},
             "feature_v": -0.58, "fill_every": 2.6, "fill_kinds": [("cycad", 0.5), ("spiky", 0.3), ("olive", 0.2)],
             "island_scale": {"height": 1.15, "radius": 1.5},
-            "kinds": {"palm": {"height": (2.0, 2.6), "radius": (0.48, 0.54), "models": ["proc/palm_0", "proc/palm_1", "proc/palm_2"]},
+            # palm: the detailed palm's compact fan crown (2026-10-14) reads as b8's roof palms on a shorter stem
+            "kinds": {"palm": {"height": (1.8, 2.3), "radius": (0.48, 0.54), "models": ["proc/palm_0", "proc/palm_1", "proc/palm_2"]},
                       "cycad": {"height": (1.3, 1.9), "radius": (0.46, 0.54), "models": ["proc/cycad_0", "proc/cycad_1", "proc/cycad_2"]},
                       "spiky": {"height": (1.1, 1.6), "radius": (0.36, 0.46), "models": ["proc/spiky_0", "proc/spiky_1", "proc/spiky_2"]},
                       "olive": {"height": (1.6, 2.1), "radius": (0.40, 0.50), "models": KINDS["olive"]["models"]}}}
@@ -490,9 +491,9 @@ ROOF_GROUPS = [
     {"id": "lounge", "run": "B", "u": -0.9, "v": 2.7, "items": [                 # an L: the armchairs flank the table
         ("coffee_table", 0.0, 0.0, "in"), ("sofa", 0.0, -1.0, "in"), ("armchair", -1.55, 0.1, "+u"),
         ("armchair", 1.55, 0.1, "-u"), ("side_table", -1.3, -1.0, "in"), ("side_table", 1.3, -1.0, "in")]},
-    {"id": "front_centre", "run": "A", "u": 0.0, "v": 3.6, "items": [
+    {"id": "front_centre", "run": "A", "u": 0.0, "v": 3.6, "items": [               # a lounger's front is its foot end
         ("low_table", 0.0, 0.0, "in"), ("armchair", -0.95, 0.0, "+u"), ("armchair", 0.95, 0.0, "-u"),
-        ("lounger", -3.4, -0.9, "in"), ("lounger", 3.4, -0.9, "in")]},
+        ("lounger", -3.4, -0.9, "out"), ("lounger", 3.4, -0.9, "out")]},           # feet towards the view
 ]
 CLEAR_OF_GUARD = 1.2          # every footprint corner at least this far inside the guard shoe's inner line
 ITEM_SIZE = {"dining_table": (2.4, 0.95), "dining_chair": (0.48, 0.52), "sofa": (2.1, 0.9), "armchair": (0.85, 0.85),
@@ -573,13 +574,16 @@ def storefront_awnings(plan):
 
 
 # ---------------------------------------------------------------- AI 632: the sidewalk café (site dressing)
-# b8: cream square market umbrellas on wood poles over round wood tables with brown woven bistro chairs, just in front of
-# the chamfer storefronts on both sides of the entrance (about two per bay). It belongs to the street: the site layer
-# builds it, with a sidewalk slab along the front runs (H, A, B), outside the building's root collection.
+# b8: cream octagonal market umbrellas on wood poles over round wood tables with brown woven bistro chairs, just in
+# front of the chamfer storefronts on both sides of the entrance (about two per bay). It belongs to the street: the site
+# layer builds it, with a sidewalk slab along the front runs (H, A, B), outside the building's root collection. The
+# umbrella (cafe_umbrella.py, 2026-10-14): its octagon inside the half-width square, the canopy's rim at the rib tips
+# and its cone apex on the axis, above the sidewalk (b8's canopy rises 0.27-0.28 of its half-width to the vent cap:
+# apex 2.66, not the square shells' 2.75), b8's short valance, the pole through the table's hole.
 CAFE = {"sets_per_bay": 2, "v": 2.4, "s_jitter": 0.15, "chair_radius": 0.62, "chairs": [(2, 0.3), (3, 0.3), (4, 0.4)],
-        "umbrella": {"half": 1.1, "rim_z": 2.25, "apex_z": 2.75, "shell": 0.015, "valance": 0.12, "pole_r": 0.025},
+        "umbrella": {"half": 1.1, "rim_z": 2.25, "apex_z": 2.66, "valance": 0.06, "pole_r": 0.025},
         "table": {"r": 0.40, "h": 0.75, "hole": 0.035},
-        "chair": {"w": 0.44, "d": 0.44, "seat": 0.47, "back": 0.84}}
+        "chair": {"w": 0.44, "d": 0.44, "seat": 0.45, "back": 0.90}}      # the bistro chair's seat / back top, from b8
 SIDEWALK = {"width": 6.0, "top": None, "front_y_cut": -2.0}
 
 
@@ -635,9 +639,9 @@ def sidewalk_cafe(plan, seed=632):
                 chairs.append({"at": [round(at[0] + d[0] * rr, 4), round(at[1] + d[1] * rr, 4)],
                                "face": [round(-d[0], 5), round(-d[1], 5)]})          # facing the table
             sets.append({"bay": zone["bay"], "at": [round(at[0], 4), round(at[1], 4)], "along": U, "chairs": chairs})
-    return {"comment": "AI 632 sidewalk café (site dressing): sets of a square market umbrella over a round table and its "
-                       "chairs, %d per reserved bay, v from the podium outline; a sidewalk slab along the front runs, its top "
-                       "at the ground floor level" % CAFE["sets_per_bay"],
+    return {"comment": "AI 632 sidewalk café (site dressing): sets of an octagonal market umbrella over a round table "
+                       "and its chairs, %d per reserved bay, v from the podium outline; a sidewalk slab along the "
+                       "front runs, its top at the ground floor level" % CAFE["sets_per_bay"],
             "seed": seed, "z": z, "config": CAFE, "sets": sets,
             "sidewalk": {"footprint": sidewalk(plan), "z": [0.0, z], "width": SIDEWALK["width"]}}
 
@@ -651,7 +655,10 @@ STREET = {"pit": {"half": 0.6, "height": 0.40}, "crown_clear": 0.4,
           # (run, s, v): b8's two tall palms, where CAM_B8's rays through their trunk bases (b8 x 278 / 845 at the sidewalk)
           # meet the sidewalk -- before the front corners, 4.26 m out from A's face, s beyond A's ends; then the far corners
           "palms": [("A", -2.55, 4.26), ("A", 12.55, 4.26), ("H", 1.4, 4.8), ("B", 10.6, 4.8)],
-          "palm": {"height": (10.5, 12.5), "radius": (2.6, 3.1), "models": ["proc/street_palm_0", "proc/street_palm_1",
+          "b8_heights": [8.9, 10.4, None, None],      # the b8 palms' measured heights (m above the soil); None: seeded
+          # b8's palms through CAM_B8 (2026-10-14, the detailed palms): 8.9 and 10.4 m above the pit soil, crowns
+          # 4.0 and 4.6 m across (radius / height 0.21-0.23, as palm_tree.py's street prototypes)
+          "palm": {"height": (9.0, 10.8), "radius": (2.0, 2.45), "models": ["proc/street_palm_0", "proc/street_palm_1",
                                                                            "proc/street_palm_2"]},
           "pit_greens": {"height": (0.35, 0.55), "radius": (0.24, 0.30), "spacing": 0.0},
           "entrance_pot": {"radius": 0.45, "height": 0.75, "colour": "charcoal"},
@@ -668,7 +675,7 @@ def street_dressing(plan, seed=633):
     rng = random.Random(f"{seed}:street")
     pits, palms, greens = [], [], []
     h = STREET["pit"]["half"]
-    for run, s, v in STREET["palms"]:
+    for i, (run, s, v) in enumerate(STREET["palms"]):
         c = at(run, s, v)
         U, N = runs[run]["along"], runs[run]["outward"]
         corner = lambda su, sv, c=c, U=U, N=N: [round(c[0] + (U[0] * su + N[0] * sv) * h, 4), round(c[1] + (U[1] * su + N[1] * sv) * h, 4)]  # noqa: E731
@@ -676,8 +683,10 @@ def street_dressing(plan, seed=633):
                      "height": STREET["pit"]["height"]})
         soil = z + STREET["pit"]["height"] - 0.04
         p = STREET["palm"]
-        palms.append({"kind": "street_palm", "model": rng.choice(p["models"]), "at": [round(c[0], 4), round(c[1], 4)],
-                      "z": round(soil, 4), "height": round(uniform(rng, p["height"]), 3),
+        model = rng.choice(p["models"])
+        height = uniform(rng, p["height"])                            # always drawn, so the seeded sequence stays
+        palms.append({"kind": "street_palm", "model": model, "at": [round(c[0], 4), round(c[1], 4)],
+                      "z": round(soil, 4), "height": round(STREET["b8_heights"][i] or height, 3),
                       "radius": round(min(uniform(rng, p["radius"]), v - STREET["crown_clear"]), 3),   # off the facade
                       "rot_deg": round(rng.uniform(0, 360), 1)})
         for k in range(4):                                            # low planting round the trunk

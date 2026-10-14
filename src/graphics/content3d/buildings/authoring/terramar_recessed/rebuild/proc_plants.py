@@ -4,26 +4,40 @@
 # (yucca / cycad-like) against the sky. Both are built here as plain geometry (no textures), deterministic per variant:
 #   spiky   a short trunk under a rosette of ~40 narrow arching blades (golden-angle spiral, older blades lower and
 #           drooping), about 1.0 m tall, 0.6-0.8 m across
-#   palm    a slim leaning trunk (1.0-1.4 m) under a crown of ~15 fronds, each a folded tapered strip curving down along
-#           its rachis, about 2.2 m tall, 1.8 m across
-#   street_palm  the palm's build at street scale (AI 633): an 8-10.5 m leaning trunk under ~25 long fronds (2.6-3.3 m)
-#           that droop well below level, the tall palms b8 shows along the frontage
-#   cycad   the palm's build with a short stout trunk and a dense crown of ~21 fronds from upright to level (sago palm /
+#   palm    the detailed palm (palm_tree.py, 2026-10-14) at roof scale: a 1.2-1.45 m trunk with its root base and boots
+#           under a narrow shuttlecock crown of 12-14 upright fronds with real leaflets, about 2.3-2.45 m tall, radius
+#           0.51-0.56 m (it keeps inside the roof guard)
+#   street_palm  the detailed palm at street scale (AI 633, detailed 2026-10-14): a slender 7 m leaning trunk under a
+#           crown of 26-30 fronds of up to 2.75 m, the young upright, the mature arching, the old drooping below level,
+#           1-2 dead ones hanging under it; about 10 m tall, radius 2.1-2.3 m (b8's frontage palms)
+#   cycad   a short stout trunk under a dense crown of ~21 folded-strip fronds from upright to level (sago palm /
 #           pygmy date-like): the bushy spiky masses b8 shows at the roof corners, about 1.4 m tall, 1.6 m across
 # ensure(kind, k) builds (or rebuilds) collection RBP_proc_<kind>_<k> under RB_PROP_PROTOTYPES with the same custom
 # properties the game prototypes carry (rb_model, rb_height, rb_radius), so the layers fit them to target sizes the same
-# way; their leaf material names end with _foliage (the clearance checks sample those vertices).
+# way; their leaf material names end with _foliage (the clearance checks sample those vertices). The detailed palms also
+# carry rb_fit_aniso: layer_roof_planters.instances() keeps their xy / z scale ratio within it (never past either
+# target), so the fitting cannot squash a crown or stretch a trunk.
+import importlib
 import math
+import os
 import random
+import sys
 
 import bmesh
 import bpy
 from mathutils import Vector
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import palm_tree  # noqa: E402
+
+importlib.reload(palm_tree)
+
 PROTOTYPES = "RB_PROP_PROTOTYPES"
-LOOKS = {"RBP_proc_spiky_foliage": ((0.15, 0.27, 0.07), 0.50), "RBP_proc_palm_foliage": ((0.13, 0.25, 0.06), 0.45),
-         "RBP_proc_street_palm_foliage": ((0.16, 0.26, 0.07), 0.45),
-         "RBP_proc_cycad_foliage": ((0.11, 0.23, 0.05), 0.40),
+DETAILED = {"palm": "roof", "street_palm": "street"}      # kind -> palm_tree.py scale
+FIT_ANISO = 0.10                                         # the detailed palms' xy / z fitting tolerance
+LOOKS = {"RBP_proc_spiky_foliage": ((0.15, 0.27, 0.07), 0.50), "RBP_proc_cycad_foliage": ((0.11, 0.23, 0.05), 0.40),
          "RBP_proc_trunk": ((0.21, 0.165, 0.12), 0.90)}
 
 
@@ -83,15 +97,11 @@ def spiky(bm, rng):
         bm.faces.new((vs[3], vs[2], vs[4])).material_index = 0
 
 
-PALMS = {"palm": {"trunk": (1.0, 1.4), "r": (0.10, 0.075), "lean": 0.15, "fronds": (14, 17), "length": (1.0, 1.3),
-                  "elev": (62.0, 72.0), "curl": 38.0},
-         "street_palm": {"trunk": (8.0, 10.5), "r": (0.24, 0.17), "lean": 0.6, "fronds": (22, 28), "length": (2.6, 3.3),
-                         "elev": (68.0, 100.0), "curl": 45.0, "width": 0.80, "sides": 10, "rings": 10},
-         "cycad": {"trunk": (0.25, 0.6), "r": (0.13, 0.11), "lean": 0.04, "fronds": (18, 24), "length": (0.85, 1.1),
+PALMS = {"cycad": {"trunk": (0.25, 0.6), "r": (0.13, 0.11), "lean": 0.04, "fronds": (18, 24), "length": (0.85, 1.1),
                    "elev": (72.0, 70.0), "curl": 30.0}}
 
 
-def palm(bm, rng, kind="palm"):
+def palm(bm, rng, kind="cycad"):
     c = PALMS[kind]
     top = trunk(bm, 1, rng.uniform(*c["trunk"]), c["r"][0], c["r"][1], rng.uniform(-c["lean"], c["lean"]),
                 sides=c.get("sides", 8), rings=c.get("rings", 6))
@@ -134,20 +144,27 @@ def ensure(kind, k):
             bpy.data.meshes.remove(me)
     rng = random.Random(f"proc:{kind}:{k}")
     bm = bmesh.new()
-    if kind == "spiky":
-        spiky(bm, rng)
+    if kind in DETAILED:                       # one welded mesh with its own UVs, creases and attributes
+        info = palm_tree.build_palm(bm, rng, scale=DETAILED[kind])
+        me = palm_tree.to_mesh(name, bm, palm_tree.materials())
+        bm.free()
+        coll["rb_fit_aniso"] = FIT_ANISO
+        coll["rb_tris"] = info["tris"]
     else:
-        palm(bm, rng, kind)
-    bm.normal_update()
-    uv = bm.loops.layers.uv.verify()
-    for f in bm.faces:
-        for lp in f.loops:
-            lp[uv].uv = (lp.vert.co.x + lp.vert.co.y, lp.vert.co.z)
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    me.materials.append(material(f"RBP_proc_{kind}_foliage"))
-    me.materials.append(material("RBP_proc_trunk"))
+        if kind == "spiky":
+            spiky(bm, rng)
+        else:
+            palm(bm, rng, kind)
+        bm.normal_update()
+        uv = bm.loops.layers.uv.verify()
+        for f in bm.faces:
+            for lp in f.loops:
+                lp[uv].uv = (lp.vert.co.x + lp.vert.co.y, lp.vert.co.z)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        me.materials.append(material(f"RBP_proc_{kind}_foliage"))
+        me.materials.append(material("RBP_proc_trunk"))
     ob = bpy.data.objects.new(name, me)
     coll.objects.link(ob)
     leaf = [v.co for v in me.vertices]

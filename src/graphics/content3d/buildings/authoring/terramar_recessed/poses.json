@@ -1111,6 +1111,111 @@
                 3840,
                 2160
             ]
+        },
+        {
+            "name": "street_palm_closeup",
+            "group": "props",
+            "label": "One street palm whole, low from the sidewalk: the right-hand front palm from crown to tree pit, its trunk, boots, crown and fronds against the B chamfer",
+            "items": [],
+            "location": [
+                13.6,
+                -29.2,
+                1.55
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                6.35
+            ],
+            "vfov_deg": 54.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "roof_palm_closeup",
+            "group": "props",
+            "label": "A roof palm at the front-left (H-A) corner cluster from inside the terrace, the guard and the street behind",
+            "items": [],
+            "location": [
+                -0.9,
+                -9.5,
+                29.25
+            ],
+            "target": [
+                -4.72,
+                -10.21,
+                28.95
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "cafe_chairs_closeup",
+            "group": "props",
+            "label": "One B chamfer cafe set low and close from the street side, the sun behind: the woven bistro chairs round their table under the umbrella",
+            "items": [],
+            "location": [
+                10.98,
+                -11.81,
+                1.05
+            ],
+            "target": [
+                9.71,
+                -9.69,
+                0.62
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "umbrella_closeup",
+            "group": "props",
+            "label": "One B chamfer cafe umbrella from the side at eye level, the sun behind: the octagonal canvas canopy, its vent cap and finial, the valance flaps, the wood pole, ribs and struts against the storefront",
+            "items": [],
+            "location": [
+                13.598,
+                -12.302,
+                1.6
+            ],
+            "target": [
+                9.709,
+                -9.685,
+                1.75
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "umbrella_underside",
+            "group": "props",
+            "label": "Looking up under one B chamfer cafe umbrella from beside its table: the canvas underside, the ribs, the struts from the runner, the hub and the pole",
+            "items": [],
+            "location": [
+                10.557,
+                -10.18,
+                1.2
+            ],
+            "target": [
+                9.532,
+                -9.579,
+                2.5
+            ],
+            "vfov_deg": 74.0,
+            "resolution": [
+                1920,
+                1080
+            ]
         }
     ]
 }

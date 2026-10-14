@@ -1,40 +1,69 @@
-# layer_roof_furniture.py -- AI 630: the roof terrace's furniture after the aerial, from plan["props"]["roof_furniture"].
+# layer_roof_furniture.py -- AI 630: the roof terrace's furniture after the aerial, from plan["props"]["roof_furniture"]
+# -- and the detailed-furniture placement every furnished layer shares (2026-10-14).
 #
 # Run through build.py (layers=roof_furniture; needs the roof and roof_planters layers). Builds RB_PROPS/RB_ROOF_FURNITURE
-# under its part root, one object per group, modelled as prisms in each item's own frame (local +v = its front):
-#   rb_roof_furniture_dining        a 2.4 m teak table on charcoal legs and eight chairs (teak seat and back, cushion)
-#   rb_roof_furniture_lounge        a three-seat sofa, two armchairs (teak frames, cushions), a coffee table, side tables
-#   rb_roof_furniture_front_centre  two armchairs round a low table, two sun loungers with a raised back
-# Materials: TM_RB_teak, TM_RB_cushion_<offwhite|ecru|greige> (the group's seeded tone), TM_RB_charcoal_metal.
-# The paving tiles are the materials pass's roof_paving family on the deck's own face set (TM_RB_roof_paving).
+# under its part root, one object per item (rb_roof_furniture_<group>_<n>_<kind>):
+#   dining        a 2.4 m teak dining table and eight slat-back teak dining chairs with seat pads
+#   lounge        a three-seat sofa and two armchairs on open teak frames (outdoor), a coffee table, two side tables
+#   front_centre  two teak-framed armchairs round a slatted low table, two sun loungers with their feet towards the view
+# Materials: the detailed furniture's (furniture_materials.py): TM_RB_furn_teak, TM_RB_furn_metal and the group's seeded
+# cushion tone, TM_RB_furn_fabric_<offwhite|ecru|greige>. The paving tiles are the materials pass's roof_paving family
+# on the deck's own face set (TM_RB_roof_paving).
 # Every object is tagged rb_hide_from_b8: check_layers.py renders them red from CAM_B8 and must find 0 pixels. The layer
 # also checks each footprint: at least clear_of_guard_m inside the guard shoe's inner line, clear of AI 629's islands and
 # of the penthouse and its annex.
+#
+# The shared placement (the restaurant, the upper dining room, the residential units, the penthouse, the café):
+#   furnish(coll, items, prefix, tagger, z=None) -> (objects, stats)
+#       one object per item. Its mesh comes from furniture_chairs.py (dining_chair, cafe_chair, bar_stool) or
+#       furniture_tables_seating.py (the tables, sofa, armchair, lounger), built at the origin in the item's own frame
+#       (+v its front, u = (face.y, -face.x)) and placed by the object's location and turn about z, so the footprint
+#       checks on the plan's items stay valid. Items with the same geometry (kind, size, variant, cushion, heights,
+#       frame) share one mesh as linked duplicates: the 330 dining chairs store a handful of meshes, the materials
+#       shift their UVs per object so the grain does not repeat. Seeded upholstery (sofa, armchair and lounger
+#       cushions) keeps one mesh per item, seeded by its place. Every object is a MESH, so the collision audit pairs
+#       it like any other. Nothing goes through rb_lib.finish: its coplanar dissolve and box UVs would undo the
+#       rounded sections and the grain and weave UVs.
+#   clear(coll)       empty a collection like rb_lib.clear_collection, removing each shared mesh once
+#   materials()       the furniture materials (shared ones and the chairs' own)
+#   Frame, corners()  an item's frame and footprint, for the layers' checks
 import importlib
 import math
 import os
 import sys
 
+import bmesh
+import bpy
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
-import layer_balcony_plants as BP  # noqa: E402  (PARENT, plain materials)
+import layer_balcony_plants as BP  # noqa: E402  (PARENT)
+import furniture_materials as FM  # noqa: E402  (the shared furniture materials)
+import furniture_chairs as FC  # noqa: E402  (dining_chair, cafe_chair, bar_stool)
+import furniture_tables_seating as FT  # noqa: E402  (tables, sofa, armchair, lounger)
 
-importlib.reload(L)
-importlib.reload(BP)
+for _mod in (L, BP, FM, FC, FT):
+    importlib.reload(_mod)
 
 COLLECTION = "RB_ROOF_FURNITURE"
 LAYER = "roof_furniture"
-TEAK, METAL = "TM_RB_teak", "TM_RB_charcoal_metal"
-LOOKS = {TEAK: ((0.30, 0.165, 0.085), 0.55), METAL: ((0.045, 0.045, 0.05), 0.40),
-         "TM_RB_cushion_offwhite": ((0.80, 0.78, 0.73), 0.90), "TM_RB_cushion_ecru": ((0.76, 0.71, 0.61), 0.90),
-         "TM_RB_cushion_greige": ((0.62, 0.59, 0.54), 0.90)}
+TEAK, METAL = FM.PLAIN_TEAK, FM.PLAIN_METAL         # the plain teak / charcoal slots of the box-built pieces
+SEEDED = ("sofa", "armchair", "lounger")            # seeded cushions: one mesh per item
+CUSHIONED = ("dining_chair", "bar_stool") + SEEDED  # the kinds whose mesh depends on the cushion colour
+GEOMETRY = ("variant", "seat_h", "back_h", "h", "top_r", "hole_r", "frame", "seed")
+ROOF_CHAIR = "slat"                                 # the terrace's dining chairs: slat-back teak, an outdoor classic
 
 
 def tags(element, name):
     return {"rb_layer": LAYER, "rb_element": element, "tm_element": COLLECTION, "tm_role": element, "rb_name": name,
             "rb_hide_from_b8": True}
+
+
+def materials():
+    FC.materials()                                  # furniture_materials.py's shared set and the chairs' own
+    FT.materials()
 
 
 class Frame:
@@ -52,58 +81,107 @@ class Frame:
     def box(self, u0, u1, v0, v1):
         return [self.pt(u0, v0), self.pt(u1, v0), self.pt(u1, v1), self.pt(u0, v1)]
 
-    def disc(self, r, n=20):
-        return [self.pt(r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n)) for k in range(n)]
-
-
-def legs(fr, z0, z1, w, d, inset, size, out):
-    for su in (-1, 1):
-        for sv in (-1, 1):
-            cu, cv = su * (w / 2 - inset), sv * (d / 2 - inset)
-            out.append(L.piece(fr.box(cu - size / 2, cu + size / 2, cv - size / 2, cv + size / 2), [(z0, z1)], METAL))
-
-
-def model(item, z):
-    """The item's pieces (L.pieces items)."""
-    fr = Frame(item)
-    w, d = item["size"]
-    cushion = f"TM_RB_cushion_{item['cushion']}"
-    k, out = item["kind"], []
-    if k in ("dining_table", "coffee_table", "low_table"):
-        h = {"dining_table": 0.74, "coffee_table": 0.38, "low_table": 0.40}[k]
-        out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, d / 2), [(z + h - 0.04, z + h)], TEAK))
-        legs(fr, z, z + h - 0.04, w, d, 0.10, 0.06 if k == "dining_table" else 0.04, out)
-    elif k == "side_table":
-        out.append(L.piece(fr.disc(w / 2), [(z + 0.48, z + 0.51)], TEAK))
-        out.append(L.piece(fr.disc(0.025, 10), [(z + 0.02, z + 0.48)], METAL))
-        out.append(L.piece(fr.disc(0.16), [(z, z + 0.02)], METAL))
-    elif k == "dining_chair":
-        legs(fr, z, z + 0.43, w, d, 0.03, 0.03, out)
-        out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, d / 2), [(z + 0.43, z + 0.46)], TEAK))
-        out.append(L.piece(fr.box(-w / 2 + 0.02, w / 2 - 0.02, -d / 2 + 0.06, d / 2 - 0.02), [(z + 0.46, z + 0.50)], cushion))
-        out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, -d / 2 + 0.04), [(z + 0.46, z + 0.86)], TEAK))
-    elif k in ("sofa", "armchair"):
-        legs(fr, z, z + 0.10, w, d, 0.06, 0.05, out)
-        out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, d / 2), [(z + 0.10, z + 0.36)], TEAK))
-        arm = 0.12
-        out.append(L.piece(fr.box(-w / 2 + arm, w / 2 - arm, -d / 2 + 0.20, d / 2), [(z + 0.36, z + 0.50)], cushion))
-        out.append(L.piece(fr.box(-w / 2 + arm, w / 2 - arm, -d / 2, -d / 2 + 0.20), [(z + 0.36, z + 0.80)], cushion))
-        for u0 in (-w / 2, w / 2 - arm):
-            out.append(L.piece(fr.box(u0, u0 + arm, -d / 2, d / 2), [(z + 0.36, z + 0.60)], TEAK))
-    elif k == "lounger":
-        legs(fr, z, z + 0.22, w, d, 0.06, 0.04, out)
-        out.append(L.piece(fr.box(-w / 2, w / 2, -d / 2, d / 2), [(z + 0.22, z + 0.32)], TEAK))
-        out.append(L.piece(fr.box(-w / 2 + 0.03, w / 2 - 0.03, -d / 2 + 0.03, d / 2 - 0.58), [(z + 0.32, z + 0.38)], cushion))
-        out.append(L.piece(fr.box(-w / 2 + 0.03, w / 2 - 0.03, d / 2 - 0.55, d / 2 - 0.03), [(z + 0.32, z + 0.68)], cushion))
-    else:
-        raise ValueError(f"unknown furniture kind {k}")
-    return out
-
 
 def corners(item):
     fr = Frame(item)
     w, d = item["size"]
     return fr.box(-w / 2, w / 2, -d / 2, d / 2)
+
+
+# ---------------------------------------------------------------- the shared placement
+
+
+def clear(coll):
+    """Empty coll (objects, child collections, the data left without users) as rb_lib.clear_collection does, removing
+    every mesh its objects share only once."""
+    datas = {ob.data.as_pointer(): ob.data for ob in coll.all_objects if ob.data is not None}
+    for ob in list(coll.all_objects):
+        bpy.data.objects.remove(ob, do_unlink=True)
+    blocks = ((bpy.types.Mesh, bpy.data.meshes), (bpy.types.Curve, bpy.data.curves),
+              (bpy.types.Camera, bpy.data.cameras), (bpy.types.Light, bpy.data.lights))
+    for d in datas.values():
+        if d.users:
+            continue
+        for kind, block in blocks:
+            if isinstance(d, kind):
+                block.remove(d)
+                break
+    L.clear_collection(coll)
+
+
+def local_item(item):
+    """The item at the origin facing +y, its variant resolved where it stands (a chair set keeps matching) and, for the
+    seeded upholstery, a seed from its place (its cushions differ from its neighbours')."""
+    kind = item["kind"]
+    loc = {k: v for k, v in item.items() if k not in ("at", "face", "z", "group")}
+    loc.update({"at": [0.0, 0.0], "face": [0.0, 1.0]})
+    if kind in FC.KINDS:
+        loc["variant"] = FC.variant(item)
+    if kind in SEEDED:
+        loc["seed"] = f"{item['at'][0]:.3f},{item['at'][1]:.3f}"
+    if kind not in CUSHIONED:
+        loc.pop("cushion", None)
+    return loc
+
+
+def mesh_key(loc):
+    return (loc["kind"], tuple(round(float(s), 4) for s in loc.get("size", ())), loc.get("cushion")) + tuple(
+        (k, loc[k]) for k in GEOMETRY if k in loc)
+
+
+def build_mesh(name, loc):
+    """The item's mesh at the origin: (mesh, triangles, the chair's footprint fit)."""
+    bm, names = bmesh.new(), []
+
+    def slot(n):
+        if n not in names:
+            names.append(n)
+        return names.index(n)
+
+    mod = FC if loc["kind"] in FC.KINDS else FT
+    res = mod.build(bm, loc, 0.0, slot)
+    bm.normal_update()
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    for n in names:
+        me.materials.append(bpy.data.materials.get(n) or bpy.data.materials.new(n))
+    return me, res["tris"], tuple(res.get("fit", (1.0, 1.0)))
+
+
+def furnish(coll, items, prefix, tagger, z=None):
+    """One object per item (floor: the item's z, else z) sharing meshes by geometry; returns (objects, stats)."""
+    meshes, made, kinds, squeezed = {}, [], {}, []
+    placed = 0
+    for i, it in enumerate(items):
+        kind = it["kind"]
+        loc = local_item(it)
+        key = mesh_key(loc)
+        if key not in meshes:
+            meshes[key] = build_mesh(f"{prefix}_mesh_{len(meshes):02d}_{kind}", loc)
+            me, _, fit = meshes[key]
+            me["rb_furniture_key"] = repr(key)
+            if fit != (1.0, 1.0):
+                squeezed.append(f"{kind} {loc.get('size')} fit {fit}")
+        me, tris, _ = meshes[key]
+        name = f"{prefix}_{i:03d}_{kind}"
+        ob = bpy.data.objects.new(name, me)
+        fx, fy = it["face"]
+        ob.location = (it["at"][0], it["at"][1], it.get("z", z))
+        ob.rotation_euler = (0.0, 0.0, math.atan2(-fx, fy))         # local +y onto the face, local +x onto u
+        for k, v in {**tagger("furniture", name), "rb_kind": kind}.items():
+            ob[k] = v
+        coll.objects.link(ob)
+        made.append(ob)
+        placed += tris
+        kinds[kind] = kinds.get(kind, 0) + 1
+    for s in squeezed:
+        print(f"WARNING {prefix}: a chair needed a footprint fit: {s}")
+    return made, {"objects": len(made), "meshes": len(meshes), "tris_placed": placed,
+                  "tris_stored": sum(m[1] for m in meshes.values()), "kinds": kinds, "squeezed": squeezed}
+
+
+# ---------------------------------------------------------------- the roof terrace
 
 
 def inside(loop, q):
@@ -144,7 +222,7 @@ def overlaps(poly, rect, margin):
 def checks(plan, items):
     rf = plan["roof"]
     loop = [tuple(q) for q in plan["props"]["roof_planters"]["keep_inside"]]
-    clear = plan["props"]["roof_furniture"]["clear_of_guard_m"]
+    clear_m = plan["props"]["roof_furniture"]["clear_of_guard_m"]
     obstacles = [(i["id"], i["rect"], 0.25) for i in plan["props"]["roof_planters"]["islands"]]
     px, py = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"]
     an = rf["annex"]
@@ -155,7 +233,7 @@ def checks(plan, items):
         for q in poly:
             d = edge_distance(loop, q) if inside(loop, q) else -edge_distance(loop, q)
             closest = min(closest, d)
-            if d < clear:
+            if d < clear_m:
                 problems.append(f"{it['group']}:{it['kind']} {d:.2f} m from the guard")
                 break
         for name, rect, margin in obstacles:
@@ -164,23 +242,33 @@ def checks(plan, items):
     return problems, closest
 
 
+def roof_item(it):
+    """The terrace's look on a plan item: slat-back dining chairs (one set), the sofa and armchairs on teak frames."""
+    it = dict(it)
+    if it["kind"] == "dining_chair":
+        it.update(variant=ROOF_CHAIR, set=f"roof_{it['group']}")
+    elif it["kind"] in ("sofa", "armchair"):
+        it["frame"] = "teak"
+    return it
+
+
 def build(plan):
     root = L.ensure_collection(L.ROOT)
     coll = L.ensure_collection(COLLECTION, L.ensure_collection(BP.PARENT, root))
-    L.clear_collection(coll)
-    for name, (rgb, rough) in LOOKS.items():
-        mat = BP.plain_material(name, rgb, rough)
-        if name == METAL:                                             # a satin powder-coated metal
-            next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED").inputs["Metallic"].default_value = 0.3
+    clear(coll)
+    materials()
     rf = plan["props"]["roof_furniture"]
-    made = []
+    made, stats = [], []
     for g in rf["groups"]:
-        items = [it for it in rf["items"] if it["group"] == g]
-        pieces = [p for it in items for p in model(it, rf["z"])]
-        made.append(L.pieces(f"rb_roof_furniture_{g}", coll, pieces, tags("furniture", g)))
+        items = [roof_item(it) for it in rf["items"] if it["group"] == g]
+        obs, st = furnish(coll, items, f"rb_roof_furniture_{g}", tags, rf["z"])
+        made += obs
+        stats.append(st)
     problems, closest = checks(plan, rf["items"])
     for p in problems:
         print("WARNING roof furniture:", p)
     return {"collection": COLLECTION, "objects": len(made), "items": len(rf["items"]),
+            "meshes": sum(s["meshes"] for s in stats), "tris_placed": sum(s["tris_placed"] for s in stats),
+            "tris_stored": sum(s["tris_stored"] for s in stats),
             "kinds": {k: sum(1 for it in rf["items"] if it["kind"] == k) for k in sorted({it["kind"] for it in rf["items"]})},
             "footprint_problems": problems, "closest_to_guard_m": round(closest, 3), "names": [o.name for o in made]}
