@@ -1,5 +1,5 @@
 {
-    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check. Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
+    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check | final (the UHD 3840x2160 completion captures). Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
     "poses": [
         {
             "name": "b8_target",
@@ -1047,6 +1047,69 @@
             "resolution": [
                 1920,
                 1080
+            ]
+        },
+        {
+            "name": "final_front",
+            "group": "final",
+            "label": "Final UHD capture: straight-on front view, level camera at mid height (no keystone)",
+            "items": [],
+            "location": [
+                0.0,
+                -62.0,
+                15.8
+            ],
+            "target": [
+                0.0,
+                0.0,
+                15.8
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                3840,
+                2160
+            ]
+        },
+        {
+            "name": "final_three_quarter",
+            "group": "final",
+            "label": "Final UHD capture: three-quarter view from the sunlit front right",
+            "items": [],
+            "location": [
+                37.0,
+                -47.0,
+                9.0
+            ],
+            "target": [
+                0.0,
+                -1.5,
+                15.0
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                3840,
+                2160
+            ]
+        },
+        {
+            "name": "final_low_closeup",
+            "group": "final",
+            "label": "Final UHD capture: low-angle close-up from the sidewalk at the base of the entrance, looking up the front to the top",
+            "items": [],
+            "location": [
+                1.2,
+                -14.4,
+                1.5
+            ],
+            "target": [
+                0.3,
+                -10.0,
+                20.0
+            ],
+            "vfov_deg": 60.0,
+            "resolution": [
+                3840,
+                2160
             ]
         }
     ]

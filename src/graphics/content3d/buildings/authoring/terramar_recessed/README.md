@@ -1208,6 +1208,28 @@ is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/638_interior_
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre638.blend`.
 
+**Final UHD captures (2026-10-14).** Three 3840 x 2160 completion captures of the finished rebuild, rendered from
+`terramar_rebuild.blend` by `render_poses.py` (Cycles, 256 samples, denoised). The scene's `INSPECTION_RIG` lights
+them: the calibrated HDRI `clear-afternoon-55.hdr` is both the visible sky and the environment and reflection source,
+with its matched sun (az 45 / el 55) and the ground plane. The three poses are in `poses.json` (group `final`):
+
+| Pose | View |
+| --- | --- |
+| `final_front` | straight-on front from 62 m, a level camera at mid height (no keystone) |
+| `final_three_quarter` | three-quarter view from the sunlit front right |
+| `final_low_closeup` | low angle from the sidewalk at the entrance, looking up the front to the top |
+
+They live in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/final_4k/` with labelled comparison sheets
+against the references, whose originals are in `references/`:
+- `reference_vs_rebuild_b8_camera.png`;
+- `reference_vs_final_front.png`;
+- `references_used.png`;
+- `final_contact_sheet.png`.
+
+```
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- groups=final samples=256 out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/final_4k
+```
+
 ## The Terra & Mar PBR kit sets (AI 640)
 
 `make_terramar_kit_pbr.py` installs the user's kit (`Terra_Mar_PBR_Kit.zip` in Downloads, md5
