@@ -1,10 +1,55 @@
 # Gameplay grass redesign
 
+## Whole-blade boundaries and continuous ground (2026-10-13)
+
+The fixed-patch renderer selects complete blades by their root's boundary-mask
+coverage. Eligible blades may lean across the field contour to form a natural
+silhouette; the contour no longer clips their bodies or tips. Each immutable
+LOD template stores a root attribute derived from its leaf ranges and UV base.
+The shader applies the same world-tile rotation and placement as the blade.
+Ground remains clipped by fragment position. Road/slab exclusion contours still
+determine root eligibility. No asset rebake or movement-time buffer edits occur.
+
+Grass ground is coplanar with the supporting terrain. The previous 5 mm lift
+left an open step against the inverse-masked soil at grazing angles. Depth bias
+orders the coplanar grass floor without lifting its geometry. In the fixed-patch
+lab, the soil now uses only the shared inverse mask; exact rectangular geometry
+cutouts disagreed with the raster contour. Inverse coverage overlaps by one
+8-bit mask value to cover interpolation roundoff between separate meshes.
+This removes the open edge, rather than adding a dark vertical skirt. Soil
+normal maps and prepared grass shading remain; this repair does not add dynamic
+normal lighting to the baked grass material.
+
+### Edge regression research log
+
+`tests/headless/e2e/grass_patch_edges.pwtest.js` compares five LODs and four tile
+rotations against an independently selected whole-blade reference, then probes
+the actual lab's four ground edges at a 5.5 cm camera height. Magenta background
+makes holes distinguishable from legitimate dark root shading. A deliberately
+raised-floor control confirms that the fixture detects a gap.
+
+- Fragment clipping missed thousands of blade pixels (LOD0: 7,696 in the
+  initial tile); root selection matches all 20 reference images exactly.
+- The original close ground probe exposed 8,007 background pixels. Removing the
+  height step closed that side, but other sides retained 346 / 4,359 / 1,072
+  pixels because of the separate rectangular cutouts.
+- Removing those cutouts left only 8 / 1 / 0 / 0 isolated pixels. Centroid
+  interpolation did not change them and was rejected. One mask-value overlap
+  reduces every side to zero exposed pixels across 251,163 checked pixels each.
+- The corrected ground projection retains passing shortened-transition
+  brightness and reported-camera motion checks. Gameplay movement/AO checks
+  pass for dissolve and shorten with no grass buffer uploads.
+
+Generated before/after captures and measurements live under the ignored
+`tests/artifacts/screens/grass/patch_edges/` directory.
+
 ## Geometric LOD4 exit prototype (2026-10-13)
 
 The subsequent [transition calibration](GRASS_TRANSITION_CALIBRATION.md) adds
 the opt-in `handoff=shorten` comparison. It preserves both ends of each blade
-while reducing height, with the ground blend synchronized over 16–24 m.
+while reducing height. The motion-seam follow-up staggers individual blade
+shortening within 16–24 m and blends the ground over 15–24 m; see that document
+for the reproduction, rejected profiles and current measurements.
 
 The opt-in lab URL `?grass=patches&handoff=rise` passes `terminalTransition: 'rise'`
 to the shared patch renderer. Existing callers default to `'dissolve'`, including
@@ -161,10 +206,10 @@ new progressive density assets have not been baked. Distance cutoffs are current
 fixed, not yet calibrated from FOV and pixel size. Overlap uses complementary
 opaque dissolve, with continuous litter-to-canopy shading on static 32 m surface
 quads. Between 16 and 21.6 m, LOD4 color and the ground approach the same canopy
-sample projected onto ground + 5 mm. The color match completes before geometric
+sample projected onto ground. The color match completes before geometric
 dissolve at 21.6–24 m, avoiding a dark-blades/bright-ground ring. Existing external
-visibility and brightness apply after this color match. The surface sits 5 mm
-above ground.
+visibility and brightness apply after this color match. The surface is coplanar
+with ground, with depth bias for deterministic overlap.
 
 The lab combines roadside rectangles and the optional curved plot in one union
 mask. Each original outline retains even-odd fill semantics; separate outlines

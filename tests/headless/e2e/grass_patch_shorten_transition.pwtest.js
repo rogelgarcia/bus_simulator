@@ -21,10 +21,12 @@ test('Shortened grass avoids bright and dark bands across angles and forward pat
         const coverage = createGrassBoundaryMask({ bounds, outline: [{ x: -48, z: -48 }, { x: 48, z: -48 }, { x: 48, z: 72 }, { x: -48, z: 72 }], exclusions: [], resolution: 256 });
         const grass = createGrassPatchRenderer({ asset, coverage, bounds, terminalTransition: 'shorten' }), scene = new THREE.Scene(); scene.add(grass.group);
         const camera = new THREE.PerspectiveCamera(55, width / height, .1, 150), gl = renderer.getContext(), poses = [], measurements = [];
-        for (const h of [3.5, 6.883, 9]) for (let a = 0; a < 8; a++) poses.push({ name: `height-${h}-angle-${a}`, h, x: .37, z: -.71, yaw: a * Math.PI / 4 + .19 });
+        for (const h of [3.5, 6.883, 9, 10.654]) for (let a = 0; a < 8; a++) poses.push({ name: `height-${h}-angle-${a}`, h, x: .37, z: -.71, yaw: a * Math.PI / 4 + .19 });
         for (let i = 0; i <= 32; i++) poses.push({ name: `forward-${i}`, h: 6.883, x: 1.31, z: -9.37 + i * .75, yaw: .07 });
+        poses.push({ name: 'reported-bus', h: 6.883, x: -12.668, z: -1.296, yaw: 0 }, { name: 'reported-high', h: 10.654, x: -12.668, z: 34.478, yaw: 0 });
+        for (const h of [4.75, 8.25, 12]) for (let a = 0; a < 8; a++) poses.push({ name: `holdout-${h}-angle-${a}`, h, x: -5.83, z: 7.21, yaw: a * Math.PI / 4 + .48, slope: .45 });
         for (const pose of poses) {
-            camera.position.set(pose.x, pose.h, pose.z); camera.lookAt(pose.x + Math.sin(pose.yaw) * 20, pose.h - .34836 * 20, pose.z + Math.cos(pose.yaw) * 20); camera.updateMatrixWorld(true);
+            camera.position.set(pose.x, pose.h, pose.z); camera.lookAt(pose.x + Math.sin(pose.yaw) * 20, pose.h - (pose.slope ?? .34836) * 20, pose.z + Math.cos(pose.yaw) * 20); camera.updateMatrixWorld(true);
             const pixels = {};
             for (const mode of ['LOD4', 'LOD5', 'AUTO']) {
                 grass.setMode(mode); grass.update(camera); renderer.render(scene, camera);
@@ -35,7 +37,7 @@ test('Shortened grass avoids bright and dark bands across angles and forward pat
             for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
                 point.set((x + .5) / width * 2 - 1, (y + .5) / height * 2 - 1, .5).unproject(camera).sub(camera.position);
                 if (point.y >= 0) continue;
-                point.multiplyScalar((.005 - camera.position.y) / point.y).add(camera.position);
+                point.multiplyScalar(-camera.position.y / point.y).add(camera.position);
                 const distance = point.distanceTo(camera.position), bin = bins[Math.floor((distance - 16) / .5)];
                 const side = (point.x - pose.x) * Math.cos(pose.yaw) - (point.z - pose.z) * Math.sin(pose.yaw);
                 if (!bin || Math.abs(side) > 6) continue;
@@ -55,7 +57,7 @@ test('Shortened grass avoids bright and dark bands across angles and forward pat
     const output = 'tests/artifacts/screens/grass/transition_calibration';
     await mkdir(output, { recursive: true }); await writeFile(`${output}/holdout.json`, JSON.stringify({ result, errors }, null, 2));
     for (const pose of result.measurements) for (const bin of pose.bins) {
-        expect(bin.count).toBeGreaterThan(100);
+        expect(bin.count, `${pose.name} at ${bin.distance} m: visible samples`).toBeGreaterThan(100);
         expect(bin.overshoot, `${pose.name} at ${bin.distance} m: bright band`).toBeLessThan(.05);
         expect(bin.undershoot, `${pose.name} at ${bin.distance} m: dark band`).toBeLessThan(.05);
     }

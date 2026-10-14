@@ -44,6 +44,16 @@ export function createGrassPatchGeometry(asset, patchSize) {
         const size = sizes[level], placement = placements.get(size);
         const geometry = new THREE.InstancedBufferGeometry();
         for (const [name, attribute] of Object.entries(source.attributes)) geometry.setAttribute(name, attribute);
+        const ranges = level < 3 ? asset.sources[`LOD${level}`].userData.grassLeafRanges : Array.from({ length: source.index.count / 6 }, (_, i) => ({ start: i * 6, count: 6 }));
+        const roots = new THREE.Float32BufferAttribute(new Float32Array(source.attributes.position.count * 2), 2);
+        for (const { start, count } of ranges) {
+            const ids = new Set(source.index.array.subarray(start, start + count)), { position, uv } = source.attributes;
+            const bottom = Math.min(...Array.from(ids, id => uv.getY(id)));
+            const base = [...ids].filter(id => uv.getY(id) <= bottom + 1e-6);
+            const x = base.reduce((sum, id) => sum + position.getX(id), 0) / base.length, z = base.reduce((sum, id) => sum + position.getZ(id), 0) / base.length;
+            for (const id of ids) roots.setXY(id, x, z);
+        }
+        geometry.setAttribute('grassPatchRoot', roots);
         geometry.setIndex(source.index); geometry.setAttribute('grassPatchOffset', placement);
         geometry.instanceCount = placement.count;
         source.computeBoundingBox();

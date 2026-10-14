@@ -18,8 +18,10 @@ export function createGrassPatchMaterials({ asset, distances, groundY, terminalT
     const bladeHeight = geometric ? Math.max(...asset.bridge.templates.map(template => template.boundingBox.max.y)) + .01 : 0;
     const create = (source, band, surface = false, handoff = false) => {
         const material = createSharedUniformMaterialVariant(source);
+        if (!surface) material.defines.GRASS_PATCH_ROOT_BOUNDARY = 1;
         if (handoff) material.defines[{ dissolve: 'GRASS_PATCH_HANDOFF', rise: 'GRASS_PATCH_RISE', trim: 'GRASS_PATCH_TRIM', shorten: 'GRASS_PATCH_SHORTEN' }[terminalTransition]] = 1;
         if (surface) {
+            Object.assign(material, { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
             if (asset.leafFill) material.defines.GRASS_PATCH_LEAF_FILL = 1;
             material.map = null;
             delete material.defines.BAKED_GRASS_PAIR;
@@ -33,7 +35,7 @@ export function createGrassPatchMaterials({ asset, distances, groundY, terminalT
         if (surface || handoff) Object.assign(uniforms, {
             grassPatchCanopyA: { value: asset.maps.canopy[0] }, grassPatchCanopyB: { value: asset.maps.canopy[1] },
             grassPatchCanopyScale: { value: asset.manifest.canopyUvScale }, grassPatchCanopyColor: { value: asset.canopy.materials.all.color },
-            grassPatchHandoffBand: { value: new THREE.Vector2(distances[3], terminalTransition === 'shorten' ? distances[4] : starts[4]) }
+            grassPatchHandoffBand: { value: new THREE.Vector2(terminalTransition === 'shorten' ? distances[3] - (distances[4] - distances[3]) * .125 : distances[3], terminalTransition === 'shorten' ? distances[4] : starts[4]) }
         });
         if (surface) {
             const litterHook = asset.litterMaterial;

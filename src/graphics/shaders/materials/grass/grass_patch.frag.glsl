@@ -41,9 +41,9 @@ uniform vec3 grassPatchLitterGain;
 #ifdef GRASS_PATCH_HANDOFF
 vec3 grassPatchRay = vGrassPatchRay;
 float grassPatchRayY = grassPatchRay.y < 0.0 ? min(grassPatchRay.y, -0.0001) : max(grassPatchRay.y, 0.0001);
-vec2 grassPatchGround = cameraPosition.xz + grassPatchRay.xz * ((grassPatchGroundY + 0.005 - cameraPosition.y) / grassPatchRayY);
+vec2 grassPatchGround = cameraPosition.xz + grassPatchRay.xz * ((grassPatchGroundY - cameraPosition.y) / grassPatchRayY);
 #else
-vec3 grassPatchRay = vec3(vBakedGrassWorld.x, grassPatchGroundY + 0.005, vBakedGrassWorld.y) - cameraPosition;
+vec3 grassPatchRay = vec3(vBakedGrassWorld.x, grassPatchGroundY, vBakedGrassWorld.y) - cameraPosition;
 vec2 grassPatchGround = vBakedGrassWorld;
 #endif
 vec2 grassPatchGroundDx = dFdx(grassPatchGround), grassPatchGroundDy = dFdy(grassPatchGround);
@@ -113,7 +113,7 @@ if (grassSurfaceFade > 0.0) {
 diffuseColor.rgb *= grassSurfaceColor;
 // @section handoff
 #ifdef GRASS_PATCH_HANDOFF
-if (grassPatchColorFade > 0.0 && grassPatchRay.y < -0.0001 && cameraPosition.y > grassPatchGroundY + 0.005) {
+if (grassPatchColorFade > 0.0 && grassPatchRay.y < -0.0001 && cameraPosition.y > grassPatchGroundY) {
     vec3 grassPatchColor = grassPatchCanopy(grassPatchGround, grassPatchGroundDx, grassPatchGroundDy, grassPatchRay) * grassPatchCanopyColor;
     outgoingLight = mix(outgoingLight, grassPatchColor, grassPatchColorFade);
 }

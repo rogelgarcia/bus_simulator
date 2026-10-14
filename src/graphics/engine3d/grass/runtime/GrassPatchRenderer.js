@@ -30,7 +30,7 @@ export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0,
     for (let z = bounds.minZ; z < bounds.maxZ; z += surfaceSize) for (let x = bounds.minX; x < bounds.maxX; x += surfaceSize) {
         const width = Math.min(surfaceSize, bounds.maxX - x), depth = Math.min(surfaceSize, bounds.maxZ - z);
         const mesh = new THREE.Mesh(surfaceGeometry, material.surface); mesh.name = 'GrassPatchGround';
-        mesh.position.set(x + width / 2, .005, z + depth / 2); mesh.scale.set(width, 1, depth);
+        mesh.position.set(x + width / 2, 0, z + depth / 2); mesh.scale.set(width, 1, depth);
         mesh.userData.grassCanopy = true; mesh.updateMatrix(); mesh.matrixAutoUpdate = false; group.add(mesh); surfaces.push(mesh);
     }
     group.updateMatrix(); group.matrixAutoUpdate = false; group.updateMatrixWorld(true);

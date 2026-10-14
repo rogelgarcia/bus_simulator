@@ -8,4 +8,8 @@ grassBoundaryPosition = batchingMatrix * grassBoundaryPosition;
 #ifdef USE_INSTANCING
 grassBoundaryPosition = instanceMatrix * grassBoundaryPosition;
 #endif
+#ifdef GRASS_PATCH_ROOT_BOUNDARY
+vGrassBoundaryWorld = grassPatchAnchor;
+#else
 vGrassBoundaryWorld = (modelMatrix * grassBoundaryPosition).xz;
+#endif

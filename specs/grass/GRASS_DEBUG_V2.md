@@ -1,5 +1,16 @@
 # Grass Debug v2
 
+## Fixed-patch field edges
+
+The fixed-patch path selects whole blades by root coverage, allowing eligible
+tips to extend across the field contour. Its ground shares the soil's height;
+the former raised floor and independent rectangular soil cutouts are removed.
+The shared inverse boundary mask closes the soil around the grass. Existing soil
+normal maps and baked grass shading provide surface detail without an exposed
+vertical lip. See the [edge regression and runtime contract](GRASS_RUNTIME_REDESIGN.md)
+and `tests/headless/e2e/grass_patch_edges.pwtest.js` for four-side grazing views
+and whole-blade comparisons across every blade LOD and tile rotation.
+
 ## Geometric LOD4 exit comparisons
 
 `?grass=patches&handoff=rise` enables the lab prototype that lowers opaque LOD4
@@ -14,9 +25,11 @@ removed over 16–24 m. Forced LOD4 bypasses the cutoff. The sidebar identifies
 this variant as “Trimmed LOD4 → 5”. The geometric options remain opt-in in the lab.
 
 `?grass=patches&handoff=shorten` is the calibrated alternative: scale each blade's
-height by `1 - smoothstep(16, 24, distance)`, keeping its root and horizontal
-placement fixed. Root and tip colors remain on the shortened blade. The ground
-blends to the distant canopy over the same 16–24 m interval. The sidebar labels
+height over a 1 m span whose start is distributed from 16 to 23 m using a stable
+world-tile/blade hash. Its root and horizontal placement stay fixed. Root and
+tip colors remain on the shortened blade. The ground blends to the distant
+canopy over 15–24 m. Staggering breaks up the synchronized moving ring of the
+earlier 16–24 m profile. The sidebar labels
 it “Shortened LOD4 → 5”. This avoids the bright-tip bias of sinking and the dark
 stubble of cutting. Forced LOD4 is unchanged; gameplay still defaults to dissolve.
 The calibration and angle/movement regression are described in

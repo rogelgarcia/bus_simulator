@@ -56,7 +56,10 @@ for (const transition of ['rise', 'trim', 'shorten']) test(`${transition}: LOD4 
         } finally { for (const [name, original] of originals) gl[name] = original; }
         const result = { forcedChanged: difference(forcedDissolve, forcedGeometric), autoChanged: difference(autoDissolve, autoGeometric),
             buriedChanged: difference(buried, canopy), uploads, allocations, initialMemory, finalMemory: { ...renderer.info.memory }, definitions,
-            snapshot: grass.getSnapshot(), glError: gl.getError(), captures };
+            snapshot: grass.getSnapshot(), glError: gl.getError(), captures,
+            bladeLayout: asset.bridge.templates.map(template => ({ leaves: template.userData.grassLeafCount,
+                vertices: template.attributes.position.count, indices: template.index.count,
+                consecutive: Array.from(template.index.array).every((vertex, i) => Math.floor(vertex / 6) === Math.floor(i / 6)) })) };
         Object.values(variants).forEach(instance => instance.dispose()); soil.geometry.dispose(); soil.material.dispose(); coverage.dispose(); asset.dispose(); renderer.dispose();
         return result;
     }, transition);
@@ -67,6 +70,10 @@ for (const transition of ['rise', 'trim', 'shorten']) test(`${transition}: LOD4 
     expect(result.forcedChanged).toBe(0);
     expect(result.autoChanged).toBeGreaterThan(1000);
     expect(result.buriedChanged).toBe(0);
+    for (const layout of result.bladeLayout) {
+        expect(layout.vertices).toBe(layout.leaves * 6); expect(layout.indices).toBe(layout.leaves * 6);
+        expect(layout.consecutive).toBe(true);
+    }
     expect(result.definitions[{ rise: 'GRASS_PATCH_RISE', trim: 'GRASS_PATCH_TRIM', shorten: 'GRASS_PATCH_SHORTEN' }[transition]]).toBe(1);
     expect(result.definitions.GRASS_PATCH_HANDOFF).toBeUndefined();
     expect(result.uploads).toBe(0); expect(result.allocations).toBe(0);

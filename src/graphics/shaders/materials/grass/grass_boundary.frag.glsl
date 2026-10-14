@@ -11,5 +11,6 @@ if (grassBoundaryEnabled > 0.5) {
     if (all(greaterThanEqual(grassBoundaryUv, vec2(0.0))) && all(lessThan(grassBoundaryUv, vec2(1.0)))) {
         grassBoundaryCoverage = texture2D(grassBoundaryMap, grassBoundaryUv).r;
     }
-    if (grassBoundaryInverse > 0.5 ? grassBoundaryCoverage >= 0.5 : grassBoundaryCoverage < 0.5) discard;
+    // One mask-value overlap covers interpolation roundoff between separate coplanar meshes.
+    if (grassBoundaryInverse > 0.5 ? grassBoundaryCoverage >= 0.5 + 1.0 / 255.0 : grassBoundaryCoverage < 0.5) discard;
 }

@@ -20,7 +20,7 @@ export async function createGrassDebugV2PatchGrass({ renderer, scene, camera, li
         asset.settings.brightness.value = lighting.sunRef.intensity / (asset.manifest.leafColor[0] * 2 * Math.PI);
         patches = createGrassPatchRenderer({ asset, coverage, bounds,
             terminalTransition: new URLSearchParams(location.search).get('handoff') || 'dissolve' }); scene.add(patches.group);
-        land.setGrassPatches(placements); land.setGrassBoundary(coverage); land.setGrassVisible(true);
+        land.setGrassBoundary(coverage); land.setGrassVisible(true);
         lighting.applyEnvironment(); configureGrassDebugV2FieldShadows({ sun: lighting.sun, renderer, bounds }); scene.updateMatrixWorld(true);
         shadows = new GrassSceneShadows({ renderer, groundY: 0, resolution: 2048 });
         const casters = [];
