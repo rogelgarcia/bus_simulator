@@ -13,6 +13,7 @@ uniform vec4 uOceanOptics;
 // 11 the seabed read through the surface (D5), 12 the water just below the surface (the seabed through the column plus the column's light),
 // 13 the caustic ratio (half), 14 the crest scattering (red the crest factor, green the view toward the sun, blue the scattering)
 uniform int uOceanDebug;
+uniform vec4 uOceanHole;  // min x, min z, max x, max z of the hole where the previous ring lies; disabled when max x <= min x
 varying vec3 vOceanWorld;
 varying vec2 vOceanPlane;
 
@@ -28,6 +29,9 @@ varying vec2 vOceanPlane;
 
 void main() {
     if (oceanCoverage(vOceanPlane) <= 0.0) discard;
+    // the annulus geometry of a ring with a hole overlaps the previous ring by one or two cells (the two lattices snap one cell apart): the
+    // fragments strictly inside the hole are the previous ring's, never drawn twice
+    if (uOceanHole.z > uOceanHole.x && vOceanPlane.x > uOceanHole.x && vOceanPlane.x < uOceanHole.z && vOceanPlane.y > uOceanHole.y && vOceanPlane.y < uOceanHole.w) discard;
     vec3 origin, v;
     float distance;
     landscapeViewRay(vOceanWorld, origin, v, distance);

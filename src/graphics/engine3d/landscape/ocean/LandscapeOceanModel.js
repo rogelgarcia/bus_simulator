@@ -192,6 +192,44 @@ export function landscapeOceanRings({ cells, baseCellMeters, farMeters = LANDSCA
 }
 
 /**
+ * The half-size, in cells, of the square of a ring's grid that always lies inside its hole: ring r - 1 spans cells / 4 of this ring's cells
+ * around its own origin, which snaps to this ring's cell and so sits within one cell of this ring's origin (snapped to twice the cell), so the
+ * hole always contains the square of half-size cells / 4 - 1 and never more than cells / 4 + 1. A ring with a hole draws the annulus outside
+ * that inner square (landscapeOceanRingIndices) and discards the fragments inside its exact hole, so nothing is drawn twice and nothing spans it
+ * (until 2026-10-14 the full grid's vertices inside the hole collapsed to the nearest hole edge, and the quads across the hole's diagonals and
+ * centre became triangles spanning the hole: the coarsest ring covered the sea near the camera with a flat sheet).
+ * @param {number} cells
+ */
+export function landscapeOceanRingHoleCells(cells) {
+    if (!Number.isInteger(cells) || cells < 8 || cells % 4 !== 0) throw new Error(`[LandscapeOcean] The ring cell count must be a multiple of 4 of at least 8; received ${cells}`);
+    return cells / 4 - 1;
+}
+
+/**
+ * The triangle list of a ring grid of cells x cells quads over (cells + 1)^2 vertices at integer indices -cells/2..cells/2 (row-major, x then z),
+ * each quad split along its (i, j) -> (i + 1, j + 1) diagonal, leaving out the quads inside the square of half-size holeCells (0 keeps every quad).
+ * @param {number} cells @param {number} [holeCells]
+ * @returns {Readonly<{index:Uint16Array|Uint32Array,triangles:number}>}
+ */
+export function landscapeOceanRingIndices(cells, holeCells = 0) {
+    if (!Number.isInteger(cells) || cells < 2 || cells % 2 !== 0) throw new Error(`[LandscapeOcean] The ring cell count must be a positive even integer; received ${cells}`);
+    if (!Number.isInteger(holeCells) || holeCells < 0 || 2 * holeCells >= cells) throw new Error(`[LandscapeOcean] The hole must be a non-negative integer smaller than half the cells; received ${holeCells}`);
+    const side = cells + 1, half = cells / 2, triangles = 2 * (cells * cells - 4 * holeCells * holeCells);
+    const index = new (side * side > 65535 ? Uint32Array : Uint16Array)(triangles * 3);
+    let o = 0;
+    for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) {
+        // the quad spans indices x..x + 1 and z..z + 1; it lies inside the hole when both spans do
+        const x = i - half, z = j - half;
+        if (x >= -holeCells && x + 1 <= holeCells && z >= -holeCells && z + 1 <= holeCells) continue;
+        const a = j * side + i, b = a + 1, c = a + side, d = c + 1;
+        index[o++] = a; index[o++] = d; index[o++] = b;
+        index[o++] = a; index[o++] = c; index[o++] = d;
+    }
+    if (o !== index.length) throw new Error(`[LandscapeOcean] Ring index count mismatch: ${o} of ${index.length}`);
+    return Object.freeze({ index, triangles });
+}
+
+/**
  * The world origin of a ring for a camera position: snapped to twice its cell, so vertex parity is stable in world space (the even vertices lie on
  * the next ring's lattice) and the ring never swims under a moving camera.
  * @param {{cellMeters:number}} ring @param {number} cameraX @param {number} cameraZ @returns {{x:number,z:number}}
@@ -262,7 +300,7 @@ export function landscapeOceanFoamSchedule({ time, lastTime, remainder = 0 }) {
  * Conservative byte estimate of the ocean's resources for a quality preset: the spectral atlases (h0 and the two FFT ping-pong textures, RGBA32F,
  * cascades x texels^2), the butterfly table, the per-cascade displacement and slope textures (RGBA16F with mips), the bathymetry fields (the extent
  * as the RGBA16F shore channels and the RG32F travel time with its float depth raster, the surround as RGBA16F depth; the CPU rasters are the
- * texture data), the clipmap geometry (position attribute and index per ring), the D3 foam state (RG16F ping-pong over the extent) and the D4 swash sheet's band (a conservative estimate).
+ * texture data), the clipmap geometries (the full grid and the annulus, position attribute and index each), the D3 foam state (RG16F ping-pong over the extent) and the D4 swash sheet's band (a conservative estimate).
  * @param {string} quality @param {{extentTexels?:number,surroundTexels?:number}} [fields]
  * @returns {Readonly<{cpuBytes:number,gpuBytes:number,parts:Readonly<Record<string,Readonly<{cpuBytes:number,gpuBytes:number}>>>}>}
  */
@@ -270,8 +308,9 @@ export function landscapeOceanResources(quality, { extentTexels = LANDSCAPE_OCEA
     const preset = LANDSCAPE_OCEAN_QUALITIES[landscapeOceanQuality(quality)], cascades = preset.cascadeLengths.length, texels = preset.texels, stages = Math.log2(texels);
     const atlasBytes = cascades * texels * texels * 16, mipped = Math.ceil(texels * texels * 8 * 4 / 3);
     const rings = landscapeOceanRings({ cells: preset.ringCells, baseCellMeters: preset.baseCellMeters });
-    const vertices = (preset.ringCells + 1) ** 2, indices = preset.ringCells * preset.ringCells * 6;
-    const geometryBytes = rings.length * (vertices * 8 + indices * 4);
+    // the full grid of ring 0 and the annulus of the other rings: a position attribute each and their index lists (4 bytes per index)
+    const vertices = (preset.ringCells + 1) ** 2, hole = landscapeOceanRingHoleCells(preset.ringCells);
+    const geometryBytes = 2 * vertices * 12 + (2 * preset.ringCells * preset.ringCells - 4 * hole * hole) * 6 * 4;
     const parts = Object.freeze({
         spectra: Object.freeze({ cpuBytes: 0, gpuBytes: 3 * atlasBytes + stages * texels * 16 }),
         cascades: Object.freeze({ cpuBytes: 0, gpuBytes: cascades * 2 * mipped }),

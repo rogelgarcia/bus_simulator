@@ -1,8 +1,10 @@
 // Draws the animated ocean surface (AI 597): a camera-snapped clipmap of rings displaced by the cascade sum, lit by the view lighting with the AI577 water optics.
 // @ts-check
-// Design. One shared grid geometry (integer indices, quads split along one diagonal so the CDLOD morph of odd vertices is exact) is drawn once per
-// ring with its own material: the ring uniform places it at the camera snapped to twice its cell (stable vertex parity, no swimming), the hole
-// uniform collapses the previous ring's extent, the morph fractions blend each ring into the next lattice at its outer edge. The outermost ring
+// Design. Two shared grid geometries (integer indices, quads split along one diagonal so the CDLOD morph of odd vertices is exact): the full grid
+// for ring 0 and, for every other ring, the annulus outside the square that always lies inside its hole (landscapeOceanRingHoleCells), each
+// drawn once per ring with its own material: the ring uniform places it at the camera snapped to twice its cell (stable vertex parity, no
+// swimming), the hole uniform discards the fragments over the previous ring's extent (the annulus overlaps it by one or two cells, since the two
+// lattices snap one cell apart), the morph fractions blend each ring into the next lattice at its outer edge. The outermost ring
 // reaches the camera far plane, where the atmosphere backdrop takes over. The materials share the lighting cells, the cascade textures, the
 // bathymetry fields and the optics uniform; the program is linked once through KHR_parallel_shader_compile before the rings become visible, so
 // the page keeps drawing the flat reference meanwhile. The rings are transparent (premultiplied Fresnel blend), never write depth, and are never
@@ -30,7 +32,7 @@ export function landscapeOceanDebugBlending(material, debug) {
 }
 import { landscapeWaterSurfaceRoughness } from '../LandscapeLightingModel.js';
 import { LANDSCAPE_SKY_REFLECTION } from '../LandscapeSkyReflection.js';
-import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanWaterType, landscapeOceanCascadeFade, landscapeOceanCascades, landscapeOceanRingOrigin, landscapeOceanRings } from './LandscapeOceanModel.js';
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanWaterType, landscapeOceanCascadeFade, landscapeOceanCascades, landscapeOceanRingHoleCells, landscapeOceanRingIndices, landscapeOceanRingOrigin, landscapeOceanRings } from './LandscapeOceanModel.js';
 
 const PROGRAM_COMPILE_WAIT_MS = 30000;
 // the unresolved part of the Cox-Munk slope variance (below the finest cascade), as a share of the AI577 reference wind's mean square slope
@@ -40,24 +42,19 @@ const REFLECTION_HORIZON_BAND = .12;
 const DEBUG_VIEWS = 14;
 
 /**
- * Builds the shared ring grid: vertices at integer indices -cells/2..cells/2 (x in position.x, z in position.y), quads split along the
- * (i, j) -> (i + 1, j + 1) diagonal.
- * @param {number} cells
+ * Builds a shared ring grid: vertices at integer indices -cells/2..cells/2 (x in position.x, z in position.y), quads split along the
+ * (i, j) -> (i + 1, j + 1) diagonal (landscapeOceanRingIndices), without the quads inside the square of half-size holeCells (the annulus of a
+ * ring with a hole; 0 is the full grid of ring 0).
+ * @param {number} cells @param {number} [holeCells]
  */
-export function createLandscapeOceanRingGeometry(cells) {
-    const side = cells + 1, positions = new Float32Array(side * side * 3), index = new (side * side > 65535 ? Uint32Array : Uint16Array)(cells * cells * 6);
+export function createLandscapeOceanRingGeometry(cells, holeCells = 0) {
+    const side = cells + 1, positions = new Float32Array(side * side * 3), { index, triangles } = landscapeOceanRingIndices(cells, holeCells);
     for (let j = 0; j < side; j++) for (let i = 0; i < side; i++) { const o = (j * side + i) * 3; positions[o] = i - cells / 2; positions[o + 1] = j - cells / 2; positions[o + 2] = 0; }
-    let o = 0;
-    for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) {
-        const a = j * side + i, b = a + 1, c = a + side, d = c + 1;
-        index[o++] = a; index[o++] = d; index[o++] = b;
-        index[o++] = a; index[o++] = c; index[o++] = d;
-    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
-    return { geometry, bytes: positions.byteLength + index.byteLength, triangles: cells * cells * 2 };
+    return { geometry, bytes: positions.byteLength + index.byteLength, triangles, holeCells };
 }
 
 /**
@@ -70,9 +67,10 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
     const preset = LANDSCAPE_OCEAN_QUALITIES[quality], cascades = landscapeOceanCascades(quality), count = cascades.length;
     const rings = landscapeOceanRings({ cells: preset.ringCells, baseCellMeters: preset.baseCellMeters });
     const key = `ocean/surface/${crypto.randomUUID()}`;
-    const grid = createLandscapeOceanRingGeometry(preset.ringCells);
-    const admission = ledger.reserve(key, { cpuBytes: grid.bytes, gpuBytes: grid.bytes });
-    if (!admission.admitted) { grid.geometry.dispose(); throw new Error(`[LandscapeOcean] The surface geometry cannot fit: ${admission.reason}`); }
+    const grid = createLandscapeOceanRingGeometry(preset.ringCells), annulus = createLandscapeOceanRingGeometry(preset.ringCells, landscapeOceanRingHoleCells(preset.ringCells));
+    const geometryBytes = grid.bytes + annulus.bytes;
+    const admission = ledger.reserve(key, { cpuBytes: geometryBytes, gpuBytes: geometryBytes });
+    if (!admission.admitted) { grid.geometry.dispose(); annulus.geometry.dispose(); throw new Error(`[LandscapeOcean] The surface geometry cannot fit: ${admission.reason}`); }
     const environment = lighting.reflectionEnvironment();
     const reference = landscapeWaterSurfaceRoughness();
     const cascadeInfo = cascades.map(cascade => { const fade = landscapeOceanCascadeFade(cascade); return new THREE.Vector4(1 / cascade.lengthMeters, cascade.texelMeters, fade.zeroMeters, fade.fullMeters); });
@@ -104,7 +102,7 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
             uniforms: { ...shared, uOceanRing: { value: new THREE.Vector4(0, 0, ring.cellMeters, ring.halfExtentMeters) }, uOceanHole: { value: new THREE.Vector4(0, 0, -1, -1) } },
             transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
         attachShaderMetadata(material, payload);
-        const mesh = new THREE.Mesh(grid.geometry, material);
+        const mesh = new THREE.Mesh(ring.hole ? annulus.geometry : grid.geometry, material);
         mesh.name = `Landscape ocean ring ${ring.index}`;
         mesh.frustumCulled = false;
         mesh.renderOrder = 2 + ring.index;
@@ -194,8 +192,8 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
             tier = value;
         },
         snapshot() {
-            return { material: 'landscape-ocean-surface-v1', rings: rings.length, cells: preset.ringCells, baseCellMeters: preset.baseCellMeters, farMeters: rings[rings.length - 1].halfExtentMeters, trianglesPerRing: grid.triangles,
-                triangles: grid.triangles * rings.length, drawCalls: ready && visible ? rings.length : 0, geometryBytes: grid.bytes, lean: preset.lean, baseMeanSquareSlope: shared.uOceanOptics.value.x, lightingTier: tier,
+            return { material: 'landscape-ocean-surface-v1', rings: rings.length, cells: preset.ringCells, baseCellMeters: preset.baseCellMeters, farMeters: rings[rings.length - 1].halfExtentMeters, trianglesPerRing: grid.triangles, trianglesPerHoleRing: annulus.triangles, holeCells: annulus.holeCells,
+                triangles: grid.triangles + annulus.triangles * (rings.length - 1), drawCalls: ready && visible ? rings.length : 0, geometryBytes, lean: preset.lean, baseMeanSquareSlope: shared.uOceanOptics.value.x, lightingTier: tier,
                 reflection: environment ? environment.model : 'sky-harmonics', programCompile: { ...programCompile }, ready, visible, drawnLastFrame: renderInfo !== null && renderInfo.frame - drawnFrame < framePasses, morph: { ...LANDSCAPE_OCEAN.morph },
                 // D5: the frame pipeline's scene copy read through the refraction, the local water types and the light terms
                 scene: pipeline !== null, water: { oceanicDepthMeters: [...LANDSCAPE_OCEAN.water.oceanic.depthMeters], surfWeight: LANDSCAPE_OCEAN.water.surf.weight, oceanic: landscapeOceanWaterType('oceanic'), surf: landscapeOceanWaterType('surf') },
@@ -208,6 +206,7 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
             disposed = true;
             for (const mesh of meshes) { mesh.removeFromParent(); mesh.material.dispose(); }
             grid.geometry.dispose();
+            annulus.geometry.dispose();
             ledger.release(key);
         }
     });

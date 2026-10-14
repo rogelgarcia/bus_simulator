@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_MAX_CASCADES, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanClock, createLandscapeOceanLedger, landscapeOceanCascades, landscapeOceanCascadeFade, landscapeOceanShoreInputs, landscapeOceanFoamSchedule, landscapeOceanQuality,
-    landscapeOceanResources, landscapeOceanRingOrigin, landscapeOceanRings, landscapeOceanSeaState, landscapeOceanSurface } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
+    landscapeOceanResources, landscapeOceanRingHoleCells, landscapeOceanRingIndices, landscapeOceanRingOrigin, landscapeOceanRings, landscapeOceanSeaState, landscapeOceanSurface } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 import { landscapeOceanButterfly, landscapeOceanDispersion, landscapeOceanEvolvedTexel, landscapeOceanGaussian, landscapeOceanHash, landscapeOceanInitialTexel, landscapeOceanInverseFftRow, landscapeOceanJonswap,
     landscapeOceanLogGamma, landscapeOceanSeaStateShapes, landscapeOceanSignificantWaveHeight, landscapeOceanSpreading, landscapeOceanTma, landscapeOceanWaveSpectrum } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanSpectrum.js';
 import { landscapeOceanFieldLayout, rasterizeLandscapeOceanDepth } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanField.js';
@@ -60,6 +60,43 @@ test('Ocean rings: the clipmap doubles until it covers the far plane and snaps t
         const resources = landscapeOceanResources(quality);
         assert.ok(resources.gpuBytes > 0 && resources.gpuBytes <= LANDSCAPE_OCEAN.budgets.gpuBytes && resources.cpuBytes <= LANDSCAPE_OCEAN.budgets.cpuBytes, `${quality} fits its share`);
         assert.deepEqual(Object.keys(resources.parts), ['spectra', 'cascades', 'fields', 'geometry', 'foam', 'swash']);
+    }
+});
+
+test('Ocean ring geometry: the annulus leaves out exactly the square inside every hole, and the hole never moves past it', () => {
+    assert.equal(landscapeOceanRingHoleCells(8), 1);
+    assert.equal(landscapeOceanRingHoleCells(128), 31);
+    assert.throws(() => landscapeOceanRingHoleCells(6));
+    const full = landscapeOceanRingIndices(8), annulus = landscapeOceanRingIndices(8, landscapeOceanRingHoleCells(8));
+    assert.equal(full.triangles, 128); assert.equal(full.index.length, 384);
+    assert.equal(annulus.triangles, 2 * (64 - 4)); assert.equal(annulus.index.length, annulus.triangles * 3);
+    // the quads present are exactly those outside the inner square, and every triangle keeps a corner strictly outside it
+    const side = 9, at = v => [v % side - 4, Math.floor(v / side) - 4];
+    const quads = new Set();
+    for (let t = 0; t < annulus.index.length; t += 3) {
+        const corners = [annulus.index[t], annulus.index[t + 1], annulus.index[t + 2]].map(at);
+        assert.ok(corners.some(([x, z]) => Math.abs(x) > 1 || Math.abs(z) > 1), `triangle inside the hole: ${JSON.stringify(corners)}`);
+        quads.add(annulus.index[t]);
+    }
+    for (let x = -4; x < 4; x++) for (let z = -4; z < 4; z++) assert.equal(quads.has((z + 4) * side + x + 4), !(x >= -1 && x + 1 <= 1 && z >= -1 && z + 1 <= 1), `quad ${x},${z}`);
+    // the shipped preset: the full grid of ring 0 and the annulus of the ten rings with a hole (the spec's triangle count)
+    assert.equal(landscapeOceanRingIndices(128).triangles, 32768);
+    assert.equal(landscapeOceanRingIndices(128, 31).triangles, 25080);
+    assert.equal(32768 + 10 * 25080, 283568);
+    assert.throws(() => landscapeOceanRingIndices(8, 4));
+    // for any camera, the previous ring's extent sits a whole number of this ring's cells from this ring's origin, at most one, so it always
+    // holds the inner square the annulus leaves out
+    const rings = landscapeOceanRings({ cells: 128, baseCellMeters: .5 });
+    let seed = 7;
+    const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    for (let sample = 0; sample < 500; sample++) {
+        const x = (random() - .5) * 20000, z = (random() - .5) * 20000;
+        for (let r = 1; r < rings.length; r++) {
+            const outer = landscapeOceanRingOrigin(rings[r], x, z), inner = landscapeOceanRingOrigin(rings[r - 1], x, z);
+            const ox = (inner.x - outer.x) / rings[r].cellMeters, oz = (inner.z - outer.z) / rings[r].cellMeters;
+            assert.ok(Number.isInteger(ox) && Number.isInteger(oz) && Math.abs(ox) <= 1 && Math.abs(oz) <= 1, `ring ${r} at ${x},${z}: offset ${ox},${oz}`);
+            assert.ok(rings[r - 1].halfExtentMeters / rings[r].cellMeters - Math.abs(ox) >= landscapeOceanRingHoleCells(128));
+        }
     }
 });
 
