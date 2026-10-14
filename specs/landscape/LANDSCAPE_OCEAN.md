@@ -1,7 +1,7 @@
 # Landscape ocean (AI 597)
 
 Status: D1 (spectral ocean surface), D2 (depth-aware shore waves), D3 (foam lifecycle) and D4 (swash and wet beach) delivered
-2026-10-12 on `codex/landscape`; D5–D7 pending (water light, inland water, acceptance). This page is the canonical contract of the animated sea of the landscape
+2026-10-12, D5 (water colour, refraction and light) 2026-10-14 on `codex/landscape`; D6–D7 pending (inland water, acceptance). This page is the canonical contract of the animated sea of the landscape
 viewer: what it is, how it is encoded and driven, how it integrates with the AI577 water optics and the AI 596 terrain,
 and what it costs. Every number is copied from a receipt under `tests/artifacts/screens/landscape/ai597/` (paths given).
 
@@ -194,7 +194,62 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   foreshore) and `OS-07` (the wet line from 70 m above, heading 180: with the calibrated sun at azimuth 45° and elevation 55°, a
   nadir view heading 0 looks straight at the sun's mirror point, 35° from nadir toward +x+z, and the whole wet beach reads as glare).
 
-## 3. Runtime (D1–D4)
+## 2e. Water colour, refraction and light (D5)
+
+Since D5 the viewer's frame renders into a linear half-float target and a final pass tone-maps it for the canvas
+(`LandscapeFramePipeline.js`, pure constants `LandscapeFramePipelineModel.js`, `materials/landscape/frame_final.frag.glsl`): three.js
+compiles the materials' own tone mapping and output transfer out under a render target, so every landscape material writes linear
+radiance unchanged, and the sea composes the water in linear light over the opaque frame it reads (`chunks/landscape/ocean_light.glsl`,
+constants `LANDSCAPE_OCEAN.water` and `.light`).
+
+- **Frame pipeline** the target is RGBA16F with a depth renderbuffer at the drawing buffer's size, bound between frames (programs
+  compile and tiles upload against its variant; the view re-binds it after its canvas reads); the first ring's `onBeforeRender`
+  copies the frame drawn so far (the terrain, the backdrop, the swash sheet) into the scene texture (RGBA16F, the same format so the
+  copy is always legal); the final pass applies the renderer's tone mapping and the sRGB transfer with an FXAA-console edge filter on
+  the encoded taps in place of the canvas multisampling (an RGBA16F target with four samples would cost 116 MB at 1080p and 464 MB
+  at UHD, and the copy cannot read a multisampled framebuffer). Bytes: 41.5 MB at 1920 × 1080 (target 16.6, depth 8.3, scene 16.6),
+  166 MB at 3840 × 2160, reported by `snapshot().pipeline`, display-sized like the canvas and not a ledger stream. The flat AI577
+  reference renders through the same pipeline, so its sky reflection composes in linear light as well (its horizon reads darker than
+  the display-space blend it was calibrated with; the D1 note that linear composition brightens dim reflections by the tone curve's
+  slope described that calibration, not the physics).
+- **Column handover** with the animated sea drawn and the camera above the water, submerged terrain writes the seabed lit under water
+  without its column, interface or air light (`terrain.frag.glsl`, `uLandscapeOcean.x`); the surface applies them once. Below the
+  water the terrain keeps its column and the surface its D1 underwater branch.
+- **Refraction** the eye ray refracts at the facet (`refract(−v, n, 1/1.333)`) and runs to the seabed level, the still-water depth of
+  the field plus the facet's own height above the level; the scene texture is read at that point's projection through the frame
+  camera (`uOceanViewProjection`), or at the fragment's own position where the refracted point projects outside the frame or over
+  land (the straight sample is the seabed the eye ray hit). The AI577 column (`landscapeWaterColumn` with the local water's
+  constants) runs along the refracted path from the surface; the upwelling radiance crosses the interface as the transmitted share
+  over n²; the reflected sky at the split-sum reflectance and the glitter add; the water is opaque, the foam a Lambertian layer.
+- **Colour** the local water blends the AI577 clear coastal water toward the oceanic water with the still-water depth (absorption
+  0.32 / 0.055 / 0.025, backscatter 0.0015 / 0.002 / 0.003 m⁻¹, blended between 5 and 20 m: the deep blue offshore) and toward the
+  stirred surf water with the breaking and the foam (absorption 0.35 / 0.09 / 0.09, backscatter 0.012 / 0.014 / 0.016 m⁻¹, weight
+  0.45 of the stirring: the milky turquoise of the surf); the bottom's own colour comes through the seabed sample (sand bright, rock
+  and weed dark as the terrain renders them).
+- **Caustics** the irradiance ratio of the refracted sun's mapping through the surface, `1 / |1 + (1 − 1/n) d ∇²h|`, from finite
+  differences of the two finest cascades' slopes at the surface point the sun ray crossed above the seabed point (their mips average
+  the far pixels), applied to the sun's share of the seabed's light (sun against downwelling sky at that depth), contrast 0.5,
+  clamped 0.5–2, fading with depth from 6 to 15 m and with the pixel footprint from 3 to 10 cm per pixel (a 70 m view is otherwise
+  solid speckle).
+- **Crest scattering** the facet's own height (the cascades and the train sampled at the fragment, not the ring vertex's coarse cell)
+  with the train's sharpening gives a crest factor (0.15–0.8 m); the local water's deep colour is added at strength 3.5 × crest ×
+  (0.25 + 0.75 cos²) with cos the view toward the sun, under the sun's visibility and the transmitted share. Documented as an
+  approximation of light scattered through thin crests.
+- **Reflections** the sky from the prefiltered map (D1). Terrain: `reflection_hits.mjs` mirrored the eye rays of the review frames
+  about the sea level over the extent's height raster: a planar mirror meets terrain in under 2 % of the sea at seven of eight
+  poses and 12.7 % at NW-09 (the water-level view along the coast), 32 % there with a 5° facet tilt. That justified a heightfield
+  screen-space reflection, not a planar re-render of the terrain: the mirrored ray of the train's smooth normal (the cascades'
+  ripples flickered the result into loops) marches the field's land heights in growing steps (16, from 4 m) while it stays low
+  (elevation below 0.35) and where it lands on terrain the frame shows, the frame's colour replaces the sky with a weight that softens
+  over 3 m of clearance and fades at the frame's edges. Limits: only terrain inside the extent and inside the frame reflects, the
+  frame's front-most surface stands in for anything it hides, no reflections of the sheet, the foam or the surround.
+- **Verification views** 11 the seabed read through the surface, 12 the water just below the surface, 13 the caustic ratio (half),
+  14 the crest scattering (crest, view toward the sun, scattering). In a verification view the rings and the swash sheet draw opaque
+  (a ONE / ZERO blend) with alpha 0, the pipeline's sentinel: the final pass passes those pixels through untouched (the frame target
+  clears to alpha 1), so the unitless views keep their raw values; the radiance views (3, 4, 11, 12) keep alpha 1 and are tone-mapped
+  by the final pass with the scene (`oceanDisplay` compiles to the identity under the target).
+
+## 3. Runtime (D1–D5)
 
 | Part | Where | What |
 | --- | --- | --- |
@@ -212,8 +267,10 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
 | Swash band (D4) | `ocean/LandscapeOceanSwashBand.js` `loadLandscapeOceanSwashBand` | after the coast and the shore distance, beside the shore march: the native chunks whose bounds cross the band are loaded through the bounded loaders and each becomes an Int16 geometry of its band samples (29 chunks, 344 669 vertices, 665 348 triangles, 6.06 MB on v3 in 0.3–0.4 s); a chunk without band samples yields nothing |
 | Swash sheet (D4) | `ocean/LandscapeOceanSwash.js` `createLandscapeOceanSwash` | reserves the band in the ocean share, one mesh per chunk under the surface's uniform set plus `uOceanSwash` (√(H L), period, drying, carried foam share), `uOceanSwashBand` (static reach, slope cap, cycles, front width), `uOceanSwashFoam` (deposit share and lifetime, film slope variance, ripple share) and the native grid; links its program in parallel like the surface (`ready(camera, signal)`), `setSeaState` only changes the inputs, `setLightingTier` rebuilds the program, `snapshot()` reports it under `snapshot().ocean.swash`; the ocean reports active once the sheet is linked (`swashActive` flips the terrain's handover) |
 | Surface over the sand (D4) | `ocean_surface.frag.glsl` | the rings' radiance and alpha fade with `1 − smoothstep(0, 4 m, inland)` of the field's shore distance |
+| Frame pipeline (D5) | `LandscapeFramePipeline.js`, `frame_final.frag.glsl` | created by the view with the renderer (null without float render targets: the frame draws to the canvas as before); `bind()` after the canvas reads, `render(scene, camera)` draws the scene into the target then the final pass to the canvas, `copyScene(renderer)` from the first ring's `onBeforeRender`; resizes with the drawing buffer; `snapshot()` under `snapshot().pipeline` (size, bytes, passes, copies) |
+| Water light (D5) | `chunks/landscape/ocean_light.glsl` in the surface fragment program | `oceanWaterBody` (refraction, the local water type, the column, the caustics), `oceanTerrainReflection` (the heightfield march), the crest scattering in the fragment program; uniforms `uOceanScene`, `uOceanViewProjection`, `uOceanWater`, the two water types' attenuation and backscatter, `uOceanLight` |
 
-## 4. Evidence (D1–D4)
+## 4. Evidence (D1–D5)
 
 - Captures (fixed time 30 s, `tools/landscape_review/capture.mjs --ocean animated|flat --ocean-time 30`):
   `tests/artifacts/screens/landscape/ai597/d1/animated/` and `d1/flat/` (NW-09, NW-10, NW-11, NW-12), composites under
@@ -251,7 +308,7 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   `landscape_ocean_swash.test.js` (the band geometry, the loader, the inputs), `landscape_ocean_shore.test.js` (the land-side
   smoothing), `landscape_ocean_model.test.js` (the share, the parts, the lighting value).
 
-## 5. Known limitations after D4
+## 5. Known limitations after D5
 
 - The shore wave is one monochromatic train (the swell period at the sea state's Hs): the wind sea's shorter waves fade
   below their own shoaling depth without breaking; the group envelope rides with the phase speed (sets do not travel at
@@ -270,8 +327,11 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   extent is nil (the far-field sea shows the instantaneous folding only); whitecap streaks follow the folding of 4 m texels, so
   they are patches rather than individual crest breaks.
 - The train stops at the landscape extent: the surround's coast keeps the D1 depth fade only.
-- The sky reflection is the prefiltered calibrated sky only (no terrain reflection, D5); the water colour and refraction
-  of the seabed are the terrain's AI577 column (D5 refines them).
+- The terrain reflection is the heightfield screen-space march of §2e: terrain outside the extent or the frame, the sheet, the foam
+  and the surround do not reflect, and the frame's front-most surface stands in for what it hides; caustics and the crest scattering
+  are approximations (no sun-disc blur, no path through the crest); the water types are three blends, not a turbidity field.
+- The frame pipeline's bytes scale with the display (41.5 MB at 1080p, 166 MB at UHD) outside the residency ledger; the flat
+  reference composes in linear light since D5.
 - The far-field sea over the surround damps near the far coast from a 62.5 m depth raster: the far shoreline is coarse.
 - The bathymetry fields are rasterized per load, not per edit: an accepted terrain edit leaves the depth fade (and the D2 shore fields)
   stale until the next load, while picking, queries and the terrain itself are current (`snapshot().ocean.settled` waits only for the

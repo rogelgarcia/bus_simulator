@@ -139,16 +139,16 @@ queries.
 
 ### D5. Water colour, refraction and light
 
-- [ ] **Colour.** Colour follows depth, turbidity and bottom type: turquoise over shallow sand, darker
+- [x] **Colour.** Colour follows depth, turbidity and bottom type: turquoise over shallow sand, darker
   over rock and weed, deep blue offshore.
-- [ ] **Light through the water.** Provide:
+- [x] **Light through the water.** Provide:
   - refraction of the visible seabed;
   - caustics on the shallow seabed;
   - light scattering through thin wave crests;
   - stable sun glints without aliasing sparkle.
-- [ ] **Reflections.** Reflect sky and terrain. Use screen-space or planar reflections only where
+- [x] **Reflections.** Reflect sky and terrain. Use screen-space or planar reflections only where
   measurement justifies them, and document their limits. The underwater view stays consistent.
-- [ ] **Gate.** Composites against R08 at NW-01 and NW-02, plus a seabed-visibility comparison over sand
+- [x] **Gate.** Composites against R08 at NW-01 and NW-02, plus a seabed-visibility comparison over sand
   versus rock.
 
 ### D6. Inland water
@@ -419,6 +419,52 @@ of a wet mirror); the prompt's NW-01 and NW-03 see the swash only at the horizon
 and OS-07 and measured at NW-12 and NW-03.
 
 **Artifacts.** `tests/artifacts/screens/landscape/ai597/d4/` (README.md).
+
+### D5. Water colour, refraction and light — delivered 2026-10-14
+
+**Summary.** The viewer's frame renders into a linear half-float target and a final pass tone-maps it for the canvas
+(`LandscapeFramePipeline.js`, pure constants `LandscapeFramePipelineModel.js`, `frame_final.frag.glsl`; spec §2e): three.js compiles
+the materials' own tone mapping and output transfer out under a render target, so no material changed to write linear radiance, and
+the first ocean ring copies the opaque frame (the terrain lit under water without its column, the backdrop, the swash sheet) into a
+scene texture before the sea draws. The terrain hands its water column, interface and air light to the sea while the animated
+surface draws (`uLandscapeOcean.x`, camera above the water); the surface refracts the eye ray at the facet to the seabed level,
+reads the scene texture at that point's projection (the straight sample where the refracted point leaves the frame or lands on
+land), runs the AI577 column along the refracted path with the local water (the clear coastal water blended toward an oceanic type
+with the still-water depth, 5–20 m, and toward a stirred surf type with the breaking and the foam), scales the sun's share of the
+seabed by the caustic ratio of the refracted sun's mapping (`1 / |1 + (1 − 1/n) d ∇²h|` from the two finest cascades' slopes at the
+sun's entry point, contrast 0.5, fading with depth and with the pixel footprint), adds the crest scattering (the fragment's own
+height with the train's sharpening, toward the sun, in the local deep colour) and the terrain where the mirrored ray of the train's
+smooth normal meets the extent's height raster inside the frame (a heightfield screen-space reflection with a soft clearance
+weight), then composes transmitted share, reflected sky, glitter and foam in linear light, opaque. The final pass carries an
+FXAA-console edge filter in place of the canvas multisampling (an RGBA16F target with four samples would cost 116 MB at 1080p and
+464 MB at UHD, and the copy cannot read a multisampled framebuffer). Verification views 11–14 (the seabed through the surface, the
+water below it, the caustic ratio, the crest scattering); the capture tool accepts `--ocean-debug 0–14`.
+
+**Evidence.** Suite `tests/headless/e2e/landscape_ocean.pwtest.js` D5 test (run 3 5 passed (run 2 4 passed, 1 failed: the flat reference's drawn-last-frame flag lagged the pipeline's second pass; run 1 4 passed, 1 failed: the D1 determinism read before the terrain under the sea had stopped refining, now a converged read); `d5/suite/light-suite.json`): the pipeline
+active at the drawing buffer's size with the model's bytes and copies, the surface reading the scene with the water types and the
+light constants, the lighting handover `[1, 1, 0, 0]`, identical pixels at the fixed time over the reef, different after a 2 s step,
+identical when restored, views 11–14 drawing (the seabed sample differing from the shaded water) and returning, the pipeline kept
+through the flat switch, disposal to zero. Reflection measurement `d5/reflection_hits.json`: NW-10 0.2 % planar (8.8 % at 5°, water 55 % of the frame), NW-02 0.0 % planar (0.0 % at 5°, water 1 % of the frame), NW-12 1.7 % planar (4.4 % at 5°, water 7 % of the frame), NW-09 12.7 % planar (32.1 % at 5°, water 48 % of the frame), OS-06 0.0 % planar (0.0 % at 5°, water 12 % of the frame), OS-04 0.0 % planar (0.0 % at 5°, water 74 % of the frame), NW-01 0.0 % planar (0.0 % at 5°, water 1 % of the frame), NW-03 0.0 % planar (15.2 % at 5°, water 0 % of the frame). Seabed visibility over
+sand and rock at OS-04 (`d5/seabed_visibility_OS-04.json`, the shaded frame against view 11 per coastal zone and depth bin):
+rock 1–2 m: shaded 0.662 / seabed 0.723, ratio 0.916, correlation 0.158; rock 2–4 m: shaded 0.524 / seabed 0.677, ratio 0.774, correlation 0.204; rock 4–8 m: shaded 0.454 / seabed 0.603, ratio 0.754, correlation 0.091; sand 0–1 m: shaded 0.683 / seabed 0.767, ratio 0.891, correlation 0.115; sand 1–2 m: shaded 0.684 / seabed 0.733, ratio 0.933, correlation 0.188; sand 2–4 m: shaded 0.508 / seabed 0.684, ratio 0.743, correlation 0.498; sand 4–8 m: shaded 0.44 / seabed 0.567, ratio 0.775, correlation 0.023. Clips of 90 frames (NW-10 mean frame difference median 1.59 / max 1.74, no spikes; OS-06 mean frame difference median 0.49 / max 0.53, no spikes). Captures (`d5/animated/` NW-01, NW-02, NW-10, NW-12, NW-09; `d5/shore_poses/` OS-01,
+OS-04, OS-06; `d5/debug11..14/`; `d5/flat/` the reference through the pipeline) and composites against the user's references
+(`d5/composites/`: NW-01 against the R08 substitute with D4 as the before, NW-02 against the R08 substitute with the flat
+reference as the before (no earlier capture of that pose exists), OS-04 sand against rock with the seabed view, NW-10, OS-06; R08–R10
+still missing on disk). The look iterations (`d5/first..sixth/`, `d5/probe_terms/`) record the tuning: the broken-program
+turquoise seabed, the caustic speckle at 70 m, the deposit of the crest factor from the vertex cell, the reflection loops of the
+per-facet normal. Regressions: `landscape_surround` 1 passed (self-served v3), `landscape_lighting` 6 passed, `landscape_surface_cache` 6 passed and `landscape_acceptance` 4 passed on the v2 default server. Unit tests `landscape_ocean_model.test.js` (the water types), the landscape unit set
+623 passed (`d5/unit-run1.log`).
+
+**Measurements.** Paired GPU frame time animated vs flat, both through the pipeline (`d5/perf/measure_ocean.json`,
+ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11), 1920 × 1080, cache on, 30 warm-up + 120 sampled frames, medians): NW-12 13.1 vs 5.3 ms (D4 12.3 vs 6.6), OS-06 13.5 vs 5.1 ms (D4 11.6 vs 6.5), OS-07 15.0 vs 3.6 ms (D4 11.4 vs 5.7), NW-10 15.5 vs 5.1 ms (D4 13.6 vs 6.5), NW-11 13.5 vs 6.4 ms (D4 15.4 vs 12.7), NW-09 15.6 vs 5.1 ms (D4 13.5 vs 6.4); the flat reference itself fell against D4 (NW-12 1.3 ms, OS-07 2.0 ms, NW-11 6.2 ms: the scene no longer renders with the canvas multisampling), so the water light's own cost is the animated rise plus that saving: NW-12 2.0 ms, OS-07 5.7 ms, NW-11 4.3 ms (NW-11 is the aerial view, where the multisampling saving on the far terrain outweighs the light; OS-07 looks down on a frame full of sea, where the refraction read, the caustic taps and the reflection march run per pixel). Draw calls per frame with the final pass: NW-12 74, OS-06 45, OS-07 30, NW-10 80, NW-11 116, NW-09 72. Pipeline bytes 41.5 MB at 1920 × 1080 (166 MB at UHD), outside the ledger.
+
+**Limitations.** The terrain reflection sees only terrain inside the extent and the frame, through the frame's front-most surface,
+never the sheet, the foam or the surround; caustics and the crest scattering are approximations (no sun-disc blur, no path through
+the crest); three blended water types, not a turbidity field; the flat reference composes in linear light now, so its horizon
+reads darker than its display-space calibration; NW-01 and NW-02 see the sea only at the horizon, so the R08 composites there show
+little water (the sand-versus-rock comparison is OS-04).
+
+**Artifacts.** `tests/artifacts/screens/landscape/ai597/d5/` (README.md).
 
 ## On completion
 

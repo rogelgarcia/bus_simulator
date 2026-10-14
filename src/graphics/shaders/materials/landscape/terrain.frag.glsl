@@ -899,12 +899,17 @@ vec3 terrainRadiance(vec3 albedo, vec3 n, vec3 geometricNormal, float roughness,
         float waterDepth = max(depth, 0.0), startDepth = max(level - origin.y, 0.0);
         float pathLength = origin.y > level ? distance * waterDepth / max(origin.y - world.y, 1.0e-4) : distance;
         vec3 wet = landscapeReflectedRadiance(albedo, n, v, roughness, metalness, ao, skyVisibility, response * uLandscapeResponse.x, landscapeUnderwaterLight(world, n, v, roughness, waterDepth, albedo));
-        LandscapeWaterColumn column = landscapeWaterColumn(pathLength, waterDepth - startDepth, startDepth);
-        wet = wet * column.transmittance + column.inscatter;
-        if (origin.y > level) {
-            vec3 surface = world + v * pathLength;
-            LandscapeHaze haze = landscapeAerialPerspective(origin, surface);
-            wet = (wet / (LANDSCAPE_WATER_IOR * LANDSCAPE_WATER_IOR) + landscapeWaterGlint(surface, v) * (1.0 - uLandscapeOcean.x)) * haze.transmittance + haze.inscatter;
+        if (origin.y > level && uLandscapeOcean.x > 0.5) {
+            // AI 597 D5: with the animated sea drawn, its surface reads this seabed through its refraction and applies the water column, the
+            // interface and the air light once (the frame renders to the linear frame target); the terrain writes the seabed as lit under water
+        } else {
+            LandscapeWaterColumn column = landscapeWaterColumn(pathLength, waterDepth - startDepth, startDepth);
+            wet = wet * column.transmittance + column.inscatter;
+            if (origin.y > level) {
+                vec3 surface = world + v * pathLength;
+                LandscapeHaze haze = landscapeAerialPerspective(origin, surface);
+                wet = (wet / (LANDSCAPE_WATER_IOR * LANDSCAPE_WATER_IOR) + landscapeWaterGlint(surface, v)) * haze.transmittance + haze.inscatter;
+            }
         }
         radiance += wet * submerged;
     }

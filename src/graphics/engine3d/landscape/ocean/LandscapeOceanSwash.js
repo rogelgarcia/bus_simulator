@@ -14,6 +14,7 @@ import { attachShaderMetadata } from '../../../shaders/core/ShaderLoader.js';
 import { LANDSCAPE_TERRAIN_APPEARANCE } from '../LandscapeTerrainAppearance.js';
 import { LANDSCAPE_OCEAN } from './LandscapeOceanModel.js';
 import { LANDSCAPE_OCEAN_SWASH, landscapeOceanSwashInputs } from './LandscapeOceanSwashBand.js';
+import { landscapeOceanDebugBlending } from './LandscapeOceanSurface.js';
 export { LANDSCAPE_OCEAN_SWASH, landscapeOceanSwashChunkGeometry, landscapeOceanSwashInputs, loadLandscapeOceanSwashBand } from './LandscapeOceanSwashBand.js';
 
 const PROGRAM_COMPILE_WAIT_MS = 30000;
@@ -21,7 +22,7 @@ const PROGRAM_COMPILE_WAIT_MS = 30000;
 /**
  * @param {{renderer:any,scene:any,ledger:any,uniforms:Record<string,{value:any}>,cascades:number,lightingTier:string,reflection:boolean,band:Awaited<ReturnType<typeof loadLandscapeOceanSwashBand>>,seaState:string,quality:string}} options
  */
-export function createLandscapeOceanSwash({ renderer, scene, ledger, uniforms, cascades, lightingTier, reflection, band, seaState, quality }) {
+export function createLandscapeOceanSwash({ renderer, scene, ledger, uniforms, cascades, lightingTier, reflection, band, seaState, quality, framePasses = 1 }) {
     if (!uniforms?.uOceanField || !uniforms.uOceanShoreField || !uniforms.uOceanTime) throw new Error('[LandscapeOceanSwash] The sheet needs the surface uniforms');
     if (!band.chunks.length) throw new Error('[LandscapeOceanSwash] The band holds no beach sample');
     const swash = LANDSCAPE_OCEAN.swash, coastal = LANDSCAPE_TERRAIN_APPEARANCE.coastal, key = `ocean/swash/${crypto.randomUUID()}`;
@@ -76,6 +77,8 @@ export function createLandscapeOceanSwash({ renderer, scene, ledger, uniforms, c
         /** Links the sheet program and shows the meshes. @param {any} camera @param {AbortSignal} [signal] */
         ready: (camera, signal) => link(camera, signal),
         setVisible(value) { visible = value; for (const mesh of meshes) mesh.visible = ready && value; },
+        /** The sheet draws opaque with alpha 0 in a verification view (the frame pipeline's sentinel). @param {number} mode */
+        setDebug(mode) { landscapeOceanDebugBlending(material, mode > 0); },
         /** @param {string} id the sea state whose swell drives the run-up */
         setSeaState(id) { inputs = landscapeOceanSwashInputs(id, quality); material.uniforms.uOceanSwash.value.x = inputs.sqrtHeightLength; material.uniforms.uOceanSwash.value.y = inputs.periodSeconds; },
         /** @param {string} value recompiles the sheet for a lighting tier on its next draw */
@@ -84,7 +87,7 @@ export function createLandscapeOceanSwash({ renderer, scene, ledger, uniforms, c
             return { recipe: LANDSCAPE_OCEAN_SWASH.recipe, status: 'active', chunks: band.chunks.length, candidates: band.candidates, vertices: band.vertices, triangles: band.triangles, bytes: band.bytes, loadMs: band.milliseconds,
                 band: { landMeters: swash.landMeters, seaMeters: swash.seaMeters, maxHeightMeters: swash.maxHeightMeters, minHeightMeters: swash.minHeightMeters }, liftMeters: swash.liftMeters,
                 runup: { ...inputs, dryingSeconds: swash.dryingSeconds, cyclesRemembered: swash.cyclesRemembered, staticReachMeters: coastal.tidalMeters + coastal.capillaryMeters, maxSlopeDegrees: swash.maxSlopeDegrees },
-                drawCalls: ready && visible ? meshes.length : 0, programCompile: { ...programCompile }, ready, visible, lightingTier: tier, drawnLastFrame: renderInfo !== null && drawnFrame === renderInfo.frame };
+                drawCalls: ready && visible ? meshes.length : 0, programCompile: { ...programCompile }, ready, visible, lightingTier: tier, drawnLastFrame: renderInfo !== null && renderInfo.frame - drawnFrame < framePasses };
         },
         dispose() {
             if (disposed) return;

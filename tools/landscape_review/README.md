@@ -179,7 +179,7 @@ python tools/landscape_review/periodicity.py --image <capture.png> --region left
 It detrends every row of the region's luminance, averages the normalized autocorrelation over the rows and reports the
 strongest correlation beyond the minimum lag; above the threshold the sea counts as repeating (exit code 1).
 
-`--ocean-debug <0-10>` replaces the shading by one of the ocean surface's verification views after the settle (see
+`--ocean-debug <0-14>` replaces the shading by one of the ocean surface's verification views after the settle (see
 `ocean_surface.frag.glsl`; 7 the per-cascade depth fades, 8 the AI 597 D2 shore wave: red its depth weight, green its
 crest sharpening, blue its bore strength; 9 the D3 foam: red its density, green its coverage, blue the shoreline supply the sand
 keeps for the swash; 10 the D4 swash sheet: red the wetness, green the water film, blue its front foam, over the surface's view 9) and
@@ -188,7 +188,8 @@ records it in the receipt's `viewer.oceanDebug`.
 The AI 597 D2 shore poses live in `poses/ocean-shore-v1.json` (`OS-01` surf-zone oblique, `OS-02` crest lines from
 above, `OS-03` the bluff sector shore, `OS-04` the reef shadow, `OS-05` the open-sea handover) with the AI 597 D4 swash poses
 (`OS-06` the swash from the berm, `OS-07` the wet line from above, looking away from the sun's mirror point); capture them with
-`--poses tools/landscape_review/poses/ocean-shore-v1.json`. Debug view 10 is the swash sheet's (wetness, film, front foam).
+`--poses tools/landscape_review/poses/ocean-shore-v1.json`. Debug view 10 is the swash sheet's (wetness, film, front foam); the
+AI 597 D5 views are 11 the seabed read through the surface, 12 the water below it, 13 the caustic ratio and 14 the crest scattering.
 
 `shore_statistics.mjs` tabulates the shore wave of a saved landscape offline, per sea state, from its level-2 chunks and
 its geology sidecar with the same pure modules the viewer runs (`LandscapeOceanShore.js`, `LandscapeOceanCoast.js`):

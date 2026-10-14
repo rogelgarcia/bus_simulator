@@ -68,6 +68,18 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     // under rippleShare of the finest cascade's slopes; sandAlbedo is the representative albedo of the calibrated wet ratio; estimateBytes the
     // resources estimate
     swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 1.5, sheetFoamShare: .3, depositShare: .5, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
+    // AI 597 D5 light through the water (ocean_light.glsl): the local water blends the AI577 clear coastal water (LANDSCAPE_WATER_OPTICS) toward
+    // the oceanic water with the still-water depth (pure-water absorption of blue and green, molecular backscatter: the deep blue offshore)
+    // and toward the stirred surf water with the breaking and the foam (sand in suspension: more backscatter and absorption, the milky
+    // turquoise of the surf); absorption and backscatter in m^-1, attenuation = their sum (landscapeOceanWaterType)
+    water: Object.freeze({
+        oceanic: Object.freeze({ absorption: Object.freeze([.32, .055, .025]), backscatter: Object.freeze([.0015, .002, .003]), depthMeters: Object.freeze([5, 20]) }),
+        surf: Object.freeze({ absorption: Object.freeze([.35, .09, .09]), backscatter: Object.freeze([.012, .014, .016]), weight: .45 })
+    }),
+    // caustics: the contrast of the refracted sun's focusing on the seabed, fading between the two depths; crest scattering: the deep colour the
+    // crests transmit toward an eye looking at the sun through them, times the crest factor
+    // terrainReflection: the sea's low reflections march the extent's height raster and read the frame where they meet the terrain
+    light: Object.freeze({ caustics: Object.freeze({ contrast: .5, fadeMeters: Object.freeze([6, 15]) }), crest: Object.freeze({ strength: 3.5 }), terrainReflection: true }),
     // the share of the shared ledger the view holds for its lifetime once the budget is at least the shipped profile (one standing reservation,
     // so the streams, which expand into free room within a frame, can never deny a rebuilt ocean): the spectral atlases, the per-cascade displacement and slope textures with
     // their mips, the bathymetry fields of the extent (its shore channels and travel time since D2) and the surround and the clipmap geometry
@@ -222,6 +234,16 @@ export function landscapeOceanShoreInputs(seaState) {
  * @param {{time:number,lastTime:number|null,remainder?:number}} state
  * @returns {Readonly<{reset:boolean,steps:number,startTime:number,remainder:number}>} steps run at startTime + k x stepSeconds for k = 1..steps
  */
+/**
+ * The attenuation and backscatter of one of the D5 water types (the JavaScript mirror of ocean_light.glsl's types).
+ * @param {'oceanic'|'surf'} type @returns {{attenuation:number[], backscatter:number[]}}
+ */
+export function landscapeOceanWaterType(type) {
+    const water = LANDSCAPE_OCEAN.water[type];
+    if (!water) throw new Error(`[LandscapeOcean] Unknown water type ${String(type)}`);
+    return { attenuation: water.absorption.map((value, channel) => value + water.backscatter[channel]), backscatter: [...water.backscatter] };
+}
+
 export function landscapeOceanFoamSchedule({ time, lastTime, remainder = 0 }) {
     const { stepSeconds, preRollSeconds, maxStepsPerFrame } = LANDSCAPE_OCEAN.foam;
     finite(time, 'the foam time');

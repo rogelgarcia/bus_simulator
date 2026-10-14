@@ -19,6 +19,7 @@ import { createLandscapeOceanFoam } from './LandscapeOceanFoam.js';
 import { createLandscapeOceanSwash, loadLandscapeOceanSwashBand } from './LandscapeOceanSwash.js';
 import { computeLandscapeOceanShore, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand } from './LandscapeOceanShore.js';
 import { createLandscapeOceanSimulation } from './LandscapeOceanSimulation.js';
+import { LANDSCAPE_FRAME_PIPELINE } from '../LandscapeFramePipelineModel.js';
 import { createLandscapeOceanSurface } from './LandscapeOceanSurface.js';
 
 // accepted texels between yields of the shore march (the frame loop keeps running while it computes)
@@ -110,7 +111,7 @@ async function marchShore({ depth, texels, texelMeters, rock, zone, seaState, qu
  *   surround?:any,signal?:AbortSignal}} options landscape is the frozen result of loadLandscapeOverview; ledger the view's ocean share (createLandscapeOceanLedger);
  *   surround an active surround handle (optional, may follow through setSurround)
  */
-export async function createLandscapeOcean({ landscape, ledger, renderer, scene, camera, lighting, lightingTier, seaState = LANDSCAPE_OCEAN.defaultSeaState, quality = LANDSCAPE_OCEAN.defaultQuality, clock: clockOptions = {}, surround = null, signal }) {
+export async function createLandscapeOcean({ landscape, ledger, renderer, scene, camera, lighting, lightingTier, seaState = LANDSCAPE_OCEAN.defaultSeaState, quality = LANDSCAPE_OCEAN.defaultQuality, clock: clockOptions = {}, surround = null, pipeline = null, signal }) {
     if (!landscape?.manifest || !landscape.manifestUrl) throw new Error('[LandscapeOcean] The ocean needs the loaded landscape');
     if (!ledger || typeof ledger.reserve !== 'function' || !renderer || !scene || !camera || !lighting) throw new Error('[LandscapeOcean] The ocean needs the view ocean ledger, renderer, scene, camera and lighting');
     const started = performance.now(), seaStateId = landscapeOceanSeaState(seaState), qualityId = landscapeOceanQuality(quality);
@@ -141,7 +142,7 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         const simulation = createLandscapeOceanSimulation({ renderer, ledger, quality: qualityId, seaState: seaStateId });
         resources.push(simulation);
         simulation.initialize();
-        const surface = createLandscapeOceanSurface({ renderer, scene, ledger, quality: qualityId, lighting, lightingTier, simulation, fields: { extent, surround: null }, seaLevel: manifest.coordinates.seaLevel });
+        const surface = createLandscapeOceanSurface({ renderer, scene, ledger, quality: qualityId, lighting, lightingTier, simulation, fields: { extent, surround: null }, seaLevel: manifest.coordinates.seaLevel, pipeline });
         resources.push(surface);
         surface.setShore({ omega: shore.inputs.omega, groupPeriodSeconds: shore.inputs.groupPeriodSeconds });
         surface.update(camera, clock.time);
@@ -157,7 +158,7 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         else if (!band.chunks.length) swashState = { status: 'off', reason: 'no beach sample inside the swash band' };
         else {
             try {
-                swash = createLandscapeOceanSwash({ renderer, scene, ledger, uniforms: surface.uniforms, cascades: surface.cascades.length, lightingTier, reflection: surface.snapshot().reflection !== 'sky-harmonics', band, seaState: seaStateId, quality: qualityId });
+                swash = createLandscapeOceanSwash({ renderer, scene, ledger, uniforms: surface.uniforms, cascades: surface.cascades.length, lightingTier, reflection: surface.snapshot().reflection !== 'sky-harmonics', framePasses: pipeline ? LANDSCAPE_FRAME_PIPELINE.passes : 1, band, seaState: seaStateId, quality: qualityId });
                 resources.push(swash);
             } catch (error) { if (error.name === 'AbortError') throw error; swashState = { status: 'failed', reason: error.message }; }
         }
@@ -243,7 +244,7 @@ function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam
         /** Verification read-back of the foam state with its statistics per coastal zone (LandscapeOceanFoam.readback). */
         foamReadback() { return foam.readback(); },
         /** @param {number} mode verification view of the surface program (0 shaded) */
-        setDebug(mode) { surface.setDebug(mode); },
+        setDebug(mode) { surface.setDebug(mode); swash?.setDebug(mode); },
         /**
          * Switches the sea state: the spectrum re-initializes on the next frame, the shore wave is marched again in the background and swapped in
          * once done (the snapshot settles then). Resolves with the shore record once applied (or superseded).

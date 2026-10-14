@@ -491,9 +491,10 @@ export class LandscapeSurfaceCache {
             terrainAppearance: variant.terrainAppearance, surfaceCacheGeneration: true });
         const material = this.#generationMaterial(payload, root.mesh.material.uniforms);
         this.#acquireProgram(material, root);
+        const previousTarget = this.renderer.getRenderTarget();
         this.renderer.setRenderTarget(this.framebuffers[0][0][0].target);
         this.renderer.compile(this.unpackScene, this.unpackCamera);
-        this.renderer.setRenderTarget(null);
+        this.renderer.setRenderTarget(previousTarget);
         this.renderer.getContext().flush();
         this.programCompiles = (this.programCompiles ?? 0) + 1;
         return { key, payload, uniforms: root.mesh.material.uniforms, material, ready: false, milliseconds: null, timedOut: false, started: performance.now(), compiles: this.programCompiles };
@@ -513,9 +514,10 @@ export class LandscapeSurfaceCache {
         probe.frustumCulled = false;
         const scene = new THREE.Scene();
         scene.add(probe);
+        const previousTarget = this.renderer.getRenderTarget();
         this.renderer.setRenderTarget(this.scratch.target);
         this.renderer.compile(scene, this.generationCamera);
-        this.renderer.setRenderTarget(null);
+        this.renderer.setRenderTarget(previousTarget);
         scene.remove(probe);
     }
 
@@ -967,7 +969,7 @@ export class LandscapeSurfaceCache {
     // level 0 copied, level 1 and the response atlas box-filtered (by atlas layer). Only blocks reaching beyond the landscape are cleared to the
     // neutral texel first; elsewhere the tiles cover every texel of a block
     #render(blocks, selected, quota) {
-        const renderer = this.renderer, gl = renderer.getContext(), state = renderer.state, autoClear = renderer.autoClear, renderStarted = performance.now();
+        const renderer = this.renderer, gl = renderer.getContext(), state = renderer.state, autoClear = renderer.autoClear, renderStarted = performance.now(), previousTarget = renderer.getRenderTarget();
         // two sequential timer queries: the generation draws and the unpack (their sum drives the batch size)
         const query = this.timer && !this.gpu.pending.length ? gl.createQuery() : null, unpackQuery = query ? gl.createQuery() : null;
         renderer.autoClear = false;
@@ -991,14 +993,14 @@ export class LandscapeSurfaceCache {
             } finally {
                 for (const mesh of this.drawPool) { mesh.geometry = this.poolGeometry; mesh.visible = false; }
             }
-            renderer.setRenderTarget(null);
+            renderer.setRenderTarget(previousTarget);
             if (query) { gl.endQuery(this.timer.TIME_ELAPSED_EXT); gl.beginQuery(this.timer.TIME_ELAPSED_EXT, unpackQuery); }
             const unpackStarted = performance.now();
             this.stats.renderCpu = { generationMs: unpackStarted - renderStarted, draws: renderer.info.render.calls };
             this.#unpack(gl, pages);
             this.stats.renderCpu.unpackMs = performance.now() - unpackStarted;
         } finally {
-            renderer.setRenderTarget(null);
+            renderer.setRenderTarget(previousTarget);
             renderer.autoClear = autoClear;
             if (query) {
                 gl.endQuery(this.timer.TIME_ELAPSED_EXT);

@@ -23,6 +23,7 @@ The source is the retained **Coastal City Terrain v2** landscape: 4,000 × 4,000
 | Browser viewport / device scale | 1920 × 1080 / DPR 1 |
 | Drawing buffer | Recorded separately; normally 1920 × 1056 because the shared 24-pixel PerfBar remains visible |
 | Standard (shipped, read from `LANDSCAPE_STREAMING_BUDGETS`) controlled CPU / estimated GPU budgets | 688 / 432 MiB since AI 597 D4 (688 / 416 in D2 and D3, 672 / 416 in D1: the AI 596 D5 640 / 352 plus the animated ocean's share, LANDSCAPE_OCEAN.budgets, 32 / 64 MiB in D1 and 48 / 64 MiB since D2, held in the ledger for the view's lifetime; 512 / 256 MiB in AI577 D4 – AI 596 D4, 384 / 192 MiB in D2–D3); 640 / 544 MiB with the surface cache on at 1920 × 1080, the default since AI577 D7 (`landscapeSurfaceCacheBudgets` of the display: 684 at 2560×1440, 1046 at 3840×2160; 448 / 588 / 950 before D5). The D5 raise is the render-only surround's 128 / 96 MiB share ("Far-field surround" below) |
+| Frame pipeline (AI 597 D5, `LandscapeFramePipelineModel`, outside the ledger) | 41.5 MB at 1920 × 1080 (RGBA16F frame target 16.6, depth renderbuffer 8.3, RGBA16F scene copy 16.6), 71 MB at 2560 × 1440, 166 MB at 3840 × 2160; display-sized like the canvas, which keeps its own multisampled buffers; reported by `snapshot().pipeline` |
 | Historical controlled CPU / estimated GPU budgets | 128 / 64 MiB (the AI 576 D7 standard) |
 | Constrained controlled CPU / estimated GPU budgets | 48 / 24 MiB |
 | Appearance | Shaded, calibrated world-scaled PBR; separate sea-level water enabled |

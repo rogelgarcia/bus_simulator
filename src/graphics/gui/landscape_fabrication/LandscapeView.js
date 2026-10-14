@@ -33,6 +33,8 @@ import { createLandscapeSurround } from '../../engine3d/landscape/LandscapeSurro
 import { LANDSCAPE_SURROUND, landscapeSurroundOption, landscapeSurroundUrl, landscapeSurroundWaterBounds } from '../../engine3d/landscape/LandscapeSurroundModel.js';
 import { landscapeCameraNear, landscapeCameraNearChanged } from '../../engine3d/landscape/LandscapeCameraDepth.js';
 import { createLandscapeOcean } from '../../engine3d/landscape/ocean/LandscapeOcean.js';
+import { createLandscapeFramePipeline } from '../../engine3d/landscape/LandscapeFramePipeline.js';
+import { LANDSCAPE_FRAME_PIPELINE } from '../../engine3d/landscape/LandscapeFramePipelineModel.js';
 import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES, createLandscapeOceanLedger, landscapeOceanQuality, landscapeOceanSeaState, landscapeOceanSurface } from '../../engine3d/landscape/ocean/LandscapeOceanModel.js';
 
 const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
@@ -169,6 +171,12 @@ export class LandscapeView {
         this.coverageSlots = chooseLandscapeCoverageSlots(this.renderer);
         this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        // AI 597 D5: every frame renders into the linear frame target (the animated sea reads the opaque frame through its refraction and
+        // composes the water column in linear light) and a final pass tone-maps it for the canvas; without float render targets the frame
+        // draws to the canvas as before and the ocean reports unavailable
+        this.pipeline = null;
+        this.pipelineFailure = null;
+        try { this.pipeline = createLandscapeFramePipeline({ renderer: this.renderer }); this.pipeline.bind(); } catch (error) { this.pipelineFailure = error.message; }
         this.scene = new THREE.Scene();
         // the game's resolved tone mapping, exposure, calibrated sun and HDR sky (the terrain and water shaders read its shared uniforms)
         this.lighting = new LandscapeLighting({ renderer: this.renderer, scene: this.scene, tier: landscapeLightingTier(lightingTier), binding: cityBinding });
@@ -275,7 +283,7 @@ export class LandscapeView {
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
             if (this.surfaceCache === 'on') this.attachSurfaceCache(loaded, stream, appearance);
-            this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, lighting: this.lighting, visible: this.waterVisible });
+            this.water = createLandscapeWaterReference({ manifest: loaded.manifest, budget: this.budget, scene: this.scene, lighting: this.lighting, visible: this.waterVisible, framePasses: this.pipeline ? LANDSCAPE_FRAME_PIPELINE.passes : 1 });
             await appearance.initialize();
             if (this.disposed || sequence !== this.loadSequence) return;
             this.loadingAppearance = null;
@@ -364,7 +372,7 @@ export class LandscapeView {
         if (!this.ensureOceanShare()) { this.panel.notice(`Ocean not drawn: ${this.oceanFailure}`); return null; }
         const clock = previousClock ? { mode: previousClock.mode, time: previousClock.time } : this.oceanOptions.time === null ? {} : { mode: 'fixed', time: this.oceanOptions.time };
         const ocean = await createLandscapeOcean({ landscape: loaded, ledger: this.oceanShare, renderer: this.renderer, scene: this.scene, camera: this.camera, lighting: this.lighting, lightingTier: this.lighting.tier,
-            seaState: this.oceanOptions.seaState, quality: this.oceanOptions.quality, clock, surround: null, signal: this.loadAbort.signal });
+            seaState: this.oceanOptions.seaState, quality: this.oceanOptions.quality, clock, surround: null, pipeline: this.pipeline, signal: this.loadAbort.signal });
         if (this.disposed || sequence !== this.loadSequence || request !== this.oceanSequence || loaded !== this.loaded) { ocean.dispose(); return null; }
         this.ocean = ocean;
         if (ocean.status === 'active') {
@@ -711,6 +719,15 @@ export class LandscapeView {
         if (!this.appearance) throw new Error('[Landscape] Load the landscape appearance before changing material sampling');
         this.appearance.setMaterialSamplingEnabled(enabled);
         return this.appearance.snapshot().materialSampling;
+    }
+
+    /** AI 597 D5: the frame through the pipeline (the linear target, then the final pass to the canvas), or straight to the canvas without it. */
+    renderFrame() {
+        if (!this.pipeline) { this.renderer.render(this.scene, this.camera); return; }
+        // the draw statistics span both passes: reset once here, not per render call (the capture and the perf bar read them after the frame)
+        this.renderer.info.autoReset = false;
+        this.renderer.info.reset();
+        this.pipeline.render(this.scene, this.camera);
     }
 
     resize() {
@@ -1207,6 +1224,7 @@ export class LandscapeView {
             cache: this.cacheAvailability ? { status: this.cacheAvailability.status, reason: this.cacheAvailability.reason ?? null } : null,
             loadTiming: this.loadTiming ? { ...this.loadTiming } : null, terrainProgram: (this.loadingStream ?? this.stream)?.programCompile ?? null,
             terrainProgramVariant: (this.loadingStream ?? this.stream)?.programVariantState() ?? null,
+            pipeline: this.pipeline ? this.pipeline.snapshot() : { active: false, reason: this.pipelineFailure },
             helpers: { grid: this.grid.visible, axes: this.axes.visible },
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
@@ -1321,9 +1339,11 @@ export class LandscapeView {
             if (this.marker.visible) this.marker.scale.setScalar(Math.max(.3, this.camera.position.distanceTo(this.marker.position) * .004));
             this.gpuTimer.poll();
             this.gpuTimer.beginFrame();
-            this.renderer.render(this.scene, this.camera);
+            this.renderFrame();
             this.gpuTimer.endFrame();
             if (this.frameReads.length) this.completeFrameReads();
+            // the frame target stays bound between frames (programs compile and tiles upload against its variant); the canvas only for the reads above
+            this.pipeline?.bind();
             if (this.stream && this.loadTiming?.coarseReadyAtMs !== null && this.loadTiming?.firstCoveredFrameAtMs === null) this.loadTiming.firstCoveredFrameAtMs = performance.now();
             this.perfBar.onFrame({ dt: Math.min(rawDt, .1), rawDt, nowMs: now, renderer: this.renderer, frameIndex: ++this.frameIndex });
             this.performanceCapture?.record({ nowMs: now, intervalMs: rawDt * 1000, cpuFrameMs: performance.now() - frameStart,
@@ -1387,6 +1407,7 @@ export class LandscapeView {
         this.water = null;
         this.ocean?.dispose(); this.ocean = null;
         this.releaseOceanShare();
+        this.pipeline?.dispose(); this.pipeline = null;
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;
         this.planning?.dispose(); this.planning = null;
         this.surround?.dispose(); this.surround = null;

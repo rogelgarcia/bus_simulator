@@ -32,16 +32,19 @@ function cascadeDefine(cascades) {
 
 /**
  * @param {'spectrum-init'|'spectrum-time'|'fft'|'fft-final'|'derivatives'|'foam'|'surface'|'swash'} kind
- * @param {{cascades:number,lightingTier?:string,reflection?:boolean}} options the surface compiles the lighting tier and samples the prefiltered sky
+ * @param {{cascades:number,lightingTier?:string,reflection?:boolean,scene?:boolean}} options the surface compiles the lighting tier and samples the prefiltered sky
  *   reflection when reflection is true (the sky harmonics otherwise); the passes (the D3 foam state among them) take only the cascade count
  * @returns {any} the shader payload (vertexSource, fragmentSource, defines, variantKey)
  */
-export function createLandscapeOceanShaderPayload(kind, { cascades, lightingTier = LANDSCAPE_LIGHTING.defaultTier, reflection = false }) {
+export function createLandscapeOceanShaderPayload(kind, { cascades, lightingTier = LANDSCAPE_LIGHTING.defaultTier, reflection = false, scene = false }) {
     const sourceSet = SOURCES[kind];
     if (!sourceSet) throw new Error(`[LandscapeOcean] Unknown ocean shader ${kind}`);
     if (typeof reflection !== 'boolean') throw new Error('[LandscapeOcean] The ocean reflection option must be boolean');
+    if (typeof scene !== 'boolean') throw new Error('[LandscapeOcean] The ocean scene option must be boolean');
     const defines = { LANDSCAPE_OCEAN_CASCADES: cascadeDefine(cascades) };
     if (kind === 'surface' || kind === 'swash') Object.assign(defines, landscapeLightingDefines(lightingTier), reflection ? { LANDSCAPE_WATER_REFLECTION: true } : {});
     if (kind === 'swash') Object.assign(defines, SWASH_DEFINES);
+    // D5: the surface reads the opaque frame (the frame pipeline's scene copy) through its refraction
+    if (kind === 'surface' && scene) defines.LANDSCAPE_OCEAN_SCENE = true;
     return createShaderPayload({ shaderId: `landscape/ocean-${kind}`, sourceSet, defines });
 }

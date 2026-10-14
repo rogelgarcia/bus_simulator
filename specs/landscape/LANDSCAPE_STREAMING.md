@@ -95,6 +95,7 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | --- | ---: |
 | Controlled terrain CPU buffers and reservations | 640 MiB since AI 596 D5 (512 MiB in AI577 D4 – AI 596 D4, 128 MiB before AI577 D2, 384 MiB in D2–D3) |
 | Estimated terrain GPU buffers and reservations | 432 MiB since AI 597 D4 (416 MiB in AI 597 D1 – D3, 352 MiB in AI 596 D5 – AI 597 D1, 256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Frame pipeline (AI 597 D5, outside the ledger) | 20 bytes per drawing-buffer pixel (41.5 MB at 1920 × 1080, 166 MB at 3840 × 2160): the linear RGBA16F frame target, its depth renderbuffer and the RGBA16F scene copy the sea reads; display-sized like the canvas, not a stream or a reservation |
 | Render-only surround share inside the totals (AI 596 D5, `LANDSCAPE_SURROUND.budgets`, kind `landscape-surround`) | 128 MiB CPU / 96 MiB GPU: the raise above is exactly this share, so the authoritative streams keep their 512/256 MiB |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
 | Concurrent independent appearance worker | 1 |

@@ -114,7 +114,8 @@ OceanSwash oceanSwashAt(vec2 xz, float height) {
     }
     // the saturated core below the tidal and capillary reach (the static band of AI577 D5)
     float reach = uOceanSwashBand.x;
-    wetness = max(wetness, 1.0 - smoothstep(LANDSCAPE_TERRAIN_WETTING.x * reach, reach, height));
+    // the saturated core fades over the last forty metres of the band so its inland edge never shows as a step on a low, wide beach
+    wetness = max(wetness, (1.0 - smoothstep(LANDSCAPE_TERRAIN_WETTING.x * reach, reach, height)) * (1.0 - smoothstep(60.0, 100.0, max(-field.y, 0.0))));
     s.wetness = clamp(wetness, 0.0, 1.0);
     s.deposit = deposit * uOceanSwashFoam.x * (1.0 - s.film);
     s.wrack = smoothstep(runupMax - 0.3, runupMax - 0.08, height) * (1.0 - smoothstep(runupMax + 0.02, runupMax + 0.18, height)) * (1.0 - s.film);

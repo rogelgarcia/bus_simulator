@@ -8,7 +8,8 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
-import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanResources, landscapeOceanShoreInputs } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
+import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, landscapeOceanResources, landscapeOceanShoreInputs, landscapeOceanWaterType } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
+import { LANDSCAPE_FRAME_PIPELINE, landscapeFramePipelineBytes } from '../../../src/graphics/engine3d/landscape/LandscapeFramePipelineModel.js';
 
 const root = path.resolve('.');
 const MiB = 1024 * 1024;
@@ -77,6 +78,23 @@ async function readFrame(page, key, region) {
         for (let i = 0; i < frame.data.length; i += 4) if (frame.data[i] | frame.data[i + 1] | frame.data[i + 2]) nonzero++;
         return { frameIndex: frame.frameIndex, nonzero, pixels: frame.width * frame.height };
     }, { key, region });
+}
+
+/**
+ * Reads a region once the frame has converged: two reads three frames apart within 0.02 of mean luminance (the streams and the surface cache
+ * keep refining terrain pixels for a while after the viewer reports settled; since D5 the sea shows the seabed through its refraction, so the
+ * sea region inherits that refinement until it stops). Gives up after twelve rounds and returns the last read.
+ */
+async function convergedFrame(page, key, region) {
+    let last = await readFrame(page, `${key}-converging`, region);
+    for (let round = 0; round < 12; round++) {
+        await frames(page, 3);
+        const next = await readFrame(page, key, region);
+        const difference = await compareFrames(page, `${key}-converging`, key);
+        if (difference.mean < .02) return { ...next, rounds: round + 1, difference };
+        last = await readFrame(page, `${key}-converging`, region);
+    }
+    return { ...last, rounds: 12, converged: false };
 }
 
 /** Mean and maximum absolute luminance difference between two stored frames. */
@@ -176,7 +194,7 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), POSES['NW-09']);
         await settled(page);
         await page.waitForTimeout(2000);
-        const first = await readFrame(page, 'first', seaRegion);
+        const first = await convergedFrame(page, 'first', seaRegion);
         expect(first.nonzero).toBeGreaterThan(first.pixels * .9);
         await frames(page, 3);
         await readFrame(page, 'second', seaRegion);
@@ -189,9 +207,9 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         await frames(page, 2);
         await readFrame(page, 'restored', seaRegion);
         const restored = await compareFrames(page, 'first', 'restored');
-        evidence.determinism = { same, stepped, restored, region: seaRegion };
-        // the terrain under the sea keeps refining between captures seconds apart (0.05-0.3 bytes under a loaded GPU), so the sea's own
-        // determinism is judged against the step: a half-second step moves the sea by more than ten times that drift, the restored time undoes it
+        evidence.determinism = { same, stepped, restored, region: seaRegion, convergence: { rounds: first.rounds, difference: first.difference ?? null } };
+        // the first read waits for the terrain under the sea to stop refining (convergedFrame); the sea's own determinism is then judged against
+        // the step: a half-second step moves the sea by more than ten times any residual drift, the restored time undoes it
         expect(same.mean, `same time: ${JSON.stringify(same)}`).toBeLessThan(1);
         expect(restored.mean, `restored: ${JSON.stringify(restored)}`).toBeLessThan(1);
         expect(stepped.mean, `stepped: ${JSON.stringify(stepped)} against ${JSON.stringify({ same, restored })}`).toBeGreaterThan(10 * Math.max(same.mean, restored.mean, .1));
@@ -620,6 +638,109 @@ test('Landscape AI 597 D4: the swash sheet covers the native beach band, moves i
         expect(errors).toEqual([]);
     } finally {
         await writeFile(path.join(swashArtifacts, 'swash-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
+        await context.close();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(() => resolve(undefined)));
+    }
+});
+
+// AI 597 D5: the frame pipeline carries the scene, the surface reads the seabed through its refraction and composes the water column with the
+// local water, caustics and crest scattering in linear light; the verification views draw and return; the fixed time still repeats. Evidence
+// under d5/suite.
+test('Landscape AI 597 D5: the frame pipeline, the refracted seabed, the water types and the light terms draw deterministically and the terrain hands its column to the sea', async ({ browser }, testInfo) => {
+    test.setTimeout(15 * 60 * 1000);
+    const baseURL = String(testInfo.project.use.baseURL);
+    expect(new URL(baseURL).port, 'Landscape verification uses port 8002').toBe('8002');
+    test.skip(!(await exists(path.join(landscapeDirectory, 'manifest.json'))), `${landscapeDirectory} is not installed`);
+    const lightArtifacts = path.resolve(root, 'tests/artifacts/screens/landscape/ai597/d5/suite');
+    await mkdir(lightArtifacts, { recursive: true });
+    const landscape = JSON.parse(await readFile(path.join(landscapeDirectory, 'manifest.json'), 'utf8'));
+    const server = await serve(landscapeDirectory, baseURL);
+    const context = await browser.newContext({ baseURL, viewport, deviceScaleFactor: 1 });
+    const page = await context.newPage(), errors = [], evidence = {};
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /shader|webgl|program|THREE/i.test(message.text())) errors.push(message.text()); });
+    // OS-04 over the reef: the reef platforms and the sand channels through the water in one frame; NW-10 the low oblique over the surf
+    const poses = { 'OS-04': pose(760, 160, 2600, 90, -35), 'NW-10': pose(900, 25, 1200, 45, -10) };
+    const regionOf = (canvas, r) => ({ left: Math.floor(canvas.width * r.left), top: Math.floor(canvas.height * r.top), width: Math.floor(canvas.width * r.width), height: Math.floor(canvas.height * r.height) });
+    try {
+        await page.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeOceanTime=${FIXED_TIME}`));
+        const boot = await settled(page);
+        const ocean = boot.ocean;
+        expect(ocean.status, `ocean: ${ocean.reason}`).toBe('active');
+        // the frame pipeline: the linear target at the drawing buffer's size, the scene copy, the final pass; the surface reads the copy
+        expect(boot.pipeline).toMatchObject({ active: true, format: 'RGBA16F', passes: LANDSCAPE_FRAME_PIPELINE.passes, antialias: 'fxaa-console' });
+        expect(boot.pipeline.width).toBe(boot.canvas.width);
+        expect(boot.pipeline.height).toBe(boot.canvas.height);
+        expect(boot.pipeline.bytes).toEqual(landscapeFramePipelineBytes(boot.canvas.width, boot.canvas.height));
+        expect(boot.pipeline.copies).toBeGreaterThan(0);
+        expect(ocean.surface.scene).toBe(true);
+        expect(ocean.surface.drawnLastFrame).toBe(true);
+        expect(ocean.surface.water).toMatchObject({ oceanicDepthMeters: [...LANDSCAPE_OCEAN.water.oceanic.depthMeters], surfWeight: LANDSCAPE_OCEAN.water.surf.weight, oceanic: landscapeOceanWaterType('oceanic'), surf: landscapeOceanWaterType('surf') });
+        expect(ocean.surface.light).toEqual({ caustics: { contrast: LANDSCAPE_OCEAN.light.caustics.contrast, fadeMeters: [...LANDSCAPE_OCEAN.light.caustics.fadeMeters] }, crest: { strength: LANDSCAPE_OCEAN.light.crest.strength } });
+        // the terrain hands its column to the sea while the animated surface draws (the lighting switch), the swash too
+        expect(boot.lighting.uniforms.ocean).toEqual([1, 1, 0, 0]);
+        evidence.boot = { pipeline: boot.pipeline, surface: { scene: ocean.surface.scene, water: ocean.surface.water, light: ocean.surface.light }, lighting: boot.lighting.uniforms.ocean };
+        // over the reef: determinism at the fixed time with the pipeline, the verification views 11-14 draw and return to the shading
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), poses['OS-04']);
+        await settled(page);
+        await page.waitForTimeout(1500);
+        const canvasSize = (await snapshot(page)).canvas, reefRegion = regionOf(canvasSize, { left: .05, top: .35, width: .9, height: .6 });
+        await readFrame(page, 'reef-first', reefRegion);
+        await frames(page, 3);
+        await readFrame(page, 'reef-second', reefRegion);
+        const same = await compareFrames(page, 'reef-first', 'reef-second');
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ clock: { step: 2 } }));
+        await frames(page, 2);
+        await readFrame(page, 'reef-stepped', reefRegion);
+        const stepped = await compareFrames(page, 'reef-first', 'reef-stepped');
+        await page.evaluate(time => window.__landscapeTestHooks.setOcean({ clock: { time } }), FIXED_TIME);
+        await frames(page, 2);
+        await readFrame(page, 'reef-restored', reefRegion);
+        const restored = await compareFrames(page, 'reef-first', 'reef-restored');
+        evidence.determinism = { same, stepped, restored, region: reefRegion };
+        expect(same.mean, `same time: ${JSON.stringify(same)}`).toBeLessThan(1);
+        expect(restored.mean, `restored: ${JSON.stringify(restored)}`).toBeLessThan(1);
+        expect(stepped.mean, `stepped: ${JSON.stringify(stepped)}`).toBeGreaterThan(5 * Math.max(same.mean, restored.mean, .1));
+        await page.screenshot({ path: path.join(lightArtifacts, 'OS-04-light-30s.png') });
+        const views = {};
+        for (const view of [11, 12, 13, 14]) {
+            await page.evaluate(mode => window.__landscapeTestHooks.setOceanDebug(mode), view);
+            await frames(page, 2);
+            const frame = await readFrame(page, `reef-debug-${view}`, reefRegion);
+            views[view] = { nonzero: frame.nonzero };
+            expect(frame.nonzero, `debug view ${view} draws`).toBeGreaterThan(0);
+            await page.screenshot({ path: path.join(lightArtifacts, `OS-04-light-debug${view}.png`) });
+        }
+        evidence.views = views;
+        // the seabed read through the surface (view 11) differs from the shaded water (the column, the reflection and the light are composed over it)
+        const seabedVsShaded = await compareFrames(page, 'reef-first', 'reef-debug-11');
+        expect(seabedVsShaded.mean).toBeGreaterThan(2);
+        await page.evaluate(() => window.__landscapeTestHooks.setOceanDebug(0));
+        await frames(page, 2);
+        await readFrame(page, 'reef-shaded', reefRegion);
+        expect((await compareFrames(page, 'reef-first', 'reef-shaded')).mean).toBeLessThan(1);
+        evidence.seabedVsShaded = seabedVsShaded;
+        // the low oblique over the surf renders through the pipeline as well; the flat inspection surface keeps the pipeline (a view-level pass)
+        await page.evaluate(camera => window.__landscapeTestHooks.setCamera(camera), poses['NW-10']);
+        await settled(page);
+        await page.screenshot({ path: path.join(lightArtifacts, 'NW-10-light-30s.png') });
+        const flat = await page.evaluate(() => window.__landscapeTestHooks.setOcean({ surface: 'flat' }));
+        expect(flat.status).toBe('off');
+        await frames(page, 2);
+        const flatState = await snapshot(page);
+        expect(flatState.pipeline.active).toBe(true);
+        expect(flatState.lighting.uniforms.ocean).toEqual([0, 0, 0, 0]);
+        await page.evaluate(() => window.__landscapeTestHooks.setOcean({ surface: 'animated' }));
+        const again = await settled(page);
+        expect(again.ocean.surface.scene).toBe(true);
+        await page.evaluate(() => window.__landscapeTestHooks.dispose());
+        const disposed = await snapshot(page);
+        expect(oceanEntries(disposed)).toEqual([]);
+        expect(disposed.pipeline.active).toBe(false);
+        expect(errors).toEqual([]);
+    } finally {
+        await writeFile(path.join(lightArtifacts, 'light-suite.json'), `${JSON.stringify({ landscape: { id: landscape.id, revision: landscape.revision }, fixedTime: FIXED_TIME, errors, ...evidence }, null, 2)}\n`);
         await context.close();
         server.closeAllConnections();
         await new Promise(resolve => server.close(() => resolve(undefined)));

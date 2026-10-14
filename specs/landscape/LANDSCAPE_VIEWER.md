@@ -218,8 +218,10 @@ switches animated and flat, the test hook `setOcean({surface, seaState, quality,
 the shore wave's inputs, statistics, breaking per coastal zone and coast classes, settled once a sea-state switch has
 marched it again; since D3 `foam`: the foam state's steps, pre-roll and resets, with the `oceanFoamReadback()` hook returning its
 per-zone statistics; since D4 `swash`: the swash sheet's band, native chunks, geometry bytes, run-up inputs, program compile and
-draws), `setOceanDebug(0..10)` selects a verification view (8 the shore wave, 9 the foam, 10 the swash sheet's wetness, film and
-front foam).
+draws), `setOceanDebug(0..14)` selects a verification view (8 the shore wave, 9 the foam, 10 the swash sheet's wetness, film and
+front foam; since D5 11 the seabed read through the surface, 12 the water below it, 13 the caustics, 14 the crest scattering). Since
+D5 every frame renders through the linear frame pipeline (`snapshot().pipeline`: size, bytes, passes, copies; the final pass
+tone-maps for the canvas with an edge filter in place of the canvas multisampling).
 The water toggle hides both surfaces and the optical water body; the ocean is never pickable and the
 water reference keeps the optical body while its plane is hidden (`snapshot().water.surfaceDrawn`).
 Planning urban/road/runway classes display natural ground, inferred from terrain

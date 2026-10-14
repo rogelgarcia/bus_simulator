@@ -28,7 +28,8 @@ function waterGeometry(bounds) {
  *   (setBounds changes it later); the plane never enters picking or queries whatever its extent
  * @returns {any}
  */
-export function createLandscapeWaterReference({ manifest, budget, scene, lighting, visible = true, bounds = manifest.bounds }) {
+// framePasses: render calls per frame (AI 597 D5: two through the frame pipeline), the tolerance of the drawn-last-frame flag
+export function createLandscapeWaterReference({ manifest, budget, scene, lighting, visible = true, bounds = manifest.bounds, framePasses = 1 }) {
     if (!lighting?.uniforms) throw new Error('[Landscape] The water reference needs the view lighting');
     const key = `water/${crypto.randomUUID()}`;
     const bytes = 140;
@@ -83,7 +84,7 @@ export function createLandscapeWaterReference({ manifest, budget, scene, lightin
                 material: 'landscape-water-surface-v1', lightingTier: tier, reflection: environment ? environment.model : 'sky-harmonics', transparency: 'fresnel-premultiplied',
                 ior: LANDSCAPE_WATER_OPTICS.ior, surface: landscapeWaterSurfaceRoughness(), opticalBody: visible,
                 drawPasses: material.transparent && material.side === THREE.DoubleSide && !material.forceSinglePass ? 2 : 1, trianglesPerPass: geometry.index.count / 3,
-                drawnLastFrame: renderInfo !== null && drawnFrame === renderInfo.frame };
+                drawnLastFrame: renderInfo !== null && renderInfo.frame - drawnFrame < framePasses };
         },
         dispose() { mesh.removeFromParent(); geometry.dispose(); material.dispose(); budget.release(key); lighting.setWaterVisible(false); }
     });
