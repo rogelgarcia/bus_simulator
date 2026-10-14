@@ -14,6 +14,7 @@ from foliage_study import isolate
 from render_cache import reuse
 from canopy_review import add_poses,mask_mode,coverage
 from presentation_poses import add_presentation_poses
+from spatial_poses import add_spatial_poses,isolate_blade
 
 
 def load(file,names):
@@ -50,12 +51,15 @@ def render(o):
         previous=[r for r in previous if r['sourceSha256']==identities[r['state']]]
         for record in previous:
             if hashlib.sha256((Path(o['output'])/record['file']).read_bytes()).hexdigest()!=record['sha256']:raise RuntimeError('Previous render changed: '+record['file'])
-        records=[r for r in previous if o['views']!='all' and r['view']!=o['views'] and not (o['views']=='canopy' and (r['view'].startswith(('road_','coverage_')) or r['view'] in ['shoot','shoot_edge'])) and not (o['views']=='poses' and r['view'].startswith('pose_'))]
+        records=[r for r in previous if o['views']!='all' and r['view']!=o['views'] and not (o['views']=='canopy' and (r['view'].startswith(('road_','coverage_')) or r['view'] in ['shoot','shoot_edge'])) and not (o['views']=='poses' and r['view'].startswith('pose_')) and not (o['views']=='blade' and r['view']=='blade_edge')]
         posture=meta['revision']=='enhanced-plane-posture-v10'
-        dome=meta['revision'] in ['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13']
-        spaced=meta['revision'] in ['enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13']
-        for state in (['enhanced','previous','current'] if prior else ['enhanced','current']) if variant=='mature_01' else ['enhanced','previous'] if posture and prior else ['enhanced']:
+        crown=meta['revision']=='enhanced-plane-balanced-crown-v16'
+        spatial=meta['revision'] in ['enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
+        dome=meta['revision'] in ['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
+        spaced=meta['revision'] in ['enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
+        for state in (['enhanced','previous','current'] if prior else ['enhanced','current']) if variant=='mature_01' else ['enhanced','previous'] if (posture or spatial) and prior else ['enhanced']:
             if o['views']=='poses' and state!='enhanced':continue
+            if o['views']=='blade' and (not spatial or variant!='mature_01' or state=='current'):continue
             bpy.ops.wm.read_factory_settings(use_empty=True)
             if state=='current':
                 source=next(r for r in o['sources'] if r['id']==model);objects=load(source['file'],[model+' / natural leaves',model+' / original wood',model+' / curved branchlets']);identity=source['sha256']
@@ -82,10 +86,10 @@ def render(o):
                 height=meta['dimensions']['heightTarget'];focus=height*.34
                 poses['trunk']={'target':[0,0,focus],'offset':[2.0,-17,1.6-focus],'span':height*.59,'projection':'PERSP'}
             if prior and state=='enhanced' and variant=='mature_01' and o['views']=='all':poses.update(wood_full=poses['full'].copy(),wood_fork=poses['trunk'].copy())
-            hierarchy=meta['revision'] in ['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13']
+            hierarchy=meta['revision'] in ['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
             if meta['dimensions'].get('growth',{}).get('architecture')=='distributed-plane' and (state=='enhanced' or state=='previous' and hierarchy) and variant=='mature_01' and o['views']=='all':
                 poses.update(bare=poses['full'].copy(),roots={'target':[0,0,.85],'offset':[3,-9,1.4],'span':8.0 if hierarchy else meta['dimensions']['growth']['rootRadius']*10})
-                if meta['revision'] in ['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13']:
+                if meta['revision'] in ['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']:
                     poses['wood_branchlets']=branchlet_pose(json.loads((directory/'architecture.json').read_text())['paths'])
             study=[]
             if (meta['revision']=='enhanced-plane-foliage-v9' and state=='enhanced' or spaced and state in ['enhanced','previous']) and variant=='mature_01':
@@ -94,12 +98,17 @@ def render(o):
                     proof=Path(o['previous']);proof=proof if proof.is_absolute() else Path(o['root'])/proof
                     detail=next(r['camera'] for r in json.loads(proof.read_text())['renders'] if r['id']==model and r['state']=='enhanced' and r['view']=='shoot')
                 if dome:detail=meta['sprayStudyPose']
+                if crown and state=='previous':detail=json.loads((Path(prior['file']).parent/'model.json').read_text())['sprayStudyPose']
                 poses['shoot']=detail;poses['leaves']=detail.copy()
                 for obj in study:obj.hide_render=True
-                if dome:add_poses(poses,meta)
+                if dome:add_poses(poses,{**meta,'sprayStudyPose':detail})
             if variant!='mature_01':poses={'full':poses['full'],**({'bare':poses['full'].copy()} if posture else {})}
-            if meta['revision']=='enhanced-plane-organic-foliage-v13' and state=='enhanced':add_presentation_poses(poses,meta,variant=='mature_01')
-            if o['views']!='all':poses={k:v for k,v in poses.items() if k==o['views'] or o['views']=='canopy' and (k.startswith(('road_','coverage_')) or k in ['shoot','shoot_edge']) or o['views']=='poses' and k.startswith('pose_')}
+            if meta['revision'] in ['enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'] and state=='enhanced':add_presentation_poses(poses,meta,variant=='mature_01')
+            blade=None
+            if spatial and state!='current':
+                add_spatial_poses(poses,state,variant=='mature_01')
+                if variant=='mature_01':blade=isolate_blade(objects[0])
+            if o['views']!='all':poses={k:v for k,v in poses.items() if k==o['views'] or o['views']=='blade' and k=='blade_edge' or o['views']=='canopy' and (k.startswith(('road_','coverage_')) or k in ['shoot','shoot_edge']) or o['views']=='poses' and k.startswith('pose_')}
             if not poses:
                 if o['views'] in ['shoot','canopy']:continue
                 raise RuntimeError('Selected view is unavailable for '+model)
@@ -109,6 +118,7 @@ def render(o):
             softbox=bpy.data.objects.new('Leaf detail softbox',light);scene.collection.objects.link(softbox)
             for view,pose in poses.items():
                 revision='presentation-leaf-softbox-v1' if view.startswith('pose_branch_') else 'shared-forks-street-view-v4' if view=='trunk' else 'shared-forks-street-view-v3' if view in ['wood_fork','wood_full'] and prior else 'outer-leaf-softbox-v2' if view=='leaves' else 'studio-v1'
+                if view in ['blade','blade_edge']:revision='isolated-blade-neutral-tint-v2'
                 cached=next((r for r in previous if r['state']==state and r['view']==view and r['width']==o['width'] and r['samples']==o['samples'] and r['camera']==pose and r.get('lightingRevision','studio-v1')==revision),None)
                 if cached is None:cached=reuse(prior,model,state,view,pose,revision,identity,o)
                 if cached:
@@ -116,12 +126,13 @@ def render(o):
                 camera.location=Vector(pose['target'])+Vector(pose['offset']);camera.rotation_euler=(Vector(pose['target'])-camera.location).to_track_quat('-Z','Y').to_euler();camera.data.type=pose.get('projection','ORTHO')
                 if camera.data.type=='PERSP':camera.data.sensor_width=36;camera.data.lens=36*float(np.linalg.norm(pose['offset']))/pose['span']
                 else:camera.data.ortho_scale=pose['span']
-                isolated=view in ['shoot','shoot_edge','pose_branch_out'];mask=view.startswith('coverage_')
+                blade_detail=view in ['blade','blade_edge'];isolated=view in ['shoot','shoot_edge','pose_branch_out'] or blade_detail;mask=view.startswith('coverage_')
                 objects[0].hide_render=view.startswith('wood_') or view=='bare' or isolated;scene.view_layers[0].material_override=clay if view.startswith('wood_') else None
                 for obj in objects[1:]:obj.hide_render=isolated or mask
-                for obj in study:obj.hide_render=not isolated
+                for obj in study:obj.hide_render=not isolated or blade_detail
+                if blade:blade.hide_render=not blade_detail
                 mask_mode(scene,mask,o['samples'])
-                leaf_detail=view in ['leaves','shoot','shoot_edge','pose_branch_in','pose_branch_out']
+                leaf_detail=view in ['leaves','shoot','shoot_edge','pose_branch_in','pose_branch_out'] or blade_detail
                 softbox.hide_render=not leaf_detail and view not in ['trunk','wood_fork'];light.energy=220 if leaf_detail else 500 if view=='trunk' else 1800;light.size=3 if leaf_detail else 4.5
                 softbox.location=camera.location+Vector((1,0,1));softbox.rotation_euler=(Vector(pose['target'])-softbox.location).to_track_quat('-Z','Y').to_euler()
                 image=directory/f'{state}_{view}.png'

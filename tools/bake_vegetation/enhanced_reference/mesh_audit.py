@@ -23,6 +23,31 @@ def audit_objects(model,meta):
             from releaf import wood_digest
             matches=wood_digest(obj.data)==meta['preservedTrunkMeshDigest']
             roles[-1]['preservedSourceMeshMatches']=matches;roles[-1]['passed']&=matches
+    crown=meta['revision']=='enhanced-plane-balanced-crown-v16'
+    opened=meta['revision']=='enhanced-plane-open-leaves-v15' or crown
+    if meta['revision']=='enhanced-plane-spatial-growth-v14' or opened:
+        from spatial_poses import leaf_prototypes
+        from leaf_curvature import blade_shape_metrics
+        for i,obj in enumerate(leaf_prototypes(bpy.data.objects[model+' / enhanced leaves'])):
+            proof=blade_shape_metrics(array(obj.data.vertices,'co',3)[:1281])
+            matches=all(abs(proof[k]-meta['bladeShape'][i][k])<1e-6 for k in proof)
+            passed=matches and proof['bestPlaneRmsRatio']>(.008 if opened else .02)
+            if opened:
+                from open_leaf_reference import retained_blade_digest,placement_digest,upper_face_metrics
+                surface=upper_face_metrics(obj.data)
+                passed&=retained_blade_digest(obj.data)==meta['preservedBladeDigests'][i]
+                passed&=proof['depthRatio']<meta['previousBladeShape'][i]['depthRatio']*.40 and surface['minimumUpperNormalZ']>0 and surface['areaWeightedUpperNormalZ']>.94
+                proof.update(surface)
+            if crown:
+                from releaf import wood_digest
+                passed&=wood_digest(obj.data)==meta['preservedLeafTemplateDigests'][i]
+            roles.append({'role':'leaf '+str(i),**proof,'passed':bool(passed)})
+        if opened and not crown:roles.append({'role':'leaf placements','passed':placement_digest(bpy.data.objects[model+' / enhanced leaves'].data)==meta['preservedLeafPlacementDigest']})
+        if crown:
+            from crown_spread import crown_metrics
+            foliage=bpy.data.objects[model+' / enhanced leaves'];actual=crown_metrics(array(foliage.data.attributes['blade_center'].data,'vector',3),meta['crownSpread']['policy']['azimuthSamples'])
+            matches=abs(actual['minimumWidth']-meta['crownSpread']['foliage']['after']['minimumWidth'])<1e-5
+            roles.append({'role':'crown breadth','minimumWidth':actual['minimumWidth'],'passed':matches and actual['minimumWidth']>=meta['crownSpread']['targetMinimumWidth']*.94 and len(foliage.data.vertices)==meta['leafCount']})
     return {'id':model,'sha256':meta['sha256'],'roles':roles,'passed':all(r['passed'] for r in roles)}
 
 

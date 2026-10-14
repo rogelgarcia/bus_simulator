@@ -225,3 +225,62 @@ pair. The resulting 43-frame collection is checked for complete per-model pose
 sets and consistent oblique pairs. `gallery` inserts these poses on the same
 index page and produces `london_plane_poses.html` and its comparison sheet.
 Models remain unchanged; older galleries without extra poses remain valid.
+
+## London plane spatial scaffolds and blade shape (v14)
+
+`phase=shape` consumes the authenticated v13 collection as `candidate` and its
+summary as `previous`, writing to a separate ignored output. Six scaffold
+families per specimen receive unequal upward and azimuth changes. Cubic growth
+curves inherit the parent's tangent; each descendant and its attached foliage
+move together in three dimensions. Bole/root paths, branch radii, leaf counts,
+sizes, tints and source PBR are retained. The existing continuous wood union and
+bark transfer rebuild the meshes. This is an artistic growth correction, not a
+physiological simulation.
+
+The eight real leaf prototypes gain a bowed midrib, cupped shoulders, torsion
+and lobe/tip curl. Their attachment junction and texture UVs are retained.
+Saved-mesh validation checks each blade's deviation from its best-fitting plane.
+No leaf cards or new textures are introduced. Runtime LODs remain unchanged.
+
+`render` with `views=all` adds matched old/new side and rear views, bare clay
+structure, and individual blade oblique/edge views at identical scale and
+lighting. The complete three-form gallery requires 63 authenticated frames,
+including the existing canopy, source-study and branchlet comparisons.
+`london_plane_spatial.html` focuses on the new corrections. Use the ordinary
+`gallery` phase to audit saved models and assemble the complete review.
+`views=blade` renders only the matched isolated blade pair and its edge views.
+
+## London plane open leaf surfaces (v15)
+
+Use `phase=foliage`, `foliage-layout=open`, the authenticated v14 collection as
+`candidate` and its summary as `previous`, with a separate ignored output.
+This changes only the eight prototype blade heights: a shallow midrib arch,
+lowered margins and modest twist replace the deep upward cup. The dark upper
+material remains on local +Z, with surface normals verified after saving.
+No light tracking is introduced. Wood, branchlets, graph, leaf placements,
+counts, petioles, silhouette coordinates, material assignments and UVs stay exact.
+Saved-model audits require over 60% less blade depth, retained intrinsic curvature,
+open upper-face normals and matching preservation digests. The existing 63-frame
+review remains required; `views=blade` supplies a quick matched preview first.
+
+## London plane reusable crown spread (v16)
+
+`phase=crown` consumes authenticated v15 candidates and their `previous` summary.
+`profiles.json` owns the species-wide `crownSpreadRule`. The pure growth rule
+selects scaffold families by topology, measures the 1–99% crown breadth over 36
+horizontal directions, and first redistributes their azimuths into open sectors.
+Remaining width deficits drive modest structural centerline growth. Attached fine
+shoots and their leaves undergo rigid transport, preserving their local shapes.
+No camera, specimen name or hand-picked branch index enters the growth rule.
+
+The target minimum breadth is the larger of 88% of the starting maximum breadth
+and 72% of crown height. Scaffold elevation remains at least 30 degrees, directional
+growth is bounded, and unsupported candidates fail validation. Unequal apical
+extensions remain unconstrained by a spherical envelope. Existing bole/root paths,
+pipe radii, leaf templates, sizes and counts are preserved. Validation additionally
+checks actual leaf-center breadth, all branch attachment positions and prototype
+hashes. Tests exercise six independent seeds and a crown requiring no correction.
+
+The existing 63-frame review remains required. Road-height cameras match v15;
+the isolated branchlet cameras follow the corresponding branchlet's local frame.
+Use `views=canopy` for an early width review before completing `views=all`.

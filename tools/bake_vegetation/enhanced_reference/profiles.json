@@ -6,7 +6,12 @@
     "height": 18.0,
     "radius": 7.5,
     "trunkRadius": 0.57,
-    "growth": {"architecture": "distributed-plane", "firstFork": 0.18, "basalRadius": 0.57, "pipeExponent": 2.05},
+    "growth": {
+      "architecture": "distributed-plane",
+      "firstFork": 0.18,
+      "basalRadius": 0.57,
+      "pipeExponent": 2.05
+    },
     "clear": 0.18,
     "habit": "spreading",
     "leaders": 5,
@@ -21,7 +26,19 @@
     "barkStrength": 0.65,
     "leafGreen": 0.95,
     "seed": 70121,
-    "barkTileMetres": 2.5
+    "barkTileMetres": 2.5,
+    "crownSpreadRule": {
+      "azimuthSamples": 36,
+      "minimumWidthAspect": 0.88,
+      "minimumWidthHeight": 0.72,
+      "maximumAzimuthChangeDegrees": 66,
+      "azimuthStepDegrees": 6,
+      "maxIterations": 80,
+      "minimumElevationDegrees": 30,
+      "maximumDirectionalGrowth": 1.55,
+      "growthStep": 0.025,
+      "minimumLaunchElevationDegrees": 40
+    }
   },
   "silver_linden": {
     "name": "Silver linden",
@@ -30,7 +47,11 @@
     "height": 18.5,
     "radius": 6.2,
     "trunkRadius": 0.46,
-    "growth": {"firstFork": 0.23, "basalRadius": 0.64, "pipeExponent": 2.35},
+    "growth": {
+      "firstFork": 0.23,
+      "basalRadius": 0.64,
+      "pipeExponent": 2.35
+    },
     "clear": 0.15,
     "habit": "pyramidal",
     "leaders": 1,
@@ -54,13 +75,26 @@
     "height": 19.0,
     "radius": 8.2,
     "trunkRadius": 0.68,
-    "growth": {"firstFork": 0.235, "basalRadius": 0.82, "pipeExponent": 2.55},
+    "growth": {
+      "firstFork": 0.235,
+      "basalRadius": 0.82,
+      "pipeExponent": 2.55
+    },
     "clear": 0.2,
     "habit": "rounded",
-    "leaderHeight": [0.76, 0.86],
-    "leaderReach": [0.28, 0.58],
-    "upperArmHeight": [0.62, 0.81],
-    "crownSpread": 0.20,
+    "leaderHeight": [
+      0.76,
+      0.86
+    ],
+    "leaderReach": [
+      0.28,
+      0.58
+    ],
+    "upperArmHeight": [
+      0.62,
+      0.81
+    ],
+    "crownSpread": 0.2,
     "leaders": 4,
     "arms": 15,
     "lobes": 10,
@@ -84,10 +118,19 @@
     "trunkRadius": 0.6,
     "clear": 0.26,
     "habit": "vase",
-    "leaderHeight": [0.76, 0.86],
-    "leaderReach": [0.55, 0.82],
-    "upperArmHeight": [0.58, 0.79],
-    "crownSpread": 0.20,
+    "leaderHeight": [
+      0.76,
+      0.86
+    ],
+    "leaderReach": [
+      0.55,
+      0.82
+    ],
+    "upperArmHeight": [
+      0.58,
+      0.79
+    ],
+    "crownSpread": 0.2,
     "leaders": 5,
     "arms": 15,
     "lobes": 12,

@@ -1,5 +1,21 @@
 # Offline bake framework
 
+The enhanced-reference staging-only `crown` phase accepts authenticated v15
+London planes and applies the species-wide crown-width rules to produce separate
+v16 candidates. It reuses shared Blender configuration, input hashing, saved-mesh
+audits and the complete comparison-gallery gates. No model publication is added.
+
+The enhanced-reference `foliage` phase also supports `foliage-layout=open`:
+authenticated v14 London plane inputs become separate v15 candidates with only
+prototype blade heights changed. It retains shared configuration, source hashing,
+preservation audits, the complete comparison review and material-only publication.
+
+The enhanced-reference `shape` phase consumes authenticated v13 London planes
+and writes v14 spatial scaffold / curved blade candidates to isolated staging.
+It reuses shared Blender configuration, input stability and saved-mesh gates.
+Only the existing materials phase can publish. The review adds matched side/rear
+views, foliage-hidden structure and individual leaf geometry comparisons.
+
 `vegetation/reference-video` is an artifact-only presentation leaf for the three
 enhanced London plane references. It authenticates source model hashes and leaf
 counts, retains instanced geometry/PBR, and renders full orbits followed by trunk

@@ -25,7 +25,10 @@ elif o['phase']=='inspect':
     inspect(o)
 
 elif o['phase']=='foliage':
-    if o['foliage-layout']=='organic':
+    if o['foliage-layout']=='open':
+        from open_leaf_reference import open_leaf_reference
+        open_leaf_reference(o)
+    elif o['foliage-layout']=='organic':
         from organic_reference import organic_reference
         organic_reference(o)
     elif o['foliage-layout']=='dome':
@@ -37,3 +40,9 @@ elif o['phase']=='foliage':
 elif o['phase']=='posture':
     from posture import posture
     posture(o)
+elif o['phase']=='shape':
+    from spatial_reference import spatial_reference
+    spatial_reference(o)
+elif o['phase']=='crown':
+    from crown_reference import crown_reference
+    crown_reference(o)

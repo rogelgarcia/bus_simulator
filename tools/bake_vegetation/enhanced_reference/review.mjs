@@ -9,9 +9,9 @@ import {pathToFileURL} from 'node:url';
 import {chromium} from 'playwright';
 
 import {hashFile,writeJson} from '../../baking/Files.mjs';
+
 import {validatePresentation,presentationContent} from './presentation_review.mjs';
-
-
+import {validateSpatial,spatialContent} from './spatial_review.mjs';
 
 const json=async f=>JSON.parse(await readFile(f,'utf8'));
 
@@ -51,9 +51,9 @@ export async function validate(o){
 
         const source=o.sources.find(r=>r.id===id);if(row.baselineSha256!==source.sha256)throw Error('Wrong baseline '+id);
 
-        const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
+        const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
 
-        if(proof.renders.length!==expected+validatePresentation(proof.renders,id.endsWith('mature_01')))throw Error('Incomplete views '+id);
+        if(proof.renders.length!==expected+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
 
         for(const image of proof.renders){
 
@@ -93,8 +93,6 @@ export async function validate(o){
 
 }
 
-
-
 function sourceImage(species,state,view,p){
 
     const file=`references/${species}_${state}.${state==='illustrative'?'jpg':'png'}`;
@@ -111,8 +109,6 @@ function sourceImage(species,state,view,p){
 
 }
 
-
-
 function panel(species,state,view,p){
 
     const image=['current','previous','enhanced'].includes(state)?`<a href="${species}/mature_01/${state}_${view}.png"><img class="image" src="${species}/mature_01/${state}_${view}.png"></a>`:sourceImage(species,state,view,p);
@@ -123,15 +119,11 @@ function panel(species,state,view,p){
 
 }
 
-
-
 function group(species,view,p){return `<h2 class="viewlabel">${views[view]}</h2><div class="grid">${Object.keys(names).map(state=>panel(species,state,view,p)).join('')}</div>`;}
 
 function variantPanel(row){return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${row.crownLobes} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
 
 const page=(title,content,sheet=false)=>`<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title><link rel="stylesheet" href="review.css"></head><body><main class="${sheet?'sheet':''}">${content}</main></body></html>`;
-
-
 
 export async function gallery(o){
 
@@ -152,10 +144,15 @@ export async function gallery(o){
     }
 
     if(o['foliage-study']){
+
         const source=o['foliage-study'],hash=await hashFile(source),target=path.join(o.output,'references/london_plane_foliage.png');
+
         await copyFile(source,target);if((await hashFile(target)).sha256!==hash.sha256)throw Error('Foliage study copy differs');
+
         sources.push({species:'london_plane',style:'foliage',source,...hash});
+
     }
+
     for(const [s,p] of Object.entries(profiles))for(const style of ['illustrative','photographic']){
 
         const source=style==='illustrative'?path.join(o.source,p.study):path.join(o.source,'mature_trees_showroom/mature_trees_showroom',s,s+'_01.png');
@@ -185,32 +182,58 @@ export async function gallery(o){
         for(const v of Object.keys(views)){const file=`${s}_${v}.html`;await writeFile(path.join(o.output,file),page(title,`<h1>${title} — ${views[v]}</h1>${group(s,v,p)}`,true));sheets.push({file,png:`${s}_${v}.png`});}
 
         const presentation=presentationContent(summary,s,title);
+        const spatial=spatialContent(summary,s);
+        if(spatial){
+            const file=s+'_spatial.html';await writeFile(path.join(o.output,file),page(title+' — spatial growth',spatial,true));sheets.push({file,png:s+'_spatial.png'});
+            index+=`<section id="${s}_spatial"><p><a href="${file}">Branch angles and leaf curvature comparisons</a></p>${spatial}</section>`;
+        }
         if(presentation){
-            const file=s+'_poses.html';await writeFile(path.join(o.output,file),page(title+' � viewing angles',presentation,true));sheets.push({file,png:s+'_poses.png'});
+
+            const file=s+'_poses.html';await writeFile(path.join(o.output,file),page(title+' — viewing angles',presentation,true));sheets.push({file,png:s+'_poses.png'});
+
             index+=`<section id="${s}_poses"><p><a href="${file}">Viewing angles and branchlet close-ups</a></p>${presentation}</section>`;
-        }
-        let changes='';
-        if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(r.revision))){
-            const organic=summary.models.some(r=>r.id===s+'/mature_01'&&r.revision==='enhanced-plane-organic-foliage-v13');
-            const pairs=[0,1,2].map(i=>{
-                const records=['previous','enhanced'].map(state=>summary.renders.find(r=>r.id===s+'/mature_01'&&r.state===state&&r.view==='coverage_'+i));
-                if(records.some(r=>!r?.foliageCoverage))throw Error('Missing foliage coverage masks');
-                if(JSON.stringify(records[0].camera)!==JSON.stringify(records[1].camera))throw Error('Coverage cameras differ');
-                const gain=(records[1].foliageCoverage.fraction/records[0].foliageCoverage.fraction-1)*100;
-                return `<h2>Road-height view ${i+1} — ${gain>=0?'+':''}${gain.toFixed(1)}% visible foliage area</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?(organic?'Previous flat sprays':'Previous spatial foliage'):(organic?'Organic aligned sprays':'Outward-facing shallow sprays')}</h3>Camera height 2.7 m · same leaf count</div><img class="image" src="${s}/mature_01/${state}_road_${i}.png"></div>`).join('')}</div>`;
-            }).join('');
-            const edge=`<h2>Same branchlet viewed from its edge</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?'Previous':organic?'Curved leaves with gentle tilt':'Shallow planar fan'}</h3>Actual leaf and twig geometry</div><img class="image" src="${s}/mature_01/${state}_shoot_edge.png"></div>`).join('')}</div>`;
-            const file=s+'_canopy.html';await writeFile(path.join(o.output,file),page(title+' — crown coverage',`<h1>${title} — flatter sprays, fuller canopy</h1><p>Three matched viewpoints around the tree. Coverage measures foliage-only alpha area; bark, shadows and ground are excluded. No leaves were added.</p>${pairs}${edge}`,true));sheets.push({file,png:s+'_canopy.png'});
-            index+=`<section><h2>${organic?'Organic sprays and canopy coverage':'Flatter sprays and canopy coverage'}</h2><p><a href="${file}">Road-height comparisons and branchlet edge view</a></p>${pairs}</section>`;
-        }
-        const adjusted=summary.models.filter(r=>r.id.startsWith(s+'/')&&r.revision==='enhanced-plane-posture-v10');
-        if(adjusted.length){
-            const comparison=adjusted.map(row=>['full','bare'].map(view=>`<h2>${row.id.split('/')[1]} - ${view==='full'?'foliage':'wood structure'}</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?'Before - low horizontal limb':'After - ascending scaffold'}</h3>${state==='enhanced'?'All leaf instances retained and moved with their supporting limb':'Preserved v9 reference'}</div><img class="image" src="${row.id}/${state}_${view}.png"></div>`).join('')}</div>`).join('')).join('');
-            const file=s+'_posture.html';await writeFile(path.join(o.output,file),page(title+' - limb posture',`<h1>${title} - lower limb correction</h1>${comparison}`,true));sheets.push({file,png:s+'_posture.png'});
-            index+=`<section><h2>Lower limb correction</h2><p>The first specimen is preserved byte-for-byte. Only the marked branch system in the other two specimens is raised.</p><p><a href="${s}_posture.png">Before/after leafy and bare-wood comparison</a></p>${comparison}</section>`;
+
         }
 
-        if(o.previous){const revision=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(r.revision))?'foliage':'fork';changes=['full','trunk'].map(v=>`<h2>${views[v]} — ${revision} revision</h2><div class="grid">${panel(s,'previous',v,p)}${panel(s,'enhanced',v,p)}${panel(s,'enhanced',v==='full'?'wood_full':'wood_fork',p)}${panel(s,'photographic',v,p)}</div>`).join('');const file=s+'_growth_changes.html';await writeFile(path.join(o.output,file),page(title+' — reference revision',`<h1>${title}</h1>${changes}`,true));sheets.push({file,png:s+'_growth_changes.png'});changes=`<p><a href="${s}_growth_changes.png">Before/after ${revision} comparison</a></p>${changes}`;}
+        let changes='';
+
+        if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))){
+
+            const pairs=[0,1,2].map(i=>{
+
+                const records=['previous','enhanced'].map(state=>summary.renders.find(r=>r.id===s+'/mature_01'&&r.state===state&&r.view==='coverage_'+i));
+
+                if(records.some(r=>!r?.foliageCoverage))throw Error('Missing foliage coverage masks');
+
+                if(JSON.stringify(records[0].camera)!==JSON.stringify(records[1].camera))throw Error('Coverage cameras differ');
+
+                const gain=(records[1].foliageCoverage.fraction/records[0].foliageCoverage.fraction-1)*100;
+
+                return `<h2>Road-height view ${i+1} — ${gain>=0?'+':''}${gain.toFixed(1)}% visible foliage area</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?'Previous reference':'Revised reference'}</h3>Camera height 2.7 m · same leaf count</div><img class="image" src="${s}/mature_01/${state}_road_${i}.png"></div>`).join('')}</div>`;
+
+            }).join('');
+
+            const edge=`<h2>Same branchlet viewed from its edge</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?'Previous reference':'Revised leaf geometry'}</h3>Actual leaf and twig geometry</div><img class="image" src="${s}/mature_01/${state}_shoot_edge.png"></div>`).join('')}</div>`;
+
+            const file=s+'_canopy.html';await writeFile(path.join(o.output,file),page(title+' — crown coverage',`<h1>${title} — canopy coverage and blade depth</h1><p>Three matched viewpoints around the tree. Coverage measures foliage-only alpha area; bark, shadows and ground are excluded. No leaves were added.</p>${pairs}${edge}`,true));sheets.push({file,png:s+'_canopy.png'});
+
+            index+=`<section><h2>Leaf geometry and canopy coverage</h2><p><a href="${file}">Road-height comparisons and branchlet edge view</a></p>${pairs}</section>`;
+
+        }
+
+        const adjusted=summary.models.filter(r=>r.id.startsWith(s+'/')&&r.revision==='enhanced-plane-posture-v10');
+
+        if(adjusted.length){
+
+            const comparison=adjusted.map(row=>['full','bare'].map(view=>`<h2>${row.id.split('/')[1]} - ${view==='full'?'foliage':'wood structure'}</h2><div class="pair">${['previous','enhanced'].map(state=>`<div class="cell"><div class="caption"><h3>${state==='previous'?'Before - low horizontal limb':'After - ascending scaffold'}</h3>${state==='enhanced'?'All leaf instances retained and moved with their supporting limb':'Preserved v9 reference'}</div><img class="image" src="${row.id}/${state}_${view}.png"></div>`).join('')}</div>`).join('')).join('');
+
+            const file=s+'_posture.html';await writeFile(path.join(o.output,file),page(title+' - limb posture',`<h1>${title} - lower limb correction</h1>${comparison}`,true));sheets.push({file,png:s+'_posture.png'});
+
+            index+=`<section><h2>Lower limb correction</h2><p>The first specimen is preserved byte-for-byte. Only the marked branch system in the other two specimens is raised.</p><p><a href="${s}_posture.png">Before/after leafy and bare-wood comparison</a></p>${comparison}</section>`;
+
+        }
+
+        if(o.previous){const revision=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))?'foliage':'fork';changes=['full','trunk'].map(v=>`<h2>${views[v]} — ${revision} revision</h2><div class="grid">${panel(s,'previous',v,p)}${panel(s,'enhanced',v,p)}${panel(s,'enhanced',v==='full'?'wood_full':'wood_fork',p)}${panel(s,'photographic',v,p)}</div>`).join('');const file=s+'_growth_changes.html';await writeFile(path.join(o.output,file),page(title+' — reference revision',`<h1>${title}</h1>${changes}`,true));sheets.push({file,png:s+'_growth_changes.png'});changes=`<p><a href="${s}_growth_changes.png">Before/after ${revision} comparison</a></p>${changes}`;}
 
         index+=`<section id="${s}"><h2>${title}</h2><p>${features[s]}</p>${changes}<p><a href="${s}_comparison.png">Complete comparison sheet</a> · ${Object.keys(views).map(v=>`<a href="${s}_${v}.png">${views[v]}</a>`).join(' · ')}</p>${all}<h3>Three enhanced mature forms</h3><div class="variants">`;
 
@@ -233,15 +256,22 @@ export async function gallery(o){
         }
 
         if(s==='london_plane'&&o['foliage-study']){
-            const spaced=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(r.revision));
-            const before=spaced?`<div class="cell"><div class="caption"><h3>Previous foliage</h3>Same saved branch and camera</div><img class="image" src="${s}/mature_01/previous_shoot.png"></div>`:'';
+
+            const spaced=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision));
+
+            const before=spaced?`<div class="cell"><div class="caption"><h3>Previous foliage</h3>Same saved branchlet; paired local framing</div><img class="image" src="${s}/mature_01/previous_shoot.png"></div>`:'';
+
             const study=`<h1>${title} - foliage study</h1><div class="${spaced?'variants':'pair'}">${before}<div class="cell"><div class="caption"><h3>New reference foliage</h3>Actual leaf and wood geometry isolated from the saved tree</div><img class="image" src="${s}/mature_01/enhanced_shoot.png"></div><div class="cell"><div class="caption"><h3>Supplied branchlet study</h3>Original user-supplied image</div><img class="image" src="references/london_plane_foliage.png"></div></div>`;
+
             const file=s+'_foliage_study.html';await writeFile(path.join(o.output,file),page(title+' - foliage study',study,true));sheets.push({file,png:s+'_foliage_study.png'});
+
             index+=`<section>${study}<p><a href="${s}_foliage_study.png">Leafy shoot comparison</a></p></section>`;
+
         }
+
         if(s==='london_plane'&&o['wood-study']){
 
-            const hierarchy=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13'].includes(r.revision))&&o.previous;
+            const hierarchy=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))&&o.previous;
 
             const old=view=>hierarchy?`<div class="cell"><div class="caption"><h3>Previous enhanced reference</h3>${view==='bare'?'Foliage hidden':'Root crown'} · CPU Cycles</div><img class="image" src="${s}/mature_01/previous_${view}.png"></div>`:'';
 

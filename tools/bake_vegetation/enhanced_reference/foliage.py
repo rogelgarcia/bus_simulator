@@ -1,5 +1,6 @@
 # Connected crown fans carry uneven alternate or opposite leaves with local crowding rejection.
 import math
+import json
 from collections import defaultdict
 from pathlib import Path
 import bpy
@@ -10,6 +11,7 @@ from surface import pixels
 from branchlets import plane_branchlets
 from plane_foliage import form_parameters
 from leaf_outline import blade_profile
+from leaf_curvature import blade_height,blade_shape_metrics
 
 
 def legacy_branchlets(p,paths,lobes,rng):
@@ -77,7 +79,7 @@ def grow(p,paths,lobes,rng):
     return leaves,shoots,{'candidateLeavesRejected':rejected,'crowdingMethod':'Center distance and normal agreement; four roll candidates; not exact triangle intersections'}
 
 
-def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=False,flat_blades=False):
+def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=False,flat_blades=False,sculpted_blades=False):
     folder=Path(o['root'])/'assets/public/pbr'/f'tree_ai_{species}_leaf_front';mask=pixels(folder/'opacity.png')[:,:,0]
     valid=mask>.5;ys,xs=np.where(valid);base=np.array([np.median(xs[ys<ys.min()+6])/1023,ys.min()/1023]);tip=ys.max()/1023
     center=np.array([np.mean(xs)/1023,np.mean(ys)/1023]);sectors=256;rings=5;angles=np.arange(sectors)*math.tau/sectors
@@ -106,6 +108,7 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
         if detailed_petioles:
             shape=form_parameters(form,spread_petioles,flat_blades);xy=(uv-[base[0],bladebase])/(tip-bladebase);xy[:,0]*=shape['width']
             z=shape['curl']*xy[:,1]**2+shape['twist']*xy[:,0]*xy[:,1]+shape['fold']*abs(xy[:,0])
+            if sculpted_blades:z=blade_height(xy,form)
             xy[:,1]+=shape['petiole']
         points=np.column_stack([xy,z]);n=len(points);vertices=np.vstack([points+[0,0,.0007],points-[0,0,.0007]])
         polygons=faces+[tuple(v+n for v in reversed(face)) for face in faces]
@@ -134,6 +137,10 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
         m=np.zeros(len(polygons),np.int32);m[len(faces):len(faces)*2]=1
         if not detailed_petioles:m[-1]=1
         mesh.polygons.foreach_set('material_index',m);mesh.polygons.foreach_set('use_smooth',np.ones(len(polygons),bool));mesh.update()
+        if sculpted_blades:
+            proof=blade_shape_metrics(points)
+            if proof['bestPlaneRmsRatio']<.02:raise RuntimeError('Sculpted blade is too close to a flat plane')
+            mesh['bladeShape']=json.dumps(proof)
         result.append(mesh)
     return result
 

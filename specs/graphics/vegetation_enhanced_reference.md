@@ -1,5 +1,29 @@
 # Enhanced reference collection
 
+London plane corrections must become reusable species rules, expressed through
+growth parameters and measurable acceptance criteria rather than specimen IDs,
+branch indices or review-camera directions. New seeds retain natural variation;
+failed candidates must be rejected instead of bypassing the constraints.
+
+The v16 crown rule measures 36 horizontal azimuths using robust 1–99% terminal
+shoot extents. Its minimum-width target is max(0.88 × prior maximum breadth,
+0.72 × crown height). It redistributes scaffold directions, then extends the
+structural centerlines into remaining underfilled directions. Descendant leafy
+shoots remain rigid, real leaf geometry and counts remain exact, and branch radii
+retain their pipe-model allocation. Shared fork positions, root/bole paths and
+minimum scaffold elevations are checked. No spherical crown boundary or camera
+dependent geometry is permitted. Six independently generated seeds exercise the
+same rule. Actual saved foliage breadth must also fill the resulting envelope.
+
+The v15 London plane leaf-only revision preserves the accepted v14 wood and
+instance transforms. Its real blades have shallow convex upper surfaces and
+lowered margins, exposing the dark front material without the deep upward cup.
+Modest bend and twist remain; this is static geometry rather than sun tracking.
+The bake audits exact wood, attachment transforms, stalks, silhouette coordinates,
+material assignments and UVs, plus at least 60% less blade depth and upward-facing
+local front normals. All three mature forms and matched single-leaf/branchlet
+comparisons remain required through the existing 63-render review contract.
+
 Preserve the current fifteen references indexed by
 `tests/artifacts/screens/vegetation_natural_foliage/coverage_20261011/summary.json`.
 Create a separate fifteen-specimen enhanced collection informed by the supplied
@@ -838,3 +862,54 @@ Render receipt:
 `tests/artifacts/screens/ai556_bake_framework/run-1791931009821-47140-7e107bb0/summary.json`.
 Gallery receipt (29.0 s):
 `tests/artifacts/screens/ai556_bake_framework/run-1791931327700-43128-6db97374/summary.json`.
+
+## Spatial scaffold and intrinsic leaf curvature revision (v14)
+
+Preserve v13, including its showcase video, before changing the three London
+plane references. The staging-only `shape` phase redirects six low/middle
+scaffold families per specimen into unequal rising directions and azimuths.
+Forks inherit their parent's tangent and retain connected descendants, branch
+orders and attached leaves. The bole, root paths and radii remain unchanged;
+the existing union/UV pipeline rebuilds continuous woody surfaces. No common
+spherical crown boundary is imposed.
+
+Leaf blades themselves must bend: a bowed midrib, cupped lobes, modest torsion
+and drooping tips replace shallow sheets without randomizing the entire spray.
+Preserve the eight prototype identities, source UVs, petiole junctions, node
+attachment, sizes, counts and tints. Reopened prototype geometry must exceed a
+best-plane RMS residual of 0.02 blade lengths. Pure geometry tests also cover
+fork continuity, upward scaffold elevation and unchanged root paths.
+
+The comparison includes all three trees from front/side/rear, matched prior
+side/rear views, bare structure from multiple angles, and individual leaf
+oblique/edge views using actual saved geometry. Existing hash, provenance,
+wood-bounds, input-stability and complete-gallery gates remain required.
+This revision changes only enhanced reference artifacts, not runtime assets.
+
+Validated output:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261013_plane_spatial_v14_final/`.
+All three saved models and 63 render records passed the geometry, hash and
+material provenance gates. All 29 growth/foliage tests and 14 shared bake tests
+pass. The source checkpoint is `c5ff56a7`; new geometry work follows that commit.
+
+The 57 bole/root paths per model retain their exact source points. All radii
+and leaf counts remain unchanged (15,739 / 16,108 / 15,694). Fork separation in
+the saved graph is below 1e-10 m. The six corrected scaffold axes span 41.5–54.5
+degrees above horizontal across the three forms, with unequal azimuth changes.
+The eight saved blades have best-plane RMS residuals of 0.063–0.095 blade lengths.
+
+The rising branches make the crown outline more compact. First-specimen
+projected foliage area retains 85.46%, 80.89% and 73.12% of v13 across the three
+matched road-height views. Within the convex outline, binary foliage fill
+increases from 56–59% to 63–68%. These measures describe changed silhouette and
+packing; they are not a performance benchmark or a preserved-volume claim.
+The gallery exposes the matched masks and unchanged leaf counts.
+
+Build receipt (73.1 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1791938237222-31932-19632690/summary.json`.
+Render receipt (838.3 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1791938551581-9448-4a84976e/summary.json`.
+Gallery receipt (29.9 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1791939515657-10228-298a642b/summary.json`.
+Study images were recovered for presentation from the authenticated v13 copies;
+their recorded SHA-256 values match. No binary assets were committed or published.

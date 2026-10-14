@@ -22,9 +22,58 @@ from leaf_space import clearance
 from dome_sprays import arrange_sprays
 from fan_foliage import place_fans
 from organic_foliage import soften_sprays
+from spatial_growth import spatial_scaffolds
+from leaf_curvature import blade_height,blade_shape_metrics
+from leaf_curvature import open_blade_height
 
 
 class GrowthTests(unittest.TestCase):
+    def test_open_blade_exposes_upper_face_with_gentle_lowered_margins(self):
+        x,y=np.meshgrid(np.linspace(-.65,.65,41),np.linspace(0,1,41));xy=np.column_stack([x.ravel(),y.ravel()])
+        for form in range(8):
+            with self.subTest(form=form):
+                z=open_blade_height(xy,form);old=blade_height(xy,form)
+                self.assertAlmostEqual(open_blade_height([[0,0]],form)[0],0)
+                for position in [.25,.5,.75]:
+                    section=open_blade_height([[-.4,position],[0,position],[.4,position]],form)
+                    self.assertLess(max(section[0],section[2]),section[1]-.01)
+                self.assertLess(np.ptp(z),np.ptp(old)*.40)
+                self.assertGreater(blade_shape_metrics(np.column_stack([xy,z]))['bestPlaneRmsRatio'],.008)
+                dx=(open_blade_height(xy+[.0001,0],form)-open_blade_height(xy-[.0001,0],form))/.0002
+                dy=(open_blade_height(xy+[0,.0001],form)-open_blade_height(xy-[0,.0001],form))/.0002
+                self.assertGreater(np.min(1/np.sqrt(1+dx*dx+dy*dy)),.88)
+
+    def test_spatial_scaffolds_rise_and_keep_connected_forks_and_root_paths(self):
+        p=json.loads((ROOT/'tools/bake_vegetation/enhanced_reference/profiles.json').read_text())['london_plane']
+        for variant in [1,2,3]:
+            paths,lobes,rng,dimensions=scaffold(p,variant);plane_branchlets(p,paths,lobes,rng);root_crown(paths,rng)
+            before=copy.deepcopy(paths);transforms,proof=spatial_scaffolds(paths,dimensions['growth']['scaffoldLaunchPaths'],variant)
+            self.assertEqual(len(proof),6)
+            for record in proof:
+                path=paths[record['rootPath']];axis=path['points'][-1]-path['points'][0]
+                self.assertGreater(np.degrees(np.arctan2(axis[2],np.linalg.norm(axis[:2]))),40)
+                tangent=path['points'][1]-path['points'][0];tangent/=np.linalg.norm(tangent)
+                np.testing.assert_allclose(tangent,record['inheritedTangent'],atol=1e-12)
+                self.assertGreater(abs(record['azimuthChangeDegrees']),8)
+            roots={r['rootPath'] for r in proof}
+            for i,(old,new) in enumerate(zip(before,paths)):
+                np.testing.assert_array_equal(old['radii'],new['radii'])
+                if i not in transforms:np.testing.assert_array_equal(old['points'],new['points'])
+                elif i not in roots:
+                    turn,shift=transforms[i]
+                    np.testing.assert_allclose(new['points'],old['points']@turn.T+shift,atol=1e-12)
+                    np.testing.assert_allclose(turn.T@turn,np.eye(3),atol=1e-12)
+                if new['parent']>=0:np.testing.assert_allclose(new['points'][0],paths[new['parent']]['points'][new['parentNode']],atol=1e-12)
+
+    def test_sculpted_blade_has_intrinsic_curvature_and_an_unmoved_stalk_junction(self):
+        x,y=np.meshgrid(np.linspace(-.4,.4,31),np.linspace(0,1,31));xy=np.column_stack([x.ravel(),y.ravel()])
+        for form in range(8):
+            self.assertAlmostEqual(blade_height([[0,0]],form)[0],0)
+            points=np.column_stack([xy,blade_height(xy,form)]);proof=blade_shape_metrics(points)
+            self.assertGreater(proof['depthRatio'],.30);self.assertGreater(proof['bestPlaneRmsRatio'],.035)
+            self.assertGreater(blade_height([[.4,.5]],form)[0],blade_height([[0,.5]],form)[0])
+            self.assertLess(blade_height([[0,1]],form)[0],0)
+
     def test_organic_sprays_keep_attachments_and_coherence_without_coplanar_blades(self):
         p=json.loads((ROOT/'tools/bake_vegetation/enhanced_reference/profiles.json').read_text())['london_plane']
         paths,lobes,rng,_=scaffold(p,1);shoots=plane_branchlets(p,paths,lobes,rng)[:60]
