@@ -81,7 +81,8 @@ void main() {
     vec3 foamRadiance = oceanFoamRadiance(n, vOceanWorld, sun, landscapeSkyIrradiance(n), visibility);
     radiance = mix(radiance, oceanDisplay(foamRadiance * haze.transmittance + haze.inscatter), coverage);
     alpha = mix(alpha, 1.0, coverage);
-    if (uOceanDebug == 10) { gl_FragColor = vec4(swash.wetness, swash.film, swash.front, 1.0); return; }
+    // alpha 0 is the frame pipeline's sentinel: the final pass passes the view through untouched (the sheet draws opaque in a debug view)
+    if (uOceanDebug == 10) { gl_FragColor = vec4(swash.wetness, swash.film, swash.front, 0.0); return; }
     if (uOceanDebug > 0) discard;
     gl_FragColor = vec4(radiance, alpha);
 }
