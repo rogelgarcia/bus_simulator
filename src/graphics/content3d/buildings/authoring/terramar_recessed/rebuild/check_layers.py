@@ -1,6 +1,6 @@
 # check_layers.py -- AI 643+: Workbench check renders of the rebuild's layers. Headless only; never saves the file.
 #
-#   blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python check_layers.py -- out=<dir>
+#   blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend --python check_layers.py -- out=<dir>
 #           [cams=b8,top,rear]
 #
 #   check_b8.png    CAM_B8, transparent, no shadows, flat colours per element (the edges compose_checks.py lays on b8)
@@ -12,7 +12,9 @@
 #   check_top.png   CAM_TOP with the roof slab cut away (onto the top residential floor) and the plan outlines drawn
 #                   above it: balcony edge blue, tower wall line green, roof guard orange, penthouse magenta
 #   check_rear.png  CAM_REAR with shadows
-# The rig (sky, sun, ground) is left out: these are geometry checks; render_poses.py gives the lit views.
+# The rig (sky, sun, ground) is left out: these are geometry checks; render_poses.py gives the lit views. Run on the
+# composition (2026-10-14), whose parts are linked and read-only, it first makes their collections and objects local in
+# this session (never saved) so it can recolour and hide them.
 import importlib
 import os
 import sys
@@ -115,6 +117,21 @@ def roof_level(scene, cam, path, z_min):
         ob.hide_render = False
 
 
+def localize():
+    """Make the linked parts' collections (parents first) and objects local in this session; meshes stay linked."""
+    queue, n = list(bpy.context.scene.collection.children), 0
+    while queue:
+        coll = queue.pop(0)
+        if coll.library:
+            coll = coll.make_local()
+            n += 1
+        queue.extend(coll.children)
+    for ob in [o for o in bpy.data.objects if o.library]:
+        ob.make_local()
+        n += 1
+    return n
+
+
 def main():
     if not bpy.app.background:
         raise SystemExit("check_layers.py changes visibility and render settings: run it headless (it never saves)")
@@ -122,6 +139,8 @@ def main():
     out = os.path.abspath(opts.get("out") or os.path.join(L.C.REBUILD_SCREENS, "checks"))
     cams_wanted = [c for c in opts.get("cams", "b8,top,rear,aerial").split(",") if c]
     os.makedirs(out, exist_ok=True)
+    if bpy.data.libraries:
+        print("LOCALIZED", localize())
     scene = bpy.context.scene
     vl = bpy.context.view_layer
     if "INSPECTION_RIG" in vl.layer_collection.children:

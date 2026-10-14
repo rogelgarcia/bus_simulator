@@ -480,24 +480,68 @@ Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/plan/` (`
 `plan_approved.png`, `massing_b8_sheet.png`, `massing_aerial_sheet.png`, `massing_rear_sheet.png`, `option_E_sheet.png`,
 `massing/`).
 
-### The rebuild file and its layers (AI 643+)
+### The rebuild files and their layers (AI 643+; split into parts 2026-10-14)
+
+The model is split into four part files, each owning one root collection. A composition links the four roots and is
+the file the poses, the audit and the checks open. The parts are built from the plan by `build.py`; `compose.py` makes
+the composition.
+
+| File | Root | Holds | Layers |
+| --- | --- | --- | --- |
+| `terramar_building.blend` | `TM_BUILDING` | the architecture | structure, envelope, balconies, podium, roof (penthouse, annex, solar, units), interior_base (partitions, downlights) |
+| `terramar_props.blend` | `TM_PROPS` | the props on the building | balcony_plants, podium_planters, roof_planters, roof_furniture, awnings |
+| `terramar_site.blend` | `RB_SITE` | the street | site_cafe (sidewalk, café), site_palms (palms, pits, entrance pots, lamps) |
+| `terramar_interiors.blend` | `TM_INTERIORS` | the furnished interiors | restaurant_l0, dining_l1, residential, penthouse |
+| `terramar_composition.blend` | — | building + props (+ site, interiors) | links the four roots: `TERRAMAR_REBUILD` (local) holds `TM_BUILDING`, `TM_PROPS` and `TM_INTERIORS`; `RB_SITE` sits beside it |
+
+Why four parts and not two:
+- **Site:** the street is context, not the building. A city scene can keep or drop it.
+- **Interiors:** the furnished interiors are heavy and only seen through the glass. A light composition can leave them
+  out.
+- **Props:** the props stay apart from the architecture, as asked.
+
+How the parts behave:
+- Each part has its own copy of the base scene (`INSPECTION_RIG` with the calibrated HDRI and sun, `RB_CAMERAS`,
+  `RB_PLAN_GUIDES`), so it opens lit and renders on its own.
+- Each part runs the materials pass on its own slots. Only the building has stone faces, so only it gets joints and
+  writes `joint_layout.json`.
+- The composition follows the parts whenever they are rebuilt and saved. Rerun `compose.py` only if the parts or their
+  roots change.
+- Linked data is read-only in the composition: edit a part, never the composition. `check_layers.py` makes the linked
+  parts local in its own session (never saved) so it can recolour and hide them.
+
+The split was checked against the single file it replaced:
+- every layer gives the same counts;
+- five poses render identically (mean pixel difference at most 0.95 of 255, no pixel over 40);
+- the audit is the same (120 objects, 0 z-fights, 0 penetrations; the site 7 objects, 0/0);
+- hidden parts visible from b8: 0 px.
+
+That evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/reorganize_parts/`.
 
 ```
-# first time (creates tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend)
-blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- layers=structure
-# rebuild one layer in place (headed: open the file, exec build.py with the same argv)
-blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- layers=structure
-# checks, audit, lit poses
-blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/check_layers.py -- out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure
-python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose_checks.py tests/artifacts/screens/buildings/terramar_recessed/rebuild/643_structure
-blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/audit_collisions.py
-blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- items=643
-python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_pose_sheets.py --before edit --after rebuild --items 643
+# every part from scratch, then the composition
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=all
+# one part from scratch, or one layer in place (layers= picks its part; headed: open the part, exec build.py the same way)
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=props
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_building.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- layers=roof
+# the composition again (only if the parts or their roots change)
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose.py
+# checks, audit, lit poses: on the composition
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/check_layers.py -- out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/<item>
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose_checks.py tests/artifacts/screens/buildings/terramar_recessed/rebuild/<item>
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/audit_collisions.py
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/audit_collisions.py -- root=RB_SITE out=<site.audit.json>
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- items=<id>
+python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_pose_sheets.py --before <tag> --after rebuild --items <id>
 ```
+
+Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per-item evidence of AI 643–648 and
+627–638 was rendered from it. The before/after snapshots and that file went to the Recycle Bin once the parts matched.
 
 | Script | Does |
 | --- | --- |
-| `build.py` | the entry: refuses any file but the rebuild (or an unsaved session); refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under `TERRAMAR_REBUILD` |
+| `build.py` | the entry: `target=` (building, props, site, interiors or all), or `layers=` of one part; refuses any file but that part's (or an unsaved session); sets the part's root, refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under the part's root, then the materials pass; `target=all` builds every part from scratch and composes |
+| `compose.py` | the composition (2026-10-14): links the four parts' roots into `terramar_composition.blend` beside the base scene (local `TERRAMAR_REBUILD` holding the building, props and interiors; `RB_SITE` beside it) |
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
@@ -1227,7 +1271,7 @@ against the references, whose originals are in `references/`:
 - `final_contact_sheet.png`.
 
 ```
-blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- groups=final samples=256 out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/final_4k
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend -P src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- groups=final samples=256 out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/final_4k
 ```
 
 ## The Terra & Mar PBR kit sets (AI 640)

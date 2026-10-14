@@ -1,6 +1,6 @@
 # layer_envelope.py -- AI 644: the envelope layer of the Terra & Mar rebuild, from plan["envelope"].
 #
-# Run through build.py (layers=envelope; needs the structure). Builds RB_ENVELOPE under TERRAMAR_REBUILD, per storey
+# Run through build.py (layers=envelope; needs the structure). Builds RB_ENVELOPE under its part root, per storey
 # (floors 1-5, the storeys above the podium roof):
 #   rb_frames_f<n>  black frames (TM_RB_frame): the rounded corner posts on the wall line's fillets, the full-height
 #                   jambs against the pilasters and the rounded chamfer columns (shaped to the column's arc), head and

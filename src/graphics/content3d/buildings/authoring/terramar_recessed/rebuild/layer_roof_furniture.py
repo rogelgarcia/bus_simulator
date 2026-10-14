@@ -1,7 +1,7 @@
 # layer_roof_furniture.py -- AI 630: the roof terrace's furniture after the aerial, from plan["props"]["roof_furniture"].
 #
 # Run through build.py (layers=roof_furniture; needs the roof and roof_planters layers). Builds RB_PROPS/RB_ROOF_FURNITURE
-# under TERRAMAR_REBUILD, one object per group, modelled as prisms in each item's own frame (local +v = its front):
+# under its part root, one object per group, modelled as prisms in each item's own frame (local +v = its front):
 #   rb_roof_furniture_dining        a 2.4 m teak table on charcoal legs and eight chairs (teak seat and back, cushion)
 #   rb_roof_furniture_lounge        a three-seat sofa, two armchairs (teak frames, cushions), a coffee table, side tables
 #   rb_roof_furniture_front_centre  two armchairs round a low table, two sun loungers with a raised back

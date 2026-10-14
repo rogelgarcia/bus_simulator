@@ -2,7 +2,8 @@
 #
 #   blender -b <file.blend> -P audit_collisions.py [-- out=<report.json>] [root=<collection>]
 #
-# The switch is the file: on the rebuild (terramar_rebuild.blend) it audits TERRAMAR_REBUILD and writes
+# The switch is the file: on the rebuild's composition (terramar_composition.blend, which links the part files) it
+# audits TERRAMAR_REBUILD (building, props, interiors; root=RB_SITE for the street) and writes
 # terramar_rebuild.audit.json beside it; on the baseline or edit copy it audits TERRAMAR (default report
 # terramar_recessed_before.audit.json beside the baseline; pass out= for the edit copy).
 #

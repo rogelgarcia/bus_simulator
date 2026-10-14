@@ -1,6 +1,6 @@
 # layer_structure.py -- AI 643: the structure layer of the Terra & Mar rebuild, built from terramar_plan.json.
 #
-# Run through build.py (layers=structure). Builds RB_STRUCTURE under TERRAMAR_REBUILD:
+# Run through build.py (layers=structure). Builds RB_STRUCTURE under its part root:
 #   rb_slab_<name>      one solid per slab of plan.structure.slabs. Face sets (material slots):
 #                         TM_RB_slab_fascia  the outer edge            TM_RB_hidden   faces in contact (core, pilasters)
 #                         TM_RB_slab_top     balcony / terrace top     TM_RB_floor    interior floor plate (inside the wall line)

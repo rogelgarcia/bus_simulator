@@ -1,7 +1,7 @@
 # layer_restaurant_l0.py -- AI 635: the ground-floor restaurant, from plan["interior"]["restaurant_l0"].
 #
 # Run through build.py (layers=restaurant_l0; needs the podium and interior_base layers). Builds
-# RB_INTERIOR/RB_RESTAURANT_L0 under TERRAMAR_REBUILD:
+# RB_INTERIOR/RB_RESTAURANT_L0 under its part root:
 #   rb_restaurant_furniture  the tables, chairs and banquettes (AI 630's teak / cushion / charcoal pieces), one object
 #   rb_restaurant_bar        the bar against the core's front: a teak counter with a stone top, the back bar (cabinet,
 #                            three shelves with LED strips under them) before the core's teak-panelled front, six stools

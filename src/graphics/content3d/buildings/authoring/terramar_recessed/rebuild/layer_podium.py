@@ -1,6 +1,6 @@
 # layer_podium.py -- AI 646: the podium layer of the Terra & Mar rebuild, from plan["podium"].
 #
-# Run through build.py (layers=podium; needs the structure). Builds RB_PODIUM under TERRAMAR_REBUILD:
+# Run through build.py (layers=podium; needs the structure). Builds RB_PODIUM under its part root:
 #   rb_podium_piers       stone (TM_RB_podium_stone): corner piers wrapping the rounded corners (on the front they reach
 #                         the entrance volume) and a pier under every chamfer column; ground and upper storeys
 #   rb_podium_lintels     stone bands over the storefronts and over the upper recesses, the entrance's sign band (its

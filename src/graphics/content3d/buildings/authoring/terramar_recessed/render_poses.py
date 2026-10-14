@@ -15,7 +15,7 @@
 #
 # Output: tests/artifacts/screens/buildings/terramar_recessed/poses/<tag>/<pose>.png + poses_manifest.json, where the
 # tag is "baseline" for the as-extracted file, "edit" for the edit copy, "rebuild" for the from-scratch rebuild
-# (terramar_rebuild.blend, AI 643+), else the file's name (or tag=).
+# (its composition terramar_composition.blend, AI 643+; 2026-10-14), else the file's name (or tag=).
 #
 # A pose is either a look-at camera (location, target, vfov_deg, resolution) or "plan_camera": <key>, which takes the
 # camera from the rebuild plan's cameras (terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the

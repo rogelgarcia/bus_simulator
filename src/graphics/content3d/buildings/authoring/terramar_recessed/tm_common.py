@@ -47,7 +47,10 @@ B8 = os.path.join(REFERENCES, "b8.png")
 REBUILD_SRC = os.path.join(HERE, "rebuild")
 REBUILD_PLAN = os.path.join(REBUILD_SRC, "terramar_plan.json")
 REBUILD_DIR = os.path.join(ROOT, "tests", "artifacts", "blender", BUILDING_ID, "rebuild")
-REBUILD_BLEND = os.path.join(REBUILD_DIR, "terramar_rebuild.blend")
+# The model is split into part files (build.py target=...) that terramar_composition.blend links (compose.py, 2026-10-14);
+# the composition is what the poses, the audit and the checks open.
+REBUILD_PARTS = {name: os.path.join(REBUILD_DIR, f"terramar_{name}.blend") for name in ("building", "props", "site", "interiors")}
+REBUILD_BLEND = os.path.join(REBUILD_DIR, "terramar_composition.blend")
 REBUILD_AUDIT = os.path.join(REBUILD_DIR, "terramar_rebuild.audit.json")
 REBUILD_SCREENS = os.path.join(ROOT, "tests", "artifacts", "screens", "buildings", BUILDING_ID, "rebuild")
 REBUILD_CALIBRATION = os.path.join(REBUILD_SCREENS, "plan", "calibration.json")

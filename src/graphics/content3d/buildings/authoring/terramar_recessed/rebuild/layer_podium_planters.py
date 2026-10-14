@@ -1,7 +1,7 @@
 # layer_podium_planters.py -- AI 628: the podium's planter boxes and their planting, from plan["props"]["podium_planters"].
 #
 # Run through build.py (layers=podium_planters; needs the podium and balconies layers, and the vegetation decoded by
-# decode_vegetation_glb.mjs). Builds RB_PROPS/RB_PODIUM_PLANTERS under TERRAMAR_REBUILD:
+# decode_vegetation_glb.mjs). Builds RB_PROPS/RB_PODIUM_PLANTERS under its part root:
 #   rb_podium_planter_boxes   every box as one object: a dark-metal trough (TM_RB_planter_metal) with a 30 mm rim and
 #                             its soil (TM_RB_soil) 40 mm below the rim
 #   rb_podium_plant_<box>_<n> one collection instance per shrub form (the game's arrowwood viburnum, the prototypes the

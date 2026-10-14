@@ -3,7 +3,7 @@
 #
 # Run through build.py (layers=interior_base; needs the structure and envelope layers). The structure layer already
 # gives every level its floor plate (TM_RB_floor), ceiling (TM_RB_ceiling) and the core (TM_RB_core, now warm plaster);
-# this builds RB_INTERIOR/RB_INTERIOR_BASE under TERRAMAR_REBUILD:
+# this builds RB_INTERIOR/RB_INTERIOR_BASE under its part root:
 #   rb_interior_partitions   the walls dividing each residential floor (1-5) into seven units, floor to slab underside,
 #                            their ends cut flush on the pilaster line, the core, the chamfer columns' backs and an E-bay
 #                            mullion (TM_RB_partition, warm plaster)

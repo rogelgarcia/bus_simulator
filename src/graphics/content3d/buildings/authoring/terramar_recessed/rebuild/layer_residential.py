@@ -1,7 +1,7 @@
 # layer_residential.py -- AI 637: residential curtains and furniture, from plan["interior"]["residential"].
 #
 # Run through build.py (layers=residential; needs the envelope and interior_base layers). Builds RB_INTERIOR/RB_RESIDENTIAL
-# under TERRAMAR_REBUILD:
+# under its part root:
 #   rb_res_curtains_f<n>   white sheer panels behind every bay's glazing on floor n, hung from the track and drawn to
 #                          seeded positions; each panel is a folded sheet (more gathered = deeper, tighter folds) in
 #                          TM_RB_sheer (part transparent, part diffuse and translucent, so daylight shines through)

@@ -1,7 +1,7 @@
 # layer_roof_planters.py -- AI 629: the roof terrace's planters and trees, from plan["props"]["roof_planters"].
 #
 # Run through build.py (layers=roof_planters; needs the roof layer, and the vegetation decoded by
-# decode_vegetation_glb.mjs). Builds RB_PROPS/RB_ROOF_PLANTERS under TERRAMAR_REBUILD:
+# decode_vegetation_glb.mjs). Builds RB_PROPS/RB_ROOF_PLANTERS under its part root:
 #   rb_roof_planter_boxes  every box as one object, soil (TM_RB_soil) 40 mm below the rim: the perimeter ring's low
 #                          limestone troughs (TM_RB_paving, dressed by the materials pass; straight modules and one curved
 #                          module per corner arc), each a body with thin rim walls and end caps, and the islands'

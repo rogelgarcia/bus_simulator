@@ -1,7 +1,7 @@
 # layer_site_cafe.py -- AI 632: the sidewalk café and its sidewalk, site dressing from plan["props"]["sidewalk_cafe"].
 #
 # Run through build.py (layers=site_cafe; needs the structure and podium layers). Builds RB_SITE, a scene collection
-# beside TERRAMAR_REBUILD (the street, not the building: a city scene can keep or drop it):
+# as the site part's root (the street, not the building: a city scene can keep or drop it):
 #   RB_SITE_GROUND/rb_site_sidewalk   the sidewalk slab along the front runs (H, A, B), 6 m wide, from the street (z 0) up
 #                                     to the ground floor level; its inner edge follows the balcony edge and the
 #                                     entrance's bump; its top is TM_RB_site_paving (the materials pass lays the pavers)

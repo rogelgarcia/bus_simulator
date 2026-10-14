@@ -1,7 +1,7 @@
 # layer_dining_l1.py -- AI 636: the upper-podium dining room, from plan["interior"]["dining_l1"].
 #
 # Run through build.py (layers=dining_l1; needs the podium, podium_planters and interior_base layers). It reuses AI 635's
-# pieces and materials (layer_restaurant_l0.py) and builds RB_INTERIOR/RB_DINING_L1 under TERRAMAR_REBUILD:
+# pieces and materials (layer_restaurant_l0.py) and builds RB_INTERIOR/RB_DINING_L1 under its part root:
 #   rb_dining_furniture      the tables, chairs and banquettes (AI 630's teak / cushion / charcoal pieces) and the two
 #                            tables on the entrance terrace, one object
 #   rb_dining_sideboard      on the core's front: the teak-panelled wall, a cabinet and three shelves with LED strips

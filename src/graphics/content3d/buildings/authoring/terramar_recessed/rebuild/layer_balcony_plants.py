@@ -1,7 +1,7 @@
 # layer_balcony_plants.py -- AI 627: potted plants and the front loggias' table sets, from plan["props"]["balcony_plants"].
 #
 # Run through build.py (layers=balcony_plants; needs the balconies and envelope layers). Builds RB_PROPS/RB_BALCONY_PLANTS
-# under TERRAMAR_REBUILD:
+# under its part root:
 #   rb_balcony_pots         every pot as one object: a tapered round pot with a rolled rim (TM_RB_pot_white /
 #                           _light_grey / _charcoal) and its soil (TM_RB_soil)
 #   rb_plant_<floor>_<bay>_<n>  one collection instance per plant: the game's own vegetation (assets/public/vegetation_lod0,

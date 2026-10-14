@@ -1,7 +1,7 @@
 # layer_balconies.py -- AI 645: the balconies layer of the Terra & Mar rebuild, from plan["balconies"].
 #
 # Run through build.py (layers=balconies; needs the structure and the envelope). Builds RB_BALCONIES under
-# TERRAMAR_REBUILD, per floor (1-5; floor 1 is the terrace on the podium roof, out to the podium edge):
+# its part root, per floor (1-5; floor 1 is the terrace on the podium roof, out to the podium edge):
 #   rb_paving_f<n>      the walking surface (TM_RB_paving, 30 mm) from the window frames to the guard shoe
 #   rb_guard_f<n>       the guard: a dark base shoe and top rail (TM_RB_frame) and frameless glass panels
 #                       (TM_RB_glass, <= 1.6 m, 10 mm joints), on the guard line; one run round the building from

@@ -1,6 +1,6 @@
 # layer_roof.py -- AI 647: the roof layer of the Terra & Mar rebuild, from plan["roof"].
 #
-# Run through build.py (layers=roof; needs the structure). Builds RB_ROOF under TERRAMAR_REBUILD. The roof slab edge
+# Run through build.py (layers=roof; needs the structure). Builds RB_ROOF under its part root. The roof slab edge
 # itself (deep, rounded, 0.68 m) is the structure's; this layer adds:
 #   rb_roof_guard          the frameless glass guard all round on the roof guard line (two mitred halves meeting at
 #                          the front and rear centres; shoe and rail TM_RB_frame, glass panels <= 1.6 m)

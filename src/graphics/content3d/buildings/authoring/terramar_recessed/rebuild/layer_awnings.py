@@ -1,6 +1,6 @@
 # layer_awnings.py -- AI 631: the storefront canopies, from plan["props"]["storefront_awnings"].
 #
-# Run through build.py (layers=awnings; needs the podium layer). Builds RB_PROPS/RB_AWNINGS under TERRAMAR_REBUILD:
+# Run through build.py (layers=awnings; needs the podium layer). Builds RB_PROPS/RB_AWNINGS under its part root:
 #   rb_awnings   every canopy as hexahedra in one object (TM_RB_awning, dark charcoal metal): the wall plate on the
 #                storefront head panel, two sloping side rails, the transverse slats between them, the front fascia, and
 #                the tie rods from the fascia's top to the stone lintel's face (each rod sheared so its ends are vertical

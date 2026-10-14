@@ -1,7 +1,7 @@
 # layer_penthouse.py -- AI 638: the penthouse interior, from plan["interior"]["penthouse"].
 #
 # Run through build.py (layers=penthouse; needs the roof layer, and reuses AI 634/635/637's materials and pieces). Builds
-# RB_INTERIOR/RB_PENTHOUSE under TERRAMAR_REBUILD; every object carries rb_hide_from_b8 like the penthouse itself:
+# RB_INTERIOR/RB_PENTHOUSE under its part root; every object carries rb_hide_from_b8 like the penthouse itself:
 #   rb_penthouse_furniture  the annex's lounge corner, the sofa at the front slider, the armchair at the right window
 #                           (AI 630's teak / cushion pieces), one object
 #   rb_penthouse_kitchen    in the annex: a teak counter run with a stone top on the penthouse wall and a lit shelf over

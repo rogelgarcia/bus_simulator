@@ -19,7 +19,8 @@ import tm_common as C  # noqa: E402
 
 importlib.reload(C)        # a headed session keeps modules imported by earlier runs
 
-ROOT = "TERRAMAR_REBUILD"           # every layer's collection lives under it (the audit's root)
+ROOT = os.environ.get("TM_RB_ROOT", "TERRAMAR_REBUILD")   # every layer's collection lives under it: build.py sets the
+                                                         # part file's root (TM_BUILDING, TM_PROPS, TM_INTERIORS)
 CAMERAS = "RB_CAMERAS"
 PLAN_GUIDES = "RB_PLAN_GUIDES"
 
