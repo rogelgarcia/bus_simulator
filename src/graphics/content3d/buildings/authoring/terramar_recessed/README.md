@@ -346,7 +346,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | interior | 634 | DONE (rebuild): seven units a residential floor (partitions cut flush on pilasters, core, columns, a mullion), warm plaster, a downlight grid; the glass lets shadow rays through so the rooms are lit |
 | interior | 635 | DONE (rebuild): dining bands behind every storefront, the entrance zone under a slatted teak ceiling, the bar on the core's teak-panelled front, banquettes; a pendant over every table and a warm area-light fill |
 | interior | 636 | DONE (rebuild): dining bands behind every upper bay, the loggia room behind the front centre's glazing, banquettes, a sideboard on the core's teak-panelled front, two tables on the entrance terrace; pendants, a warm fill and a ceiling wash |
-| interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
+| interior | 637 | DONE (rebuild): sheer curtains on ceiling tracks behind every bay's glazing on floors 1-5, drawn to seeded positions (no two floors alike); a seeded lounge, dining or reading set with a floor lamp near the windows |
 | interior | 638 | Penthouse interior (retargeted to the rebuild) |
 | material | 640 | DONE: the user's PBR kit installed as three sets (byte-exact, provenance in `source.json`), configs committed, not registered in the catalog (see "The Terra & Mar PBR kit sets") |
 | exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
@@ -514,6 +514,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
 | `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
 | `layer_dining_l1.py` | the upper-podium dining room (AI 636), `RB_INTERIOR/RB_DINING_L1`: furniture, sideboard, pendants, plants, fill and ceiling-wash lights, from `plan["interior"]["dining_l1"]` (`props_layout.py`); reuses `layer_restaurant_l0.py`'s pieces |
+| `layer_residential.py` | residential curtains and furniture (AI 637), `RB_INTERIOR/RB_RESIDENTIAL`: sheer panels and tracks, furniture sets, floor lamps, from `plan["interior"]["residential"]` (`props_layout.py`) |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
@@ -1109,6 +1110,61 @@ carried it. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre636.blend`.
+
+**Residential curtains and furniture (AI 637, interior).** In b8 the residential sliders show white sheer curtains,
+partly drawn, with hints of furniture inside. `props_layout.residential()` writes `plan["interior"]["residential"]`,
+and `layer_residential.py` builds `RB_INTERIOR/RB_RESIDENTIAL` on floors 1–5.
+
+**Curtains** (`rb_res_curtains_f<n>`, `rb_res_tracks`):
+- Every bay's glazed span gets a ceiling track at 0.2 m inside the wall line. The span is trimmed 0.12 m at corners
+  and 0.03 m elsewhere, and split where a partition meets the glazing (the E-bay mullion), with 0.03 m clearance.
+- Each span's panels are drawn to a seeded style:
+
+  | Style | Weight | Panels |
+  | --- | --- | --- |
+  | pair | 0.4 | one from each end, covering 15–45% of the span each |
+  | start / end | 0.2 each | one panel covering 40–85% from one side |
+  | open | 0.2 | both stacked at the ends (10–18% each) |
+
+  Narrow lights (A0, A2) take one panel. A floor whose style sequence repeats an earlier floor is re-rolled, so no two
+  floors share a pattern.
+- Each panel is a folded sheet hung from 4 cm under the track to 1.5 cm over the floor. The folds come every ~0.1 m,
+  deeper and tighter when gathered (2.5–5 cm), 15% deeper at the hem, with a seeded phase.
+- The fabric, `TM_RB_sheer`, is 80% cloth and 20% clear. The cloth is mostly diffuse with a quarter translucent,
+  because from outside the sheers are lit from the window side.
+
+The counts are 131 panels on 85 tracks.
+
+**Furniture** (`rb_res_furniture_f<n>`, `rb_res_lamps`):
+- Every bay of 3 m and more gets a seeded set near its window, each with a floor lamp:
+
+  | Set | Weight | Pieces |
+  | --- | --- | --- |
+  | lounge | 0.45 | sofa facing the window, coffee table |
+  | dining | 0.3 | a 1.4 m table, four chairs |
+  | reading | 0.25 | two armchairs, a side table |
+
+- Each set gets up to 12 seeded tries (layout and centre) until it stays 0.35 m clear of the bay ends and clear of the
+  partitions and of the core (by 0.45 m).
+- 15 bay-floors stay empty. On D1 and F1 the rear partitions cross the band diagonally, leaving only a sliver; the
+  others are side or rear bays where no try fitted. Every unit still has a set.
+- The lamps have a charcoal base and pole and a linen drum shade glowing warm at strength 10. At 30 the shades read
+  as white squares.
+
+The counts are 11 sofas, 11 coffee tables, 44 armchairs, 22 side tables, 22 dining tables, 88 chairs and 55 lamps.
+
+From b8 the curtains add soft pale verticals behind the shaded sliders. The reference's sheers are whiter. The
+close-up shows them clearly, drawn to varied positions.
+
+Audit: 114 objects, 0 z-fights, 0 penetrations (the curtains are open sheets, so their non-manifold warnings are
+expected). Hidden parts visible from b8: 0 px. New pose: `residential_curtains_closeup` (from first-floor height
+across the street, above the palms). 637 is also tagged on `b8_calibrated`, and `chamfer_left_balconies`,
+`front_centre_bays`, `side_right_faceon` and `interior_residential_glass` already carried it. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/637_interior_residential_curtains_and_furniture/`:
+- `poses/rebuild_pre637_vs_rebuild/`: 6 sheets;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre637.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

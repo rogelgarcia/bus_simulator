@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (interior): In the reference, the residential sliders show white sheer curtains, partly drawn, with hints of furniture inside (`b8.png`; the AI smart model agrees). The extracted model has no curtains (the game draws no shades; they sit hidden in `TM_WINDOWS_SHADES_HIDDEN`) and plain interior shells.
@@ -46,3 +48,25 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **Layout** (`rebuild/props_layout.py` `residential()`, written to `plan["interior"]["residential"]` by `make_plan.py`):
+  - **Curtains:** ceiling tracks behind every bay's glazed span on floors 1-5, split at the partitions. Panels are drawn to seeded styles (pair, one side, stacked open), and a floor is re-rolled until its pattern differs from every other floor's.
+  - **Furniture:** a seeded lounge, dining or reading set with a floor lamp near the window of every bay of 3 m and more, kept clear of the bay ends, the partitions and the core (up to 12 tries per bay).
+- **Layer** (`rebuild/layer_residential.py`, registered in `build.py` after `dining_l1`) builds `RB_INTERIOR/RB_RESIDENTIAL`:
+  - `rb_res_curtains_f1-5`: 131 folded sheer panels, `TM_RB_sheer`;
+  - `rb_res_tracks`: 85;
+  - `rb_res_furniture_f1-5`: 198 pieces in 55 sets;
+  - `rb_res_lamps`: 55.
+  - Nothing went to `TM_REPLACED`.
+- **Iteration:**
+  - First try: one try per bay left too many bays empty, so each bay now gets up to 12 tries. On D1 and F1 the rear partitions cross the band, so those bays stay empty.
+  - The curtains at 45% opacity read as a grey veil; they are now 80% cloth, mostly diffuse.
+  - The lamp shades at 30 read as white squares; they are now 10.
+  - The close-up camera was behind a palm crown; it was raised to first-floor height across the street.
+- **Checks:** audit 114 objects, 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `residential_curtains_closeup`; 637 added to `b8_calibrated`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/637_interior_residential_curtains_and_furniture/`:
+  - `poses/rebuild_pre637_vs_rebuild/` (6 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre637.blend`.

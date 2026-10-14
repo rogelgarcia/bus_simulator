@@ -61,7 +61,8 @@
                 633,
                 634,
                 635,
-                636
+                636,
+                637
             ]
         },
         {
@@ -564,6 +565,29 @@
                 18.6
             ],
             "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "residential_curtains_closeup",
+            "group": "interior",
+            "label": "The B chamfer floors 1-3 from a first-floor window across the street, telephoto, above the street palms: sheer curtains drawn to varied positions behind the sliders, furniture and lamps behind them",
+            "items": [
+                637
+            ],
+            "location": [
+                2.0,
+                -24.0,
+                12.0
+            ],
+            "target": [
+                6.0,
+                -7.8,
+                15.0
+            ],
+            "vfov_deg": 22.0,
             "resolution": [
                 1920,
                 1080

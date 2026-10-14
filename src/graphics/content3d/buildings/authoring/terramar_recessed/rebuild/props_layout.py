@@ -1075,3 +1075,170 @@ def dining_l1(plan, seed=636):
             "seed": seed, "z": z, "ceiling": ceiling, "terrace_z": terrace_z, "config": D, "zones": room.zones,
             "items": room.items, "pendants": room.pendants, "plants": room.plants, "sideboard": sb, "core": core,
             "skipped_sets": room.skipped, "fills": room.fills}
+
+
+# ---------------------------------------------------------------- AI 637: residential curtains and furniture
+# b8: the residential sliders show white sheer curtains, partly drawn, with hints of furniture inside. Every bay's
+# glazed span on floors 1-5 gets a ceiling track and sheer panels drawn to seeded positions (a pair from both ends, one
+# side drawn, or stacked open), split where a partition meets the glazing; no two floors share a pattern. Each bay of a
+# unit (bays of 3 m and more) gets a seeded set near its window: a lounge (sofa facing the window, coffee table, floor
+# lamp), a dining table with chairs and a lamp, or a reading corner (two armchairs, side table, lamp). Furniture keeps off
+# the partitions, the core and the bay ends; the curtains hang between the frames and the furniture.
+RESIDENTIAL = {"curtain": {"v": -0.2, "half_depth": 0.07, "top_gap": 0.04, "hem": 0.015, "fold_pitch": 0.1,
+                           "amp": [0.025, 0.05], "end_trim": {"corner": 0.12, "other": 0.03}, "min_panel": 0.3,
+                           "styles": {"pair": 0.4, "start": 0.2, "end": 0.2, "open": 0.2}},
+               "track": {"depth": 0.04, "height": 0.03},
+               "partition_clear": 0.03,
+               "furniture": {"min_bay": 3.0, "end_clear": 0.35, "core_clear": 0.45,
+                             "layouts": {"lounge": 0.45, "dining": 0.3, "reading": 0.25}, "tries": 12},
+               "lamp": {"height": 1.55, "shade_r": 0.19, "shade_h": 0.3, "base_r": 0.15}}
+
+
+def _line(bay):
+    """A bay's wall line: the point at s along it, v off it (outward +)."""
+    (ax, ay), (ux, uy), (ox, oy) = bay["a"], bay["along"], bay["outward"]
+    return lambda s, v: (ax + ux * s + ox * v, ay + uy * s + oy * v)
+
+
+def _pick(rng, weights):
+    names = sorted(weights)
+    return rng.choices(names, [weights[n] for n in names])[0]
+
+
+def residential(plan, seed=637):
+    env, base, st = plan["envelope"], plan["interior"]["base"], plan["structure"]
+    R = RESIDENTIAL
+    C = R["curtain"]
+    walls = [[tuple(q) for q in w["loop"]] for w in base["partitions"]]
+    core = st["core"]["outer"]
+    m = R["furniture"]["core_clear"]
+    core_quad = [(core["x"][0] - m, core["y"][0] - m), (core["x"][1] + m, core["y"][0] - m),
+                 (core["x"][1] + m, core["y"][1] + m), (core["x"][0] - m, core["y"][1] + m)]
+
+    def spans(bay, panes):
+        """The bay's glazed span trimmed at its ends, split wherever a partition crosses the curtain strip."""
+        pt = _line(bay)
+        t = C["end_trim"]
+        s0 = min(q[0] for q in panes) + (t["corner"] if bay["ends"][0] == "corner" else t["other"])
+        s1 = max(q[1] for q in panes) - (t["corner"] if bay["ends"][1] == "corner" else t["other"])
+        v0, v1 = C["v"] - C["half_depth"], C["v"] + C["half_depth"]
+        step = 0.01
+        n = int((s1 - s0) / step)
+        free = []
+        for k in range(n + 1):
+            s = s0 + k * step
+            quad = [pt(s - step / 2, v0), pt(s + step / 2, v0), pt(s + step / 2, v1), pt(s - step / 2, v1)]
+            free.append(not any(_overlap(quad, w) for w in walls))
+        out, k = [], 0
+        while k <= n:                                                 # runs of free samples, kept off the partitions
+            if not free[k]:
+                k += 1
+                continue
+            i0 = k
+            while k <= n and free[k]:
+                k += 1
+            i1 = k - 1
+            a = s0 + i0 * step + (R["partition_clear"] + step if i0 > 0 else 0.0)
+            e = s0 + i1 * step - (R["partition_clear"] + step if i1 < n else 0.0)
+            if e - a >= C["min_panel"]:
+                out.append([round(a, 4), round(e, 4)])
+        return out
+
+    def drawn(rng, a, e):
+        """Seeded curtain panels over the span [a, e]: (style, [(s0, s1, anchor), ...])."""
+        w, mp = e - a, C["min_panel"]
+        if w < 2 * mp:                                                # a narrow light: one panel from either side
+            f = rng.uniform(0.5, 1.0) * w
+            return ("start", [(a, a + f, "start")]) if rng.random() < 0.5 else ("end", [(e - f, e, "end")])
+        style = _pick(rng, C["styles"])
+        if style == "pair":
+            f0, f1 = rng.uniform(0.15, 0.45), rng.uniform(0.15, 0.45)
+            return style, [(a, a + max(mp, f0 * w), "start"), (e - max(mp, f1 * w), e, "end")]
+        if style in ("start", "end"):
+            f = max(mp, rng.uniform(0.4, 0.85) * w)
+            return style, [(a, a + f, "start")] if style == "start" else [(e - f, e, "end")]
+        f0, f1 = max(mp, rng.uniform(0.1, 0.18) * w), max(mp, rng.uniform(0.1, 0.18) * w)
+        return style, [(a, a + f0, "start"), (e - f1, e, "end")]
+
+    def furnish(rng, bay):
+        """A seeded set near the bay's window: lounge, dining or reading (items, lamp position)."""
+        F = R["furniture"]
+        pt, L = _line(bay), bay["length"]
+        N, out = (-bay["outward"][0], -bay["outward"][1]), bay["outward"]       # N into the room
+        face = lambda vec: [round(vec[0], 5), round(vec[1], 5)]  # noqa: E731
+        layout = _pick(rng, F["layouts"])
+        c = rng.uniform(0.3, 0.7) * L                                            # the set's centre along the bay
+        new = []
+        if layout == "lounge":
+            sw = min(2.2, L - 1.6)
+            new += [{"kind": "sofa", "at": pt(c, -2.55), "face": face(out), "size": [round(sw, 3), 0.9], "cushion": "ecru"},
+                    {"kind": "coffee_table", "at": pt(c, -1.65), "face": face(out), "size": [1.0, 0.55], "cushion": "greige"}]
+            lamp = pt(c + (sw / 2 + 0.3) * rng.choice((-1, 1)), -2.7)
+        elif layout == "dining":
+            new.append({"kind": "dining_table", "at": pt(c, -1.75), "face": face(out), "size": [1.4, 0.85], "cushion": "greige"})
+            for du in (-0.35, 0.35):
+                for dv, fv in ((-0.85, out), (0.85, N)):                              # chairs either long side, facing in
+                    new.append({"kind": "dining_chair", "at": pt(c + du, -1.75 + dv), "face": face(fv), "size": [0.46, 0.5],
+                                "cushion": "greige"})
+            lamp = pt(c + 1.25 * rng.choice((-1, 1)), -2.4)
+        else:
+            for du in (-0.65, 0.65):
+                new.append({"kind": "armchair", "at": pt(c + du, -1.7), "face": face(out), "size": [0.8, 0.8], "cushion": "ecru"})
+            new.append({"kind": "side_table", "at": pt(c, -1.75), "face": face(out), "size": [0.45, 0.45], "cushion": "greige"})
+            lamp = pt(c, -2.35)
+        for it in new:
+            it["at"] = [round(it["at"][0], 4), round(it["at"][1], 4)]
+        return new, lamp
+
+    curtains, tracks, items, lamps, skipped, patterns = [], [], [], [], [], {}
+    for floor in sorted(env["floors"], key=int):
+        z0, z1 = env["floors"][floor]
+        for attempt in range(20):                                     # re-roll until no earlier floor shares the pattern
+            rng = random.Random(f"{seed}:curtains:{floor}:{attempt}")
+            fc, ft, sig = [], [], []
+            for bay in env["bays"]:
+                var = next(v for v in bay["variants"] if int(floor) in v["floors"])
+                for a, e in spans(bay, var["panes"]):
+                    ft.append({"floor": int(floor), "bay": bay["id"], "s": [a, e]})
+                    style, panels = drawn(rng, a, e)
+                    sig.append(style)
+                    for s0, s1, anchor in panels:
+                        fc.append({"floor": int(floor), "bay": bay["id"], "s": [round(s0, 4), round(s1, 4)], "anchor": anchor,
+                                   "z": [round(z0 + C["hem"], 4), round(z1 - C["top_gap"], 4)], "phase": round(rng.random(), 4)})
+            if tuple(sig) not in patterns.values():
+                break
+        patterns[floor] = tuple(sig)
+        curtains += fc
+        tracks += [dict(t, z=z1) for t in ft]
+        # furniture near the windows
+        F = R["furniture"]
+        kept = [list(w) for w in walls] + [core_quad]
+        for bay in env["bays"]:
+            if bay["length"] < F["min_bay"]:
+                continue
+            for attempt in range(F["tries"]):                         # another layout or centre until one fits
+                rng = random.Random(f"{seed}:furniture:{floor}:{bay['id']}:{attempt}")
+                new, lamp = furnish(rng, bay)
+                for it in new:
+                    it.update(group=f"f{floor}_{bay['id']}", z=z0)
+                lr = R["lamp"]["base_r"]
+                lamp_quad = [(lamp[0] - lr, lamp[1] - lr), (lamp[0] + lr, lamp[1] - lr), (lamp[0] + lr, lamp[1] + lr),
+                             (lamp[0] - lr, lamp[1] + lr)]
+                polys = [_footprint(it) for it in new] + [lamp_quad]
+                # within the bay (clear of its ends), off the partitions, the core and the other sets
+                U, L = bay["along"], bay["length"]
+                ends_ok = all(F["end_clear"] <= (x - bay["a"][0]) * U[0] + (y - bay["a"][1]) * U[1] <= L - F["end_clear"]
+                              for poly in polys for x, y in poly)
+                if ends_ok and not any(_overlap(q, k) for q in polys for k in kept):
+                    kept += polys
+                    items += new
+                    lamps.append({"floor": int(floor), "bay": bay["id"], "at": [round(lamp[0], 4), round(lamp[1], 4)], "z": z0})
+                    break
+            else:
+                skipped.append(f"f{floor}_{bay['id']}")
+    lines = {b["id"]: {"a": b["a"], "along": b["along"], "outward": b["outward"]} for b in env["bays"]}
+    return {"comment": "AI 637 residential: sheer curtains on a ceiling track behind every bay's glazing on floors 1-5, "
+                       "drawn to seeded positions (no two floors share a pattern), split at the partitions; a seeded "
+                       "lounge, dining or reading set with a floor lamp near the window of every bay of 3 m and more",
+            "seed": seed, "config": R, "lines": lines, "curtains": curtains, "tracks": tracks, "items": items,
+            "lamps": lamps, "patterns": {k: list(v) for k, v in patterns.items()}, "skipped_sets": skipped}
