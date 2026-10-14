@@ -3,6 +3,9 @@
 `vegetation/reference-video` authenticates a saved enhanced reference summary and
 all three selected mature London planes. It retains the original solid-leaf
 instances, wood meshes and packed PBR materials. It never publishes game assets.
+The source summary must contain a passing geometry audit with matching model
+hashes. Video and page labels use the authenticated source revision, including
+the v16 balanced crowns; they do not assume unchanged v13 wood.
 
 Use `node tools/bake.mjs --target vegetation/reference-video` with scoped options:
 

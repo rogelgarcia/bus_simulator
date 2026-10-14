@@ -46,3 +46,6 @@ elif o['phase']=='shape':
 elif o['phase']=='crown':
     from crown_reference import crown_reference
     crown_reference(o)
+elif o['phase']=='leaf-wireframe':
+    from leaf_wireframe import render_leaf_wireframe
+    render_leaf_wireframe(o)

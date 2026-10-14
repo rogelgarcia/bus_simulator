@@ -1,5 +1,16 @@
 # Enhanced reference collection
 
+Reference showcase videos must use the selected collection's saved geometry and
+matching accepted mesh-audit hashes. Revision labels come from authenticated model
+metadata, including the v16 balanced crowns. Regeneration uses a fresh ignored
+video directory and preserves older animations and all source reference meshes.
+
+Leaf topology diagnostics must render actual saved prototype meshes, without
+rebuilding their outline, realizing the entire canopy or exaggerating thickness.
+The artifact-only `leaf-wireframe` phase authenticates the source, reports exact
+vertex/triangle counts and shader alpha inputs, and preserves mesh/UV/source hashes.
+Textured, opaque wireframe and grazing views show the same selected prototype.
+
 London plane corrections must become reusable species rules, expressed through
 growth parameters and measurable acceptance criteria rather than specimen IDs,
 branch indices or review-camera directions. New seeds retain natural variation;

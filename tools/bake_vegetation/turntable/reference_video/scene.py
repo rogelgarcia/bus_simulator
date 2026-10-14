@@ -58,7 +58,8 @@ def prepare(options,model,shot):
     title(camera,'Platanus × acerifolia',(-horizontal*.455,vertical*.372,-.5),vertical*.031,muted)
     title(camera,f'MATURE {variant[-2:]} / 03',(horizontal*.275,vertical*.442,-.5),vertical*.030,ink)
     title(camera,SHOTS[shot],(-horizontal*.455,-vertical*.435,-.5),vertical*.025,ink)
-    title(camera,'ENHANCED REFERENCE · v13',(horizontal*.21,-vertical*.435,-.5),vertical*.022,muted)
+    revision=model['revision'].rsplit('-',1)[-1]
+    title(camera,'ENHANCED REFERENCE · '+revision,(horizontal*.21,-vertical*.435,-.5),vertical*.022,muted)
     scene.frame_set(1)
     report.update(variant=variant,shot=shot,frames=scene.frame_end,seconds=scene.frame_end/options['fps'],
                   orbitDegrees=360 if shot=='full' else 48 if shot=='trunk' else 36,sourceId=model['id'],

@@ -1,5 +1,12 @@
 # Enhanced botanical references
 
+`phase=leaf-wireframe` reads an authenticated `candidate` reference into an isolated
+scene and renders its actual leaf prototype as textured, triangle-wire and grazing
+views. Select `models=london_plane/mature_01` and a new ignored `output`; use the
+same `source` and shared Blender configuration as the other phases. It records
+counts for every saved prototype, verifies opaque shader alpha and unchanged mesh,
+UV and source hashes, and never saves the source scene or publishes assets.
+
 Use `node tools/bake.mjs --target vegetation/enhanced-reference`. Supply `source`
 as the user-provided `references_ideas/trees` directory and a fresh ignored
 `output`. The shared Blender configuration supplies all executable paths.

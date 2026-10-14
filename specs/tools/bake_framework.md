@@ -1,5 +1,10 @@
 # Offline bake framework
 
+The enhanced-reference `leaf-wireframe` diagnostic accepts an authenticated saved
+candidate and a separate ignored output. It reuses the registered Blender backend,
+source stability checks and publication restrictions; it produces topology renders
+and a receipt only, without changing the complete reference gallery contract.
+
 The enhanced-reference staging-only `crown` phase accepts authenticated v15
 London planes and applies the species-wide crown-width rules to produce separate
 v16 candidates. It reuses shared Blender configuration, input hashing, saved-mesh

@@ -15,13 +15,13 @@ export const enhancedReferenceJob={
     defaults:{phase:'materials',source:'',models:'all',views:'all','structure-surface':'pbr','wood-study':'','foliage-study':'','foliage-layout':'branchlet',width:1440,samples:24,previous:'',candidate:'',
         baseline:'tests/artifacts/screens/vegetation_natural_foliage/coverage_20261011/summary.json',
         output:'tests/artifacts/screens/vegetation_enhanced_reference/review'},
-    options:{phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,baseline:String,output:String,previous:String,candidate:String},
+    options:{phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,baseline:String,output:String,previous:String,candidate:String},
     async inputs(ctx){
         if(!ctx.options.source)throw Error('Supply the reference image/PBR source directory');
         const index=path.resolve(ctx.root,ctx.options.baseline),manifest=await json(index);
         const prior=ctx.options.previous?path.resolve(ctx.root,ctx.options.previous):null,previous=prior?await json(prior):null;
-        if(['refine','foliage','posture','shape','crown','inspect'].includes(ctx.options.phase)&&!ctx.options.candidate)throw Error('Candidate phase requires a preserved candidate directory');
-        const candidates=['refine','foliage','posture','shape','crown','inspect'].includes(ctx.options.phase)?await listFiles(path.resolve(ctx.root,ctx.options.candidate)):[];
+        if(['refine','foliage','posture','shape','crown','inspect','leaf-wireframe'].includes(ctx.options.phase)&&!ctx.options.candidate)throw Error('Candidate phase requires a preserved candidate directory');
+        const candidates=['refine','foliage','posture','shape','crown','inspect','leaf-wireframe'].includes(ctx.options.phase)?await listFiles(path.resolve(ctx.root,ctx.options.candidate)):[];
         return [...(ctx.options['foliage-study']?[path.resolve(ctx.root,ctx.options['foliage-study'])]:[]),...(ctx.options['wood-study']?[path.resolve(ctx.root,ctx.options['wood-study'])]:[]),...candidates.filter(f=>/\.(blend|json)$/.test(f)),...(prior?[prior,...previous.models.map(r=>path.resolve(path.dirname(prior),r.file))]:[]),index,...manifest.models.map(r=>path.resolve(path.dirname(index),r.file)),
             ...(await listFiles(path.resolve(ctx.root,ctx.options.source))).filter(f=>!f.endsWith('.zip')),
             ...(await listFiles(path.join(ctx.root,TOOL))).filter(f=>!f.includes('__pycache__')),
@@ -41,7 +41,7 @@ export const enhancedReferenceJob={
         if(manifest.models.length!==15||ids.some(id=>!manifest.models.some(r=>r.id===id)))throw Error('Incomplete baseline');
         o.models=o.models==='all'?ids:o.models.split(',');
         if(new Set(o.models).size!==o.models.length||o.models.some(id=>!ids.includes(id)))throw Error('Invalid model selection');
-        if(['refine','foliage','posture','shape','crown','inspect'].includes(o.phase)){
+        if(['refine','foliage','posture','shape','crown','inspect','leaf-wireframe'].includes(o.phase)){
             o.candidate=path.resolve(ctx.root,o.candidate);
             if(!within(path.join(ctx.root,'tests/artifacts/screens/vegetation_enhanced_reference'),o.candidate)||o.candidate===o.output||within(o.output,o.candidate)||within(o.candidate,o.output))throw Error('Refinement requires separate preserved staging directories');
         }
@@ -54,7 +54,7 @@ export const enhancedReferenceJob={
         await mkdir(o.output,{recursive:true});
         await writeJson(path.join(o.output,'baseline-preservation.json'),{index:o.baseline,models:o.sources.map(r=>({id:r.id,file:r.file,sha256:r.sha256}))});
         if(o.phase==='materials')await stageMaterials(o);
-        if(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','render'].includes(o.phase)){
+        if(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render'].includes(o.phase)){
             const previous=ctx.env;ctx.env={...ctx.env,OMP_NUM_THREADS:'4',OPENBLAS_NUM_THREADS:'1',TBB_NUM_THREADS:'4'};
             const tasks=['build','foliage','posture','shape','crown'].includes(o.phase)?o.models.map(model=>({...o,models:[model]})):[o];
             try{for(const [index,task] of tasks.entries()){const file=path.join(ctx.stage,`enhanced-options-${index}.json`);await writeJson(file,task);await runHeadlessBake(ctx,TOOL+'/run.py',[file]);}}finally{ctx.env=previous;}
