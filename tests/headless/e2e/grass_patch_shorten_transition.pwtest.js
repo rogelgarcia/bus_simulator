@@ -20,10 +20,12 @@ test('Shortened grass avoids bright and dark bands across angles and forward pat
         const asset = await loadGrassRuntimeAsset({ renderer }), bounds = { minX: -48, maxX: 48, minZ: -48, maxZ: 72 };
         const coverage = createGrassBoundaryMask({ bounds, outline: [{ x: -48, z: -48 }, { x: 48, z: -48 }, { x: 48, z: 72 }, { x: -48, z: 72 }], exclusions: [], resolution: 256 });
         const grass = createGrassPatchRenderer({ asset, coverage, bounds, terminalTransition: 'shorten' }), scene = new THREE.Scene(); scene.add(grass.group);
+        const [, , , transitionStart, transitionEnd] = grass.getSnapshot().distances, binWidth = (transitionEnd - transitionStart) / 16;
         const camera = new THREE.PerspectiveCamera(55, width / height, .1, 150), gl = renderer.getContext(), poses = [], measurements = [];
         for (const h of [3.5, 6.883, 9, 10.654]) for (let a = 0; a < 8; a++) poses.push({ name: `height-${h}-angle-${a}`, h, x: .37, z: -.71, yaw: a * Math.PI / 4 + .19 });
         for (let i = 0; i <= 32; i++) poses.push({ name: `forward-${i}`, h: 6.883, x: 1.31, z: -9.37 + i * .75, yaw: .07 });
         poses.push({ name: 'reported-bus', h: 6.883, x: -12.668, z: -1.296, yaw: 0 }, { name: 'reported-high', h: 10.654, x: -12.668, z: 34.478, yaw: 0 });
+        poses.push({ name: 'reported-reach', h: 6.883, x: -12.934, z: -9.561, yaw: 0 });
         for (const h of [4.75, 8.25, 12]) for (let a = 0; a < 8; a++) poses.push({ name: `holdout-${h}-angle-${a}`, h, x: -5.83, z: 7.21, yaw: a * Math.PI / 4 + .48, slope: .45 });
         for (const pose of poses) {
             camera.position.set(pose.x, pose.h, pose.z); camera.lookAt(pose.x + Math.sin(pose.yaw) * 20, pose.h - (pose.slope ?? .34836) * 20, pose.z + Math.cos(pose.yaw) * 20); camera.updateMatrixWorld(true);
@@ -32,13 +34,13 @@ test('Shortened grass avoids bright and dark bands across angles and forward pat
                 grass.setMode(mode); grass.update(camera); renderer.render(scene, camera);
                 pixels[mode] = new Uint8Array(width * height * 4); gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels[mode]);
             }
-            const bins = Array.from({ length: 16 }, (_, i) => ({ distance: 16 + i * .5, count: 0, LOD4: 0, LOD5: 0, AUTO: 0 }));
+            const bins = Array.from({ length: 16 }, (_, i) => ({ distance: transitionStart + i * binWidth, count: 0, LOD4: 0, LOD5: 0, AUTO: 0 }));
             const point = new THREE.Vector3();
             for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
                 point.set((x + .5) / width * 2 - 1, (y + .5) / height * 2 - 1, .5).unproject(camera).sub(camera.position);
                 if (point.y >= 0) continue;
                 point.multiplyScalar(-camera.position.y / point.y).add(camera.position);
-                const distance = point.distanceTo(camera.position), bin = bins[Math.floor((distance - 16) / .5)];
+                const distance = point.distanceTo(camera.position), bin = bins[Math.floor((distance - transitionStart) / binWidth)];
                 const side = (point.x - pose.x) * Math.cos(pose.yaw) - (point.z - pose.z) * Math.sin(pose.yaw);
                 if (!bin || Math.abs(side) > 6) continue;
                 const i = (y * width + x) * 4; bin.count++;

@@ -2,6 +2,22 @@
 
 ## Decision
 
+Accepted for gameplay on 2026-10-14. The Grass quality buttons select Flat,
+Low, Medium, High (default), or Ultra; the three Auto presets use this shortening
+method with terminal cutoffs 16/24, 18/36, and 22/42 m respectively.
+The lab keeps the explicit `handoff=shorten` comparison URL.
+
+The 2026-10-14 reach adjustment changes the shared fixed-patch defaults from
+`0.6 / 0.8 / 8 / 16 / 24 m` to `0.6 / 0.8 / 8 / 18 / 36 m`.
+LOD3's requested 10% extension was rounded from 17.6 to 18 m; LOD4's cutoff
+increases by 50%, from 24 to 36 m. These are camera-to-ground distances in 3D.
+This is a fixed-distance extension, with no screen-size selection or new fade
+method. The shortened exit now spans 18–36 m; each blade shortens over 2.25 m,
+with its start distributed over 18–33.75 m. Ground blends over 15.75–36 m.
+The implementation and earlier calibration described below used 16–24 m;
+their measurements remain historical. The live brightness and motion checks
+derive their measured interval from the renderer's configured cutoffs.
+
 Retain a separate lab option, `?grass=patches&handoff=shorten`, that scales blade
 height toward its fixed root instead of translating or cutting the blade.
 At ground-anchor distance `d`, including camera elevation, each blade uses a
@@ -23,7 +39,8 @@ and color dissolution remain disabled. At 24 m an explicit zero-height fragment
 guard prevents residual MSAA samples along the field boundary; it does not
 gradually discard fragments within the transition. Forced LOD4 bypasses both
 height reduction and that endpoint guard. The shared renderer supports this
-option, but gameplay and the ordinary lab URL retain their existing defaults.
+option; gameplay quality presets now select it explicitly, while the ordinary
+lab URL retains its comparison default.
 
 ## Initial synchronized-profile research
 

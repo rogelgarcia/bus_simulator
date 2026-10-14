@@ -1,5 +1,11 @@
 # Grass Debug v2
 
+The accepted `handoff=shorten` renderer is now used by gameplay's Medium, High
+and Ultra quality buttons. High matches this lab's current Auto cutoffs at
+18/36 m; Medium uses the previous 16/24 m reach and Ultra uses 22/42 m.
+The lab retains its explicit handoff comparison URLs; historical prototype
+notes below describe the earlier acceptance stage.
+
 ## Fixed-patch field edges
 
 The fixed-patch path selects whole blades by root coverage, allowing eligible
@@ -12,6 +18,13 @@ and `tests/headless/e2e/grass_patch_edges.pwtest.js` for four-side grazing views
 and whole-blade comparisons across every blade LOD and tile rotation.
 
 ## Geometric LOD4 exit comparisons
+
+As of 2026-10-14, fixed patches use cutoffs `0.6 / 0.8 / 8 / 18 / 36 m`.
+The shortened LOD4 exit spans 18–36 m, with each blade shortening over 2.25 m
+and ground blending over 15.75–36 m. The rise/trim exits use the same 18–36 m
+height band. The comparison descriptions below document the earlier 16/24 m
+calibration; the sidebar reports the current cutoffs. See
+[the reach adjustment](GRASS_TRANSITION_CALIBRATION.md#decision).
 
 `?grass=patches&handoff=rise` enables the lab prototype that lowers opaque LOD4
 blades into the soil across 16–24 m, reversing continuously as the camera

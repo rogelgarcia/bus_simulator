@@ -1,6 +1,7 @@
 // Own gameplay's immutable grass patches, coverage and cached external shadows.
 // @ts-check
 import * as THREE from 'three';
+import { GRASS_QUALITY_PRESETS } from '../../../../app/grass/GrassSettings.js';
 import { loadGrassRuntimeAsset } from './GrassRuntimeAsset.js';
 import { createGrassPatchRenderer } from './GrassPatchRenderer.js';
 import { createGrassCoverageMask } from './GrassCoverageMask.js';
@@ -19,7 +20,7 @@ export class GameplayGrassRenderer {
         this.window = { value: new THREE.Vector4() };
         this.anchor = new THREE.Vector2(Infinity, Infinity); this.groundY = city.generatorConfig.ground.surfaceY;
         engine.scene.add(this.group);
-        this.loading = this.mode === '3d';
+        this.prepared = false; this.loading = this.mode !== 'flat';
         this.ready = this.loading ? this.load() : Promise.resolve();
         this.ready.catch(() => {});
     }
@@ -36,12 +37,13 @@ export class GameplayGrassRenderer {
             this.dynamicShadows = new GrassSceneShadows({ renderer: this.engine.renderer, groundY: this.groundY, resolution: 1024 });
             asset.shadowUniforms.grassCanopyShadowVisibility.value = this.dynamicShadows.target.texture;
             asset.shadowUniforms.grassCanopyShadowBounds.value = this.dynamicShadows.bounds;
-            this.patches = createGrassPatchRenderer({ asset, coverage: this.coverage, bounds: this.coverage.bounds, groundY: this.groundY });
+            this.patches = createGrassPatchRenderer({ asset, coverage: this.coverage, bounds: this.coverage.bounds, groundY: this.groundY,
+                distances: GRASS_QUALITY_PRESETS[this.mode].distances, maxDistance: 42, terminalTransition: 'shorten' });
             this.patches.material.materials.forEach(material => applyGrassRuntimeShadows(material, this.staticShadows));
             this.group.add(this.patches.group);
             await this.patches.prewarm(this.engine.renderer, this.engine.scene, this.engine.camera);
             if (this.disposed) return;
-            this.group.visible = this.mode === '3d'; this.update(true);
+            this.prepared = true; this.setMode(this.mode);
         } catch (error) {
             this.error = error.message; this.group.visible = false;
             console.error('[Grass] ' + this.error);
@@ -49,11 +51,13 @@ export class GameplayGrassRenderer {
         }
     }
 
-    /** @param {'texture'|'3d'} mode */
+    /** @param {'flat'|'low'|'medium'|'high'|'ultra'} mode */
     setMode(mode) {
-        if (!['texture', '3d'].includes(mode)) throw new Error('[Grass] Unknown rendering mode: ' + mode);
-        this.mode = mode; this.group.visible = mode === '3d' && !!this.patches && !this.error;
-        if (mode === '3d' && !this.asset && !this.loading) { this.loading = true; this.ready = this.load(); this.ready.catch(() => {}); }
+        if (!Object.hasOwn(GRASS_QUALITY_PRESETS, mode)) throw new Error('[Grass] Unknown rendering mode: ' + mode);
+        const preset = GRASS_QUALITY_PRESETS[mode];
+        this.mode = mode; this.group.visible = mode !== 'flat' && this.prepared && !this.error;
+        if (this.patches) { this.patches.setDistances(preset.distances); this.patches.setMode(preset.fieldMode); }
+        if (mode !== 'flat' && !this.asset && !this.loading) { this.loading = true; this.ready = this.load(); this.ready.catch(() => {}); }
         if (this.group.visible) this.update(true);
     }
 
@@ -95,7 +99,7 @@ export class GameplayGrassRenderer {
     }
 
     getSnapshot() {
-        return { mode: this.mode, ready: !!this.patches, error: this.error, active: this.group.visible, updates: this.updates,
+        return { mode: this.mode, ready: this.prepared, error: this.error, active: this.group.visible, updates: this.updates,
             strategy: 'patches', appearance: this.asset?.manifest.appearance ?? null, field: this.patches?.getSnapshot() ?? null,
             anchor: this.anchor.toArray(), window: this.window.value.toArray(),
             farBatches: this.patches?.surfaces.length ?? 0, packageBytes: this.asset?.manifest.bytes ?? 0,

@@ -1,22 +1,21 @@
-import { makeEl, makeSelectRow } from '../OptionsUiControls.js';
+import { GRASS_QUALITY_PRESETS } from '../../../../app/grass/GrassSettings.js';
+import { makeEl, makeChoiceRow } from '../OptionsUiControls.js';
 
 export function renderGrassTab() {
     const section = makeEl('div', 'options-section');
     section.appendChild(makeEl('div', 'options-section-title', 'Grass'));
-    const details = makeEl('div', 'options-section');
-    const title = makeEl('div', 'options-section-title');
     const note = makeEl('div', 'options-note');
+    note.setAttribute('role', 'status');
     const refresh = () => {
-        const mode = this._draftGrass.mode === '3d' ? '3D' : 'Texture';
-        title.textContent = `${mode} details`;
-        note.textContent = `Detailed ${mode} grass settings will be added later.`;
+        for (const id of Object.keys(GRASS_QUALITY_PRESETS)) mode.getButton(id).setAttribute('aria-pressed', String(id === this._draftGrass.mode));
+        note.textContent = GRASS_QUALITY_PRESETS[this._draftGrass.mode].description;
     };
-    const mode = makeSelectRow({ label: 'Grass mode', value: this._draftGrass.mode,
-        options: [{ id: 'texture', label: 'Texture' }, { id: '3d', label: '3D' }],
+    const mode = makeChoiceRow({ label: 'Grass quality', value: this._draftGrass.mode,
+        options: Object.entries(GRASS_QUALITY_PRESETS).map(([id, preset]) => ({ id, label: preset.label })),
         onChange: value => { this._draftGrass.mode = value; refresh(); this._emitLiveChange(); } });
-    mode.select.setAttribute('aria-label', 'Grass mode');
-    section.appendChild(mode.row);
-    details.append(title, note);
+    mode.row.classList.add('options-grass-quality');
+    mode.row.setAttribute('role', 'group'); mode.row.setAttribute('aria-label', 'Grass quality');
+    section.append(mode.row, note);
     refresh();
-    this.body.append(section, details);
+    this.body.append(section);
 }

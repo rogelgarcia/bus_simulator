@@ -1,18 +1,32 @@
 # Gameplay grass
 
-The existing **Grass** Options tab selects **Texture** or **3D**. Source defaults,
-Reset and settings without a supported mode resolve to `3d`. An explicit
-`texture` override persists in `bus_sim.grass.v1` and the `grass` preset group.
-Preview is immediate; Cancel restores the original mode, Save retains the edited
-group, Reset previews defaults, and Use defaults removes overrides. Each mode has
-its own details heading and an empty state for future controls. No density,
-distance, quality or experimental lab controls are exposed.
+The **Grass** Options tab uses five mutually exclusive quality buttons, with
+**High** selected by default. The accepted lab shortening transition is used by
+all automatic quality levels as of 2026-10-14.
 
-Texture uses the existing textured terrain and stops grass updates and rendering.
-A fresh Texture session does not fetch the grass package. After a live switch,
+| Button | Rendering | LOD3 cutoff | LOD4 cutoff |
+| --- | --- | --- | --- |
+| Flat | Original terrain texture, patch renderer disabled | — | — |
+| Low | LOD5 canopy only, no blade meshes drawn | — | — |
+| Medium | Previous Auto reach | 16 m | 24 m |
+| High | Accepted current Auto reach (default) | 18 m | 36 m |
+| Ultra | Extended Auto reach | 22 m | 42 m |
+
+LOD0/1/2 retain 0.6 / 0.8 / 8 m cutoffs. Settings persist as lowercase button
+names in `bus_sim.grass.v1` and the `grass` preset group. Previous `texture`
+settings migrate to `flat`; `3d`, absent and unsupported settings resolve to
+`high`. Preview is immediate; Cancel restores the original quality, Save retains
+it, Reset previews High, and Use defaults removes overrides.
+
+Flat uses the existing textured terrain and stops grass updates and rendering.
+A fresh Flat session does not fetch the grass package. After a live switch,
 the hidden renderer retains its resources for reuse until city detach. City
 detach disposes the renderer, including shadow targets and shared patch buffers;
 re-entry creates one renderer. The gameplay loading cover waits for grass readiness.
+The patch pools are reserved for Ultra's 42 m reach during loading. Quality
+changes update distance uniforms and selection without replacing the asset,
+geometry, materials or buffers. A selection made while loading is applied after
+shader preparation before the group becomes visible.
 
 ## Shared renderer and assets
 
@@ -56,8 +70,9 @@ exclusion groups so overlapping obstacles cannot cancel each other.
 
 The mask retains antialiased coverage and uses linear filtering without mipmaps;
 the 0.5 contour follows the hardscape within each one-metre rendering cell.
-Every blade and litter/canopy surface fragment uses
-the same world-space mask. CPU coverage queries use matching bilinear sampling
+Blade roots and litter/canopy surface fragments use
+the same world-space mask; eligible blades retain complete overhanging tips.
+CPU coverage queries use matching bilinear sampling
 and the same threshold; batch culling conservatively includes partial cells.
 Sampling remains capped at 4096² (about 14.65 cm texels for the 600 m city),
 with filtered contours between texels instead of square nearest-neighbour steps.
@@ -76,7 +91,7 @@ camera window. Slab geometry and the grass asset package are unchanged.
 rotated and merged footprints, sidewalk joins and preserved gaps. Visual evidence
 is gitignored under `tests/artifacts/screens/grass/ai612_sloped_base_exclusion/`.
 
-The camera drives automatic LOD ranges of 0.6 / 0.8 / 8 / 16 / 24 m, measured
+High uses automatic LOD ranges of 0.6 / 0.8 / 8 / 18 / 36 m, measured
 from camera to ground in three dimensions. LOD0/1 use 2 m patches; LOD2–4 use
 4 m patches. Conservative coverage grids and frustum/range culling choose from
 bounded pools each frame. Geometry and 40 bytes of shared placement attributes
@@ -84,12 +99,15 @@ are uploaded during loading and remain immutable during travel. Ordinary mesh
 transforms place selected patches on a stable world grid; reversing or crossing
 boundaries preserves the same grass at each position. No lab rectangles are used.
 
-Static 32 m quads, 5 mm above the authored ground, blend litter into canopy
-appearance. During the incoming LOD4 band (13.6–16 m), bright leaf shapes from the
+Static 32 m quads, coplanar with the authored ground and depth-biased, blend litter into canopy
+appearance. During the incoming LOD4 band (15–18 m), bright leaf shapes from the
 existing canopy maps fill some of the exposed litter beneath the sparse blades.
 This positive-only blend preserves dark soil and adds no geometry or texture assets.
-Over 16–21.6 m, LOD4 color and the ground approach the same projected
-canopy sample before blades dissolve at 21.6–24 m. Adjacent blade levels use
+LOD4 blades shorten over a staggered interval within 18–36 m. Each blade takes
+2.25 m to shorten, with a stable world-tile/blade phase selecting its start.
+The ground blends from litter to canopy over 15.75–36 m. Medium uses a 16–24 m
+height band, a 1 m blade span and 15–24 m ground blend; Ultra uses 22–42 m,
+a 2.5 m blade span and 19.5–42 m ground blend. Adjacent blade levels retain
 complementary opaque dissolve. Every representation uses the shared coverage mask.
 Loading prewarms all five blade levels and the surface, including invisible levels.
 Disposal while shader compilation is pending cancels the warmup draw; preparation
@@ -108,7 +126,7 @@ changing game meshes or baked-shadow ownership. The static target refreshes when
 sun direction changes; the 128 m dynamic target follows camera anchors on a
 16 m grid and vehicle movement, with a 100 ms update interval. Anchors affect
 only shadow caching, not grass geometry or coverage. Shading combines both visibility fields.
-Grass does not cast duplicate live self-shadows. Texture suspends these passes.
+Grass does not cast duplicate live self-shadows. Flat suspends these passes.
 
 ## Removed edge blend
 
@@ -122,14 +140,18 @@ remove sidewalk geometry or the exclusion boundaries consumed by gameplay grass.
 
 `tests/node/unit/grass_settings.test.js` covers default/legacy/persistence behavior.
 `tests/headless/e2e/grass_gameplay_modes.pwtest.js` exercises the production game,
-mode previews, cancellation, save/reload, reset, repeated switching and disposal.
+all five quality previews, cancellation, save/reload, reset, repeated switching
+and disposal. It verifies cold Flat loading, selections made during loading,
+Ultra persistence, restoration of High defaults, and live shader distance bands
+without replacing geometry or changing buffer versions.
 It also drives the bus, moves the camera, checks road/building exclusion samples,
 and compares rendered grass with and without cached external shadows.
 The existing bus-lab regression continues to cover all six shared LODs.
 Generated captures and measurements live under
-`tests/artifacts/screens/grass/ai611_game_migration/`.
+`tests/artifacts/screens/grass/quality_presets/`.
 
-`grass_gameplay_patches.pwtest.js` tracks the production grass's 36 GPU buffers
+`grass_gameplay_patches.pwtest.js` runs Medium, High and Ultra through the same
+movement and AO checks. It tracks the production grass's 36 GPU buffers
 through 120 forward/reverse camera poses, six shadow anchors and all blade
 levels. It checks zero grass uploads, unchanged attribute versions and identical
 patch placements on return. It exercises SSAO/GTAO with both alpha handling modes,

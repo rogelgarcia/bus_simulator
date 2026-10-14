@@ -1,5 +1,15 @@
 # Gameplay grass redesign
 
+## Accepted gameplay quality presets (2026-10-14)
+
+Gameplay now uses the accepted shortened LOD4 exit. Its Grass Options buttons
+are Flat (original terrain), Low (forced LOD5), Medium (Auto 16/24 m), High
+(Auto 18/36 m, default), and Ultra (Auto 22/42 m). Near cutoffs stay 0.6/0.8/8 m.
+One renderer reserves Ultra-sized pools and changes its distance uniforms when
+quality changes; movement and quality switching retain the same grass buffers.
+Earlier comparison results below describe the previous experimental status.
+See [the production settings contract](GRASS_GAMEPLAY.md).
+
 ## Whole-blade boundaries and continuous ground (2026-10-13)
 
 The fixed-patch renderer selects complete blades by their root's boundary-mask
@@ -199,15 +209,15 @@ placement attributes contain 40 bytes. Moving pool objects updates ordinary mesh
 transforms, without rewriting instance, vertex or index buffers. Templates and
 shader variants are warmed during loading, including currently invisible levels.
 
-The initial automatic ranges are 0.6 / 0.8 / 8 / 16 / 24 m, measured from the camera
+The automatic ranges are 0.6 / 0.8 / 8 / 18 / 36 m, measured from the camera
 to the ground in three dimensions. Camera elevation therefore reduces unnecessary
 detail. Blades retain the package's authored geometry and reduced LOD3/4 assets;
 new progressive density assets have not been baked. Distance cutoffs are currently
 fixed, not yet calibrated from FOV and pixel size. Overlap uses complementary
 opaque dissolve, with continuous litter-to-canopy shading on static 32 m surface
-quads. Between 16 and 21.6 m, LOD4 color and the ground approach the same canopy
+quads. Between 18 and 30.6 m, LOD4 color and the ground approach the same canopy
 sample projected onto ground. The color match completes before geometric
-dissolve at 21.6–24 m, avoiding a dark-blades/bright-ground ring. Existing external
+dissolve at 30.6–36 m, avoiding a dark-blades/bright-ground ring. Existing external
 visibility and brightness apply after this color match. The surface is coplanar
 with ground, with depth bias for deterministic overlap.
 

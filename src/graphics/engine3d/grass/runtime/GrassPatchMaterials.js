@@ -8,11 +8,18 @@ import { grassPatchShader } from '../../../shaders/materials/grass/GrassPatchSha
 const sections = source => Object.fromEntries([...source.matchAll(/\/\/ @section (\w+)\s*\n([\s\S]*?)(?=\/\/ @section|$)/g)].map(match => [match[1], match[2]]));
 const vertex = sections(grassPatchShader.vertexSource), fragment = sections(grassPatchShader.fragmentSource);
 
-/** @param {{asset:object,distances:number[],groundY:number,terminalTransition?:'dissolve'|'rise'|'trim'|'shorten'}} input */
+/** @param {{asset:object,distances:readonly number[],groundY:number,terminalTransition?:'dissolve'|'rise'|'trim'|'shorten'}} input */
 export function createGrassPatchMaterials({ asset, distances, groundY, terminalTransition = 'dissolve' }) {
     const camera = { value: new THREE.Vector3() }, mode = { value: -1 };
-    const starts = distances.map((distance, i) => distance - (distance - (distances[i - 1] ?? 0)) * .3);
-    const bands = distances.map((distance, i) => new THREE.Vector4(i ? starts[i - 1] : -2, i ? distances[i - 1] : -1, starts[i], distance));
+    const bands = distances.map(() => new THREE.Vector4());
+    const heightBand = { value: new THREE.Vector2() }, handoffBand = { value: new THREE.Vector2() };
+    function setDistances(values) {
+        const starts = values.map((distance, i) => distance - (distance - (values[i - 1] ?? 0)) * .3);
+        bands.forEach((band, i) => band.set(i ? starts[i - 1] : -2, i ? values[i - 1] : -1, starts[i], values[i]));
+        heightBand.value.set(values[3], values[4]);
+        handoffBand.value.set(terminalTransition === 'shorten' ? values[3] - (values[4] - values[3]) * .125 : values[3], terminalTransition === 'shorten' ? values[4] : starts[4]);
+    }
+    setDistances(distances);
     const materials = [];
     const geometric = terminalTransition !== 'dissolve';
     const bladeHeight = geometric ? Math.max(...asset.bridge.templates.map(template => template.boundingBox.max.y)) + .01 : 0;
@@ -30,12 +37,12 @@ export function createGrassPatchMaterials({ asset, distances, groundY, terminalT
             material.defines.GRASS_PATCH_SURFACE = 1;
         }
         const uniforms = { grassPatchCamera: camera, grassPatchMode: mode, grassPatchBand: { value: band }, grassPatchGroundY: { value: groundY } };
-        if (handoff && geometric) Object.assign(uniforms, { grassPatchHeightBand: { value: new THREE.Vector2(distances[3], distances[4]) },
+        if (handoff && geometric) Object.assign(uniforms, { grassPatchHeightBand: heightBand,
             grassPatchBladeHeight: { value: bladeHeight } });
         if (surface || handoff) Object.assign(uniforms, {
             grassPatchCanopyA: { value: asset.maps.canopy[0] }, grassPatchCanopyB: { value: asset.maps.canopy[1] },
             grassPatchCanopyScale: { value: asset.manifest.canopyUvScale }, grassPatchCanopyColor: { value: asset.canopy.materials.all.color },
-            grassPatchHandoffBand: { value: new THREE.Vector2(terminalTransition === 'shorten' ? distances[3] - (distances[4] - distances[3]) * .125 : distances[3], terminalTransition === 'shorten' ? distances[4] : starts[4]) }
+            grassPatchHandoffBand: handoffBand
         });
         if (surface) {
             const litterHook = asset.litterMaterial;
@@ -60,6 +67,6 @@ export function createGrassPatchMaterials({ asset, distances, groundY, terminalT
     };
     const leaves = bands.map((band, level) => create(asset.sources.LOD2.material, band, false, level === 4));
     const surface = create(asset.canopy.materials.all, bands[4], true);
-    return Object.freeze({ leaves, surface, camera, mode, bands, materials,
+    return Object.freeze({ leaves, surface, camera, mode, bands, materials, setDistances,
         dispose() { materials.forEach(material => material.dispose()); } });
 }

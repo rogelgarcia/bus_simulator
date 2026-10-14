@@ -143,7 +143,7 @@ test('Gameplay: options tab modularization preserves tabs and save/cancel/reset 
     await expect(rowByLabel(page, 'Coarse scale')).toHaveCount(1);
 
     await clickTab(page, 'Grass');
-    await expect(rowByLabel(page, 'Grass mode')).toHaveCount(1);
+    await expect(rowByLabel(page, 'Grass quality').getByRole('button')).toHaveText(['Flat', 'Low', 'Medium', 'High', 'Ultra']);
     await expect(rowByLabel(page, 'Sidewalk grass-edge dirt strip')).toHaveCount(0);
 
     await clickTab(page, 'Buildings');

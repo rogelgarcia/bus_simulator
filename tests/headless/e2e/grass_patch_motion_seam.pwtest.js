@@ -37,11 +37,12 @@ test('Isolate shortening, ground blending and incoming dissolve at the reported 
     await page.goto('/debug_tools/grass_debug_v2.html?grass=patches&handoff=shorten');
     await page.waitForFunction(() => !!window.__grassDebugV2);
     await page.evaluate(() => window.__grassDebugV2.readiness);
-    for (const pose of [{ name: 'bus', position: [-12.668, 6.883, -1.296] }, { name: 'high', position: [-12.668, 10.654, 34.478] }]) {
+    for (const pose of [{ name: 'bus', position: [-12.668, 6.883, -1.296] }, { name: 'high', position: [-12.668, 10.654, 34.478] }, { name: 'reach', position: [-12.934, 6.883, -9.561] }]) {
         const result = await page.evaluate(async pose => {
             const THREE = await import('three'), view = window.__grassTestView, state = window.__seam;
             view.renderer.setAnimationLoop(null); view.controls.enabled = false; view.keyboard.clear();
             const { camera, renderer, grass } = view, gl = renderer.getContext();
+            const [, , , transitionStart, transitionEnd] = grass.getSnapshot().field.distances, binCount = Math.ceil((transitionEnd + 4 - 12) / .5);
             camera.position.fromArray(pose.position); camera.rotation.set(THREE.MathUtils.degToRad(-19.206), Math.PI, 0, 'YXZ'); camera.updateMatrixWorld(true);
             Object.assign(state.fixed.value, camera.position);
             const width = renderer.domElement.width, height = renderer.domElement.height, samples = [], captures = {};
@@ -54,7 +55,7 @@ test('Isolate shortening, ground blending and incoming dissolve at the reported 
                 if (point.y >= 0) continue;
                 point.multiplyScalar(-camera.position.y / point.y).add(camera.position);
                 const bin = Math.floor((point.distanceTo(camera.position) - 12) / .5);
-                if (bin >= 0 && bin < 32 && Math.abs(point.x - camera.position.x) < 6 && grass.coverage.sample(point.x, point.z)) bands[y * width + x] = bin;
+                if (bin >= 0 && bin < binCount && Math.abs(point.x - camera.position.x) < 6 && grass.coverage.sample(point.x, point.z)) bands[y * width + x] = bin;
             }
             try {
                 for (const [name, heightFrozen, groundFrozen, mode] of [
@@ -64,7 +65,7 @@ test('Isolate shortening, ground blending and incoming dissolve at the reported 
                     state.height.value = heightFrozen; state.ground.value = groundFrozen; grass.setMode(mode);
                     offset = -.133333; draw(); const before = pixels();
                     offset = .133333; draw(); const after = pixels();
-                    const bins = Array.from({ length: 32 }, (_, index) => ({ distance: 12 + index * .5, count: 0, change: 0, brightness: 0, changed: 0 }));
+                    const bins = Array.from({ length: binCount }, (_, index) => ({ distance: 12 + index * .5, count: 0, change: 0, brightness: 0, changed: 0 }));
                     const delta = new Uint8ClampedArray(before.length);
                     for (let i = 0; i < bands.length; i++) {
                         const j = i * 4, difference = Math.abs(before[j] - after[j]) * .2126 + Math.abs(before[j + 1] - after[j + 1]) * .7152 + Math.abs(before[j + 2] - after[j + 2]) * .0722;
@@ -83,7 +84,7 @@ test('Isolate shortening, ground blending and incoming dissolve at the reported 
                     samples.push({ name, bins });
                 }
             } finally { offset = 0; }
-            return { pose, samples, captures, uniformCount: state.uniforms.length, glError: gl.getError() };
+            return { pose, samples, captures, transitionStart, transitionEnd, uniformCount: state.uniforms.length, glError: gl.getError() };
         }, pose);
         for (const [name, image] of Object.entries(result.captures)) await writeFile(`${output}/${pose.name}-${name}.png`, Buffer.from(image.split(',')[1], 'base64'));
         delete result.captures; results.push(result);
@@ -92,7 +93,7 @@ test('Isolate shortening, ground blending and incoming dissolve at the reported 
         expect(result.uniformCount).toBe(6);
         expect(result.samples.find(sample => sample.name === 'normal').bins.reduce((sum, bin) => sum + bin.change, 0)).toBeGreaterThan(1000);
         expect(result.samples.find(sample => sample.name === 'forced-lod4').bins.every(bin => bin.change === 0)).toBe(true);
-        const moving = result.samples.find(sample => sample.name === 'normal').bins.filter(bin => bin.distance >= 16 && bin.distance < 24);
+        const moving = result.samples.find(sample => sample.name === 'normal').bins.filter(bin => bin.distance >= result.transitionStart && bin.distance < result.transitionEnd);
         expect(Math.max(...moving.map(bin => bin.relative)), `${pose.name}: concentrated moving transition`).toBeLessThan(.06);
     }
     await writeFile(`${output}/isolation.json`, JSON.stringify({ results, errors }, null, 2));

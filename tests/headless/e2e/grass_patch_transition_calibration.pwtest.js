@@ -13,8 +13,8 @@ test('Calibrate geometric height and ground appearance from matched bus-camera v
         const response = await route.fetch();
         const body = (await response.text())
             .replace('grassPatchCamera: camera,', 'grassPatchCamera: camera, grassPatchCurveBias: window.__grassSweep.bias, grassPatchCompress: window.__grassSweep.compress,')
-            .replace('grassPatchHeightBand: { value: new THREE.Vector2(distances[3], distances[4]) }', 'grassPatchHeightBand: window.__grassSweep.height')
-            .replace(/grassPatchHandoffBand: \{ value: new THREE.Vector2\(distances\[3\], .*?\) \}/, 'grassPatchHandoffBand: window.__grassSweep.ground');
+            .replace('grassPatchHeightBand: heightBand', 'grassPatchHeightBand: window.__grassSweep.height')
+            .replace('grassPatchHandoffBand: handoffBand', 'grassPatchHandoffBand: window.__grassSweep.ground');
         await route.fulfill({ response, body });
     });
     await page.route('**/grass_patch.frag.glsl*', async route => {
@@ -46,7 +46,7 @@ test('Calibrate geometric height and ground appearance from matched bus-camera v
         renderer.setSize(width, height); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .0511;
         const asset = await loadGrassRuntimeAsset({ renderer }), bounds = { minX: -24, maxX: 24, minZ: -24, maxZ: 72 };
         const coverage = createGrassBoundaryMask({ bounds, outline: [{ x: -24, z: -24 }, { x: 24, z: -24 }, { x: 24, z: 72 }, { x: -24, z: 72 }], exclusions: [], resolution: 256 });
-        const variants = Object.fromEntries(['trim', 'rise'].map(terminalTransition => [terminalTransition, createGrassPatchRenderer({ asset, coverage, bounds, terminalTransition })]));
+        const variants = Object.fromEntries(['trim', 'rise'].map(terminalTransition => [terminalTransition, createGrassPatchRenderer({ asset, coverage, bounds, distances: [.6, .8, 8, 16, 24], terminalTransition })]));
         const scene = new THREE.Scene(); Object.values(variants).forEach(grass => scene.add(grass.group));
         const camera = new THREE.PerspectiveCamera(55, width / height, .1, 150), gl = renderer.getContext();
         const poses = [['bus', 6.883, -8, .34836, 0], ['close', 4.5, -8, .5, 0], ['forward', 6.883, 4, .34836, 0],

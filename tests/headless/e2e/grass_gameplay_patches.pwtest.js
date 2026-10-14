@@ -4,19 +4,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 
 const output = 'tests/artifacts/screens/grass/gameplay_patches';
 
-for (const transition of ['dissolve', 'shorten']) test(`${transition}: gameplay patch movement keeps grass buffers fixed and uses terrain for AO depth`, async ({ page }) => {
+for (const quality of ['medium', 'high', 'ultra']) test(`${quality}: gameplay patch movement keeps grass buffers fixed and uses terrain for AO depth`, async ({ page }) => {
     test.setTimeout(180000);
-    const caseOutput = transition === 'dissolve' ? output : `${output}/shorten`;
+    const caseOutput = `${output}/${quality}`;
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    if (transition === 'shorten') await page.route('**/grass/runtime/GameplayGrassRenderer.js*', async route => {
-        const response = await route.fetch(), source = await response.text();
-        const original = 'bounds: this.coverage.bounds, groundY: this.groundY });';
-        expect(source).toContain(original);
-        await route.fulfill({ response, body: source.replace(original,
-            "bounds: this.coverage.bounds, groundY: this.groundY, terminalTransition: 'shorten' });") });
-    });
+    await page.addInitScript(mode => localStorage.setItem('bus_sim.grass.v1', JSON.stringify({ mode })), quality);
     await page.addInitScript(() => {
         const original = WebGL2RenderingContext.prototype.bufferData;
         window.grassBufferSources = new Map();
@@ -135,7 +129,8 @@ for (const transition of ['dissolve', 'shorten']) test(`${transition}: gameplay 
     }
     await writeFile(`${caseOutput}/validation.json`, JSON.stringify({ movement, ao, errors }, null, 2));
     expect(movement.snapshot.strategy).toBe('patches');
-    expect(movement.snapshot.field.terminalTransition).toBe(transition);
+    expect(movement.snapshot.mode).toBe(quality);
+    expect(movement.snapshot.field.terminalTransition).toBe('shorten');
     expect(movement.trackedBuffers).toBeGreaterThan(10);
     expect(movement.uploads).toBe(0);
     expect(movement.versionsUnchanged).toBe(true);

@@ -3,7 +3,7 @@ import test, { expect } from '@playwright/test';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-const output = path.resolve('tests/artifacts/screens/grass/ai611_game_migration');
+const output = path.resolve('tests/artifacts/screens/grass/quality_presets');
 async function ready(page) {
     await page.waitForFunction(() => !!window.__busSim?.engine?.context?.city?.grass, null, { timeout: 90_000 });
     await page.evaluate(async () => {
@@ -45,7 +45,7 @@ async function measure(page) {
     });
 }
 
-test('gameplay uses immutable grass patches and supports Texture, preview, cancel, save, reset and re-entry', async ({ page }) => {
+test('gameplay grass quality supports preview, cancel, save, reset and re-entry', async ({ page }) => {
     test.setTimeout(240_000);
     await mkdir(output, { recursive: true });
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -55,45 +55,61 @@ test('gameplay uses immutable grass patches and supports Texture, preview, cance
     page.on('request', request => { if (/tests\/artifacts|grass_debugger_v2|debug_tools\/grass/.test(request.url())) authoringRequests.push(request.url()); });
     await page.goto('/?pose=civic_center_curve_front&coreTests=0');
     await ready(page);
-    expect((await snapshot(page)).mode).toBe('3d');
+    expect((await snapshot(page)).mode).toBe('high');
     expect((await snapshot(page)).active).toBe(true);
     expect((await snapshot(page)).strategy).toBe('patches');
     expect((await snapshot(page)).field.geometryPolicy).toBe('immutable');
     const threeD = await measure(page);
     await page.screenshot({ path: path.join(output, 'gameplay-3d.png') });
     await options(page);
-    const select = page.getByRole('combobox', { name: 'Grass mode', exact: true });
-    await expect(select).toHaveValue('3d');
-    await expect(select.locator('option')).toHaveText(['Texture', '3D']);
-    await expect(page.getByText('3D details', { exact: true })).toBeVisible();
+    const quality = page.getByRole('group', { name: 'Grass quality', exact: true });
+    await expect(page.getByRole('combobox', { name: 'Grass mode', exact: true })).toHaveCount(0);
+    await expect(quality.getByRole('button')).toHaveText(['Flat', 'Low', 'Medium', 'High', 'Ultra']);
+    await expect(quality.getByRole('button', { name: 'High', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.screenshot({ path: path.join(output, 'options-3d.png') });
-    await select.selectOption('texture');
-    await expect(page.getByText('Texture details', { exact: true })).toBeVisible();
+    const settings = [];
+    for (const [name, mode, fieldMode, distances] of [
+        ['Flat', 'flat', 'OFF', [.6, .8, 8, 18, 36]], ['Low', 'low', 'LOD5', [.6, .8, 8, 18, 36]],
+        ['Medium', 'medium', 'AUTO', [.6, .8, 8, 16, 24]], ['High', 'high', 'AUTO', [.6, .8, 8, 18, 36]],
+        ['Ultra', 'ultra', 'AUTO', [.6, .8, 8, 22, 42]], ['High', 'high', 'AUTO', [.6, .8, 8, 18, 36]]
+    ]) {
+        await quality.getByRole('button', { name, exact: true }).click();
+        await expect(quality.locator('[aria-pressed="true"]')).toHaveCount(1);
+        await expect(quality.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'true');
+        const state = await snapshot(page); settings.push(state);
+        expect(state.mode).toBe(mode); expect(state.active).toBe(mode !== 'flat');
+        expect(state.field.mode).toBe(fieldMode); expect(state.field.distances).toEqual(distances);
+        expect(state.field.terminalTransition).toBe('shorten');
+        if (mode === 'low') { expect(state.field.levels.slice(0, 5)).toEqual([0, 0, 0, 0, 0]); expect(state.field.levels[5]).toBeGreaterThan(0); }
+        await page.screenshot({ path: path.join(output, `options-${mode}.png`) });
+    }
+    await writeFile(path.join(output, 'quality-settings.json'), JSON.stringify(settings, null, 2));
+    await quality.getByRole('button', { name: 'Flat', exact: true }).click();
     expect((await snapshot(page)).active).toBe(false);
     await page.screenshot({ path: path.join(output, 'options-texture.png') });
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-    expect((await snapshot(page)).mode).toBe('3d');
+    expect((await snapshot(page)).mode).toBe('high');
     await options(page);
-    await select.selectOption('texture');
+    await quality.getByRole('button', { name: 'Flat', exact: true }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     const before = (await snapshot(page)).updates;
     const texture = await measure(page);
     expect((await snapshot(page)).updates).toBe(before);
     await page.screenshot({ path: path.join(output, 'gameplay-texture.png') });
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('bus_sim.grass.v1')))).toEqual({ mode: 'texture' });
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('bus_sim.grass.v1')))).toEqual({ mode: 'flat' });
     await page.reload(); await ready(page);
-    expect((await snapshot(page)).mode).toBe('texture');
+    expect((await snapshot(page)).mode).toBe('flat');
     expect((await snapshot(page)).ready).toBe(false);
     await options(page);
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await ready(page);
-    expect((await snapshot(page)).mode).toBe('3d');
+    expect((await snapshot(page)).mode).toBe('high');
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-    expect((await snapshot(page)).mode).toBe('texture');
+    expect((await snapshot(page)).mode).toBe('flat');
     const repeated = await page.evaluate(async () => {
         const engine = window.__busSim.engine, grass = engine.context.city.grass;
-        for (let i = 0; i < 6; i++) { engine.setGrassSettings({ mode: '3d' }); await grass.ready; engine.setGrassSettings({ mode: 'texture' }); }
-        engine.setGrassSettings({ mode: '3d' });
+        for (let i = 0; i < 6; i++) { engine.setGrassSettings({ mode: 'high' }); await grass.ready; engine.setGrassSettings({ mode: 'flat' }); }
+        engine.setGrassSettings({ mode: 'high' });
         return engine.scene.children.filter(node => node.name === 'GameplayGrass').length;
     });
     expect(repeated).toBe(1);
@@ -113,10 +129,10 @@ test('gameplay uses immutable grass patches and supports Texture, preview, cance
     await ready(page);
     await page.screenshot({ path: path.join(output, 'gameplay-grass-close.png') });
     const close3d = await measure(page);
-    await page.evaluate(() => window.__busSim.engine.setGrassSettings({ mode: 'texture' }));
+    await page.evaluate(() => window.__busSim.engine.setGrassSettings({ mode: 'flat' }));
     const closeTexture = await measure(page);
     await page.screenshot({ path: path.join(output, 'gameplay-texture-close.png') });
-    await page.evaluate(() => window.__busSim.engine.setGrassSettings({ mode: '3d' }));
+    await page.evaluate(() => window.__busSim.engine.setGrassSettings({ mode: 'high' }));
     const movement = [];
     for (const [name, position, target] of [
         ['near', [-171, 1.2, 57], [-156, .25, 44]],
@@ -200,5 +216,69 @@ test('gameplay uses immutable grass patches and supports Texture, preview, cance
     await page.screenshot({ path: path.join(output, 'gameplay-after-driving.png') });
     await writeFile(path.join(output, 'performance.json'), JSON.stringify({ viewport: [1600, 900], pose: 'civic_center_curve_front', warmupFrames: 30, threeD, texture, closePoint, close3d, closeTexture, movement, boundaries, shadowPixels, driveStart, driveEnd, errors, authoringRequests }, null, 2));
     expect(authoringRequests).toEqual([]);
+    expect(errors).toEqual([]);
+});
+
+test('grass quality honors changes during loading, saves Ultra and returns to High defaults', async ({ page }) => {
+    test.setTimeout(150000);
+    const errors = [], requests = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('request', request => { if (request.url().endsWith('/grass.bin')) requests.push(request.url()); });
+    await page.addInitScript(() => {
+        if (!sessionStorage.getItem('grassQualitySeeded')) {
+            localStorage.setItem('bus_sim.grass.v1', JSON.stringify({ mode: 'texture' }));
+            sessionStorage.setItem('grassQualitySeeded', '1');
+        }
+    });
+    await page.goto('/?pose=civic_center_curve_front&coreTests=0'); await ready(page);
+    expect((await snapshot(page)).mode).toBe('flat'); expect(requests).toEqual([]);
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/grass.bin', async route => { await gate; await route.continue(); });
+    await options(page);
+    const quality = page.getByRole('group', { name: 'Grass quality', exact: true });
+    const requested = page.waitForRequest('**/grass.bin');
+    await quality.getByRole('button', { name: 'High', exact: true }).click(); await requested;
+    await quality.getByRole('button', { name: 'Low', exact: true }).click();
+    await quality.getByRole('button', { name: 'Ultra', exact: true }).click();
+    expect((await snapshot(page)).active).toBe(false);
+    release(); await ready(page);
+    expect(requests).toHaveLength(1);
+    expect((await snapshot(page)).mode).toBe('ultra');
+    expect((await snapshot(page)).field.distances).toEqual([.6, .8, 8, 22, 42]);
+    const switches = await page.evaluate(() => {
+        const { engine } = window.__busSim, grass = engine.context.city.grass, patches = grass.patches, asset = grass.asset;
+        const attributes = new Set(patches.group.children.flatMap(mesh => [...Object.values(mesh.geometry.attributes), mesh.geometry.index].filter(Boolean)));
+        const versions = [...attributes].map(attribute => attribute.version), geometry = patches.group.children.map(mesh => mesh.geometry);
+        const rows = [];
+        for (const mode of ['medium', 'low', 'high', 'ultra', 'flat', 'ultra']) {
+            engine.setGrassSettings({ mode });
+            const uniforms = engine.renderer.properties.get(patches.material.leaves[4]).uniforms;
+            rows.push({ mode, height: uniforms.grassPatchHeightBand.value.toArray(), ground: uniforms.grassPatchHandoffBand.value.toArray() });
+        }
+        return { rows, same: grass.asset === asset && grass.patches === patches && patches.group.children.every((mesh, i) => mesh.geometry === geometry[i]),
+            unchanged: [...attributes].every((attribute, i) => attribute.version === versions[i]) };
+    });
+    expect(switches.same && switches.unchanged).toBe(true);
+    for (const row of switches.rows.filter(row => ['medium', 'high', 'ultra'].includes(row.mode))) {
+        const expected = { medium: [16, 24], high: [18, 36], ultra: [22, 42] }[row.mode];
+        expect(row.height).toEqual(expected); expect(row.ground).toEqual([expected[0] - (expected[1] - expected[0]) / 8, expected[1]]);
+    }
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.reload(); await ready(page);
+    expect((await snapshot(page)).mode).toBe('ultra');
+    await options(page);
+    await expect(quality.getByRole('button', { name: 'Ultra', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Use defaults', exact: true }).click();
+    await expect(page.locator('#ui-options')).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('bus_sim.grass.v1'))).toBeNull();
+    await page.reload(); await ready(page); expect((await snapshot(page)).mode).toBe('high');
+    await options(page);
+    await expect(quality.getByRole('button', { name: 'High', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await mkdir(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, 'options-default-high.png') });
+    await writeFile(path.join(output, 'quality-switching.json'), JSON.stringify({ switches, requests, errors }, null, 2));
     expect(errors).toEqual([]);
 });
