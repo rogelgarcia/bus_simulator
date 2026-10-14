@@ -9,7 +9,8 @@
 #                                  arm = AO / roughness / metallic, normal_gl) through the node group TM_RB_limestone,
 #                                  4 m repeat, a calibrated linear tone on the base colour
 #                 wood             the calibrated warm tone of AI 645 (no wood texture is installed), flat
-#                 steel / glass / plaster / interior_floor / concrete    plain Principled settings
+#                 glass            clear Principled glass whose shadow rays pass (lit rooms behind the glazing)
+#                 steel / plaster / partition / interior_floor / concrete    plain Principled settings
 #               The sign letters keep the kit's own sign sets (the podium layer's TM_RB_sign_* materials).
 #   joints      the stone's panel joints cut as geometry into every object carrying a slot of joints.rules:
 #                 course joints  z-planes from joints.course_planes, cut into the course faces whose height holds the
@@ -218,6 +219,26 @@ def dress_tiles(mat, folder, fam):
     mat.diffuse_color = (*[c * k for c, k in zip(mean, fam["tone"])], 1.0)
 
 
+def dress_glass(mat, fam):
+    """Clear glass whose shadow rays pass (a transparent BSDF, tinted, for Light Path's shadow rays): Cycles' glass
+    otherwise blocks the sun's shadow rays and the rooms behind the glazing go dark (AI 634)."""
+    nt, out = fresh_tree(mat)
+    glass = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    glass.inputs["Base Color"].default_value = (*fam["rgb"], 1.0)
+    glass.inputs["Roughness"].default_value = fam["roughness"]
+    glass.inputs["Transmission Weight"].default_value = 1.0
+    glass.inputs["IOR"].default_value = fam["ior"]
+    clear = nt.nodes.new("ShaderNodeBsdfTransparent")
+    clear.inputs["Color"].default_value = (*fam["rgb"], 1.0)
+    path = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(mix.inputs["Fac"], path.outputs["Is Shadow Ray"])
+    nt.links.new(mix.inputs[1], glass.outputs["BSDF"])
+    nt.links.new(mix.inputs[2], clear.outputs["BSDF"])
+    nt.links.new(out.inputs["Surface"], mix.outputs["Shader"])
+    mat.diffuse_color = (*fam["rgb"], 0.35)
+
+
 def dress_plain(mat, rgb, roughness, metallic=0.0, transmission=0.0, ior=1.5):
     nt, out = fresh_tree(mat)
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
@@ -250,7 +271,7 @@ def dress_materials(m):
             elif "tile_m" in fam:                                     # roof_paving, site_paving
                 dress_tiles(mat, folder, fam)
             elif fam_name == "glass":
-                dress_plain(mat, fam["rgb"], fam["roughness"], transmission=1.0, ior=fam["ior"])
+                dress_glass(mat, fam)
             else:
                 dress_plain(mat, fam["rgb"], fam["roughness"], fam.get("metallic", 0.0))
             dressed[slot] = fam_name

@@ -704,3 +704,112 @@ def street_dressing(plan, seed=633):
                        "CC0 street_lamp_01, read-only) on the kerb side",
             "seed": seed, "z": z, "pits": pits, "palms": palms, "pit_greens": greens, "pots": pots,
             "entrance_plants": entrance_plants, "lamps": lamps, "lamp_model": STREET["lamp"]}
+
+
+# ---------------------------------------------------------------- AI 634: the interior base (residential floors)
+# The structure layer already gives every level its floor plate, ceiling and the core; this adds the partitions that
+# divide each residential floor (1-5) into units behind the bays, so the views through the glazing stop at walls, and a
+# ceiling downlight grid. Every partition ends on something solid and is cut flush there: behind the front pilasters,
+# on the core's faces, on the chamfer columns' flat back faces, on a rear-bay mullion (the frames' inner face).
+# Seven units a floor: front centre (behind the pilasters), front left / right (A's short bays and the front chamfers'
+# front halves), left / right (the chamfers' rear halves, the sides), rear left / right (split at an E-bay mullion).
+INTERIOR = {"partition": 0.12, "downlight": {"spacing": 2.4, "radius": 0.08, "height": 0.015, "clear_wall": 0.9,
+                                             "clear_partition": 0.45}}
+
+
+def _cut(a, b, plane_a, plane_b, half):
+    """The footprint of a wall of thickness 2*half along a -> b, its ends cut flush on two planes (point, normal)."""
+    d = (b[0] - a[0], b[1] - a[1])
+    L = math.hypot(*d)
+    t = (d[0] / L, d[1] / L)
+    nrm = (-t[1], t[0])
+
+    def meet(off, plane):
+        p0 = (a[0] + nrm[0] * off, a[1] + nrm[1] * off)               # the edge line: p0 + t * k
+        (px, py), (nx, ny) = plane
+        k = ((px - p0[0]) * nx + (py - p0[1]) * ny) / (t[0] * nx + t[1] * ny)
+        return (p0[0] + t[0] * k, p0[1] + t[1] * k)
+    loop = [meet(-half, plane_a), meet(-half, plane_b), meet(half, plane_b), meet(half, plane_a)]
+    area = sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(loop, loop[1:] + loop[:1]))
+    loop = loop if area > 0 else list(reversed(loop))
+    return [[round(x, 4), round(y, 4)] for x, y in loop]
+
+
+def interior_base(plan):
+    st, env = plan["structure"], plan["envelope"]
+    core = st["core"]["outer"]
+    cx0, cx1, cy0, cy1 = core["x"][0], core["x"][1], core["y"][0], core["y"][1]
+    half = INTERIOR["partition"] / 2
+    frame_in = env["frame_depth"] / 2
+    col = st["columns"]
+    pil = plan["markers"]["front_pilasters"]
+    y_wall = pil[0]["y"][1]                                          # the A wall line
+    cols = {}
+    for c in plan["markers"]["chamfer_columns"]:
+        cols.setdefault(c["run"], []).append(c)
+
+    def col_back(c):
+        """The column's flat back face: (point, normal into the room)."""
+        (ax, ay), (nx, ny) = c["at"], c["outward"]
+        return (ax - nx * col["behind"], ay - ny * col["behind"]), (-nx, -ny)
+    walls = []
+    for sgn in (-1, 1):
+        side = "left" if sgn < 0 else "right"
+        x_p = sgn * (abs(pil[0]["x"][1]) + half)                     # behind the pilaster, off the bay's end jamb
+        walls.append({"name": f"front_centre_{side}", "loop": _cut((x_p, y_wall + frame_in), (x_p, cy0),
+                                                                 ((0.0, y_wall + frame_in), (0.0, 1.0)), ((0.0, cy0), (0.0, -1.0)), half)})
+        front_col = cols["H" if sgn < 0 else "B"][0]
+        pt, nrm = col_back(front_col)
+        start = (sgn * cx1, cy0 + 0.4)
+        walls.append({"name": f"front_{side}", "loop": _cut(start, pt, ((sgn * cx1, 0.0), (-sgn * 1.0, 0.0)), (pt, nrm), half)})
+        rear_cols = cols["F" if sgn < 0 else "D"]
+        side_col = max(rear_cols, key=lambda c: abs(c["at"][0]))      # the rear chamfer column nearer the side
+        pt, nrm = col_back(side_col)
+        start = (sgn * cx1, cy1 - 0.4)
+        walls.append({"name": f"rear_{side}", "loop": _cut(start, pt, ((sgn * cx1, 0.0), (-sgn * 1.0, 0.0)), (pt, nrm), half)})
+    # the rear split, on E's first mullion
+    e = next(b for b in env["bays"] if b["run"] == "E")
+    panes = e["variants"][0]["panes"]
+    s_m = (panes[0][1] + panes[1][0]) / 2
+    x_m = e["a"][0] + e["along"][0] * s_m
+    y_e = e["a"][1] - frame_in
+    walls.append({"name": "rear_split", "loop": _cut((x_m, cy1), (x_m, y_e), ((0.0, cy1), (0.0, 1.0)), ((0.0, y_e), (0.0, -1.0)), half)})
+    # downlights: a grid inside the wall line, clear of the walls, the partitions and the core
+    wall = [tuple(q) for q in plan["layers"]["tower_wall_line"]["outline"]]
+    dl = INTERIOR["downlight"]
+
+    def inside(q, loop):
+        c, n = False, len(loop)
+        for i in range(n):
+            (ax, ay), (bx, by) = loop[i], loop[(i + 1) % n]
+            if (ay > q[1]) != (by > q[1]) and q[0] < ax + (q[1] - ay) * (bx - ax) / (by - ay):
+                c = not c
+        return c
+
+    def seg_dist(q, a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+        return math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy)
+    edges = [(w["loop"][i], w["loop"][(i + 1) % 4]) for w in walls for i in range(4)]
+    pts = []
+    sp = dl["spacing"]
+    wx0, wx1 = min(q[0] for q in wall), max(q[0] for q in wall)
+    wy0, wy1 = min(q[1] for q in wall), max(q[1] for q in wall)
+    xs = [wx0 + sp / 2 + k * sp for k in range(int((wx1 - wx0) / sp))]
+    ys = [wy0 + sp / 2 + k * sp for k in range(int((wy1 - wy0) / sp))]
+    for x in xs:
+        for y in ys:
+            q = (x, y)
+            if not inside(q, wall):
+                continue
+            if min(seg_dist(q, wall[i], wall[(i + 1) % len(wall)]) for i in range(len(wall))) < dl["clear_wall"]:
+                continue
+            if cx0 - 0.4 < x < cx1 + 0.4 and cy0 - 0.4 < y < cy1 + 0.4:
+                continue
+            if min(seg_dist(q, a, b) for a, b in edges) < dl["clear_partition"]:
+                continue
+            pts.append([round(x, 3), round(y, 3)])
+    return {"comment": "AI 634 interior base: partitions dividing each residential floor into seven units (footprints cut "
+                       "flush on the pilaster line, the core, the chamfer columns' backs and an E-bay mullion), standing on "
+                       "each storey's floor up to the slab above; a downlight grid under every residential ceiling",
+            "config": INTERIOR, "storeys": st["columns"]["storeys"], "partitions": walls, "downlights": pts}

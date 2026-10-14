@@ -34,6 +34,7 @@ MATERIALS = {
     "TM_RB_pilaster": (0.80, 0.77, 0.71),
     "TM_RB_column": (0.74, 0.72, 0.68),
     "TM_RB_core": (0.60, 0.60, 0.58),
+    "TM_RB_partition": (0.66, 0.61, 0.54),
     "TM_RB_hidden": (0.35, 0.35, 0.35),
     "TM_RB_frame": (0.025, 0.025, 0.028),
     "TM_RB_glass": (0.80, 0.86, 0.90),

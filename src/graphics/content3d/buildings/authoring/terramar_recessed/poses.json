@@ -58,7 +58,8 @@
                 630,
                 631,
                 632,
-                633
+                633,
+                634
             ]
         },
         {
@@ -169,7 +170,8 @@
                 627,
                 637,
                 644,
-                645
+                645,
+                634
             ],
             "location": [
                 -27.1,
@@ -225,7 +227,8 @@
                 637,
                 615,
                 644,
-                648
+                648,
+                634
             ],
             "location": [
                 0.0,
@@ -895,6 +898,29 @@
                 3.6
             ],
             "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "interior_unit_chamfer",
+            "group": "interior",
+            "label": "Into an H chamfer unit on floor 3 from outside its balcony: warm plaster partitions, the core wall, wood floor, ceiling downlights",
+            "items": [
+                634
+            ],
+            "location": [
+                -12.2,
+                -11.0,
+                18.3
+            ],
+            "target": [
+                -6.2,
+                -3.8,
+                17.8
+            ],
+            "vfov_deg": 55.0,
             "resolution": [
                 1920,
                 1080

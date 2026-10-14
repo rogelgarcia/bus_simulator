@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (interior): Through the glazing, the reference shows lit interiors with depth: floors, ceilings and room divisions. The extracted interiors are 24 plain plaster shells (`TM_INTERIORS`: a wall, floor and ceiling per level) that read as white boxes. The audit also shows the loggia platforms crossing the interior floor shells (100 object pairs) and the belts crossing them (12).
@@ -47,3 +49,22 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **Starting point:** the rebuild had no game shells to set aside. The structure layer already provides every level's floor plates, ceilings and the core; this item adds what divides and lights them.
+- **Layout** (`rebuild/props_layout.py` `interior_base()`, written to `plan["interior"]["base"]` by `make_plan.py`):
+  - seven partitions per residential floor, cut flush on the pilaster line, the core's faces, the chamfer columns' backs and an E-bay mullion: seven units behind the bays;
+  - a 2.4 m downlight grid clear of walls, partitions and the core (44 per floor).
+- **Layer** (`rebuild/layer_interior_base.py`, registered in `build.py` after `site_palms`) builds `RB_INTERIOR/RB_INTERIOR_BASE`:
+  - `rb_interior_partitions` (floors 1-5, floor to slab underside);
+  - `rb_interior_downlights` (220, warm emitter at strength 400).
+  - Nothing went to `TM_REPLACED`.
+- **Finishes** (materials pass): a new `partition` family (warm plaster) on the partitions and the core; warmer ceilings; floors keep the warm interior-floor tone.
+- **Glass:** the glass family now lets shadow rays pass (Light Path mix to a tinted transparent BSDF). Cycles' glass blocked the sun and left the rooms black; they are now daylit, and the guards' shadows are softer.
+- **Iteration:** the first renders showed the rooms dark even with partitions; fixed with the shadow-transparent glass and a brighter downlight (30 -> 400) for the daylight exposure.
+- **Checks:** audit 93 objects, 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `interior_unit_chamfer`; 634 added to `b8_calibrated`, `front_centre_bays` and `chamfer_left_balconies`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/634_interior_base_floor_plates_ceilings_partitions/`:
+  - `poses/rebuild_pre634_vs_rebuild/` (7 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre634.blend`.

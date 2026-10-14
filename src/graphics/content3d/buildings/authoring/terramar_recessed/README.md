@@ -343,7 +343,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 631 | DONE (rebuild): 13 dark charcoal slatted canopies, one per podium storefront bay (none over the entrance), 24 degrees, wall plate under the lintel, fascia, 39 tie rods |
 | props | 632 | DONE (rebuild, site): `RB_SITE` beside the building: a 6 m paved sidewalk along the front runs, 8 café sets (square cream market umbrellas, round wood tables, 23 woven chairs) before the chamfer storefronts |
 | props | 633 | DONE (rebuild, site): 4 tall procedural street palms in limestone tree pits (the two main ones at b8's positions through `CAM_B8`), charcoal entrance pots with cycads, 2 CC0 street lamps |
-| interior | 634 | Interior base: floor plates, ceilings, partitions (retargeted to the rebuild) |
+| interior | 634 | DONE (rebuild): seven units a residential floor (partitions cut flush on pilasters, core, columns, a mullion), warm plaster, a downlight grid; the glass lets shadow rays through so the rooms are lit |
 | interior | 635 | Ground-floor restaurant (retargeted to the rebuild) |
 | interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
 | interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
@@ -511,6 +511,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
+| `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
@@ -985,6 +986,45 @@ Audits: the building (91 objects) and the site (7 objects): 0 z-fights, 0 penetr
 - the checks, `terramar_rebuild.audit.json` and `site.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre633.blend`.
+
+**Interior base (AI 634, interior).** b8 shows lit interiors with depth through the glazing. The structure layer already
+gives every level its floor plate (`TM_RB_floor`), ceiling (`TM_RB_ceiling`) and the core (stair and two lifts), so
+nothing is replaced. `props_layout.interior_base()` writes `plan["interior"]["base"]`, and `layer_interior_base.py` builds
+`RB_INTERIOR/RB_INTERIOR_BASE`.
+
+**Partitions** (`rb_interior_partitions`) divide each residential floor (1–5) into seven units behind the bays:
+
+| Wall | From | To |
+| --- | --- | --- |
+| front centre, left and right | the frames' inner face, behind the pilasters (x ±2.715) | the core's front |
+| front left and right | the core's sides | the front chamfer columns (H, B) |
+| rear left and right | the core's rear corners | the rear chamfer columns nearer the sides (F, D) |
+| rear split | the core's back | an E-bay mullion (x 0.59) |
+
+The units are front centre, front left and right (A's short bays and the chamfers' front halves), left and right (the
+chamfers' rear halves and the sides), and rear left and right. Each wall stands from the storey's floor to the slab above,
+120 mm thick, its ends cut flush on the faces they meet, so nothing penetrates. Views through the glazing now stop at
+walls instead of passing through the building to the sea.
+
+**Downlights** (`rb_interior_downlights`): 44 per floor, 220 in all. They form a 2.4 m grid inside the wall line, kept
+0.9 m off the walls and 0.45 m off the partitions and the core, in `TM_RB_ceiling_light` (warm, about 2700 K, emission
+400: bright enough to light the rooms at the daylight exposure).
+
+**Finishes:** the new `partition` family is warm plaster (0.66, 0.61, 0.54) on the partitions and the core (no longer grey
+concrete through the glass). The ceilings are a warmer plaster (0.74, 0.70, 0.64). The floors keep the warm
+interior-floor tone.
+
+**Glass.** Cycles' glass blocks the sun's shadow rays, so the rooms read black. The materials pass's glass family is now
+clear Principled glass mixed to a tinted transparent BSDF for shadow rays (Light Path "Is Shadow Ray"). The rooms are
+daylit, and the guards cast soft shadows. This applies to every `TM_RB_glass`.
+
+Audit: 93 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 px. New pose: `interior_unit_chamfer`. 634 is
+also tagged on `b8_calibrated`, `front_centre_bays` and `chamfer_left_balconies`. Evidence is in
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/634_interior_base_floor_plates_ceilings_partitions/`:
+- `poses/rebuild_pre634_vs_rebuild/`: 7 sheets;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre634.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

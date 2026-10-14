@@ -124,9 +124,10 @@ MATERIALS = {
     "steel": {"rgb": [0.018, 0.018, 0.020], "roughness": 0.38, "metallic": 0.0, "slots": ["TM_RB_frame", "TM_RB_louvre"],
               "note": "black powder-coated steel"},
     "glass": {"rgb": [0.94, 0.97, 0.97], "roughness": 0.02, "ior": 1.5, "slots": ["TM_RB_glass"]},
-    "plaster": {"rgb": [0.80, 0.78, 0.74], "roughness": 0.9, "slots": ["TM_RB_ceiling"]},
+    "plaster": {"rgb": [0.74, 0.70, 0.64], "roughness": 0.9, "slots": ["TM_RB_ceiling"]},          # warm, not white (AI 634)
+    "partition": {"rgb": [0.66, 0.61, 0.54], "roughness": 0.9, "slots": ["TM_RB_partition", "TM_RB_core"]},   # AI 634
     "interior_floor": {"rgb": [0.42, 0.33, 0.24], "roughness": 0.55, "slots": ["TM_RB_floor"]},
-    "concrete": {"rgb": [0.48, 0.47, 0.45], "roughness": 0.85, "slots": ["TM_RB_roof_top", "TM_RB_core", "TM_RB_hidden"]},
+    "concrete": {"rgb": [0.48, 0.47, 0.45], "roughness": 0.85, "slots": ["TM_RB_roof_top", "TM_RB_hidden"]},
 }
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
@@ -483,6 +484,7 @@ def main():
     plan["props"]["storefront_awnings"] = props_layout.storefront_awnings(plan)            # AI 631
     plan["props"]["sidewalk_cafe"] = props_layout.sidewalk_cafe(plan)                      # AI 632 (site dressing)
     plan["props"]["street_dressing"] = props_layout.street_dressing(plan)                  # AI 633 (site dressing)
+    plan["interior"] = {"base": props_layout.interior_base(plan)}                          # AI 634
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)
