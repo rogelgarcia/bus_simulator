@@ -11,8 +11,10 @@ varying float vOceanHeight;     // height above sea level of the sand
 void main() {
     vec2 xz = uOceanSwashGrid.xy + position.xz * uOceanSwashGrid.zw;
     float sand = position.y * 0.001;
-    float lift = uOceanSwashLift + 0.002 * distance(cameraPosition, vec3(xz.x, sand, xz.y));
-    vOceanWorld = vec3(xz.x, sand + lift, xz.y);
+    float lift = uOceanSwashLift + 0.004 * distance(cameraPosition, vec3(xz.x, sand, xz.y));
+    // seaward of the waterline the sheet sinks under the still water (30 cm a metre down), so it never pokes up through a trough of the sea
+    float submerge = 0.3 * smoothstep(0.0, 1.0, uOceanLevel - sand);
+    vOceanWorld = vec3(xz.x, sand + lift - submerge, xz.y);
     vOceanPlane = xz;
     vOceanHeight = sand - uOceanLevel;
     gl_Position = projectionMatrix * viewMatrix * vec4(vOceanWorld, 1.0);

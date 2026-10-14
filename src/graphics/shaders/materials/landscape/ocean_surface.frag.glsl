@@ -102,10 +102,15 @@ void main() {
 #endif
         // AI 597 D4: over the sand the displaced surface fades out within the first metres inland of the still-water line (the swash sheet
         // draws the water that runs up the beach), so a crest never washes over the beach as a water surface
-        float inland = oceanInside(vOceanPlane, uOceanFieldBounds) ? max(-texture(uOceanField, (vOceanPlane - uOceanFieldBounds.xy) * uOceanFieldBounds.zw).y, 0.0) : 0.0;
+        float shoreDistance = oceanInside(vOceanPlane, uOceanFieldBounds) ? texture(uOceanField, (vOceanPlane - uOceanFieldBounds.xy) * uOceanFieldBounds.zw).y : 1.0;
+        float inland = max(-shoreDistance, 0.0);
         float landFade = 1.0 - smoothstep(0.0, 4.0, inland);
+        // and on the land side a crest standing above the sea level is the swash sheet's to draw: it never shows over the beach as a sliver
+        if (shoreDistance < 0.0) landFade *= 1.0 - smoothstep(0.0, 0.06, vOceanWorld.y - uOceanLevel);
         radiance *= landFade;
         alpha *= landFade;
+        // view 10 is the swash sheet's: the rings leave it uncovered
+        if (uOceanDebug == 10) discard;
         if (uOceanDebug > 0) {
             vec3 view = uOceanDebug == 1 ? n * 0.5 + 0.5 : uOceanDebug == 2 ? vec3(reflectance) : uOceanDebug == 3 ? oceanDisplay(sky) : uOceanDebug == 4 ? oceanDisplay(glint)
                 : uOceanDebug == 5 ? vec3(surface.variance * 20.0) : uOceanDebug == 6 ? vec3(reflection.y * 0.5 + 0.5) : uOceanDebug == 7 ? vec3(oceanAmplitudeFactors(vOceanPlane).xyz)

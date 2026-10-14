@@ -1,7 +1,7 @@
 // Verifies the AI 597 D2 shore model: the exact signed shore distance, the phase-speed inversion, the fast-marching travel time against a plane wave, refraction and depth-limited breaking on a planar beach, reef shadowing, rock platforms, the sentinel fill and the yielding driver.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANDSCAPE_OCEAN_SHORE, computeLandscapeOceanShore, landscapeOceanPhaseSpeed, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand,
+import { LANDSCAPE_OCEAN_SHORE, landscapeOceanSeaMask, computeLandscapeOceanShore, landscapeOceanPhaseSpeed, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand,
     landscapeOceanShoreWaves } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanShore.js';
 import { LANDSCAPE_OCEAN } from '../../../src/graphics/engine3d/landscape/ocean/LandscapeOceanModel.js';
 
@@ -44,6 +44,23 @@ test('Shore distance: exact against the brute force on both sides of a random co
     assert.ok(sea.every(value => value === 8) && land.every(value => value === -8));
     assert.throws(() => landscapeOceanShoreDistance(new Float32Array(15), 4, 2), /texels x texels/);
     assert.throws(() => landscapeOceanShoreDistance(new Float32Array(16), 4, 0), /texel size must be positive/);
+});
+
+test('Sea mask: a pocket of water enclosed by land is no shoreline; the sea is the water connected to the boundary', () => {
+    // an 8 x 8 raster: the sea on the west (columns 0-2), land east of it, a one-texel pocket at (5, 4) and a two-texel pocket at (5, 1)-(6, 1)
+    // (a pocket touching the raster's boundary would be sea: the sea is whatever water reaches the boundary)
+    const texels = 8, depth = new Float32Array(texels * texels).fill(-1);
+    for (let r = 0; r < texels; r++) for (let c = 0; c < 3; c++) depth[r * texels + c] = 2;
+    depth[4 * texels + 5] = .3; depth[1 * texels + 5] = .2; depth[1 * texels + 6] = .2;
+    const mask = landscapeOceanSeaMask(depth, texels);
+    assert.equal(mask.seaTexels, 24); assert.equal(mask.pockets, 2); assert.equal(mask.pocketTexels, 3);
+    assert.equal(mask.sea[4 * texels + 5], 0); assert.equal(mask.sea[1 * texels + 6], 0); assert.equal(mask.sea[3 * texels + 2], 1);
+    // the distance ignores the pockets: at (5, 4) the land is 3 texels from the sea's edge (column 2), and the texel beside the pocket too
+    const plain = landscapeOceanShoreDistance(depth, texels, 1), masked = landscapeOceanShoreDistance(depth, texels, 1, mask.sea);
+    assert.equal(masked[4 * texels + 5], -3); assert.equal(masked[4 * texels + 4], -2); assert.equal(masked[4 * texels + 6], -4);
+    assert.equal(masked[1 * texels + 5], -3); assert.equal(masked[1 * texels + 6], -4);
+    assert.ok(plain[4 * texels + 5] > 0 && plain[4 * texels + 4] === -1, 'without the mask the pocket is water with its own shoreline');
+    assert.throws(() => landscapeOceanShoreDistance(depth, texels, 1, new Uint8Array(3)), /sea mask/);
 });
 
 test('Shore fill: the island and the lake take the shoreline values breadth first and no sentinel remains', () => {

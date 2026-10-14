@@ -2,14 +2,16 @@
 // wetness and the foam the swash leaves on the sand, all analytic in time (no state, so a fixed time repeats exactly). The train's crest
 // reaches the waterline at phase 0: the arrival a fragment of sand follows is its nearest waterline texel's (the shore distance is an exact
 // distance field, so its gradient leads to that texel and the travel time is read there); the swash cycle u = fract(lag / period) then runs
-// the water sheet up the beach to the wave's run-up R and back: the front stands at R sin(pi u). R is the Stockdon et al. (2006) R2 run-up
-// of the sea state's swell at the foreshore slope (the sand height over its distance to the waterline), scaled by the train's group envelope,
-// its longshore variation and the shore exposure like the train itself. The sand at a height z is wet while the sheet covers it and dries
-// afterwards with a lag (e^(-t / drying)): the last of the remembered cycles whose run-up passed z gives the time since the water receded.
-// The foam the backwash leaves follows the same memory with its own, shorter lifetime, strongest at the top of each run-up where the water
-// stalls, and scales with the foam supply of the shoreline (the D3 state's deposit channel). Below the tidal and capillary reach the sand
-// stays saturated (the AI577 D5 static band's core, which the sheet replaces in time). The wrack line lies at the highest run-up of the
-// remembered cycles. The vertex program places the sheet on the native beach heights.
+// the water sheet up the beach to the wave's run-up R and back: the front stands R sin(pi u) / beta metres inland of the waterline along the
+// shore distance averaged over the field's 3 x 3 texels (a smooth offset of the shoreline; the 3.9 m raster's waterline is a staircase and
+// the sand's own relief never interrupts the sheet). R is the Stockdon et al. (2006) R2 run-up of the sea state's swell at the foreshore
+// slope beta of this longshore position (the field's sand height eight metres inland of the waterline over those eight metres), scaled by the
+// train's group envelope, its longshore variation and the shore exposure like the train itself. The sand at a distance d is wet while the
+// sheet covers it and dries afterwards with a lag (e^(-t / drying)): the last of the remembered cycles whose excursion passed d gives the
+// time since the water receded. The foam the backwash leaves follows the same memory with its own, shorter lifetime, strongest at the top of
+// each run-up where the water stalls, and scales with the foam supply of the shoreline (the D3 state's deposit channel). Below the tidal and
+// capillary reach the sand stays saturated (the AI577 D5 static band's core, which the sheet replaces in time). The wrack line lies at the
+// highest excursion of the remembered cycles. The vertex program places the sheet on the native beach heights.
 // x sqrt(H L) of the sea state's swell (m), y swell period (s), z drying time (s), w the foam the sheet carries behind its front (of the
 // shoreline's supply)
 uniform vec4 uOceanSwash;
@@ -37,49 +39,73 @@ float oceanSwashRunup(float beta) {
     return 1.1 * (0.35 * beta * uOceanSwash.x + 0.5 * sqrt(hl * (0.563 * beta * beta + 0.004)));
 }
 
-// the foreshore slope that drives the run-up (Stockdon uses the mean slope of the swash zone, not the local one, which a berm face would
-// turn into metres of run-up): the sand height over its horizontal distance to the waterline, the depth field's gradient at the waterline
-// itself, capped at the maximum beach slope
-float oceanSwashSlope(vec2 uv, float height, float shoreDistance) {
+// the field averaged over the 3 x 3 texels around uv: the waterline of the 3.9 m raster is a staircase, its smoothed offset is what the
+// sheet follows
+vec4 oceanSwashFieldWide(vec2 uv) {
     vec2 texel = 1.0 / vec2(textureSize(uOceanField, 0));
-    vec2 spacing = texel / uOceanFieldBounds.zw;
-    float dx = (texture(uOceanField, uv + vec2(texel.x, 0.0)).x - texture(uOceanField, uv - vec2(texel.x, 0.0)).x) / (2.0 * spacing.x);
-    float dz = (texture(uOceanField, uv + vec2(0.0, texel.y)).x - texture(uOceanField, uv - vec2(0.0, texel.y)).x) / (2.0 * spacing.y);
-    float local = length(vec2(dx, dz));
-    float inland = max(-shoreDistance, 0.0);
-    float foreshore = max(height, 0.0) / max(inland, 4.0);
-    float slope = mix(local, foreshore, smoothstep(2.0, 8.0, inland));
-    return min(slope, tan(radians(uOceanSwashBand.y)));
+    vec4 sum = vec4(0.0);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) sum += texture(uOceanField, uv + vec2(float(i), float(j)) * texel);
+    return sum / 9.0;
 }
 
-// the crest arrival the sand at uv follows: the travel time at its nearest waterline texel, two metres past the waterline along the shore
-// distance's gradient, averaged with the texels beside it along the shore so the fronts of two waterline points meeting on the sand blend
-float oceanSwashArrival(vec2 uv, float shoreDistance) {
+// the unit direction toward the water in texture space (the shore distance's gradient; the distance field is exact, so it points at the
+// nearest waterline texel)
+vec2 oceanSwashToWater(vec2 uv) {
     vec2 texel = 1.0 / vec2(textureSize(uOceanField, 0));
     vec2 gradient = vec2(texture(uOceanField, uv + vec2(texel.x, 0.0)).y - texture(uOceanField, uv - vec2(texel.x, 0.0)).y,
         texture(uOceanField, uv + vec2(0.0, texel.y)).y - texture(uOceanField, uv - vec2(0.0, texel.y)).y);
-    vec2 toWater = length(gradient) > 1.0e-6 ? normalize(gradient) : vec2(0.0);
+    return length(gradient) > 1.0e-6 ? normalize(gradient) : vec2(0.0);
+}
+
+// the crest arrival the sand follows: the travel time at its nearest waterline texel, two metres past the waterline, averaged over the 3 x 3
+// texels there (the marched time has local maxima in the inner corners of the raster's staircased waterline; averaged, the fronts of two
+// waterline points meeting on the sand blend)
+float oceanSwashArrival(vec2 uv, vec2 toWater, float shoreDistance) {
+    vec2 texel = 1.0 / vec2(textureSize(uOceanField, 0));
     vec2 foot = uv + toWater * (max(-shoreDistance, 0.0) + 2.0) * uOceanFieldBounds.zw;
+    float sum = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) sum += texture(uOceanShoreField, foot + vec2(float(i), float(j)) * texel).x;
+    return sum / 9.0;
+}
+
+// the foreshore slope that drives the run-up at this longshore position (Stockdon uses the mean slope of the swash zone, not the local one,
+// which a berm face would turn into metres of run-up and a raster texel's centre into none): the field's sand height eight metres inland of
+// the waterline over those eight metres, averaged along the shore, between a floor and the maximum beach slope; the same for every fragment
+// across the profile, on the water side too
+float oceanSwashSlope(vec2 uv, vec2 toWater, float shoreDistance) {
+    vec2 texel = 1.0 / vec2(textureSize(uOceanField, 0));
+    vec2 waterline = uv - toWater * shoreDistance * uOceanFieldBounds.zw;
+    vec2 probe = waterline - toWater * 8.0 * uOceanFieldBounds.zw;
     vec2 along = vec2(-toWater.y, toWater.x) * texel;
-    return 0.5 * texture(uOceanShoreField, foot).x + 0.25 * (texture(uOceanShoreField, foot + along).x + texture(uOceanShoreField, foot - along).x);
+    float height = max(-(0.5 * texture(uOceanField, probe).x + 0.25 * (texture(uOceanField, probe + along).x + texture(uOceanField, probe - along).x)), 0.0);
+    return clamp(height / 8.0, 0.02, tan(radians(uOceanSwashBand.y)));
 }
 
 OceanSwash oceanSwashAt(vec2 xz, float height) {
     OceanSwash s = OceanSwash(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     vec2 uv = (xz - uOceanFieldBounds.xy) * uOceanFieldBounds.zw;
     vec4 field = texture(uOceanField, uv);
+    vec4 wide = oceanSwashFieldWide(uv);
+    vec2 toWater = oceanSwashToWater(uv);
     float period = uOceanSwash.y;
-    float lag = uOceanTime - oceanSwashArrival(uv, field.y);
+    float lag = uOceanTime - oceanSwashArrival(uv, toWater, field.y);
     float u = fract(lag / period);
     s.cycle = u;
     // the wave-to-wave run-up: the group envelope and the longshore variation of the train, damped by the shore exposure like the train
     float sheltered = uOceanShoreExposure.x + (1.0 - uOceanShoreExposure.x) * field.w;
     vec2 p = xz / uOceanShoreWave.w + vec2(3.7, 11.9);
     float longshore = 1.0 + uOceanShoreShape.y * (2.0 * (0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.0 + vec2(5.1, 2.3))) - 1.0);
-    float slope = oceanSwashSlope(uv, height, field.y);
+    float slope = oceanSwashSlope(uv, toWater, field.y);
     float base = oceanSwashRunup(slope) * longshore * sheltered;
+    // the sheet is placed by the cross-shore distance, not by the sand's own height: the run-up R climbs the foreshore slope, so its edge
+    // stands R / slope metres inland of the smoothed waterline, and the sand's hummocks and ridges neither ring the front with foam nor
+    // push it into spikes
+    float inland = max(-wide.y, 0.0);
+    // the sheet's foam belongs to the land side of the waterline: the water side is the rings' (their breaker and shoreline foam)
+    float onLand = smoothstep(-0.5, 0.5, -wide.y);
+    float metersPerMeter = 1.0 / slope;
     float cycleStart = lag - u * period;
-    float runupMax = 0.0;
+    float excursionMax = 0.0;
     float wetness = 0.0;
     float deposit = 0.0;
     // the current cycle and the remembered ones before it
@@ -88,36 +114,39 @@ OceanSwash oceanSwashAt(vec2 xz, float height) {
         float start = cycleStart - float(i) * period;
         float group = 1.0 + uOceanShoreShape.x * sin(6.283185307179586 * start / uOceanShoreWave.y);
         float runup = base * group;
+        float excursion = runup * metersPerMeter;
         // the oldest remembered cycle fades out over its last period, so the memory window never drops a wave at once
         float age = 1.0 - clamp(u + float(i) - (uOceanSwashBand.z - 1.0), 0.0, 1.0);
-        runupMax = max(runupMax, runup * age);
+        excursionMax = max(excursionMax, excursion * age);
         if (i == 0) {
             s.runup = runup;
-            float front = runup * sin(3.141592653589793 * u);
-            s.film = 1.0 - smoothstep(front - 0.03, front + 0.03, height);
-            s.thickness = max(front - height, 0.0) / max(runup, 0.01);
-            // the foam at the leading edge is a band of a fixed width along the beach (the sheet's depth over the foreshore slope, so a flat
-            // beach does not turn a share of the run-up into tens of metres of foam); behind it the sheet carries foam that thins seaward
-            float behind = max(front - height, 0.0) / max(slope, 0.02);
-            s.front = (1.0 - smoothstep(0.0, uOceanSwashBand.w, behind)) * s.film;
-            s.sheetFoam = uOceanSwash.w * (1.0 - smoothstep(0.0, 0.6, s.thickness)) * s.film;
+            float front = excursion * sin(3.141592653589793 * u);
+            s.film = 1.0 - smoothstep(front - 0.4, front + 0.4, inland);
+            s.thickness = max(front - inland, 0.0) / max(excursion, 0.1);
+            // the foam rides the advancing edge over a band of a fixed width along the beach and thins away as the sheet recedes (the backwash
+            // leaves its foam on the sand instead: the deposit below); behind the edge the sheet carries foam that thins seaward
+            float behind = max(front - inland, 0.0);
+            float advancing = 1.0 - smoothstep(0.5, 0.85, u);
+            s.front = (1.0 - smoothstep(0.0, uOceanSwashBand.w, behind)) * s.film * advancing * onLand;
+            s.sheetFoam = uOceanSwash.w * (1.0 - smoothstep(0.0, 0.6, s.thickness)) * s.film * onLand;
         }
-        if (runup <= height) continue;
-        // the sheet covered this height between the phases where runup sin(pi u) = height
-        float ua = asin(clamp(height / runup, 0.0, 1.0)) / 3.141592653589793, ub = 1.0 - ua;
+        if (excursion <= inland) continue;
+        // the sheet covered this distance between the phases where excursion sin(pi u) = inland
+        float ua = asin(clamp(inland / excursion, 0.0, 1.0)) / 3.141592653589793, ub = 1.0 - ua;
         float ui = u + float(i);
         float since = ui < ua ? -1.0 : (ui <= ub ? 0.0 : (ui - ub) * period);
         if (since < 0.0) continue;
         wetness = max(wetness, exp(-since / uOceanSwash.z) * age);
         // the foam the backwash left here: dying with its lifetime, most where this run-up stalled (its top), little on the lower foreshore
-        deposit = max(deposit, exp(-since / uOceanSwashFoam.y) * (0.4 + 0.6 * smoothstep(0.3, 1.0, height / runup)) * age);
+        deposit = max(deposit, exp(-since / uOceanSwashFoam.y) * (0.4 + 0.6 * smoothstep(0.3, 1.0, inland / excursion)) * age);
     }
     // the saturated core below the tidal and capillary reach (the static band of AI577 D5)
     float reach = uOceanSwashBand.x;
     // the saturated core fades over the last forty metres of the band so its inland edge never shows as a step on a low, wide beach
-    wetness = max(wetness, (1.0 - smoothstep(LANDSCAPE_TERRAIN_WETTING.x * reach, reach, height)) * (1.0 - smoothstep(60.0, 100.0, max(-field.y, 0.0))));
+    wetness = max(wetness, (1.0 - smoothstep(LANDSCAPE_TERRAIN_WETTING.x * reach, reach, height)) * (1.0 - smoothstep(60.0, 100.0, inland)));
     s.wetness = clamp(wetness, 0.0, 1.0);
-    s.deposit = deposit * uOceanSwashFoam.x * (1.0 - s.film);
-    s.wrack = smoothstep(runupMax - 0.3, runupMax - 0.08, height) * (1.0 - smoothstep(runupMax + 0.02, runupMax + 0.18, height)) * (1.0 - s.film);
+    s.deposit = deposit * uOceanSwashFoam.x * (1.0 - s.film) * onLand;
+    // the wrack line two metres wide at the highest remembered excursion
+    s.wrack = smoothstep(excursionMax - 1.5, excursionMax - 0.4, inland) * (1.0 - smoothstep(excursionMax + 0.1, excursionMax + 0.9, inland)) * (1.0 - s.film);
     return s;
 }

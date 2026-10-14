@@ -17,7 +17,7 @@ import { loadLandscapeOceanField } from './LandscapeOceanField.js';
 import { LANDSCAPE_OCEAN_COAST, landscapeOceanCoastBeachMask, landscapeOceanCoastZoneBreaking, loadLandscapeOceanCoast } from './LandscapeOceanCoast.js';
 import { createLandscapeOceanFoam } from './LandscapeOceanFoam.js';
 import { createLandscapeOceanSwash, loadLandscapeOceanSwashBand } from './LandscapeOceanSwash.js';
-import { computeLandscapeOceanShore, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand } from './LandscapeOceanShore.js';
+import { computeLandscapeOceanShore, landscapeOceanSeaMask, landscapeOceanShoreDistance, landscapeOceanShoreFill, landscapeOceanShoreSmoothLand } from './LandscapeOceanShore.js';
 import { createLandscapeOceanSimulation } from './LandscapeOceanSimulation.js';
 import { LANDSCAPE_FRAME_PIPELINE } from '../LandscapeFramePipelineModel.js';
 import { createLandscapeOceanSurface } from './LandscapeOceanSurface.js';
@@ -128,7 +128,10 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         const coast = await loadLandscapeOceanCoast({ manifest, manifestUrl, layout: field.layout, signal });
         signal?.throwIfAborted();
         // the D4 swash band (the native beach chunks) loads beside the shore march; it needs the shore distance the march computes first
-        const shoreDistance = landscapeOceanShoreDistance(field.depth, texels, field.layout.texelMetersX);
+        // the shoreline is the sea's: a pocket of below-sea-level texels enclosed by the beach would be no shoreline (the swash sheet would wrap
+        // its foam band around it); coastal v3 holds none, the snapshot reports the count
+        const seaMask = landscapeOceanSeaMask(field.depth, texels);
+        const shoreDistance = landscapeOceanShoreDistance(field.depth, texels, field.layout.texelMetersX, seaMask.sea);
         const [shore, band] = await Promise.all([
             marchShore({ depth: field.depth, texels, texelMeters: field.layout.texelMetersX, rock: coast.rock, zone: coast.zone, seaState: seaStateId, quality: qualityId, signal, shoreDistance }),
             loadLandscapeOceanSwashBand({ manifest, manifestUrl, layout: field.layout, shoreDistance, signal }).catch(error => { if (error.name === 'AbortError') throw error; return { error: error.message }; })
@@ -165,7 +168,7 @@ export async function createLandscapeOcean({ landscape, ledger, renderer, scene,
         await Promise.all([surface.ready(camera, signal), swash ? swash.ready(camera, signal) : Promise.resolve()]);
         signal?.throwIfAborted();
         const coastState = { status: coast.status, reason: coast.reason, stale: coast.stale, staleChunks: coast.staleChunks, revision: coast.revision, pages: coast.pages, milliseconds: coast.milliseconds, ...coast.statistics };
-        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, swash, swashState, extent, field, coast: coastState, shore, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
+        const ocean = createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, swash, swashState, extent, field, coast: coastState, shore: { ...shore, seaMask: { pockets: seaMask.pockets, pocketTexels: seaMask.pocketTexels, seaTexels: seaMask.seaTexels } }, seaState: seaStateId, quality: qualityId, loadMs: performance.now() - started, release, signal });
         if (surround) await ocean.setSurround(surround);
         return ocean;
     } catch (error) {
@@ -193,7 +196,7 @@ function applyClock(clock, { mode, time, step } = {}) {
 function describeShore(shore, seaState) {
     const { inputs } = shore;
     return { status: 'active', seaState, periodSeconds: inputs.periodSeconds, heightMeters: shore.heightMeters, headingDegrees: inputs.headingDegrees, gamma: inputs.gamma, deepDepthMeters: inputs.deepDepthMeters, deepWavelengthMeters: inputs.deepWavelengthMeters,
-        omega: inputs.omega, groupPeriodSeconds: inputs.groupPeriodSeconds, statistics: shore.statistics, zoneBreaking: shore.zoneBreaking, milliseconds: shore.milliseconds, filledLandTexels: shore.filledTexels };
+        omega: inputs.omega, groupPeriodSeconds: inputs.groupPeriodSeconds, statistics: shore.statistics, zoneBreaking: shore.zoneBreaking, milliseconds: shore.milliseconds, filledLandTexels: shore.filledTexels, seaMask: shore.seaMask ?? null };
 }
 
 function createActiveOcean({ landscape, ledger, clock, simulation, surface, foam, swash, swashState, extent, field, coast, shore, seaState, quality, loadMs, release, signal }) {

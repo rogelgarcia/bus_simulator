@@ -75,9 +75,12 @@ void main() {
     float ratio = dot(baseDisplay, luma) / max(dot(oceanDisplay(sandLinear), luma), 1.0e-4);
     vec3 radiance = max(oceanDisplay(lit) - baseDisplay, vec3(0.0));
     float alpha = 1.0 - ratio;
-    // the foam at the front of the sheet, the foam it carries and the foam the backwash left, through the D3 pattern
-    float density = 1.2 * swash.front + supply * swash.sheetFoam + deposit;
-    float coverage = uOceanFoamLook.x > 0.5 ? oceanFoamCoverage(density, oceanFoamPattern(vOceanPlane, length(fwidth(vOceanPlane)))) : 0.0;
+    // the foam at the front of the sheet, the foam it carries and the foam the backwash left
+    float pattern = oceanFoamPattern(vOceanPlane, length(fwidth(vOceanPlane)));
+    // the front's dense foam through the D3 lace; the foam the sheet carries and the backwash left as soft wisps over the pattern's high
+    // ground (through the lace threshold a low density keeps only the veins: isolated needles and cells on the sand)
+    float lingering = clamp(supply * swash.sheetFoam + deposit, 0.0, 1.0);
+    float coverage = uOceanFoamLook.x > 0.5 ? max(oceanFoamCoverage(1.2 * swash.front, pattern), 0.8 * lingering * smoothstep(0.3, 0.9, pattern)) : 0.0;
     vec3 foamRadiance = oceanFoamRadiance(n, vOceanWorld, sun, landscapeSkyIrradiance(n), visibility);
     radiance = mix(radiance, oceanDisplay(foamRadiance * haze.transmittance + haze.inscatter), coverage);
     alpha = mix(alpha, 1.0, coverage);

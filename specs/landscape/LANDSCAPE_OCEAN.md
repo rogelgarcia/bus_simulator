@@ -160,25 +160,35 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   vertices (grid column, height in millimetres, grid row as 16-bit integers; centimetres staircased the film front along the grid),
   665 348 triangles, 6.06 MB, loaded beside the shore march in 0.3–0.4 s; one mesh per chunk with a bounding sphere, premultiplied,
   no depth write, drawn before the rings, never picked (picking reads the terrain meshes only). The vertex program lifts the sheet
-  3 cm over the sand plus 2 mm per metre of distance, so the far band never fights the coarser terrain levels for depth.
+  3 cm over the sand plus 4 mm per metre of distance (2 mm until 2026-10-14: from 70 m up the coarser terrain level still rose through
+  the sheet in small hollows and the front band ringed the holes), so the far band never fights the coarser terrain levels for depth, and
+  seaward of the waterline sinks it 30 cm per metre of depth below the still water, so it never pokes up through a trough of the sea.
 - **Arrival** the train's crest reaches the waterline at phase 0; the sand follows its nearest waterline texel's travel time, read 2 m
-  past the waterline along the gradient of the exact shore distance and averaged with the texels beside it along the shore (the
-  breadth-first copy of the land side forms Manhattan arcs the front would otherwise follow).
+  past the waterline along the gradient of the exact shore distance and averaged over the 3 × 3 texels there (the marched time has local
+  maxima in the inner corners of the raster's staircased waterline; the breadth-first copy of the land side forms Manhattan arcs the front
+  would otherwise follow).
 - **Run-up** Stockdon et al. (2006) R2 of the sea state's swell, `1.1 (0.35 β √(H L) + 0.5 √(H L (0.563 β² + 0.004)))`, with H the
-  continuous significant height, L the deep-water swell wavelength (`√(H L)` 12.05 m moderate) and β the foreshore slope (the sand
-  height over its horizontal distance to the waterline, the depth field's gradient at the waterline itself, capped at 14°; a local
-  berm face would turn into metres of run-up), scaled wave by wave by the train's group envelope, its longshore variation and the
-  shore exposure like the train itself.
-- **Cycle** `u = fract(lag / period)` runs the sheet's front up to `R sin(π u)` and back; the sand at a height z is under the sheet
-  while the front is above it, and wet afterwards with the drying lag `e^(−t / 60 s)` from the last of the eight remembered cycles
-  whose run-up passed z (the oldest fades out over its last period, so the memory window never drops a wave at once); below the
-  tidal and capillary reach (0.85 m) the sand stays saturated (the D5 static band's core); the wrack line lies at the highest
-  remembered run-up. Everything is analytic in the clock, so a fixed time repeats exactly and a sea-state switch only changes the
-  inputs.
-- **Foam** the leading edge is a band 1.5 m wide along the beach (the sheet's depth over the foreshore slope; a share of the run-up
-  turned into 18 m of white on a 1:30 beach); behind it the sheet carries 0.3 of the shoreline's supply thinning seaward, and the
-  backwash leaves 0.5 of it dying over 10 s, most where each run-up stalled. The supply is the D3 state's sand channel (§2c); all
-  three go through the D3 lace pattern and coverage.
+  continuous significant height, L the deep-water swell wavelength (`√(H L)` 12.05 m moderate) and β the foreshore slope of the longshore
+  position: the field's sand height 8 m inland of the waterline over those 8 m, averaged along the shore, between a 0.02 floor and 14° (a
+  local slope turns a berm face into metres of run-up and a raster texel's centre into none), scaled wave by wave by the train's group
+  envelope, its longshore variation and the shore exposure like the train itself.
+- **Cycle** `u = fract(lag / period)` runs the sheet's front up to `R sin(π u) / β` metres inland of the waterline along the shore distance
+  averaged over 3 × 3 texels (a smooth offset of the shoreline; until 2026-10-14 the native sand's height placed the front, and every
+  hummock on the foreshore then wore a ring of foam, each remembered run-up its own nested ring, every ridge a seaward spike); the sand's
+  own relief never interrupts the sheet. The sand at a distance d is under the sheet while the front is beyond it, and wet afterwards with
+  the drying lag `e^(−t / 60 s)` from the last of the eight remembered cycles whose excursion passed d (the oldest fades out over its last
+  period, so the memory window never drops a wave at once); below the tidal and capillary reach (0.85 m) the sand stays saturated (the D5
+  static band's core); the wrack line lies 2 m wide at the highest remembered excursion. Everything is analytic in the clock, so a fixed
+  time repeats exactly and a sea-state switch only changes the inputs.
+- **Foam** the leading edge is a band 3 m wide along the beach behind the advancing front, thinning away as the sheet recedes (foam rides
+  the advance; the backwash leaves its foam on the sand instead); behind it the sheet carries 0.3 of the shoreline's supply thinning
+  seaward, and the backwash leaves 0.5 of it dying over 10 s, most where each run-up stalled (lines parallel to the shore at each
+  remembered excursion, never rings). All of it lies on the land side of the waterline: the water side is the rings' (their breaker and
+  shoreline foam); a water-side band traced the level sets of the marched arrival time, with its local maxima in the inner corners of the
+  staircased waterline, as closed loops (the islands of foam of 2026-10-14). The front's foam goes through the D3 lace; the carried and
+  deposited foam draws as soft wisps over the pattern's high ground (the lace threshold at a low density keeps only its veins: a needle with
+  a hole, a cell as a polygon). The shore distance measures to the sea connected to the extent's boundary (`landscapeOceanSeaMask`; an
+  enclosed pocket of below-sea-level texels is no shoreline; coastal v3 holds none, reported in `snapshot().ocean.shore.seaMask`).
 - **Shading** composed in linear light over the sand's representative radiance (albedo 0.4 under the sun and sky irradiance) and
   carried to the terrain's display-encoded pixel as a display ratio (the alpha: the wet sand under the reflection, the Lekner–Dorf
   darkening of the calibrated wet surface, 0.6 of the albedo) and a display increment (the colour: what the reflection and the
@@ -187,8 +197,10 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   their amplitude as its ripples, a 0.008 mean square slope below them, so the sun breaks into glitter on it; saturated sand keeps
   the calibrated wet roughness (0.18) at 0.6 gloss. Dry, unfilmed sand is discarded. Debug view 10 shows the wetness, the film and
   the front foam over the surface's view 9.
-- **Surface over the sand** the displaced rings fade out within 4 m inland of the still-water line (`ocean_surface.frag.glsl`), so a
-  crest never washes over the beach as a water surface; the sheet owns the water on the sand.
+- **Surface over the sand** the displaced rings fade out within 4 m inland of the still-water line (`ocean_surface.frag.glsl`), and on
+  the land side a ring crest standing above the sea level fades with its height (it showed over the beach as a foamed sliver), so a crest
+  never washes over the beach as a water surface; the sheet owns the water on the sand. In the sheet's verification view (10) the rings
+  discard, so the view shows the sheet alone (they drew opaque over it before).
 - **Residency** the band reserves in the ocean share (6.1 MiB GPU and CPU on v3; the estimate 8 MiB); the share grew to 48 / 80 MiB
   and the shipped GPU profiles by the same 16 MiB (416 → 432 MiB, 608 → 624 MiB, 764 and 1126 MiB at 2560 × 1440 and 3840 × 2160).
 - **Review poses** `OS-06` (the swash from the berm, 3 m over the dry sand 47 m east of the swim beach's waterline, looking down the
@@ -317,7 +329,11 @@ today the surface, the water column and the light are bound to the sea level and
   (NW-12, OS-06, NW-01, NW-03 over the beach regions), the paired GPU measurement `d4/perf/` (with OS-06 and OS-07) and the
   regression logs `d4/regressions/`; the look iterations `d4/first..eighth/` and the term probes `d4/probe_terms/`; unit tests
   `landscape_ocean_swash.test.js` (the band geometry, the loader, the inputs), `landscape_ocean_shore.test.js` (the land-side
-  smoothing), `landscape_ocean_model.test.js` (the share, the parts, the lighting value).
+  smoothing), `landscape_ocean_model.test.js` (the share, the parts, the lighting value). The foam fix of 2026-10-14 (the islands and spikes of foam the
+  user reported on the beach passes): the look iterations and term probes under `tests/artifacts/screens/landscape/ai597/pass/`
+  (`foam-fix1..10/`, `probe*/`, `needle_probe.mjs`), the passes `pass/beach-forward/clip.mp4` (facing north along the swash),
+  `pass/beach-sideways/clip.mp4`, `pass/surf-low/clip.mp4`, `pass/coast-oblique/clip.mp4`; unit test `landscape_ocean_shore.test.js`
+  (the sea mask).
 
 ## 5. Known limitations after D5
 

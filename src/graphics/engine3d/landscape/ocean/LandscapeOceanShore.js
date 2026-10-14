@@ -112,20 +112,61 @@ function distanceTransform1d(f, d, v, z, n) {
 }
 
 /**
+ * The sea of a depth raster: the water texels (depth > 0) four-connected to a water texel on the raster's boundary. A pocket of water texels
+ * enclosed by land (a hollow of the beach below sea level in the 3.9 m raster, a runnel, a lagoon with no channel) is not sea: no shoreline
+ * runs around it. Returns the mask (1 sea) with the pockets' count and texels.
+ * @param {ArrayLike<number>} depth @param {number} texels @returns {{sea:Uint8Array,pockets:number,pocketTexels:number,seaTexels:number}}
+ */
+export function landscapeOceanSeaMask(depth, texels) {
+    requireRaster(depth, texels, 1);
+    const n = texels, N = n * n, sea = new Uint8Array(N), queue = new Int32Array(N);
+    let head = 0, tail = 0, seaTexels = 0;
+    const seed = i => { if (depth[i] > 0 && !sea[i]) { sea[i] = 1; queue[tail++] = i; } };
+    for (let c = 0; c < n; c++) { seed(c); seed((n - 1) * n + c); }
+    for (let r = 0; r < n; r++) { seed(r * n); seed(r * n + n - 1); }
+    while (head < tail) {
+        const i = queue[head++], r = (i / n) | 0, c = i - r * n;
+        seaTexels++;
+        if (c > 0) seed(i - 1);
+        if (c < n - 1) seed(i + 1);
+        if (r > 0) seed(i - n);
+        if (r < n - 1) seed(i + n);
+    }
+    // the pockets: the water texels the sea never reached, counted as four-connected components
+    let pockets = 0, pocketTexels = 0;
+    const seen = new Uint8Array(N);
+    for (let start = 0; start < N; start++) {
+        if (!(depth[start] > 0) || sea[start] || seen[start]) continue;
+        pockets++;
+        seen[start] = 1; queue[0] = start; head = 0; tail = 1;
+        while (head < tail) {
+            const i = queue[head++], r = (i / n) | 0, c = i - r * n;
+            pocketTexels++;
+            for (const j of [c > 0 ? i - 1 : -1, c < n - 1 ? i + 1 : -1, r > 0 ? i - n : -1, r < n - 1 ? i + n : -1]) if (j >= 0 && depth[j] > 0 && !sea[j] && !seen[j]) { seen[j] = 1; queue[tail++] = j; }
+        }
+    }
+    return { sea, pockets, pocketTexels, seaTexels };
+}
+
+/**
  * Signed Euclidean shore distance of a depth raster (m): on water the distance to the nearest land texel centre, on land minus the distance to
  * the nearest water texel centre; exact (two one-dimensional squared transforms). Without any land every value is texels x texelMeters, without any water its negative.
- * @param {ArrayLike<number>} depth @param {number} texels @param {number} texelMeters @returns {Float32Array}
+ * With a sea mask (landscapeOceanSeaMask) the water is the mask's sea: a pocket of water enclosed by land counts as land, so no shoreline runs
+ * around it.
+ * @param {ArrayLike<number>} depth @param {number} texels @param {number} texelMeters @param {Uint8Array|null} [sea] @returns {Float32Array}
  */
-export function landscapeOceanShoreDistance(depth, texels, texelMeters) {
+export function landscapeOceanShoreDistance(depth, texels, texelMeters, sea = null) {
     requireRaster(depth, texels, texelMeters);
+    if (sea !== null && (!(sea instanceof Uint8Array) || sea.length !== texels * texels)) throw new Error('[LandscapeOceanShore] The sea mask must be a Uint8Array of texels x texels');
     const n = texels, N = n * n, distance = new Float32Array(N);
+    const water = i => (sea ? sea[i] === 1 : depth[i] > 0);
     let land = 0;
-    for (let i = 0; i < N; i++) if (!(depth[i] > 0)) land++;
+    for (let i = 0; i < N; i++) if (!water(i)) land++;
     if (land === 0) return distance.fill(n * texelMeters);
     if (land === N) return distance.fill(-n * texelMeters);
     const squared = new Float64Array(N), f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
     const transform = sitesOnLand => {
-        for (let i = 0; i < N; i++) squared[i] = (depth[i] > 0) === sitesOnLand ? EDT_INFINITY : 0;
+        for (let i = 0; i < N; i++) squared[i] = water(i) === sitesOnLand ? EDT_INFINITY : 0;
         for (let c = 0; c < n; c++) {
             for (let r = 0; r < n; r++) f[r] = squared[r * n + c];
             distanceTransform1d(f, d, v, z, n);
@@ -139,9 +180,9 @@ export function landscapeOceanShoreDistance(depth, texels, texelMeters) {
         }
     };
     transform(true);
-    for (let i = 0; i < N; i++) if (depth[i] > 0) distance[i] = Math.sqrt(squared[i]) * texelMeters;
+    for (let i = 0; i < N; i++) if (water(i)) distance[i] = Math.sqrt(squared[i]) * texelMeters;
     transform(false);
-    for (let i = 0; i < N; i++) if (!(depth[i] > 0)) distance[i] = -Math.sqrt(squared[i]) * texelMeters;
+    for (let i = 0; i < N; i++) if (!water(i)) distance[i] = -Math.sqrt(squared[i]) * texelMeters;
     return distance;
 }
 

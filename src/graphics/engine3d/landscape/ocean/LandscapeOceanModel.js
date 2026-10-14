@@ -67,7 +67,7 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     // thinning seaward and the backwash leaves depositShare of it dying over depositSeconds; the water sheet reflects with filmMeanSquareSlope
     // under rippleShare of the finest cascade's slopes; sandAlbedo is the representative albedo of the calibrated wet ratio; estimateBytes the
     // resources estimate
-    swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 1.5, sheetFoamShare: .3, depositShare: .5, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
+    swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 3, sheetFoamShare: .3, depositShare: .5, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
     // AI 597 D5 light through the water (ocean_light.glsl): the local water blends the AI577 clear coastal water (LANDSCAPE_WATER_OPTICS) toward
     // the oceanic water with the still-water depth (pure-water absorption of blue and green, molecular backscatter: the deep blue offshore)
     // and toward the stirred surf water with the breaking and the foam (sand in suspension: more backscatter and absorption, the milky
