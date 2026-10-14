@@ -2,6 +2,10 @@
 
 ## Geometric LOD4 exit prototype (2026-10-13)
 
+The subsequent [transition calibration](GRASS_TRANSITION_CALIBRATION.md) adds
+the opt-in `handoff=shorten` comparison. It preserves both ends of each blade
+while reducing height, with the ground blend synchronized over 16–24 m.
+
 The opt-in lab URL `?grass=patches&handoff=rise` passes `terminalTransition: 'rise'`
 to the shared patch renderer. Existing callers default to `'dissolve'`, including
 gameplay. This is an appearance experiment, not a production promotion.
@@ -16,8 +20,8 @@ bypasses lowering and preserves its existing pixels and full-field coverage.
 
 The LOD4 shader excludes the outgoing screen-door mask and the two projected
 canopy color samples. It retains the incoming LOD3→4 dissolve over 13.6–16 m.
-Ground changes from litter to canopy in that incoming band and then remains
-stable underneath the rising blades. Ordinary leaf coloring and external shadow
+Ground changes from litter to canopy over 16–21.6 m as geometric coverage
+recedes. Ordinary leaf coloring and external shadow
 shading remain; this is not a shading-free technique. Buried vertices still cost
 vertex work within selected patches. GPU cost must be measured rather than
 inferred from the missing dissolve alone.
@@ -31,7 +35,7 @@ The comparison removes the hazy terminal blend but still changes apparent blade
 height/density and eventually becomes a flat canopy. Moving visual acceptance
 is required before replacing the default.
 
-At 3814 × 1672 on an RTX 3060, three alternating forward bus-camera passes per
+Before the brightness correction below, at 3814 × 1672 on an RTX 3060, three alternating forward bus-camera passes per
 variant measured mean whole-frame GPU times of 5.64 ms for dissolve and 5.47 ms
 for rise (p95 6.67 / 6.68 ms). The paired mean differences by repeat were
 +0.09, -0.58 and -0.001 ms; variability and changing GPU load prevent an isolated
@@ -44,6 +48,47 @@ growth. Triangle and draw counts matched at every paired pose. Reproduce with
 The adjacent `comparison.html` contains matched screenshots and motion clips.
 Set `GRASS_RISE_CAPTURE_MOTION=1` when running the rise E2E spec to regenerate
 the optional 24 m, 8-second field-side clips. Encoding is outside the benchmark.
+
+### Bright-band correction and top-cutting comparison
+
+The original rise prototype completed the ground's canopy blend over 13.6–16 m,
+while LOD4 still had its full height and coverage. The combined appearance was
+16.4% brighter than the brighter of forced LOD4 and LOD5 in the bus camera's
+16–18 m annulus. Moving the ground blend to 16–24 m removed that excess but
+left the surface too dark after most blades had already disappeared. Restoring
+the existing 16–21.6 m ground band produced a smoother result, with maximum
+measured excess below 2.4% across the bus, close and forward fixtures. Leaf
+color, camera exposure, full LOD4 and distant LOD5 were not globally darkened.
+
+`terminalTransition: 'trim'` / lab `handoff=trim` provides the alternative requested
+by the user: leave geometry fixed and discard fragments above a ceiling descending
+from the tallest blade plus 1 cm to zero over 16–24 m. It preserves dark roots
+and cuts bright tips; it does not shrink or translate the blade. The cutoff uses
+centroid-interpolated height because pixel-center extrapolation outside thin
+MSAA triangles otherwise leaves clipped blade fragments visible. An explicit
+zero-ceiling cutoff removes the last roots at the endpoint. It retains the
+incoming LOD3→4 dissolve, normal coloring and shadows, and forced LOD4 bypasses
+all automatic clipping. No new textures, geometry or movement uploads are needed.
+
+Both methods remove the original brightness overshoot in
+`grass_patch_rise_brightness.pwtest.js`. The test samples 2 m distance bands from
+three views, allowing at most 5% excess over both forced endpoints and at most
+8% deficit below both. Trimming still shows a darker region of short roots near
+20–24 m, particularly from above; it is a comparison option, not an accepted
+replacement. The endpoint/movement suite covers both methods. Before/after
+measurements and preserved original-rise captures are under
+`tests/artifacts/screens/grass/lod4_rise_transition/brightness/` and `original-rise/`.
+
+The subsequent two forward/reversed bus passes per case at 3814 × 1672 measured
+19.01 ms mean GPU for unchanged dissolve, 20.90 ms for corrected rise and 21.67 ms
+for trim. Unlike the earlier run, all three stuttered (167 / 227 / 234 recorded
+intervals above 33.5 ms across 718 intervals per case). GPU utilization was
+97–100% at the sampled starts. This run does not establish an isolated rendering
+cost or a speedup; the cause of the large change in the unchanged baseline was
+not isolated. All 2,160 GPU queries were valid, CPU render means were below
+0.9 ms, movement uploads remained zero, resource counts stayed stable and
+paired geometry/draw counts matched. Raw data is under
+`tests/artifacts/screens/grass/lod4_rise_transition/trim_benchmark/`.
 
 ## Offline omitted-leaf experiment (2026-10-13)
 

@@ -6,7 +6,9 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 
 const recordingResolution = process.env.GRASS_LEAF_BUS_VIEWPORT === 'recording';
-const riseStudy = process.env.GRASS_LEAF_BUS_TRANSITION === 'rise';
+const shortenStudy = process.env.GRASS_LEAF_BUS_TRANSITION === 'shorten';
+const trimStudy = process.env.GRASS_LEAF_BUS_TRANSITION === 'trim';
+const riseStudy = trimStudy || process.env.GRASS_LEAF_BUS_TRANSITION === 'rise';
 const rounds = Number(process.env.GRASS_LEAF_BUS_ROUNDS || 3);
 if (!Number.isInteger(rounds) || rounds < 1 || rounds > 3) throw new Error('GRASS_LEAF_BUS_ROUNDS must be 1, 2 or 3.');
 test.use({ viewport: recordingResolution ? { width: 2147, height: 884 } : { width: 1600, height: 1000 }, deviceScaleFactor: 2, video: 'off', trace: 'off',
@@ -26,11 +28,13 @@ async function gpuStatus() {
 test('Bus camera: matched forward laps compare experimental and existing grass', async ({ page, browser }) => {
     test.skip(process.env.GRASS_LEAF_BUS_BENCHMARK !== '1', 'Opt in with GRASS_LEAF_BUS_BENCHMARK=1 and a hardware Chrome executable.');
     test.setTimeout(600000);
-    const root = riseStudy ? 'tests/artifacts/screens/grass/lod4_rise_transition/benchmark' : 'tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark';
+    const root = shortenStudy ? 'tests/artifacts/screens/grass/transition_calibration/benchmark' : riseStudy ? 'tests/artifacts/screens/grass/lod4_rise_transition/' + (trimStudy ? 'trim_benchmark' : 'benchmark') : 'tests/artifacts/screens/grass/lod4_offline_leaf_fill/bus_benchmark';
     const output = path.resolve(root, new Date().toISOString().replace(/[:.]/g, '-'));
     await mkdir(output, { recursive: true });
-    const blocks = [], telemetry = [], errors = [], cases = riseStudy ? {
-        auto: { mode: 'AUTO' }, autoRise: { mode: 'AUTO', rise: true }
+    const blocks = [], telemetry = [], errors = [], cases = shortenStudy ? {
+        autoRise: { mode: 'AUTO', handoff: 'rise' }, autoTrim: { mode: 'AUTO', handoff: 'trim' }, autoShorten: { mode: 'AUTO', handoff: 'shorten' }
+    } : riseStudy ? {
+        auto: { mode: 'AUTO' }, autoRise: { mode: 'AUTO', handoff: 'rise' }, ...(trimStudy ? { autoTrim: { mode: 'AUTO', handoff: 'trim' } } : {})
     } : {
         lod3: { mode: 'LOD3', baked: false }, lod4: { mode: 'LOD4', baked: false },
         lod4Baked: { mode: 'LOD4', baked: true }, auto: { mode: 'AUTO', baked: false }, autoBaked: { mode: 'AUTO', baked: true }
@@ -41,7 +45,8 @@ test('Bus camera: matched forward laps compare experimental and existing grass',
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()).replace('let copyFeedbackTimer;', 'window.__grassTestView = view;\nlet copyFeedbackTimer;') });
     });
-    const orders = (riseStudy ? [['auto', 'autoRise'], ['autoRise', 'auto'], ['auto', 'autoRise']] :
+    const orders = (shortenStudy ? [['autoRise', 'autoTrim', 'autoShorten'], ['autoShorten', 'autoTrim', 'autoRise'], ['autoTrim', 'autoRise', 'autoShorten']] : trimStudy ? [['auto', 'autoRise', 'autoTrim'], ['autoTrim', 'autoRise', 'auto'], ['autoRise', 'auto', 'autoTrim']] :
+        riseStudy ? [['auto', 'autoRise'], ['autoRise', 'auto'], ['auto', 'autoRise']] :
         [ ['lod3', 'lod4', 'lod4Baked', 'auto', 'autoBaked'], ['autoBaked', 'auto', 'lod4Baked', 'lod4', 'lod3'],
             ['lod4', 'lod4Baked', 'lod3', 'autoBaked', 'auto'] ]).slice(0, rounds);
     const metadata = { date: new Date().toISOString(), browser: browser.version(), orders, output, viewportProfile: recordingResolution ? 'recording' : 'comparison',
@@ -49,7 +54,7 @@ test('Bus camera: matched forward laps compare experimental and existing grass',
     console.log(`[BusGrass] Output: ${output}`);
     for (const [round, order] of orders.entries()) for (const name of order) {
         const config = cases[name];
-        await page.goto('/debug_tools/grass_debug_v2.html?grass=patches' + (config.baked ? '&leafFill=baked' : '') + (config.rise ? '&handoff=rise' : ''));
+        await page.goto('/debug_tools/grass_debug_v2.html?grass=patches' + (config.baked ? '&leafFill=baked' : '') + (config.handoff ? '&handoff=' + config.handoff : ''));
         await page.waitForFunction(() => !!window.__grassDebugV2);
         await page.evaluate(() => window.__grassDebugV2.readiness);
         telemetry.push({ round, name, before: await gpuStatus() });
@@ -86,7 +91,7 @@ test('Bus camera: matched forward laps compare experimental and existing grass',
             framesOver50ms: selected.reduce((sum, block) => sum + block.summary.framesOver50ms, 0) }];
     }));
     const paired = {};
-    for (const [previous, candidate] of (riseStudy ? [['auto', 'autoRise']] : [['lod4', 'lod4Baked'], ['auto', 'autoBaked']])) {
+    for (const [previous, candidate] of (shortenStudy ? [['autoRise', 'autoShorten'], ['autoTrim', 'autoShorten']] : trimStudy ? [['auto', 'autoRise'], ['autoRise', 'autoTrim']] : riseStudy ? [['auto', 'autoRise']] : [['lod4', 'lod4Baked'], ['auto', 'autoBaked']])) {
         const deltas = [], rounds = [];
         for (let round = 0; round < orders.length; round++) {
             const a = blocks.find(block => block.name === previous && block.round === round), b = blocks.find(block => block.name === candidate && block.round === round);

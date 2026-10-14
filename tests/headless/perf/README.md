@@ -30,6 +30,14 @@ LOD4 exit instead of the five leaf-fill cases. Both runs use the ordinary
 textures and identical poses, geometry counts and draw counts. This study saves
 results under `tests/artifacts/screens/grass/lod4_rise_transition/benchmark/`.
 Other settings and timing/upload validation are shared with the leaf-fill study.
+`GRASS_LEAF_BUS_TRANSITION=trim` adds the top-cutting variant to the dissolve and
+corrected-rise runs, including paired rise-versus-trim timings. These results
+are saved under `tests/artifacts/screens/grass/lod4_rise_transition/trim_benchmark/`.
+
+`GRASS_LEAF_BUS_TRANSITION=shorten` compares corrected rise, tip-cutting and the
+calibrated height-scaling variant in alternating order, with paired per-pose
+GPU differences. Results go under
+`tests/artifacts/screens/grass/transition_calibration/benchmark/`.
 
 This suite measures deterministic performance metrics in a headless browser using the harness (`window.__testHooks.measurePerformance`) and enforces budgets.
 

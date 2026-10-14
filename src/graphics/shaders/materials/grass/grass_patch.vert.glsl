@@ -1,10 +1,14 @@
 // @section pars
-#ifdef GRASS_PATCH_RISE
+#if defined(GRASS_PATCH_RISE) || defined(GRASS_PATCH_SHORTEN)
 uniform vec3 grassPatchCamera;
 uniform int grassPatchMode;
 uniform float grassPatchGroundY;
-uniform float grassPatchSinkHeight;
-uniform vec2 grassPatchRiseBand;
+uniform float grassPatchBladeHeight;
+uniform vec2 grassPatchHeightBand;
+#endif
+#ifdef GRASS_PATCH_TRIM
+// Thin MSAA triangles need covered-sample interpolation to avoid leaking clipped tips.
+centroid varying float vGrassPatchHeight;
 #endif
 #ifdef GRASS_PATCH_HANDOFF
 varying vec3 vGrassPatchRay;
@@ -21,12 +25,19 @@ if ((grassPatchSeed & 1u) != 0u) transformed.xz = vec2(-transformed.z, transform
 if ((grassPatchSeed & 2u) != 0u) transformed.xz = -transformed.xz;
 transformed.xz += grassPatchOffset;
 #endif
-#ifdef GRASS_PATCH_RISE
+#if defined(GRASS_PATCH_RISE) || defined(GRASS_PATCH_SHORTEN)
 if (grassPatchMode < 0) {
     vec2 grassRiseWorld = (modelMatrix * vec4(transformed, 1.0)).xz;
     float grassRiseDistance = distance(vec3(grassRiseWorld.x, grassPatchGroundY, grassRiseWorld.y), grassPatchCamera);
-    transformed.y -= grassPatchSinkHeight * smoothstep(grassPatchRiseBand.x, grassPatchRiseBand.y, grassRiseDistance);
+#ifdef GRASS_PATCH_SHORTEN
+    transformed.y *= 1.0 - smoothstep(grassPatchHeightBand.x, grassPatchHeightBand.y, grassRiseDistance);
+#else
+    transformed.y -= grassPatchBladeHeight * smoothstep(grassPatchHeightBand.x, grassPatchHeightBand.y, grassRiseDistance);
+#endif
 }
+#endif
+#ifdef GRASS_PATCH_TRIM
+vGrassPatchHeight = transformed.y;
 #endif
 #ifdef GRASS_PATCH_HANDOFF
 vGrassPatchRay = (modelMatrix * vec4(transformed, 1.0)).xyz - cameraPosition;

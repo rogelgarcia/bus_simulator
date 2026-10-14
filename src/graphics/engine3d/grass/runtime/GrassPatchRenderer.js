@@ -5,13 +5,13 @@ import { createGrassPatchGeometry } from './GrassPatchGeometry.js';
 import { createGrassPatchMaterials } from './GrassPatchMaterials.js';
 import { createGrassPatchGrid } from './GrassPatchGrid.js';
 
-/** @param {{asset:object,coverage:object,bounds:object,groundY?:number,patchSize?:number,distances?:number[],terminalTransition?:'dissolve'|'rise'}} options */
+/** @param {{asset:object,coverage:object,bounds:object,groundY?:number,patchSize?:number,distances?:number[],terminalTransition?:'dissolve'|'rise'|'trim'|'shorten'}} options */
 export function createGrassPatchRenderer({ asset, coverage, bounds, groundY = 0, patchSize = 4, distances = [.6, .8, 8, 16, 24], terminalTransition = 'dissolve' }) {
     if (!Number.isInteger(patchSize) || patchSize < 2 || patchSize > 8 || patchSize % 2
         || ![bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ, groundY].every(Number.isFinite)
         || bounds.maxX <= bounds.minX || bounds.maxZ <= bounds.minZ || distances.length !== 5
         || distances.some((value, i) => !Number.isFinite(value) || value <= (distances[i - 1] ?? 0)) || distances[4] > 48
-        || !['dissolve', 'rise'].includes(terminalTransition))
+        || !['dissolve', 'rise', 'trim', 'shorten'].includes(terminalTransition))
         throw new Error('[Grass] Invalid immutable patch bounds or distances.');
     const group = new THREE.Group(); group.name = 'GrassImmutablePatches'; group.position.y = groundY;
     const geometry = createGrassPatchGeometry(asset, patchSize);

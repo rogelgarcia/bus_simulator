@@ -3,6 +3,13 @@ uniform vec3 grassPatchCamera;
 uniform vec4 grassPatchBand;
 uniform int grassPatchMode;
 uniform float grassPatchGroundY;
+#ifdef GRASS_PATCH_TRIM
+centroid varying float vGrassPatchHeight;
+uniform float grassPatchBladeHeight;
+#endif
+#if defined(GRASS_PATCH_TRIM) || defined(GRASS_PATCH_SHORTEN)
+uniform vec2 grassPatchHeightBand;
+#endif
 #ifdef GRASS_PATCH_HANDOFF
 varying vec3 vGrassPatchRay;
 #endif
@@ -47,7 +54,15 @@ float grassPatchColorFade = grassPatchMode < 0 ? smoothstep(grassPatchHandoffBan
 if (grassPatchMode < 0) {
     float grassPatchDistance = distance(vec3(vBakedGrassWorld.x, grassPatchGroundY, vBakedGrassWorld.y), grassPatchCamera);
     float grassPatchIncoming = smoothstep(grassPatchBand.x, grassPatchBand.y, grassPatchDistance);
-#ifdef GRASS_PATCH_RISE
+#ifdef GRASS_PATCH_SHORTEN
+    // Zero-height blades can cover MSAA samples just outside the opaque field edge.
+    if (grassPatchDistance >= grassPatchHeightBand.y) discard;
+#endif
+#ifdef GRASS_PATCH_TRIM
+    float grassPatchCeiling = grassPatchBladeHeight * (1.0 - smoothstep(grassPatchHeightBand.x, grassPatchHeightBand.y, grassPatchDistance));
+    if (grassPatchCeiling <= 0.0 || vGrassPatchHeight >= grassPatchCeiling) discard;
+#endif
+#if defined(GRASS_PATCH_RISE) || defined(GRASS_PATCH_TRIM) || defined(GRASS_PATCH_SHORTEN)
     // Only the LOD3 -> LOD4 entrance keeps its existing complementary dissolve.
     if (grassPatchIncoming < 1.0) {
         float grassPatchSample = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));

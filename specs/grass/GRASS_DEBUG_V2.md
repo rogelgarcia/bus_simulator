@@ -1,6 +1,6 @@
 # Grass Debug v2
 
-## Geometric LOD4 exit comparison
+## Geometric LOD4 exit comparisons
 
 `?grass=patches&handoff=rise` enables the lab prototype that lowers opaque LOD4
 blades into the soil across 16–24 m, reversing continuously as the camera
@@ -8,12 +8,30 @@ approaches. The sidebar identifies it as “Rising LOD4 → 5”. Forced LOD4 st
 full height at every distance. The normal lab and gameplay retain the existing
 handoff until the prototype is visually accepted.
 
-The canopy underneath reaches its distant appearance during the incoming
-13.6–16 m band. Across 16–24 m, visible blades retain their normal colors;
+`?grass=patches&handoff=trim` tests cutting off the tops instead: blade positions
+and roots remain fixed, and fragments above a descending height ceiling are
+removed over 16–24 m. Forced LOD4 bypasses the cutoff. The sidebar identifies
+this variant as “Trimmed LOD4 → 5”. The geometric options remain opt-in in the lab.
+
+`?grass=patches&handoff=shorten` is the calibrated alternative: scale each blade's
+height by `1 - smoothstep(16, 24, distance)`, keeping its root and horizontal
+placement fixed. Root and tip colors remain on the shortened blade. The ground
+blends to the distant canopy over the same 16–24 m interval. The sidebar labels
+it “Shortened LOD4 → 5”. This avoids the bright-tip bias of sinking and the dark
+stubble of cutting. Forced LOD4 is unchanged; gameplay still defaults to dissolve.
+The calibration and angle/movement regression are described in
+[GRASS_TRANSITION_CALIBRATION.md](GRASS_TRANSITION_CALIBRATION.md).
+
+For rise and trim, the canopy underneath reaches its distant appearance over 16–21.6 m, as the
+blade coverage recedes. The earlier rise prototype completed that ground change
+at 16 m and produced a bright band. Across 16–24 m, visible blades retain their normal colors;
 their height changes instead of terminal color blending and pixel dissolution.
 The incoming LOD3→4 dissolve is unchanged. This uses the existing geometry and
 assets, with no new bake. See [the runtime experiment](GRASS_RUNTIME_REDESIGN.md)
 and `tests/headless/e2e/grass_patch_rise_transition.pwtest.js` for its contract.
+The brightness regression measures both geometric variants against forced LOD4
+and LOD5 from three camera positions. Trimming retains dark roots, so it can
+produce a darker strip of short grass even after the bright band is corrected.
 
 ## Offline leaf-fill comparison
 
