@@ -488,6 +488,7 @@ def main():
     plan["interior"]["restaurant_l0"] = props_layout.restaurant_l0(plan)                   # AI 635
     plan["interior"]["dining_l1"] = props_layout.dining_l1(plan)                           # AI 636
     plan["interior"]["residential"] = props_layout.residential(plan)                       # AI 637
+    plan["interior"]["penthouse"] = props_layout.penthouse(plan)                           # AI 638
     with open(PLAN, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(plan, fh, indent=2)
     draw(plan, poly, edge, wall, guard, entrance, penthouse, columns, cal)

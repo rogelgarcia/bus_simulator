@@ -62,7 +62,8 @@
                 634,
                 635,
                 636,
-                637
+                637,
+                638
             ]
         },
         {
@@ -314,7 +315,8 @@
                 623,
                 629,
                 630,
-                647
+                647,
+                638
             ],
             "location": [
                 -14.0,
@@ -489,6 +491,52 @@
                 0.0,
                 1.5,
                 29.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "penthouse_annex_kitchen",
+            "group": "interior",
+            "label": "Into the glazed annex from the roof terrace on its left at eye level: the lounge corner behind the front glass, the island with stools under its pendants, the lit counter run on the penthouse wall",
+            "items": [
+                638
+            ],
+            "location": [
+                -12.6,
+                -2.6,
+                28.95
+            ],
+            "target": [
+                -6.6,
+                3.0,
+                28.4
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "penthouse_front_slider",
+            "group": "interior",
+            "label": "Into the penthouse front strip through the front slider from the roof terrace: the sofa facing the glass, the side table, the floor lamp, the downlights",
+            "items": [
+                638
+            ],
+            "location": [
+                4.4,
+                -7.0,
+                28.9
+            ],
+            "target": [
+                1.9,
+                0.6,
+                28.3
             ],
             "vfov_deg": 40.0,
             "resolution": [

@@ -1242,3 +1242,103 @@ def residential(plan, seed=637):
                        "lounge, dining or reading set with a floor lamp near the window of every bay of 3 m and more",
             "seed": seed, "config": R, "lines": lines, "curtains": curtains, "tracks": tracks, "items": items,
             "lamps": lamps, "patterns": {k: list(v) for k, v in patterns.items()}, "skipped_sets": skipped}
+
+
+# ---------------------------------------------------------------- AI 638: the penthouse
+# The penthouse walls (AI 647) wrap the core, which rises to the penthouse roof: inside is a ring, a 1.55 m front strip
+# behind the front slider and door, 1.15 m side strips, nothing behind. The glazed annex on the -X side (3.4 x 5.3 m,
+# through the left door) is the one real room. A restrained interior that reads through the glazing: the annex holds the
+# kitchen (a counter run on the penthouse wall with a lit shelf, an island with three stools and pendants hung from the
+# louvres) and a lounge corner behind the front glass; the front strip a sofa facing the slider, a side table and a
+# floor lamp; the right strip an armchair at the window. Downlights in the penthouse ceiling, warm fills under both
+# ceilings, plants in the corners. Every footprint is checked against the others, the walls, the core, the annex posts
+# and the door paths.
+PENTHOUSE = {"run": {"y": [2.8, 5.2], "depth": 0.6, "top_over": 0.02, "height": 0.9, "top": 0.04,
+                     "shelf": {"z": 1.5, "depth": 0.3, "y": [3.0, 5.0], "thick": 0.03}},
+             "island": {"x": [-7.4, -6.5], "y": [3.0, 4.8], "body_inset": [0.25, 0.05], "height": 0.92, "top": 0.04,
+                        "stools_x": -7.62, "seat": 0.66},
+             "pendant": {"drop_to": 1.75, "shade_r": 0.14, "shade_h": 0.2, "cord_r": 0.006},
+             "downlight": {"radius": 0.08, "height": 0.015},
+             "door_path": 0.2,
+             "fill": {"rgb": [1.0, 0.70, 0.42], "w_per_m2": 15.0, "below": 0.12}}
+
+
+def penthouse(plan):
+    rf, st = plan["roof"], plan["structure"]
+    P = PENTHOUSE
+    top = rf["roof_top"]
+    walk = top + rf["paving"]                                         # the annex stands on the terrace paving
+    ph, an = rf["penthouse"], rf["annex"]
+    px, py, w = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"], ph["wall"]
+    ceiling = top + ph["roof_slab"][0]
+    core = st["core"]["outer"]
+    inner = {"x": [px[0] + w, px[1] - w], "y": [py[0] + w, py[1] - w]}
+    p, fd = an["post"], ph["frame"]["depth"] / 2
+    annex_in = {"x": [an["x"][0] + p / 2 + fd, an["x"][1]], "y": [an["y"][0] + p / 2 + fd, an["y"][1] - p / 2 - fd]}
+    lv = an["louvre"]
+    louvre_under = walk + an["height"] + an["beam"] - 0.06 - lv["thickness"]
+    blades = []
+    yb = an["y"][0] + p + lv["spacing"] / 2
+    while yb + lv["width"] / 2 <= an["y"][1] - p - 0.02:
+        blades.append(round(yb, 4))
+        yb += lv["spacing"]
+
+    def item(kind, at, face, size, z, cushion="ecru"):
+        return {"kind": kind, "at": [round(at[0], 4), round(at[1], 4)], "face": list(face), "size": list(size), "z": z,
+                "cushion": cushion}
+
+    # the annex: lounge corner behind the front glass, kitchen at the back
+    ax0, ax1 = annex_in["x"]
+    ay0, ay1 = annex_in["y"]
+    items = [item("sofa", (-6.6, ay0 + 0.08 + 0.425), (0.0, 1.0), (2.0, 0.85), walk),
+             item("coffee_table", (-6.6, 1.6), (0.0, 1.0), (1.0, 0.55), walk, "greige"),
+             item("armchair", (ax0 + 0.14 + 0.4, 1.55), (1.0, 0.0), (0.8, 0.8), walk)]
+    lamps = [{"at": [-5.32, 0.55], "z": walk}]
+    # the front strip and the right strip of the penthouse
+    fy0, fy1 = inner["y"][0], core["y"][0]
+    items += [item("sofa", (2.15, fy1 - 0.02 - 0.425), (0.0, -1.0), (2.4, 0.85), top),
+              item("side_table", (0.55, 0.45), (0.0, -1.0), (0.45, 0.45), top, "greige"),
+              item("armchair", (4.2, 2.1), (1.0, 0.0), (0.8, 0.8), top),
+              item("side_table", (4.2, 2.85), (1.0, 0.0), (0.45, 0.45), top, "greige")]
+    lamps.append({"at": [3.65, 0.5], "z": top})
+    plants = [{"at": [-8.0, 2.55], "z": walk}, {"at": [-4.3, 0.3], "z": top}, {"at": [-4.2, 4.5], "z": top},
+              {"at": [4.2, 5.2], "z": top}]
+    I, R = P["island"], P["run"]
+    stools = [[I["stools_x"], y] for y in blades if I["y"][0] + 0.25 <= y <= I["y"][1] - 0.25][::2]
+    pendants = [{"at": [round((I["x"][0] + I["x"][1]) / 2, 4), y], "top": round(louvre_under, 4)} for _, y in stools]
+    # footprints: the furniture, the kitchen, the lamps, the pots, against the walls, the core, the posts, the door paths
+    sq = lambda c, r: [(c[0] - r, c[1] - r), (c[0] + r, c[1] - r), (c[0] + r, c[1] + r), (c[0] - r, c[1] + r)]  # noqa: E731
+    box = lambda x, y: [(x[0], y[0]), (x[1], y[0]), (x[1], y[1]), (x[0], y[1])]  # noqa: E731
+    named = [(f"{it['kind']}@{it['at']}", _footprint(it)) for it in items]
+    named += [("run", box([an["x"][1] - R["depth"] - R["top_over"], an["x"][1]], R["y"])), ("island", box(I["x"], I["y"]))]
+    named += [(f"stool@{c}", sq(c, 0.18)) for c in stools] + [(f"lamp@{q['at']}", sq(q["at"], 0.15)) for q in lamps]
+    named += [(f"pot@{q['at']}", sq(q["at"], _POT_R)) for q in plants]
+    dp = P["door_path"]
+    doors = {o["wall"]: o["s"] for o in ph["openings"] if o["kind"] == "door"}
+    blocks = [("core", box(core["x"], core["y"])),
+              ("left door path", box([an["x"][1] - 0.9, px[0] + w + 0.9], [doors["left"][0] - dp, doors["left"][1] + dp])),
+              ("front door path", box([doors["front"][0] - dp, doors["front"][1] + dp], [py[0], py[0] + w + 0.9]))]
+    blocks += [(f"annex post {k}", box([x0, x0 + p], [y0, y0 + p])) for k, (x0, y0) in
+               enumerate((x0, y0) for x0 in (an["x"][0], an["x"][1] - p) for y0 in (an["y"][0], an["y"][1] - p))]
+    rooms = [box(annex_in["x"], annex_in["y"]), box(inner["x"], inner["y"])]
+    problems = [f"{a} overlaps {b}" for i, (a, pa) in enumerate(named) for b, pb in named[i + 1:] if _overlap(pa, pb)]
+    problems += [f"{a} overlaps {b}" for a, pa in named for b, pb in blocks if _overlap(pa, pb)]
+    problems += [f"{a} outside the rooms" for a, pa in named
+                 if not any(all(r[0][0] - 1e-6 <= x <= r[1][0] + 1e-6 and r[0][1] - 1e-6 <= y <= r[2][1] + 1e-6 for x, y in pa)
+                            for r in rooms)]
+    dl = []
+    for x in (-4.0, -2.4, -0.8, 0.8, 2.4, 4.0):                        # downlights: a row along the front strip,
+        dl.append([x, round((fy0 + fy1) / 2, 4)])
+    for x in (inner["x"][0], inner["x"][1]):                            # and down each side strip
+        xm = round((x + (core["x"][0] if x < 0 else core["x"][1])) / 2, 4)
+        dl += [[xm, y] for y in (1.6, 3.2, 4.8)]
+    fills = [_rect_fill(inner["x"], [fy0, fy1], ceiling),
+             _rect_fill([inner["x"][0], core["x"][0]], [fy1, inner["y"][1]], ceiling),
+             _rect_fill([core["x"][1], inner["x"][1]], [fy1, inner["y"][1]], ceiling),
+             _rect_fill(annex_in["x"], annex_in["y"], round(louvre_under, 4))]
+    return {"comment": "AI 638 penthouse: the annex holds the kitchen (counter run with a lit shelf on the penthouse wall, an "
+                       "island with stools and pendants from the louvres) and a lounge corner; the penthouse ring a sofa "
+                       "at the front slider and an armchair at the right window; downlights, warm fills, plants",
+            "config": P, "top": top, "walk": walk, "ceiling": ceiling, "louvre_under": round(louvre_under, 4),
+            "annex_in": annex_in, "inner": inner, "core": core, "items": items, "lamps": lamps, "plants": plants,
+            "stools": stools, "pendants": pendants, "downlights": dl, "fills": fills, "problems": problems}

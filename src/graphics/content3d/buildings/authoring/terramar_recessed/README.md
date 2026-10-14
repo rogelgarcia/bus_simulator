@@ -347,7 +347,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | interior | 635 | DONE (rebuild): dining bands behind every storefront, the entrance zone under a slatted teak ceiling, the bar on the core's teak-panelled front, banquettes; a pendant over every table and a warm area-light fill |
 | interior | 636 | DONE (rebuild): dining bands behind every upper bay, the loggia room behind the front centre's glazing, banquettes, a sideboard on the core's teak-panelled front, two tables on the entrance terrace; pendants, a warm fill and a ceiling wash |
 | interior | 637 | DONE (rebuild): sheer curtains on ceiling tracks behind every bay's glazing on floors 1-5, drawn to seeded positions (no two floors alike); a seeded lounge, dining or reading set with a floor lamp near the windows |
-| interior | 638 | Penthouse interior (retargeted to the rebuild) |
+| interior | 638 | DONE (rebuild): the annex holds the kitchen (counter run with a lit shelf, an island with stools and pendants) and a lounge corner; the penthouse ring a sofa at the front slider and an armchair at the right window; downlights, warm fills, plants |
 | material | 640 | DONE: the user's PBR kit installed as three sets (byte-exact, provenance in `source.json`), configs committed, not registered in the catalog (see "The Terra & Mar PBR kit sets") |
 | exterior | 641 | ~~Open the side bays (C, G): the game buried the side windows behind solid brick prows~~ superseded by the rebuild → 644 |
 | rebuild | 642 | DONE: **restart from scratch** (user, 2026-10-12): calibrated b8 camera, silhouette options, approved plan E in `rebuild/terramar_plan.json`, massing check (see "Rebuild" below) |
@@ -515,6 +515,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
 | `layer_dining_l1.py` | the upper-podium dining room (AI 636), `RB_INTERIOR/RB_DINING_L1`: furniture, sideboard, pendants, plants, fill and ceiling-wash lights, from `plan["interior"]["dining_l1"]` (`props_layout.py`); reuses `layer_restaurant_l0.py`'s pieces |
 | `layer_residential.py` | residential curtains and furniture (AI 637), `RB_INTERIOR/RB_RESIDENTIAL`: sheer panels and tracks, furniture sets, floor lamps, from `plan["interior"]["residential"]` (`props_layout.py`) |
+| `layer_penthouse.py` | the penthouse interior (AI 638), `RB_INTERIOR/RB_PENTHOUSE`: furniture, kitchen, pendants, downlights, lamps, plants, fills, from `plan["interior"]["penthouse"]` (`props_layout.py`); every object tagged `rb_hide_from_b8` |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
@@ -1165,6 +1166,47 @@ across the street, above the palms). 637 is also tagged on `b8_calibrated`, and 
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre637.blend`.
+
+**Penthouse interior (AI 638, interior).** The references barely show the penthouse's interior; it only has to read
+plausibly through the glazing. `props_layout.penthouse()` writes `plan["interior"]["penthouse"]`, and
+`layer_penthouse.py` builds `RB_INTERIOR/RB_PENTHOUSE`. Every object is tagged `rb_hide_from_b8`, like the penthouse
+itself.
+
+**Space.** The core rises to the penthouse roof slab (z 30.45), so inside the walls there is only a ring around it:
+- a 1.55 m strip at the front, behind the front slider and door;
+- 1.15 m strips at the sides;
+- nothing behind (the rear windows face the core 0.25 m away).
+
+The glazed annex on the −X side (inside 3.4 x 5.3 m, through the left door) is the one real room, so the kitchen and
+its island go there.
+
+| Place | What stands there |
+| --- | --- |
+| annex, back | a teak counter run (0.6 m, stone top) on the penthouse wall, a teak shelf over it with an LED strip; an island (1.8 x 0.9 m, the stone top overhanging the stool side) with three stools and three pendants hung from louvre blades |
+| annex, front | a lounge corner behind the front glass: sofa, coffee table, armchair, a floor lamp by the sofa |
+| front strip | a sofa against the core facing the front slider, a side table, a floor lamp |
+| right strip | an armchair at the right window, a side table |
+| corners | four potted plants, clear of the door paths |
+
+**Light:**
+- 12 downlights in the penthouse ceiling: a row along the front strip and three down each side;
+- the island's pendants, hung at louvre-blade centres so their cords meet a blade;
+- the two floor lamps;
+- 4 warm fill lights (15 W/m², 0.7 kW in all) under the penthouse ceiling and the louvres, out of camera and
+  reflection rays.
+
+**Checks.** Every footprint is checked against the others, the walls, the core, the annex posts and the paths from the
+front and left doors: 0 problems. Audit: 120 objects, 0 z-fights, 0 penetrations. Hidden parts visible from b8: 0 px.
+New poses:
+- `penthouse_annex_kitchen`, into the annex from the terrace on its left;
+- `penthouse_front_slider`, through the front slider.
+
+638 is also tagged on `b8_calibrated` and `roof_terrace_aerial`, and `penthouse_closeup` already carried it. Evidence
+is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/638_interior_penthouse/`:
+- `poses/rebuild_pre638_vs_rebuild/`: 5 sheets;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre638.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

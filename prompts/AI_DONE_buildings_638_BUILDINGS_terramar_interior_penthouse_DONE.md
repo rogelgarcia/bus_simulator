@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (interior): The penthouse is mostly glazed at the front and rear. The references barely show its interior, and the extracted penthouse is a plain shell.
@@ -45,3 +47,25 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-14)
+- **Space:** the core rises to the penthouse roof, so inside the penthouse walls there is only a ring: a 1.55 m front strip, 1.15 m side strips, nothing behind. The glazed annex (AI 647's, on the −X side) is the one real room, so the kitchen island goes there.
+- **Layout** (`rebuild/props_layout.py` `penthouse()`, written to `plan["interior"]["penthouse"]` by `make_plan.py`):
+  - **annex:** a kitchen counter run on the penthouse wall with a lit shelf, an island with three stools and pendants hung from louvre blades, and a lounge corner;
+  - **front strip:** a sofa facing the front slider, a side table, a floor lamp;
+  - **right strip:** an armchair at the window;
+  - plants in four corners.
+  - Every footprint is checked against the others, the walls, the core, the annex posts and the door paths: 0 problems.
+- **Layer** (`rebuild/layer_penthouse.py`, registered in `build.py` after `residential`) builds `RB_INTERIOR/RB_PENTHOUSE`, all objects tagged `rb_hide_from_b8`:
+  - `rb_penthouse_furniture`, `_kitchen`, `_pendants`;
+  - `_downlights` (12), `_lamps` (2);
+  - `_pots` and 4 plants;
+  - 4 `rb_penthouse_fill_<n>` warm fills (15 W/m²).
+  - It reuses AI 634/635/637's materials and pieces. Nothing went to `TM_REPLACED`.
+- **Blender:** the headed Blender (MCP) was unreachable during this item, so the layer was built and probed in headless Blender. Nothing Blender-dependent was skipped.
+- **Checks:** audit 120 objects, 0 z-fights, 0 penetrations; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `penthouse_annex_kitchen` and `penthouse_front_slider` (moved clear of a planter palm); 638 added to `b8_calibrated` and `roof_terrace_aerial`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/638_interior_penthouse/`:
+  - `poses/rebuild_pre638_vs_rebuild/` (5 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre638.blend`.
