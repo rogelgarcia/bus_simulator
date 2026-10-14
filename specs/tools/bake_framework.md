@@ -22,11 +22,14 @@ Only the existing materials phase can publish. The review adds matched side/rear
 views, foliage-hidden structure and individual leaf geometry comparisons.
 
 `vegetation/reference-video` is an artifact-only presentation leaf for the three
-enhanced London plane references. It authenticates source model hashes and leaf
+enhanced references of a selected species. It authenticates source model hashes and leaf
 counts, retains instanced geometry/PBR, and renders full orbits followed by trunk
 and matched in-tree/isolated branchlet camera arcs. Its prepare/proof/render/assemble
 phases use the shared headless backend. Output identities prevent stale clip reuse;
 assembly validates source identities, SHA256, resolution and frame counts.
+Labels use the species recipe. When no saved branchlet pose exists, the renderer
+selects an outward-facing mid-crown fan from the authenticated shoot graph and
+frames the same original wood faces and leaf instances in both detail views.
 See [the reference video workflow](../../tools/bake_vegetation/turntable/reference_video/README.md).
 
 `vegetation/enhanced-reference` includes a staging-only `posture` phase for

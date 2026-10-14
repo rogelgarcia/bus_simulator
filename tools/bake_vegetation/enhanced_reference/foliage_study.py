@@ -9,7 +9,15 @@ from junctions import flow_surfaces
 def isolate(directory,objects):
     graph=json.loads((directory/'architecture.json').read_text());paths=graph['paths']
     for r in paths:r['points']=np.asarray(r['points']);r['radii']=np.asarray(r['radii'])
-    root=graph.get('studyRoot',max((i for i,r in enumerate(paths) if r.get('shootDepth')==1),key=lambda i:paths[i]['points'][-1,2]))
+    root=graph.get('studyRoot')
+    if root is None:
+        candidates=[i for i,r in enumerate(paths) if r.get('shootDepth')==1]
+        if candidates:root=max(candidates,key=lambda i:paths[i]['points'][-1,2])
+        else:
+            candidates=sorted({r['parent'] for r in graph['shoots']})
+            height=max(float(r['points'][-1,2]) for r in paths)
+            view=np.array([1.,-8.,0.]);view/=np.linalg.norm(view)
+            root=max(candidates,key=lambda i:paths[i]['points'][-1]@view-abs(paths[i]['points'][-1,2]-height*.60)*1.4)
     selected={root}
     for i,path in enumerate(paths):
         if path['parent'] in selected:selected.add(i)
@@ -36,6 +44,10 @@ def isolate(directory,objects):
         field,width,dtype={'FLOAT_VECTOR':('vector',3,np.float32),'FLOAT_COLOR':('color',4,np.float32),'INT':('value',1,np.int32),'FLOAT':('value',1,np.float32),'BOOLEAN':('value',1,np.bool_)}[attr.data_type]
         mesh.attributes.new(attr.name,attr.data_type,'POINT').data.foreach_set(field,array(attr.data,field,width,dtype)[ids].ravel())
     foliage=objects[0].copy();foliage.data=mesh;foliage.name='Isolated actual foliage';bpy.context.scene.collection.objects.link(foliage)
-    points=array(mesh.attributes['blade_center'].data,'vector',3);low=np.minimum(points.min(axis=0)-.24,verts[used].min(axis=0));high=np.maximum(points.max(axis=0)+.24,verts[used].max(axis=0))
+    if 'blade_center' in mesh.attributes:
+        points=array(mesh.attributes['blade_center'].data,'vector',3);margin=.24
+    else:
+        points=array(mesh.vertices,'co',3);margin=float(np.max(array(mesh.attributes['leaf_scale'].data,'vector',3)))
+    low=np.minimum(points.min(axis=0)-margin,verts[used].min(axis=0));high=np.maximum(points.max(axis=0)+margin,verts[used].max(axis=0))
     pose={'target':((low+high)*.5).tolist(),'offset':[1.,-8.,2.4],'span':float(max(high-low)*1.23)}
     return [foliage,twig],pose
