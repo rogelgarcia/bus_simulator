@@ -79,10 +79,11 @@ def assemble(options):
     print('[Turntable] Validated final video '+str(final),flush=True)
 
 
-options=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text())
-if options['phase']=='inspect':inspect(options)
-elif options['phase']=='closeups':
-    from closeups import render_closeups
-    render_closeups(options)
-elif options['phase']=='assemble':assemble(options)
-else:render(options)
+if __name__=='__main__':
+    options=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text())
+    if options['phase']=='inspect':inspect(options)
+    elif options['phase']=='closeups':
+        from closeups import render_closeups
+        render_closeups(options)
+    elif options['phase']=='assemble':assemble(options)
+    else:render(options)

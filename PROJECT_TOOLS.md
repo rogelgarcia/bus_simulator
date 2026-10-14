@@ -1,5 +1,7 @@
 # Project Tools
 
+- `vegetation/reference-video`: enhanced reference orbits and moving detail shots through `node tools/bake.mjs`; [workflow](tools/bake_vegetation/turntable/reference_video/README.md).
+
 - Gameplay grass runtime: `node tools/bake.mjs --target materials/grass/gameplay-runtime --publish`.
   Explicit browser leaf using shared bake configuration, prepared bus-lab assets,
   all-LOD loading validation and guarded publication. See

@@ -1,5 +1,13 @@
 # Offline bake framework
 
+`vegetation/reference-video` is an artifact-only presentation leaf for the three
+enhanced London plane references. It authenticates source model hashes and leaf
+counts, retains instanced geometry/PBR, and renders full orbits followed by trunk
+and matched in-tree/isolated branchlet camera arcs. Its prepare/proof/render/assemble
+phases use the shared headless backend. Output identities prevent stale clip reuse;
+assembly validates source identities, SHA256, resolution and frame counts.
+See [the reference video workflow](../../tools/bake_vegetation/turntable/reference_video/README.md).
+
 `vegetation/enhanced-reference` includes a staging-only `posture` phase for
 authenticated v9 London planes. It preserves mature_01, raises the marked
 scaffold families in mature_02/03 with attached foliage, and regenerates their

@@ -32,8 +32,9 @@ def title(camera,text,position,size,mat):
 
 
 def reference_specimen(options,model):
-    if model.get('natural'):
-        names=[model['id']+' / '+suffix for suffix in ['original wood','natural leaves','curved branchlets']]
+    if model.get('natural') or model.get('enhanced'):
+        suffixes=['enhanced wood','enhanced leaves','enhanced branchlets'] if model.get('enhanced') else ['original wood','natural leaves','curved branchlets']
+        names=[model['id']+' / '+suffix for suffix in suffixes]
         with bpy.data.libraries.load(model['file'],link=False) as (source,target):
             if any(name not in source.objects for name in names):raise RuntimeError('Incomplete revised reference: '+model['id'])
             target.objects=names
@@ -63,7 +64,7 @@ def reference_specimen(options,model):
     return trees,points,{'woodTriangles':sum(triangles(obj.data) for obj in trees if obj!=trees[1]),'foliageInstances':instances,'foliageRevision':model.get('revision','original')}
 
 
-def studio(options,model):
+def studio(options,model,labels=True):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene=bpy.context.scene;scene.render.engine='BLENDER_EEVEE'
     scene.eevee.taa_render_samples=options['samples'];scene.eevee.use_raytracing=False
@@ -127,11 +128,12 @@ def studio(options,model):
         raise RuntimeError('Full orbit does not fit the showroom frame: '+str([[min(p[i] for p in projected),max(p[i] for p in projected)] for i in range(2)]))
     vertical=camera.data.ortho_scale/(16/9);horizontal=camera.data.ortho_scale
     white=material('Typography · forest ink',(.008,.018,.012),emission=True);muted=material('Typography · dark sage',(.025,.045,.032),emission=True)
-    title(camera,NAMES[model['species']],(-horizontal*.45,vertical*.435,-1),vertical*.057,white)
-    title(camera,model['scientific'],(-horizontal*.45,vertical*.36,-1),vertical*.032,muted)
-    title(camera,'HIGH-DETAIL REFERENCE' if reference else 'MATURE COLLECTION',(-horizontal*.45,-vertical*.435,-1),vertical*.020,muted)
-    index=list(NAMES).index(model['species'])+1
-    title(camera,f'{index:02d} / 05',(horizontal*.375,vertical*.435,-1),vertical*.034,white)
+    if labels:
+        title(camera,NAMES[model['species']],(-horizontal*.45,vertical*.435,-1),vertical*.057,white)
+        title(camera,model['scientific'],(-horizontal*.45,vertical*.36,-1),vertical*.032,muted)
+        title(camera,'HIGH-DETAIL REFERENCE' if reference else 'MATURE COLLECTION',(-horizontal*.45,-vertical*.435,-1),vertical*.020,muted)
+        index=list(NAMES).index(model['species'])+1
+        title(camera,f'{index:02d} / 05',(horizontal*.375,vertical*.435,-1),vertical*.034,white)
     scene.frame_set(1)
     return scene,{'species':model['species'],'name':NAMES[model['species']],'scientific':model['scientific'],
         'heightMetres':height,'variant':options['variant'],'representation':options['representation'],**detail,'engine':'BLENDER_EEVEE','orbitDegrees':360,
