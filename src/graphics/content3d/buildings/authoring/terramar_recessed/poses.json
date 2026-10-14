@@ -1,5 +1,5 @@
 {
-    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check | final (the UHD 3840x2160 completion captures). Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
+    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check | final (the UHD 3840x2160 completion captures) | detail (close-ups for review, rendered at pct=200). Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
     "poses": [
         {
             "name": "b8_target",
@@ -1212,6 +1212,195 @@
                 2.5
             ],
             "vfov_deg": 74.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_palm_crown",
+            "group": "detail",
+            "label": "Up into the right front street palm crown from 6 m away: leaflets, frond ages, boots",
+            "items": [],
+            "location": [
+                2.6,
+                -20.0,
+                8.4
+            ],
+            "target": [
+                8.6,
+                -15.0,
+                9.7
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_palm_trunk",
+            "group": "detail",
+            "label": "The right front street palm trunk at mid-height, long lens: leaf-scar rings and bark",
+            "items": [],
+            "location": [
+                5.4,
+                -17.6,
+                4.2
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                4.6
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_palm_base",
+            "group": "detail",
+            "label": "The right front street palm foot in its pit: root base, roots, lower trunk, pit greens",
+            "items": [],
+            "location": [
+                6.6,
+                -16.4,
+                1.2
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                0.75
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_umbrella_top",
+            "group": "detail",
+            "label": "A cafe umbrella from first-floor height across the street: canvas panels, seams, vent cap, valance",
+            "items": [],
+            "location": [
+                4.4,
+                -16.6,
+                5.6
+            ],
+            "target": [
+                8.1,
+                -11.3,
+                2.4
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_restaurant_inside",
+            "group": "detail",
+            "label": "Inside the ground-floor restaurant from the doors: entrance tables and chairs, wood ceiling, pendants, bar",
+            "items": [],
+            "location": [
+                0.0,
+                -10.7,
+                1.6
+            ],
+            "target": [
+                0.0,
+                -2.0,
+                1.15
+            ],
+            "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_dining_inside",
+            "group": "detail",
+            "label": "Inside the upper-podium dining room behind the loggia glass: tables, caned chairs, pendants, sideboard",
+            "items": [],
+            "location": [
+                0.0,
+                -9.6,
+                7.4
+            ],
+            "target": [
+                0.0,
+                -1.0,
+                6.9
+            ],
+            "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_residential_inside",
+            "group": "detail",
+            "label": "Inside a front centre residential unit (floor 3) looking at the window: furniture set, lamp, sheer curtains",
+            "items": [],
+            "location": [
+                1.6,
+                -4.0,
+                18.4
+            ],
+            "target": [
+                -0.4,
+                -9.4,
+                17.7
+            ],
+            "vfov_deg": 60.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_penthouse_annex_inside",
+            "group": "detail",
+            "label": "Inside the penthouse annex from the door: island, stools, pendants, lit shelf, lounge corner",
+            "items": [],
+            "location": [
+                -5.45,
+                2.0,
+                28.85
+            ],
+            "target": [
+                -7.4,
+                4.2,
+                28.0
+            ],
+            "vfov_deg": 60.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "detail_roof_lounge_eye",
+            "group": "detail",
+            "label": "Roof terrace lounge at eye level: teak-framed sofa and armchairs, cushions, tables",
+            "items": [],
+            "location": [
+                3.0,
+                -9.6,
+                29.0
+            ],
+            "target": [
+                8.0,
+                -6.5,
+                27.6
+            ],
+            "vfov_deg": 55.0,
             "resolution": [
                 1920,
                 1080
