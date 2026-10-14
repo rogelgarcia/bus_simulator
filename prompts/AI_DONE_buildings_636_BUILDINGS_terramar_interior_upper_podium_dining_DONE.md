@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (interior): In `b8.png`, the upper podium's glazing shows a dining room: tables, chairs, plants and pendant lights. The terrace over the entrance continues it outside. The extracted upper podium is a plain shell.
@@ -45,3 +47,31 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **Layout** (`rebuild/props_layout.py` `dining_l1()`, written to `plan["interior"]["dining_l1"]` by `make_plan.py`):
+  - dining bands behind every upper bay;
+  - the loggia room behind the front centre's glazing;
+  - banquettes on the core's sides and rear;
+  - a sideboard on the core's front;
+  - two tables on the entrance terrace.
+  - Seed 636.
+  - AI 635's room logic became a shared `_Room` helper. The ground floor's layout is unchanged; its plan only gains `fills`.
+  - Plants now yield to furniture.
+- **Layer** (`rebuild/layer_dining_l1.py`, registered in `build.py` after `restaurant_l0`) builds `RB_INTERIOR/RB_DINING_L1`, reusing `layer_restaurant_l0.py`'s pieces:
+  - `rb_dining_furniture`: 51 tables, 124 chairs, 3 banquettes;
+  - `rb_dining_sideboard`;
+  - `rb_dining_pendants`: 49;
+  - `rb_dining_pots` and 14 plants;
+  - 18 `rb_dining_fill_<n>` (down, 20 W/m²) and 18 `rb_dining_fill_up_<n>` (ceiling wash, 12 W/m²), out of camera and reflection rays.
+  - Nothing went to `TM_REPLACED`.
+- **Iteration:**
+  - The 2.1 m loggia row pitch overlapped 4-tops; it is now 2.35 m.
+  - The first audit found three pots inside furniture (148 penetrations); fixed with the plant check.
+  - From b8 the room read dark because the camera looks up at the ceiling; fixed with the ceiling wash.
+- **Checks:** audit 102 objects, 0 z-fights, 0 penetrations; footprint overlaps 0; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts for both floors.
+- **Poses:** new `loggia_dining_closeup`; 636 added to `b8_calibrated` and `entrance_terrace_planters`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/636_interior_upper_podium_dining/`:
+  - `poses/rebuild_pre636_vs_rebuild/` (5 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre636.blend`.

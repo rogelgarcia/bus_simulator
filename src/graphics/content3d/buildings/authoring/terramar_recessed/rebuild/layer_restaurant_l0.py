@@ -73,11 +73,10 @@ def rect(x0, x1, y0, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
-def bar_pieces(bar, z, core, ceiling):
-    (x0, x1), (c0, c1), (b0, b1) = bar["x"], bar["counter_y"], bar["back_y"]
+def back_pieces(bar, z, core, ceiling):
+    """The core's teak-panelled front, and before it a cabinet and three shelves with LED strips under them."""
+    (x0, x1), (b0, b1) = bar["x"], bar["back_y"]
     out = [L.piece(rect(core["x"][0], core["x"][1], b1, core["y"][0]), [(z, ceiling)], RF.TEAK),      # teak-panelled wall
-           L.piece(rect(x0, x1, c0 + 0.03, c1), [(z, z + bar["counter_h"] - 0.05)], RF.TEAK),           # counter body
-           L.piece(rect(x0 - 0.03, x1 + 0.03, c0, c1), [(z + bar["counter_h"] - 0.05, z + bar["counter_h"])], "TM_RB_bar_top"),
            L.piece(rect(x0, x1, b0, b1), [(z, z + 0.9)], RF.TEAK)]                                     # back cabinet
     for h in (1.3, 1.65, 2.0):                                                                          # back shelves,
         out.append(L.piece(rect(x0 + 0.2, x1 - 0.2, b0 + 0.1, b1), [(z + h, z + h + 0.03)], RF.TEAK))
@@ -85,6 +84,15 @@ def bar_pieces(bar, z, core, ceiling):
                            BAR_GLOW[0]))                                                               # a strip under each
     for sx in (x0 + 0.2, (x0 + x1) / 2, x1 - 0.2):                                                    # shelf uprights
         out.append(L.piece(rect(sx - 0.02, sx + 0.02, b0 + 0.1, b1), [(z + 0.9, z + bar["back_h"])], RF.TEAK))
+    return out
+
+
+def bar_pieces(bar, z, core, ceiling):
+    """The back bar, the counter before it (teak body, stone top) and the stools."""
+    (x0, x1), (c0, c1) = bar["x"], bar["counter_y"]
+    out = back_pieces(bar, z, core, ceiling)
+    out += [L.piece(rect(x0, x1, c0 + 0.03, c1), [(z, z + bar["counter_h"] - 0.05)], RF.TEAK),          # counter body
+            L.piece(rect(x0 - 0.03, x1 + 0.03, c0, c1), [(z + bar["counter_h"] - 0.05, z + bar["counter_h"])], "TM_RB_bar_top")]
     for sx in bar["stool_x"]:                                                                           # stools
         c = (sx, c0 - 0.35)
         out.append(L.piece(disc(c, 0.2), [(z, z + 0.02)], RF.METAL))
@@ -122,45 +130,74 @@ def pendant_pieces(p, cfg, z_floor, slat_x=None):
             L.piece(disc(c, sr - 0.02, 20), [(zs - 0.012, zs)], GLOW[0])]
 
 
-def fill_zones(rl):
-    """Rectangles (centre, width, depth, angle, top) over the zones: dining bands, entrance, bar, banquette strips."""
-    cfg = rl["config"]
-    out = []
-    for zone in rl["zones"]:
-        p0, p1, p2 = zone["loop"][0], zone["loop"][1], zone["loop"][2]
-        c = [sum(q[0] for q in zone["loop"]) / 4, sum(q[1] for q in zone["loop"]) / 4]
-        out.append((c, math.dist(p0, p1), math.dist(p1, p2), math.atan2(p1[1] - p0[1], p1[0] - p0[0]), rl["ceiling"]))
-    E, wc, bar = cfg["entrance"], cfg["wood_ceiling"], rl["bar"]
-    out.append(([sum(E["x"]) / 2, sum(E["y"]) / 2], E["x"][1] - E["x"][0], E["y"][1] - E["y"][0], 0.0,
-                wc["z"] - wc["slat"][1]))                                                               # under the slats
-    out.append(([sum(bar["x"]) / 2, (E["y"][1] + bar["back_y"][1]) / 2], bar["x"][1] - bar["x"][0],
-                bar["back_y"][1] - E["y"][1], 0.0, rl["ceiling"]))
-    (x0, x1), (y0, y1), d = rl["core"]["x"], rl["core"]["y"], cfg["fill"]["strip"]
-    out += [([x0 - d / 2, (y0 + y1) / 2], d, y1 - y0, 0.0, rl["ceiling"]),                             # banquette strips
-            ([x1 + d / 2, (y0 + y1) / 2], d, y1 - y0, 0.0, rl["ceiling"]),
-            ([(x0 + x1) / 2, y1 + d / 2], x1 - x0, d, 0.0, rl["ceiling"])]
-    return out
-
-
-def fill_lights(coll, rl):
-    """Warm area lights under the ceiling over every zone: the restaurant's ambient light. They face down and stay out
-    of camera and reflection rays, so only their light shows (the pendants are the visible sources)."""
+def fill_lights(coll, rl, prefix, tagger):
+    """Warm area lights under the ceiling over every zone (rl["fills"]): the room's ambient light. They face down (and, with
+    up_w_per_m2, a second set faces up to wash the ceiling) and stay out of camera and reflection rays, so only their
+    light shows (the pendants are the visible sources)."""
     f = rl["config"]["fill"]
     made = []
-    for i, (c, w, d, ang, top) in enumerate(fill_zones(rl)):
-        name = f"rb_restaurant_fill_{i + 1}"
+    for i, r in enumerate(rl["fills"]):
+        name = f"{prefix}_{i + 1}"
         data = bpy.data.lights.get(name) or bpy.data.lights.new(name, "AREA")
-        data.shape, data.size, data.size_y = "RECTANGLE", w, d
-        data.color, data.energy = f["rgb"], f["w_per_m2"] * w * d
+        data.shape, data.size, data.size_y = "RECTANGLE", r["w"], r["d"]
+        data.color, data.energy = f["rgb"], f["w_per_m2"] * r["w"] * r["d"]
         ob = bpy.data.objects.new(name, data)
         coll.objects.link(ob)
-        ob.location = (c[0], c[1], top - f["below"])
-        ob.rotation_euler = (0.0, 0.0, ang)
+        ob.location = (r["c"][0], r["c"][1], r["top"] - f["below"])
+        ob.rotation_euler = (0.0, 0.0, r["angle"])
         ob.visible_camera = ob.visible_glossy = ob.visible_transmission = False
-        for k, v in tags("light", name).items():
+        for k, v in tagger("light", name).items():
             ob[k] = v
         made.append(ob)
+        if f.get("up_w_per_m2"):                                      # a ceiling wash: the same rectangle facing up
+            name = f"{prefix}_up_{i + 1}"
+            data = bpy.data.lights.get(name) or bpy.data.lights.new(name, "AREA")
+            data.shape, data.size, data.size_y = "RECTANGLE", r["w"], r["d"]
+            data.color, data.energy = f["rgb"], f["up_w_per_m2"] * r["w"] * r["d"]
+            ob = bpy.data.objects.new(name, data)
+            coll.objects.link(ob)
+            ob.location = (r["c"][0], r["c"][1], r["top"] - f["up_below"])
+            ob.rotation_euler = (math.pi, 0.0, r["angle"])
+            ob.visible_camera = ob.visible_glossy = ob.visible_transmission = False
+            for k, v in tagger("light", name).items():
+                ob[k] = v
+            made.append(ob)
     return made
+
+
+def potted_plants(coll, rl, prefix, tagger):
+    """AI 627's charcoal pots (one object) with the game's viburnum in each."""
+    bm = bmesh.new()
+    slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
+    r_pot, h_pot = PLANT["pot"]
+    for p in rl["plants"]:
+        BP.pot(bm, slots, p["at"], p["z"], r_pot, h_pot, "charcoal")
+    made = [L.finish(f"{prefix}_pots", coll, bm, slots, tagger("pot", f"{prefix}_pots"), smooth_deg=40.0)]
+    protos = {PLANT["model"]: RP.prototype(PLANT["model"])}
+    BP.exclude(BP.PROTOTYPES)
+    for i, p in enumerate(rl["plants"]):
+        spec = {"model": PLANT["model"], "at": p["at"], "z": p["z"] + h_pot - 0.05, "height": PLANT["height"],
+                "radius": PLANT["radius"], "rot_deg": (i * 137.5) % 360.0, "kind": "shrub"}
+        for ob, _, _ in RP.instances(coll, spec, protos, f"{prefix}_plant_{i + 1}"):
+            for k, v in tagger("plant", ob.name).items():
+                ob[k] = v
+            made.append(ob)
+    return made
+
+
+def furniture(rl):
+    """Every item's pieces, each on its own floor (terrace items carry their own z)."""
+    return [p for it in rl["items"] for p in RF.model(it, it.get("z", rl["z"]))]
+
+
+def report(rl, made, fills, problems, collection):
+    kinds = {}
+    for it in rl["items"]:
+        kinds[it["kind"]] = kinds.get(it["kind"], 0) + 1
+    return {"collection": collection, "objects": len(made), "kinds": kinds, "pendants": len(rl["pendants"]),
+            "plants": len(rl["plants"]), "skipped_sets": len(rl["skipped_sets"]), "fill_lights": len(fills),
+            "fill_watts": round(sum(o.data.energy for o in fills)), "footprint_problems": len(problems),
+            "problems": problems[:10], "names": [o.name for o in made]}
 
 
 def poly_overlap(a, b):
@@ -203,35 +240,15 @@ def build(plan):
     BP.prop_materials()
     rl = plan["interior"]["restaurant_l0"]
     z = rl["z"]
-    made = [L.pieces("rb_restaurant_furniture", coll, [p for it in rl["items"] for p in RF.model(it, z)],
-                     tags("furniture", "restaurant_furniture"))]
+    made = [L.pieces("rb_restaurant_furniture", coll, furniture(rl), tags("furniture", "restaurant_furniture"))]
     made.append(L.pieces("rb_restaurant_bar", coll, bar_pieces(rl["bar"], z, rl["core"], rl["ceiling"]), tags("bar", "bar")))
     wood, slat_x = wood_ceiling_pieces(rl["config"]["wood_ceiling"], rl["ceiling"])
     made.append(L.pieces("rb_restaurant_wood_ceiling", coll, wood, tags("ceiling", "wood_ceiling")))
     pend = [q for p in rl["pendants"] for q in pendant_pieces(p, rl["config"]["pendant"], z, slat_x)]
     made.append(L.pieces("rb_restaurant_pendants", coll, pend, tags("light", "pendants")))
-    fills = fill_lights(coll, rl)
-    bm = bmesh.new()
-    slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
-    r_pot, h_pot = PLANT["pot"]
-    for p in rl["plants"]:
-        BP.pot(bm, slots, p["at"], p["z"], r_pot, h_pot, "charcoal")
-    made.append(L.finish("rb_restaurant_pots", coll, bm, slots, tags("pot", "restaurant_pots"), smooth_deg=40.0))
-    protos = {PLANT["model"]: RP.prototype(PLANT["model"])}
-    BP.exclude(BP.PROTOTYPES)
-    for i, p in enumerate(rl["plants"]):
-        spec = {"model": PLANT["model"], "at": p["at"], "z": p["z"] + h_pot - 0.05, "height": PLANT["height"],
-                "radius": PLANT["radius"], "rot_deg": (i * 137.5) % 360.0, "kind": "shrub"}
-        for ob, _, _ in RP.instances(coll, spec, protos, f"rb_restaurant_plant_{i + 1}"):
-            for k, v in tags("plant", ob.name).items():
-                ob[k] = v
-            made.append(ob)
+    fills = fill_lights(coll, rl, "rb_restaurant_fill", tags)
+    made += potted_plants(coll, rl, "rb_restaurant", tags)
     problems = checks(rl)
     for p in problems[:20]:
         print("WARNING restaurant:", p)
-    kinds = {}
-    for it in rl["items"]:
-        kinds[it["kind"]] = kinds.get(it["kind"], 0) + 1
-    return {"collection": COLLECTION, "objects": len(made), "kinds": kinds, "pendants": len(rl["pendants"]),
-            "plants": len(rl["plants"]), "fill_lights": len(fills), "fill_watts": round(sum(o.data.energy for o in fills)),
-            "footprint_problems": len(problems), "problems": problems[:10], "names": [o.name for o in made]}
+    return report(rl, made, fills, problems, COLLECTION)

@@ -60,7 +60,8 @@
                 632,
                 633,
                 634,
-                635
+                635,
+                636
             ]
         },
         {
@@ -760,7 +761,8 @@
             "group": "props",
             "label": "Entrance terrace from above the street: the front flower trough and the tall corner planters before the loggia",
             "items": [
-                628
+                628,
+                636
             ],
             "location": [
                 2.6,
@@ -947,6 +949,29 @@
                 2.0
             ],
             "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "loggia_dining_closeup",
+            "group": "interior",
+            "label": "Into the upper-podium dining room through the loggia over the entrance, from across the street at first-floor height: the terrace tables, the room under its pendants, the sideboard at the back",
+            "items": [
+                636
+            ],
+            "location": [
+                0.8,
+                -19.5,
+                7.4
+            ],
+            "target": [
+                0.0,
+                -6.0,
+                7.2
+            ],
+            "vfov_deg": 36.0,
             "resolution": [
                 1920,
                 1080

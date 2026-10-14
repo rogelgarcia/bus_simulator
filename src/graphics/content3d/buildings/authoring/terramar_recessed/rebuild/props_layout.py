@@ -858,34 +858,43 @@ def _overlap(a, b):
     return True
 
 
-def restaurant_l0(plan, seed=635):
-    pd, st = plan["podium"], plan["structure"]
-    runs = {r["run"]: r for r in pd["runs"]}
-    z = st["ground_floor_level"]
-    ceiling = pd["storeys"]["ground"][1]
-    core = st["core"]["outer"]
-    R = RESTAURANT
-    items, pendants, plants = [], [], []
+def _rect_fill(x, y, top):
+    """A fill light's rectangle over an axis-aligned zone (centre, width along x, depth along y, angle, top)."""
+    return {"c": [round((x[0] + x[1]) / 2, 4), round((y[0] + y[1]) / 2, 4)], "w": round(x[1] - x[0], 4),
+            "d": round(y[1] - y[0], 4), "angle": 0.0, "top": top}
 
+
+_POT_R = 0.26                                                         # layer_restaurant_l0.PLANT["pot"] radius
+
+
+class _Room:
+    """A dining room's items, pendants, plants, zones and fill rectangles. Sets (a table, its chairs, its pendant) are
+    placed in priority order: a set is kept only if no footprint overlaps one already placed (AI 635, reused by 636)."""
+
+    def __init__(self, cfg):
+        self.R = cfg
+        self.items, self.pendants, self.plants, self.zones, self.fills = [], [], [], [], []
+        self.kept, self.skipped, self.plant_spots = [], [], []
+
+    @staticmethod
     def face(vec):
         return [round(vec[0], 5), round(vec[1], 5)]
 
-    kept, skipped = [], []
-
-    def place(new, pendant=None):
+    def place(self, new, pendant=None):
         """Keep a set of items (and its pendant) only if no footprint overlaps one already placed."""
         polys = [_footprint(it) for it in new]
-        if any(_overlap(a, b) for a in polys for b in kept):
-            skipped.append(new[0]["group"])
+        if any(_overlap(a, b) for a in polys for b in self.kept):
+            self.skipped.append(new[0]["group"])
             return False
-        kept.extend(polys)
-        items.extend(new)
+        self.kept.extend(polys)
+        self.items.extend(new)
         if pendant:
-            pendants.append(pendant)
+            self.pendants.append(pendant)
         return True
 
-    def table_set(rng, centre, U, N, size, n_chairs, group, ceiling_z):
-        """A table facing N (its local +v), its chairs round it facing in, a pendant over it."""
+    def table_set(self, rng, centre, U, N, size, n_chairs, group, ceiling_z, pendant=True):
+        """A table facing N (its local +v), its chairs round it facing in, a pendant over it (indoors)."""
+        R, face = self.R, self.face
         new = [{"group": group, "kind": "dining_table", "at": [round(centre[0], 4), round(centre[1], 4)],
                 "face": face(N), "size": list(size), "cushion": "greige"}]
         w, d = size
@@ -898,75 +907,171 @@ def restaurant_l0(plan, seed=635):
             fv = (-N[0], -N[1]) if dv > 0 else N                      # chairs face the table
             new.append({"group": group, "kind": "dining_chair", "at": [round(at[0], 4), round(at[1], 4)],
                         "face": face(fv), "size": [0.46, 0.5], "cushion": "greige"})
-        place(new, {"at": [round(centre[0], 4), round(centre[1], 4)], "top": ceiling_z})
-    # banquettes along the core's sides and rear, tables before them
-    B = R["banquette"]
-    cx0, cx1, cy0, cy1 = core["x"][0], core["x"][1], core["y"][0], core["y"][1]
-    sides = [((cx0, cy0), (cx0, cy1), (-1.0, 0.0)), ((cx1, cy1), (cx1, cy0), (1.0, 0.0)), ((cx1, cy1), (cx0, cy1), (0.0, 1.0))]
-    for k, (a, b, out) in enumerate(sides):
-        rng = random.Random(f"{seed}:banquette:{k}")
-        L = math.dist(a, b)
-        U = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
-        mid = ((a[0] + b[0]) / 2 + out[0] * B["depth"] / 2, (a[1] + b[1]) / 2 + out[1] * B["depth"] / 2)
-        place([{"group": "banquettes", "kind": "sofa", "at": [round(mid[0], 4), round(mid[1], 4)], "face": face(out),
-                "size": [round(L - 0.2, 3), B["depth"]], "cushion": "ecru"}])
-        n = max(1, int((L - 0.4) // B["pitch"]))
-        for j in range(n):
-            s = (j + 0.5) * L / n
-            c = (a[0] + U[0] * s + out[0] * (B["depth"] + B["gap"] + B["table"][1] / 2),
-                 a[1] + U[1] * s + out[1] * (B["depth"] + B["gap"] + B["table"][1] / 2))
-            ch = (c[0] + out[0] * (B["table"][1] / 2 + R["chair_gap"]), c[1] + out[1] * (B["table"][1] / 2 + R["chair_gap"]))
-            place([{"group": "banquettes", "kind": "dining_table", "at": [round(c[0], 4), round(c[1], 4)],
-                    "face": face(out), "size": list(B["table"]), "cushion": "greige"},
-                   {"group": "banquettes", "kind": "dining_chair", "at": [round(ch[0], 4), round(ch[1], 4)],
-                    "face": face((-out[0], -out[1])), "size": [0.46, 0.5], "cushion": "greige"}],
-                  {"at": [round(c[0], 4), round(c[1], 4)], "top": ceiling})
-    # dining bands behind every storefront bay
-    zones = []
-    order = {"B": 0, "H": 0, "C": 1, "G": 1, "D": 2, "F": 2, "E": 2}   # the bays b8 sees first: they win any overlap
-    for bay in sorted(pd["bays"], key=lambda b: order[b["run"]]):
-        r = runs[bay["run"]]
-        U, N = r["along"], (-r["outward"][0], -r["outward"][1])        # N into the room
-        s0, s1 = bay["s"][0] + R["end_inset"], bay["s"][1] - R["end_inset"]
-        door = bay.get("storefront_door")                              # the door pane's index -> its span along the bay
-        door = bay["storefront_panes"][door] if door is not None else None
-        rng = random.Random(f"{seed}:{bay['id']}")
-        pt = lambda s, v, r=r: (r["p"][0] + r["along"][0] * s + r["outward"][0] * v, r["p"][1] + r["along"][1] * s + r["outward"][1] * v)  # noqa: E731
-        zones.append({"bay": bay["id"], "loop": [list(pt(s0, R["band_v"][0])), list(pt(s1, R["band_v"][0])),
-                                                list(pt(s1, R["band_v"][1])), list(pt(s0, R["band_v"][1]))]})
-        d0, d1 = (bay["s"][0] + door[0], bay["s"][0] + door[1]) if door else (None, None)
-        for row in R["rows"]:
-            if row.get("beside_door") and door:                       # by the glass: one table in each gap beside the door
-                spots = [(a + b) / 2 for a, b in ((s0, d0 - R["door_aisle"]), (d1 + R["door_aisle"], s1))
-                         if b - a >= row["table"][0] + 0.1]
-            else:                                                     # deeper: evenly, but not straight behind the door
-                n = max(1, int((s1 - s0) // row.get("pitch", 1.8)))
-                spots = [s0 + (k + 0.5) * (s1 - s0) / n for k in range(n)]
-                if door:
-                    spots = [s for s in spots if abs(s - (d0 + d1) / 2) >= R["behind_door"]]
-            for s in spots:
-                s += rng.uniform(-0.06, 0.06)
-                chairs = row["chairs"] if rng.random() > 0.15 else 2
-                table_set(rng, pt(s, row["v"]), U, N, row["table"], chairs, bay["id"], ceiling)
-        plants.append({"at": [round(c, 4) for c in pt(s0 - 0.2, (R["band_v"][0] + R["band_v"][1]) / 2)], "z": z})
-    # the entrance zone under the wood ceiling
-    rng = random.Random(f"{seed}:entrance")
-    E = R["entrance"]
-    wc = R["wood_ceiling"]
-    for y in E["rows_y"]:
-        for x in E["cols_x"]:
-            if abs(x) < 0.1 and y == E["rows_y"][0]:
-                continue                                              # keep the way in from the doors clear
-            top = wc["z"] - wc["slat"][1] if wc["y"][0] < y < wc["y"][1] else ceiling
-            two = rng.random() < 0.4
-            table_set(rng, (x + rng.uniform(-0.05, 0.05), y), (1.0, 0.0), (0.0, 1.0), [0.75, 0.75] if two else [1.2, 0.8],
-                      2 if two else 4, "entrance", top)
+        return self.place(new, {"at": [round(centre[0], 4), round(centre[1], 4)], "top": ceiling_z} if pendant else None)
+
+    def banquettes(self, core, seed, ceiling):
+        """Banquettes along the core's sides and rear, tables and a chair before them."""
+        R, face, B = self.R, self.face, self.R["banquette"]
+        cx0, cx1, cy0, cy1 = core["x"][0], core["x"][1], core["y"][0], core["y"][1]
+        sides = [((cx0, cy0), (cx0, cy1), (-1.0, 0.0)), ((cx1, cy1), (cx1, cy0), (1.0, 0.0)), ((cx1, cy1), (cx0, cy1), (0.0, 1.0))]
+        for k, (a, b, out) in enumerate(sides):
+            rng = random.Random(f"{seed}:banquette:{k}")
+            L = math.dist(a, b)
+            U = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+            mid = ((a[0] + b[0]) / 2 + out[0] * B["depth"] / 2, (a[1] + b[1]) / 2 + out[1] * B["depth"] / 2)
+            self.place([{"group": "banquettes", "kind": "sofa", "at": [round(mid[0], 4), round(mid[1], 4)], "face": face(out),
+                         "size": [round(L - 0.2, 3), B["depth"]], "cushion": "ecru"}])
+            n = max(1, int((L - 0.4) // B["pitch"]))
+            for j in range(n):
+                s = (j + 0.5) * L / n
+                c = (a[0] + U[0] * s + out[0] * (B["depth"] + B["gap"] + B["table"][1] / 2),
+                     a[1] + U[1] * s + out[1] * (B["depth"] + B["gap"] + B["table"][1] / 2))
+                ch = (c[0] + out[0] * (B["table"][1] / 2 + R["chair_gap"]), c[1] + out[1] * (B["table"][1] / 2 + R["chair_gap"]))
+                self.place([{"group": "banquettes", "kind": "dining_table", "at": [round(c[0], 4), round(c[1], 4)],
+                             "face": face(out), "size": list(B["table"]), "cushion": "greige"},
+                            {"group": "banquettes", "kind": "dining_chair", "at": [round(ch[0], 4), round(ch[1], 4)],
+                             "face": face((-out[0], -out[1])), "size": [0.46, 0.5], "cushion": "greige"}],
+                           {"at": [round(c[0], 4), round(c[1], 4)], "top": ceiling})
+
+    def bands(self, pd, seed, z, ceiling, doors):
+        """Dining bands behind every bay: rows of tables at fixed depths, a plant at each band's start. With doors, the
+        row by the glass takes one table in each gap beside the storefront door and the deeper rows keep off its axis."""
+        R = self.R
+        runs = {r["run"]: r for r in pd["runs"]}
+        order = {"B": 0, "H": 0, "C": 1, "G": 1, "D": 2, "F": 2, "E": 2}   # the bays b8 sees first: they win any overlap
+        for bay in sorted(pd["bays"], key=lambda b: order[b["run"]]):
+            r = runs[bay["run"]]
+            U, N = r["along"], (-r["outward"][0], -r["outward"][1])        # N into the room
+            s0, s1 = bay["s"][0] + R["end_inset"], bay["s"][1] - R["end_inset"]
+            door = bay.get("storefront_door") if doors else None           # the door pane's index -> its span along the bay
+            door = bay["storefront_panes"][door] if door is not None else None
+            rng = random.Random(f"{seed}:{bay['id']}")
+            pt = lambda s, v, r=r: (r["p"][0] + r["along"][0] * s + r["outward"][0] * v, r["p"][1] + r["along"][1] * s + r["outward"][1] * v)  # noqa: E731
+            loop = [list(pt(s0, R["band_v"][0])), list(pt(s1, R["band_v"][0])), list(pt(s1, R["band_v"][1])), list(pt(s0, R["band_v"][1]))]
+            self.zones.append({"bay": bay["id"], "loop": loop})
+            self.fills.append({"c": [round(sum(q[0] for q in loop) / 4, 4), round(sum(q[1] for q in loop) / 4, 4)],
+                               "w": round(math.dist(loop[0], loop[1]), 4), "d": round(math.dist(loop[1], loop[2]), 4),
+                               "angle": round(math.atan2(loop[1][1] - loop[0][1], loop[1][0] - loop[0][0]), 6), "top": ceiling})
+            d0, d1 = (bay["s"][0] + door[0], bay["s"][0] + door[1]) if door else (None, None)
+            for row in R["rows"]:
+                if row.get("beside_door") and door:                       # by the glass: one table in each gap beside the door
+                    spots = [(a + b) / 2 for a, b in ((s0, d0 - R["door_aisle"]), (d1 + R["door_aisle"], s1))
+                             if b - a >= row["table"][0] + 0.1]
+                else:                                                     # deeper: evenly, but not straight behind the door
+                    n = max(1, int((s1 - s0) // row.get("pitch", 1.8)))
+                    spots = [s0 + (k + 0.5) * (s1 - s0) / n for k in range(n)]
+                    if door:
+                        spots = [s for s in spots if abs(s - (d0 + d1) / 2) >= R["behind_door"]]
+                for s in spots:
+                    s += rng.uniform(-0.06, 0.06)
+                    chairs = row["chairs"] if rng.random() > 0.15 else 2
+                    self.table_set(rng, pt(s, row["v"]), U, N, row["table"], chairs, bay["id"], ceiling)
+            self.plant_spots.append({"at": [round(c, 4) for c in pt(s0 - 0.2, (R["band_v"][0] + R["band_v"][1]) / 2)], "z": z})
+
+    def settle_plants(self, spots=()):
+        """Keep the plant spots whose pot clears every placed footprint (the tables win); dropped ones count as skipped."""
+        for p in list(self.plant_spots) + list(spots):
+            pot = [(p["at"][0] + _POT_R * math.cos((k + 0.5) * math.pi / 4), p["at"][1] + _POT_R * math.sin((k + 0.5) * math.pi / 4))
+                   for k in range(8)]
+            if any(_overlap(pot, q) for q in self.kept):
+                self.skipped.append("plant")
+                continue
+            self.kept.append(pot)
+            self.plants.append(p)
+        self.plant_spots = []
+
+    def grid(self, rng, zone, group, top_at, skip=()):
+        """A grid of 2- and 4-tops facing +y (zone: rows_y, cols_x); (x, y) spots in skip stay free."""
+        for y in zone["rows_y"]:
+            for x in zone["cols_x"]:
+                if (x, y) in skip:
+                    continue
+                two = rng.random() < 0.4
+                self.table_set(rng, (x + rng.uniform(-0.05, 0.05), y), (1.0, 0.0), (0.0, 1.0), [0.75, 0.75] if two else [1.2, 0.8],
+                               2 if two else 4, group, top_at(y))
+
+    def strips(self, core, top):
+        """Fill rectangles over the banquette strips beside and behind the core."""
+        (x0, x1), (y0, y1), d = core["x"], core["y"], self.R["fill"]["strip"]
+        self.fills += [_rect_fill([x0 - d, x0], [y0, y1], top), _rect_fill([x1, x1 + d], [y0, y1], top),
+                       _rect_fill([x0, x1], [y1, y1 + d], top)]
+
+
+def restaurant_l0(plan, seed=635):
+    pd, st = plan["podium"], plan["structure"]
+    z = st["ground_floor_level"]
+    ceiling = pd["storeys"]["ground"][1]
+    core = st["core"]["outer"]
+    R = RESTAURANT
+    room = _Room(R)
+    room.banquettes(core, seed, ceiling)
+    room.bands(pd, seed, z, ceiling, doors=True)
+    # the entrance zone under the wood ceiling, the way in from the doors kept clear
+    E, wc = R["entrance"], R["wood_ceiling"]
+    under = wc["z"] - wc["slat"][1]
+    room.grid(random.Random(f"{seed}:entrance"), E, "entrance", lambda y: under if wc["y"][0] < y < wc["y"][1] else ceiling,
+              skip=[(x, E["rows_y"][0]) for x in E["cols_x"] if abs(x) < 0.1])
     bar = dict(R["bar"])
     bar["stool_x"] = [round(bar["x"][0] + (k + 0.5) * (bar["x"][1] - bar["x"][0]) / bar["stools"], 3) for k in range(bar["stools"])]
-    plants += [{"at": [bar["x"][0] - 0.6, -0.3], "z": z}, {"at": [bar["x"][1] + 0.6, -0.3], "z": z}]
+    room.settle_plants([{"at": [bar["x"][0] - 0.6, -0.3], "z": z}, {"at": [bar["x"][1] + 0.6, -0.3], "z": z}])
+    room.fills.append(_rect_fill(E["x"], E["y"], under))                                     # under the slats
+    room.fills.append(_rect_fill(bar["x"], [E["y"][1], bar["back_y"][1]], ceiling))
+    room.strips(core, ceiling)
     return {"comment": "AI 635 ground-floor restaurant: dining bands behind every storefront bay (2-top and 4-top rows, an "
                        "aisle behind each storefront door), the entrance zone under a slatted wood ceiling, banquettes on "
                        "the core's side and rear walls, the bar on the core's front facing the entrance, a pendant over "
                        "every table, potted plants at the band ends and the bar",
-            "seed": seed, "z": z, "ceiling": ceiling, "config": R, "zones": zones, "items": items, "pendants": pendants,
-            "plants": plants, "bar": bar, "core": core, "skipped_sets": skipped}
+            "seed": seed, "z": z, "ceiling": ceiling, "config": R, "zones": room.zones, "items": room.items,
+            "pendants": room.pendants, "plants": room.plants, "bar": bar, "core": core, "skipped_sets": room.skipped,
+            "fills": room.fills}
+
+
+# ---------------------------------------------------------------- AI 636: the upper-podium dining room
+# b8: the upper podium's glazing shows a dining room -- tables, chairs, plants, pendant lights -- and the terrace over the
+# entrance continues it outside. AI 635's room logic on the upper storey: dining bands behind every upper bay (the upper
+# glazing stands 0.9 m in, so the bands start deeper and have no doors), the loggia room behind the front centre's
+# glazing, banquettes on the core's sides and rear, a sideboard with lit shelves on the core's teak-panelled front, and
+# tables on the entrance terrace between its planters and the loggia glazing (no pendants outside).
+DINING = {"band_v": [-1.9, -5.7], "rows": [{"v": -2.35, "table": [0.7, 0.7], "chairs": 2, "pitch": 1.6},
+                                           {"v": -4.55, "table": [1.2, 0.8], "chairs": 4, "pitch": 1.8}],
+          "end_inset": 0.5, "chair_gap": 0.42, "pendant": dict(RESTAURANT["pendant"]),
+          "loggia_room": {"x": [-2.8, 2.8], "y": [-9.8, -1.2], "rows_y": [-8.6, -6.25, -3.9, -1.55], "cols_x": [-1.65, 0.0, 1.65]},
+          "sideboard": {"x": [-2.6, 2.6], "back_y": [0.4, 0.78], "back_h": 2.2},
+          "banquette": dict(RESTAURANT["banquette"]),
+          "terrace": {"cols_x": [-1.55, 1.55], "y": -10.78, "table": [0.7, 0.7]},
+          "core_clear": 0.45,
+          # b8 looks up through the loggia and sees mostly the room's ceiling: a hidden warm wash lights it from below
+          "fill": dict(RESTAURANT["fill"], up_w_per_m2=12.0, up_below=0.9)}
+
+
+def dining_l1(plan, seed=636):
+    pd, st = plan["podium"], plan["structure"]
+    z, ceiling = pd["storeys"]["upper"]
+    core = st["core"]["outer"]
+    D = DINING
+    room = _Room(D)
+    room.banquettes(core, seed, ceiling)
+    room.bands(pd, seed, z, ceiling, doors=False)
+    G = D["loggia_room"]
+    room.grid(random.Random(f"{seed}:loggia"), G, "loggia_room", lambda y: ceiling)
+    terrace_z = max(b["z"] for b in plan["props"]["podium_planters"]["boxes"] if b["kind"] == "terrace")
+    T = D["terrace"]
+    rng = random.Random(f"{seed}:terrace")
+    for x in T["cols_x"]:                                     # chairs either side along the terrace, facing the table
+        room.table_set(rng, (x, T["y"]), (0.0, 1.0), (1.0, 0.0), T["table"], 2, "terrace", None, pendant=False)
+    for it in room.items:
+        if it["group"] == "terrace":
+            it["z"] = terrace_z                               # on the terrace's paving, not the room's floor
+    sb = D["sideboard"]
+    room.settle_plants([{"at": [sb["x"][0] - 0.6, -0.3], "z": z}, {"at": [sb["x"][1] + 0.6, -0.3], "z": z},
+                        {"at": [G["x"][0] + 0.25, G["y"][0] + 0.35], "z": z}, {"at": [G["x"][1] - 0.25, G["y"][0] + 0.35], "z": z}])
+    room.fills.append(_rect_fill(G["x"], G["y"], ceiling))
+    room.fills.append(_rect_fill(sb["x"], [G["y"][1], sb["back_y"][1]], ceiling))
+    room.strips(core, ceiling)
+    return {"comment": "AI 636 upper-podium dining room: dining bands behind every upper bay (2-top and 4-top rows), the "
+                       "loggia room behind the front centre's glazing, banquettes on the core's side and rear walls, a "
+                       "sideboard on the core's front, two tables on the entrance terrace, a pendant over every indoor "
+                       "table, potted plants at the band ends, the sideboard and the loggia glazing",
+            "seed": seed, "z": z, "ceiling": ceiling, "terrace_z": terrace_z, "config": D, "zones": room.zones,
+            "items": room.items, "pendants": room.pendants, "plants": room.plants, "sideboard": sb, "core": core,
+            "skipped_sets": room.skipped, "fills": room.fills}

@@ -345,7 +345,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 633 | DONE (rebuild, site): 4 tall procedural street palms in limestone tree pits (the two main ones at b8's positions through `CAM_B8`), charcoal entrance pots with cycads, 2 CC0 street lamps |
 | interior | 634 | DONE (rebuild): seven units a residential floor (partitions cut flush on pilasters, core, columns, a mullion), warm plaster, a downlight grid; the glass lets shadow rays through so the rooms are lit |
 | interior | 635 | DONE (rebuild): dining bands behind every storefront, the entrance zone under a slatted teak ceiling, the bar on the core's teak-panelled front, banquettes; a pendant over every table and a warm area-light fill |
-| interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
+| interior | 636 | DONE (rebuild): dining bands behind every upper bay, the loggia room behind the front centre's glazing, banquettes, a sideboard on the core's teak-panelled front, two tables on the entrance terrace; pendants, a warm fill and a ceiling wash |
 | interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
 | interior | 638 | Penthouse interior (retargeted to the rebuild) |
 | material | 640 | DONE: the user's PBR kit installed as three sets (byte-exact, provenance in `source.json`), configs committed, not registered in the catalog (see "The Terra & Mar PBR kit sets") |
@@ -513,6 +513,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
 | `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
 | `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
+| `layer_dining_l1.py` | the upper-podium dining room (AI 636), `RB_INTERIOR/RB_DINING_L1`: furniture, sideboard, pendants, plants, fill and ceiling-wash lights, from `plan["interior"]["dining_l1"]` (`props_layout.py`); reuses `layer_restaurant_l0.py`'s pieces |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
@@ -1066,6 +1067,48 @@ carried it. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre635.blend`.
+
+**Upper-podium dining room (AI 636, interior).** b8 shows a dining room behind the upper podium's glazing: tables,
+chairs, plants and pendant lights. The terrace over the entrance continues it outside. `props_layout.dining_l1()` writes
+`plan["interior"]["dining_l1"]`, and `layer_dining_l1.py` builds `RB_INTERIOR/RB_DINING_L1` on the upper storey
+(floor 5.79, ceiling 9.76).
+
+**Shared room logic.** AI 635's room logic is now a shared `_Room` helper in `props_layout.py`, used by both floors:
+priority placement, table sets, banquettes, dining bands, table grids, plants and the fill rectangles. The ground floor's
+layout is unchanged; its plan only gains its `fills` list. `layer_restaurant_l0.py` likewise exposes `back_pieces`,
+`furniture`, `fill_lights`, `potted_plants` and `report` for `layer_dining_l1.py`.
+
+| Zone | What stands there |
+| --- | --- |
+| dining bands | behind every upper bay, 1.9–5.7 m in from the outline (the upper glazing stands 0.9 m in): a row of 2-tops at a 1.6 m pitch and a row of 1.2 x 0.8 m 4-tops at 1.8 m; no doors, so the rows are even |
+| loggia room | behind the front centre's loggia glazing (x ±2.8, y −9.8 to −1.2): a 4 x 3 grid of 2- and 4-tops at a 2.35 m row pitch |
+| sideboard | on the core's front: the teak-panelled wall, a cabinet and three shelves with LED strips (AI 635's back bar without counter or stools) |
+| banquettes | along the core's sides and rear, as on the ground floor |
+| entrance terrace | two 2-tops on the terrace paving (z 5.82), between the planters (AI 628) and the loggia glazing, chairs either side; no pendants outside |
+
+**Placement order:** banquettes, the bays b8 sees first, the loggia room, then the terrace. Skipped sets: C0, G0, D1, D2,
+F0, F1, and one loggia set by the B0 band. Plants now yield to furniture too: a pot that would stand in a placed
+footprint is dropped (three on this floor, none on the ground floor). The seed is 636.
+
+**Counts:** 51 tables, 124 chairs, 3 banquettes, 49 pendants, 14 plants.
+
+**Light.**
+- The pendants match AI 635's.
+- 18 warm fill lights face down at 20 W/m².
+- b8 looks up through the loggia and sees mostly the room's ceiling, which the downward fill leaves dark. A second set of
+  18 lights faces up from 0.9 m under the ceiling at 12 W/m² as a warm ceiling wash (`up_w_per_m2` in the fill config;
+  the ground floor has none). All of them are out of camera, glossy and transmission rays. Total: 8.1 kW.
+- From the b8 stand the loggia shows the pendants' glow, a warmer ceiling and the lit shelves. The reference's room is
+  still brighter.
+
+Audit: 102 objects, 0 z-fights, 0 penetrations (the first pass caught three pots inside furniture, hence the plant
+check). Footprint overlaps: 0. Hidden parts visible from b8: 0 px. New pose: `loggia_dining_closeup`. 636 is also
+tagged on `b8_calibrated` and `entrance_terrace_planters`, and `entrance_sign` and `interior_podium_glass` already
+carried it. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/636_interior_upper_podium_dining/`:
+- `poses/rebuild_pre636_vs_rebuild/`: 5 sheets;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre636.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 
