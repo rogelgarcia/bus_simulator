@@ -21,11 +21,15 @@ def refine(o):
     for model in o['models']:
         source=Path(o['candidate'])/model;target=Path(o['output'])/model;file=source/'enhanced.blend'
         meta=json.loads((source/'model.json').read_text());identity=hashlib.sha256(file.read_bytes()).hexdigest()
-        if identity!=meta['sha256'] or meta['revision']!='enhanced-shared-forks-v2':raise RuntimeError('Expected authenticated unsmoothed shared-fork candidate')
+        if identity!=meta['sha256'] or meta['revision'] not in ['enhanced-shared-forks-v2','enhanced-linden-conical-v4']:raise RuntimeError('Expected authenticated supported wood candidate')
         if meta['baselineSha256']!=next(r['sha256'] for r in o['sources'] if r['id']==model):raise RuntimeError('Wrong candidate baseline')
         if meta['previousSha256']!=next(r['sha256'] for r in o['previousSources'] if r['id']==model):raise RuntimeError('Wrong previous enhanced reference')
         if (target/'enhanced.blend').exists():raise RuntimeError('Preserve existing refined candidate')
-        target.mkdir(parents=True,exist_ok=True);bpy.ops.wm.open_mainfile(filepath=str(file))
+        target.mkdir(parents=True,exist_ok=True)
+        if meta['revision']=='enhanced-linden-conical-v4':
+            from wood_rebuild import rebuild
+            rebuild(o,model,source,target,meta);continue
+        bpy.ops.wm.open_mainfile(filepath=str(file))
         wood=bpy.data.objects[model+' / enhanced wood'];foliage=bpy.data.objects[model+' / enhanced leaves'];twigs=bpy.data.objects[model+' / enhanced branchlets']
         retained=[digest(obj.data) for obj in [foliage,twigs]];old=array(wood.data.vertices,'co',3)
         paths=json.loads((source/'architecture.json').read_text())['paths']

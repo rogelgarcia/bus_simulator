@@ -23,6 +23,23 @@ def audit_objects(model,meta):
             from releaf import wood_digest
             matches=wood_digest(obj.data)==meta['preservedTrunkMeshDigest']
             roles[-1]['preservedSourceMeshMatches']=matches;roles[-1]['passed']&=matches
+    if meta['revision']=='enhanced-linden-conical-v4':
+        from linden_growth import crown_profile
+        from wood_continuity import inspect_leader
+        roles.append({'role':'solid central leader',**inspect_leader(bpy.data.objects[model+' / enhanced wood'],meta['leaderSections'])})
+        co=array(bpy.data.objects[model+' / enhanced wood'].data.vertices,'co',3);ratios=[]
+        for section in meta['boleSections']:
+            ring=co[abs(co[:,2]-section['height'])<section['slab']]
+            ratios.append(float(np.quantile(np.linalg.norm(ring[:,:2]-section['center'],axis=1),.05)/section['radius']) if len(ring)>12 else 0.)
+        roles.append({'role':'continuous bole','minimumRadiusRatio':min(ratios),'sections':len(ratios),'passed':min(ratios)>=.88})
+        foliage=bpy.data.objects[model+' / enhanced leaves'];proof=crown_profile(array(foliage.data.vertices,'co',3),meta['dimensions'])
+        matches=all(abs(proof[k]-meta['crownProfile'][k])<1e-5 for k in proof)
+        roles.append({'role':'tapered linden crown',**proof,'passed':matches and proof['upperToLowerRadius']<.80 and proof['middleToLowerRadius']<1.10 and len(foliage.data.vertices)==meta['leafCount']})
+        if 'retainedFoliageDigest' in meta:
+            from refine import digest
+            from releaf import wood_digest
+            from spatial_poses import leaf_prototypes
+            roles.append({'role':'preserved foliage','passed':digest(foliage.data)==meta['retainedFoliageDigest'] and [wood_digest(obj.data) for obj in leaf_prototypes(foliage)]==meta['retainedLeafPrototypeDigests']})
     crown=meta['revision']=='enhanced-plane-balanced-crown-v16'
     opened=meta['revision']=='enhanced-plane-open-leaves-v15' or crown
     if meta['revision']=='enhanced-plane-spatial-growth-v14' or opened:

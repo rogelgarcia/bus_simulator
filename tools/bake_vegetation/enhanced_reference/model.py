@@ -35,6 +35,7 @@ def build(o):
         template_counts=[triangles(m) for m in forms];expanded=sum(template_counts[l['form']] for l in leaves)
         bounds={'min':np.minimum(centers.min(axis=0)-p['leafLength'],[0,0,0]).tolist(),'max':(centers.max(axis=0)+p['leafLength']).tolist()}
         revision='enhanced-plane-branchlets-v8' if p.get('growth',{}).get('architecture')=='distributed-plane' else 'enhanced-shared-forks-v3' if 'growth' in p else 'enhanced-botanical-v1'
+        if p.get('growth',{}).get('architecture')=='conical-linden':revision='enhanced-linden-conical-v4'
         stats={'id':model,'revision':revision,'baselineSha256':next(r['sha256'] for r in o['sources'] if r['id']==model),'previousSha256':next((r['sha256'] for r in o['previousSources'] if r['id']==model),None),'codeIdentity':o['codeIdentity'],
             'leafCount':len(leaves),'branchPaths':len(paths),'crownLobes':len(lobes),'woodTriangles':triangles(wood.data),'branchletTriangles':triangles(twigs.data),
             'leafTemplateTriangles':template_counts,'instancedLeafTriangles':expanded,'alphaCards':0,'bounds':bounds,'dimensions':dimensions,'crowding':crowding,
@@ -42,6 +43,14 @@ def build(o):
             'limitations':['Artist-authored growth model, not physiological simulation','Imported maps are AI generated, not scans','Local crowding proxy does not prove leaf nonintersection','Reference geometry is not a runtime LOD']}
         for obj in [foliage,wood,twigs]:obj['species']=species;obj['variant']=variant;obj['referenceRevision']=revision
         if 'boleMinimumRadiusRatios' in wood:stats['boleMinimumRadiusRatios']=list(wood['boleMinimumRadiusRatios'])
+        if 'boleSections' in wood:stats['boleSections']=json.loads(wood['boleSections'])
+        if revision=='enhanced-linden-conical-v4':
+            from linden_growth import crown_profile
+            from wood_continuity import leader_sections,inspect_leader
+            stats['crownProfile']=crown_profile(origins,dimensions)
+            if stats['crownProfile']['upperToLowerRadius']>=.80:raise RuntimeError('Linden foliage lost its tapered silhouette')
+            stats['leaderSections']=leader_sections(paths);stats['leaderContinuity']=inspect_leader(wood,stats['leaderSections'])
+            if not stats['leaderContinuity']['passed']:raise RuntimeError('Missing wood along the central leader: '+str(stats['leaderContinuity']))
         if 'barkProjectionMethod' in wood:stats['barkProjection']={'method':wood['barkProjectionMethod'],'maximumDistance':wood['barkProjectionMaximumDistance']}
         bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(file),compress=True)
         stats['sha256']=hashlib.sha256(file.read_bytes()).hexdigest();stats['file']=str(file.relative_to(output)).replace('\\','/')

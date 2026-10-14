@@ -924,3 +924,66 @@ Gallery receipt (29.9 s):
 `tests/artifacts/screens/ai556_bake_framework/run-1791939515657-10228-298a642b/summary.json`.
 Study images were recovered for presentation from the authenticated v13 copies;
 their recorded SHA-256 values match. No binary assets were committed or published.
+
+## Silver linden proportional growth revision (October 14, v4)
+
+Replace the enhanced linden's oversized bole and rectangular crown with a slimmer
+dominant leader and a progressively narrowing crown. Keep the existing v3 models
+and original references intact. The rule applies to all three mature variants
+and independent seeds; no camera or selected specimen determines the shape.
+
+The profile's basal radius becomes 0.43 m (previously 0.64 m), and the first fork
+starts at 20% of target height. Eighteen ascending scaffold families are staggered
+around the leader with unequal spacing and azimuth variation. Three additional
+orders of unequal successor growth distribute the crown in three dimensions.
+Branches inherit the parent's tangent and share descendant-demand thickening.
+Both extension length and foliage-group size decrease toward the top, retaining
+an irregular conical silhouette rather than pruning against a geometric shell.
+Foliage groups must also grow along intermediate branch sections, not only at
+the terminal forks. Wider fan and shoot spread fills the intervening volume;
+leaf counts may change to preserve a dense crown with discernible branch groups.
+
+Reuse the continuous root-crown surfaces, inherited fork transitions, voxel union
+and lengthwise bark projection proven for London plane. Skip the old shrinking
+fork relaxation for this architecture. Check fourteen clear-bole cross sections
+after meshing/displacement and again after reopening: their fifth-percentile
+radius must remain at least 88% of the specified radius. Check actual saved leaf
+origins: upper crown radius must be below 80% of the lower crown radius, and the
+middle below 110%, using the same height-band metric recorded during generation.
+
+Validate seed-independent topology, monotonically tapering radii, demand
+conservation, inherited directions and crown proportions. Render the three forms
+plus full-tree, trunk and foliage comparisons with the preserved v3 models and
+both supplied study styles through the existing enhanced-reference bake leaf.
+Retain AI material provenance; this pass publishes no runtime assets or textures.
+
+Surface overlap must fit the actual parent segment: burial stations may not
+collapse onto the same endpoint when a trunk segment is shorter than its radius
+would otherwise require. Test every generated surface for distinct adjacent
+rings. In addition to the clear-bole width check, radial rays from centerline
+stations throughout the dominant leader must exit solid wood in at least four
+of six directions. Reopen and repeat this test on saved files; overall bounds
+alone cannot detect a missing trunk section. The existing `refine` phase can
+remesh authenticated v4 linden candidates while retaining the complete growth
+graph, foliage placements and prototype geometry. Preserve all earlier outputs.
+
+Validated collection:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261014_linden_conical_v4c_final/`.
+All three saved models, thirteen 1440 px / 24-sample CPU Cycles frames, both
+supplied study copies and fifteen installed material sets pass the gallery gates.
+The three forms retain 195,682 / 195,934 / 196,245 leaves after the wood repair.
+All 596 sampled leader sections have six valid outward exits; foliage placement
+and prototype digests match the preserved pre-remesh candidates. The audit
+detects twelve invalid sections in the earlier second specimen and none in its
+replacement. Clear-bole radius checks remain above 96% of the intended radius.
+All 33 focused vegetation tests pass, including eighteen linden seed/size cases
+and the formerly failing coincident-ring regression. The complete mature-form,
+full-tree, trunk, leaf and source-study comparison sheets were visually reviewed.
+
+Wood repair receipt (79.1 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792000078231-22004-4fdf0306/summary.json`.
+Final render receipt (665.1 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792000212335-25836-adf6e659/summary.json`.
+Gallery/audit receipt (88.7 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792000951473-27096-7c709be8/summary.json`.
+The preserved baseline and previous enhanced model hashes remain unchanged.

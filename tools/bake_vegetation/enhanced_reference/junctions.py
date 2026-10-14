@@ -31,10 +31,13 @@ def flow_surfaces(paths):
                 blend=np.maximum(0,1-distance/reach);blend=blend*blend*(3-2*blend)
                 radii+=np.maximum(0,radius-radii)*blend
             points+=offsets[i]*np.maximum(0,1-distance/(radius*2.5))[:,None]
-            back=parent['points'][:node+1][::-1];prefix=np.array([at_distance(back,d) for d in [radius*2.8,radius*2.,radius*1.1,radius*.45]])
+            back=parent['points'][:node+1][::-1]
+            available=float(np.sum(np.linalg.norm(np.diff(back,axis=0),axis=1)))
+            burial=min(radius*2.8,available*.90)
+            prefix=np.array([at_distance(back,d) for d in burial*np.array([1.,2./2.8,1.1/2.8,.45/2.8])])
             prefix+=np.array([0,.12,.40,.76])[:,None]*offsets[i]
             points=np.vstack([prefix,points]);radii=np.r_[path['radii'][0]*np.array([.55,.80,.94,1.]),radii]
-            surface['uvOffset']=path.get('uvOffset',0)-radius*2.8
+            surface['uvOffset']=path.get('uvOffset',0)-burial
         surface.update(points=points,radii=radii);result.append(surface)
     return result
 

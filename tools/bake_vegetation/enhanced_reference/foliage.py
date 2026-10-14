@@ -22,7 +22,7 @@ def legacy_branchlets(p,paths,lobes,rng):
             end=center+axis*radius*rng.uniform(.65,1.25);attachment=rng.uniform(.35,.98);anchor=point(support,attachment)
             if lobe.get('spray'):
                 across=unit(np.cross(lobe['axis'],lobe['side']));side=lobe['side']*math.cos(angle)+across*math.sin(angle)
-                end=center+lobe['axis']*radius*rng.uniform(.45,1.15)+side*radius*rng.uniform(.24,.65)
+                end=center+lobe['axis']*radius*rng.uniform(.45,1.15)+side*radius*rng.uniform(.24,.65)*p.get('foliageFanSpread',1.)
             parent_radius=float(np.interp(attachment,np.linspace(0,1,len(support['radii'])),support['radii']))
             fan=curve(anchor,end,min(parent_radius*.64,radius*.024),rng,lobe['parent'],steps=7,tip=.0015)
             paths.append(fan);fans.append(len(paths)-1)
@@ -32,7 +32,7 @@ def legacy_branchlets(p,paths,lobes,rng):
             angle=rng.uniform(0,math.tau);out=unit(np.array([math.cos(angle),math.sin(angle),rng.uniform(-.28,.8)]))
             away=unit(start-center);direction=unit(out*.50+away*.42+lobe['axis']*.12+[0,0,.18])
             if lobe.get('spray'):
-                direction=unit(unit(fan['points'][-1]-fan['points'][0])*.75+lobe['axis']*.35+out*.25+[0,0,.06])
+                direction=unit(unit(fan['points'][-1]-fan['points'][0])*.75+lobe['axis']*.35+out*p.get('foliageShootSpread',.25)+[0,0,.06])
             stations=max(4,round(p['stations']*rng.uniform(.70,1.25)));length=p['leafLength']*stations*rng.uniform(.39,.66)
             length=min(length,radius*1.3);end=start+direction*length;end[2]-=p['droop']*length*.48
             parent_radius=float(np.interp(t,np.linspace(0,1,len(fan['radii'])),fan['radii']))

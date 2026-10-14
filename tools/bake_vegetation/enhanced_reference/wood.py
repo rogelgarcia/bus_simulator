@@ -10,6 +10,10 @@ from bark_flow import blend_junction_uv
 from root_growth import radial_flare
 
 
+def continuous_growth(p):
+    return p.get('growth',{}).get('architecture') in ['distributed-plane','conical-linden']
+
+
 def check_bounds(obj,paths,stage):
     points=np.vstack([p['points'] for p in paths]);margin=max(float(max(p['radii'])) for p in paths)*2+.5
     co=array(obj.data.vertices,'co',3)
@@ -19,7 +23,7 @@ def check_bounds(obj,paths,stage):
 
 
 def roots(paths,p,rng):
-    if p.get('growth',{}).get('architecture')=='distributed-plane':
+    if continuous_growth(p):
         from root_growth import root_crown
         root_crown(paths,rng);return
     for parent in [i for i,path in enumerate(paths) if path['basal']]:
@@ -30,14 +34,20 @@ def roots(paths,p,rng):
             root=curve(start,end,radius*rng.uniform(.24,.45),rng,parent,bend=[0,0,-radius*.25],steps=9,tip=.002);root['root']=True;paths.append(root)
 
 
-def check_bole_width(obj,paths,voxel):
+def check_bole_width(obj,paths,voxel,full_bole=False):
     bole=paths[0];co=array(obj.data.vertices,'co',3);base=float(bole['radii'][0]);ratios=[]
-    for drop in [.5,1.1,1.8]:
-        z=bole['points'][-1,2]-base*drop;center=np.array([np.interp(z,bole['points'][:,2],bole['points'][:,k]) for k in range(2)])
+    heights=np.linspace(base*1.8,bole['points'][-1,2]-base*.5,14) if full_bole else bole['points'][-1,2]-base*np.array([.5,1.1,1.8])
+    sections=[]
+    for z in heights:
+        center=np.array([np.interp(z,bole['points'][:,2],bole['points'][:,k]) for k in range(2)])
         radius=np.interp(z,bole['points'][:,2],bole['radii']);ring=co[abs(co[:,2]-z)<voxel*1.5]
         if len(ring)<12:raise RuntimeError('Missing bole cross section')
         ratio=float(np.quantile(np.linalg.norm(ring[:,:2]-center,axis=1),.05)/radius);ratios.append(ratio)
         if ratio<.88:raise RuntimeError('Meshing pinched the bole below its first fork: '+str(ratio))
+        sections.append({'height':float(z),'center':center.tolist(),'radius':float(radius),'slab':voxel*1.5,'minimumRadiusRatio':ratio})
+    if full_bole:
+        import json
+        obj['boleSections']=json.dumps(sections)
     obj['boleMinimumRadiusRatios']=ratios;print('[Enhanced] Bole width retained '+str(ratios),flush=True)
 
 
@@ -67,7 +77,7 @@ def mesh_paths(name,paths,material,tile,rng,major=False):
 def build_wood(model,paths,p,material,meta,rng):
     uv_offsets(paths)
     surfaces=flow_surfaces(paths);major=[r for r in surfaces if ('growthRole' in r or r.get('root',False))] if 'growth' in p else [r for r in surfaces if max(r['radii'])>(.018 if p['habit']=='shrub' else .065)]
-    if p.get('growth',{}).get('architecture')=='distributed-plane':major=[r for r in major if max(r['radii'])>=.060 or r.get('rootCrown',False)]
+    if continuous_growth(p):major=[r for r in major if max(r['radii'])>=.060 or r.get('rootCrown',False)]
     small=[r for r in surfaces if not any(r is m for m in major)]
     tile=p['barkTileMetres'];source=mesh_paths(model+' source major wood',major+shoulders(paths),material,tile,rng,True)
     check_bounds(source,paths,'source')
@@ -78,10 +88,10 @@ def build_wood(model,paths,p,material,meta,rng):
     print('[Enhanced] Fused wood surfaces '+model,flush=True)
     smooth=obj.modifiers.new('Growth shoulders','SMOOTH');smooth.factor=.65;smooth.iterations=5;bpy.ops.object.modifier_apply(modifier=smooth.name)
     check_bounds(obj,paths,'initial smoothing')
-    if 'growth' in p and p['growth'].get('architecture')!='distributed-plane':relax_forks(obj,paths,p.get('woodVoxel',.022))
+    if 'growth' in p and not continuous_growth(p):relax_forks(obj,paths,p.get('woodVoxel',.022))
     check_bounds(obj,paths,'fork relaxation')
     if not p.get('clayPreview',False):bake_bark(obj,source,paths,p,model,material,meta)
-    if p.get('growth',{}).get('architecture')=='distributed-plane':check_bole_width(obj,paths,p.get('woodVoxel',.022))
+    if continuous_growth(p):check_bole_width(obj,paths,p.get('woodVoxel',.022),p['growth']['architecture']=='conical-linden')
     obj.data.polygons.foreach_set('use_smooth',np.ones(len(obj.data.polygons),bool));bpy.data.objects.remove(source,do_unlink=True)
     young=material.copy();young.name=model+' / younger branch bark';nodes,links=young.node_tree.nodes,young.node_tree.links;bsdf=nodes.get('Principled BSDF');original=bsdf.inputs['Base Color'].links[0].from_socket
     mix=nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY';mix.inputs[0].default_value=.60;mix.inputs[2].default_value=(.42,.31,.17,1);links.new(original,mix.inputs[1]);links.new(mix.outputs[0],bsdf.inputs['Base Color'])
@@ -91,7 +101,7 @@ def build_wood(model,paths,p,material,meta,rng):
 
 def bake_bark(obj,source,paths,p,model,material,meta):
     obj.data.uv_layers.new(name='UVMap')
-    if p.get('growth',{}).get('architecture')=='distributed-plane':
+    if continuous_growth(p):
         from bark_projection import transfer
         transfer(obj,source,p.get('woodVoxel',.022))
     else:

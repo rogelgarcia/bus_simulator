@@ -291,3 +291,36 @@ hashes. Tests exercise six independent seeds and a crown requiring no correction
 The existing 63-frame review remains required. Road-height cameras match v15;
 the isolated branchlet cameras follow the corresponding branchlet's local frame.
 Use `views=canopy` for an early width review before completing `views=all`.
+
+## Silver linden conical crown (v4)
+
+The ordinary `build` phase now selects `conical-linden` from the species profile.
+It grows one dominant leader with eighteen unevenly spaced, ascending scaffold
+families and three further orders of unequal successors. Every fork inherits
+its parent's tangent. Extension length and foliage-group size decrease toward
+the tip, producing the crown's taper without clipping it to an envelope.
+Connected foliage groups occur along the main laterals as well as successive
+forks and tips. The species profile broadens the fans and their shoot spread,
+avoiding isolated terminal tufts while retaining openings between branch groups.
+
+The basal radius is 0.43 m, down from 0.64 m. The existing continuous root-crown,
+fork-union and bark-projection pipeline also serves linden. Inherited junctions
+skip the old iterative fork relaxation that could pinch the bole. Fourteen
+cross sections of the actual saved bole must retain at least 88% of their
+specified radius; saved foliage must retain the taper measured at build time.
+
+Use `structure` for an isolated clay review, then `build`, `render` and `gallery`
+in a separate ignored output directory with the previous v3 summary. The review
+includes all three forms, full-tree/trunk/leaf comparisons, bare structure and
+the unchanged supplied illustrative and photorealistic studies. Old references,
+London plane generation and installed runtime LODs are preserved. Pure tests
+exercise eighteen seed/size combinations, connected forks, pipe conservation,
+radius taper and crown proportions.
+
+Fork burial is bounded by the available parent segment length, preventing
+coincident rings on short leader sections. A saved-mesh radial-ray audit follows
+the entire central leader, so missing segments cannot pass only a bounds check.
+`refine` also supports authenticated v4 linden candidates: it rebuilds wood from
+the preserved architecture, retains all leaf placements and prototype digests,
+and carries forward only verified original/previous comparison frames. Revised
+model frames are always rendered again. Use a separate output directory.
