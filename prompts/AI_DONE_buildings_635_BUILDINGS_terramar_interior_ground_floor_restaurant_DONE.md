@@ -1,3 +1,5 @@
+DONE
+
 # Problem
 
 Terra & Mar (interior): In `b8.png`, a warm-lit restaurant shows behind the ground-floor storefronts and the entrance: wood tables, chairs and banquettes, pendant lights, plants, a bar toward the back, and a warm wood ceiling near the entrance. The extracted ground floor is a plain shell.
@@ -46,3 +48,30 @@ the rebuild, not the game-extracted edit copy; where this section and the text a
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
 - Add a high-level one-line summary per completed change, with the piece script, the collections it builds, what went to `TM_REPLACED`, the evidence paths and the audit result
+
+## Summary (2026-10-13)
+- **Layout** (`rebuild/props_layout.py` `restaurant_l0()`, written to `plan["interior"]["restaurant_l0"]` by `make_plan.py`):
+  - dining bands behind every storefront bay (2-tops by the glass beside the doors, 4-tops behind them);
+  - the entrance zone under a slatted teak ceiling;
+  - the bar on the core's front facing the entrance;
+  - banquettes along the core's sides and rear.
+  - Sets are placed in priority order (banquettes, entrance, then the bays b8 sees first); any set that would overlap one already placed is skipped and recorded.
+  - The seed (635) varies positions, seat counts and the entrance's 2-/4-top mix.
+- **Layer** (`rebuild/layer_restaurant_l0.py`, registered in `build.py` after `interior_base`) builds `RB_INTERIOR/RB_RESTAURANT_L0`:
+  - `rb_restaurant_furniture`: 46 tables, 110 chairs, 3 banquettes;
+  - `rb_restaurant_bar`: counter, back bar with LED-strip shelves, stools, the core's teak-panelled front;
+  - `rb_restaurant_wood_ceiling`;
+  - `rb_restaurant_pendants`: 46;
+  - `rb_restaurant_pots` and 15 `rb_restaurant_plant_<n>`;
+  - 18 `rb_restaurant_fill_<n>` warm area lights (20 W/m², out of camera and reflection rays).
+  - Nothing went to `TM_REPLACED`.
+- **Iteration:**
+  - Door aisles first removed nearly every table; replaced by a beside-the-door rule.
+  - 75 chair overlaps; fixed with rectangular 4-tops and wider rows, then priority placement.
+  - The b8 entrance read as a grey pane. Fixed with the warm area-light fill: 30 W/m² washed the bar wall pale, so the final is 20 W/m², ~2700 K, with a teak-panelled bar wall.
+- **Checks:** audit 98 objects, 0 z-fights, 0 penetrations; footprint overlaps 0; hidden parts visible from b8: 0 px; a fresh headless build gives the same counts.
+- **Poses:** new `restaurant_through_entrance`; 635 added to `b8_calibrated`, `entrance_sign`, `stone_cladding_closeup` and `cafe_closeup`.
+- **Evidence** in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/635_interior_ground_floor_restaurant/`:
+  - `poses/rebuild_pre635_vs_rebuild/` (6 sheets);
+  - `check_sheet.png`, `checks.json`, `terramar_rebuild.audit.json`.
+  - The "before" file: `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre635.blend`.

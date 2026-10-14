@@ -32,7 +32,7 @@ import rb_lib as L  # noqa: E402
 importlib.reload(L)
 
 C = L.C
-LAYERS = ["structure", "envelope", "balconies", "podium", "roof", "balcony_plants", "podium_planters", "roof_planters", "roof_furniture", "awnings", "site_cafe", "site_palms", "interior_base", "materials"]   # build order; a later layer may stand on an earlier one
+LAYERS = ["structure", "envelope", "balconies", "podium", "roof", "balcony_plants", "podium_planters", "roof_planters", "roof_furniture", "awnings", "site_cafe", "site_palms", "interior_base", "restaurant_l0", "materials"]   # build order; a later layer may stand on an earlier one
 FINISHING = "materials"                                                         # dresses (and cuts joints into) what the others built
 
 

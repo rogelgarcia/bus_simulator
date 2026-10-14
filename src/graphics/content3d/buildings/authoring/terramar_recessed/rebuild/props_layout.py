@@ -813,3 +813,160 @@ def interior_base(plan):
                        "flush on the pilaster line, the core, the chamfer columns' backs and an E-bay mullion), standing on "
                        "each storey's floor up to the slab above; a downlight grid under every residential ceiling",
             "config": INTERIOR, "storeys": st["columns"]["storeys"], "partitions": walls, "downlights": pts}
+
+
+# ---------------------------------------------------------------- AI 635: the ground-floor restaurant
+# b8: a warm-lit restaurant behind the storefronts and the entrance -- wood tables and chairs, banquettes, pendant lights,
+# plants, a bar toward the back, a warm wood ceiling near the entrance. Dining bands run behind every storefront bay
+# (rows of 2- and 4-tops, an aisle kept behind each storefront door), banquettes line the core's side and rear walls, the
+# bar stands against the core's front facing the entrance, a slatted wood ceiling hangs over the entrance zone, and a
+# pendant hangs over every table. Items carry a facing (local +v = front) like AI 630's; zones are checked against each
+# other and the core.
+RESTAURANT = {"band_v": [-1.3, -5.1], "rows": [{"v": -1.75, "table": [0.7, 0.7], "chairs": 2, "beside_door": True},
+                                                {"v": -3.95, "table": [1.2, 0.8], "chairs": 4, "pitch": 1.8}],
+              "end_inset": 0.5, "door_aisle": 0.15, "behind_door": 0.6, "chair_gap": 0.42, "pendant": {"drop_to": 2.45, "shade_r": 0.17,
+                                                                                  "shade_h": 0.22, "cord_r": 0.006},
+              "entrance": {"x": [-2.8, 2.8], "y": [-10.4, -3.2], "rows_y": [-9.6, -7.3, -5.0], "cols_x": [-1.65, 0.0, 1.65]},
+              "wood_ceiling": {"x": [-2.85, 2.85], "y": [-10.95, -6.0], "z": 4.20, "slat": [0.06, 0.04], "pitch": 0.12},
+              "bar": {"x": [-2.6, 2.6], "counter_y": [-0.65, 0.0], "back_y": [0.4, 0.78], "counter_h": 1.08,
+                      "back_h": 2.2, "stools": 6},
+              "banquette": {"depth": 0.62, "gap": 0.5, "table": [0.7, 0.7], "pitch": 1.5},
+              "core_clear": 0.45,
+              # the restaurant's ambient light: warm area lights under the ceiling over every zone, unseen by the camera
+              # and in reflections (the pendants are the visible sources); power per m2 of zone
+              "fill": {"rgb": [1.0, 0.70, 0.42], "w_per_m2": 20.0, "below": 0.12, "strip": 2.4}}
+
+
+def _footprint(item):
+    """An item's footprint (its facing = local +v, size = width along u, depth along v)."""
+    (cx, cy), (fx, fy), (w, d) = item["at"], item["face"], item["size"]
+    ux, uy = fy, -fx
+    return [(cx + ux * su * w / 2 + fx * sv * d / 2, cy + uy * su * w / 2 + fy * sv * d / 2)
+            for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+
+
+def _overlap(a, b):
+    """Convex polygons overlapping by more than a touch (separating axes)."""
+    for shape in (a, b):
+        for i in range(len(shape)):
+            (ax, ay), (bx, by) = shape[i], shape[(i + 1) % len(shape)]
+            nx, ny = by - ay, ax - bx
+            pa = [nx * x + ny * y for x, y in a]
+            pb = [nx * x + ny * y for x, y in b]
+            if max(pa) <= min(pb) + 1e-6 or max(pb) <= min(pa) + 1e-6:
+                return False
+    return True
+
+
+def restaurant_l0(plan, seed=635):
+    pd, st = plan["podium"], plan["structure"]
+    runs = {r["run"]: r for r in pd["runs"]}
+    z = st["ground_floor_level"]
+    ceiling = pd["storeys"]["ground"][1]
+    core = st["core"]["outer"]
+    R = RESTAURANT
+    items, pendants, plants = [], [], []
+
+    def face(vec):
+        return [round(vec[0], 5), round(vec[1], 5)]
+
+    kept, skipped = [], []
+
+    def place(new, pendant=None):
+        """Keep a set of items (and its pendant) only if no footprint overlaps one already placed."""
+        polys = [_footprint(it) for it in new]
+        if any(_overlap(a, b) for a in polys for b in kept):
+            skipped.append(new[0]["group"])
+            return False
+        kept.extend(polys)
+        items.extend(new)
+        if pendant:
+            pendants.append(pendant)
+        return True
+
+    def table_set(rng, centre, U, N, size, n_chairs, group, ceiling_z):
+        """A table facing N (its local +v), its chairs round it facing in, a pendant over it."""
+        new = [{"group": group, "kind": "dining_table", "at": [round(centre[0], 4), round(centre[1], 4)],
+                "face": face(N), "size": list(size), "cushion": "greige"}]
+        w, d = size
+        spots = ([(0.0, d / 2 + R["chair_gap"]), (0.0, -d / 2 - R["chair_gap"])] if n_chairs == 2 else
+                 [(-w / 4, d / 2 + R["chair_gap"]), (w / 4, d / 2 + R["chair_gap"]),
+                  (-w / 4, -d / 2 - R["chair_gap"]), (w / 4, -d / 2 - R["chair_gap"])])
+        for du, dv in spots:
+            at = (centre[0] + U[0] * du + N[0] * dv + rng.uniform(-0.02, 0.02),
+                  centre[1] + U[1] * du + N[1] * dv + rng.uniform(-0.02, 0.02))
+            fv = (-N[0], -N[1]) if dv > 0 else N                      # chairs face the table
+            new.append({"group": group, "kind": "dining_chair", "at": [round(at[0], 4), round(at[1], 4)],
+                        "face": face(fv), "size": [0.46, 0.5], "cushion": "greige"})
+        place(new, {"at": [round(centre[0], 4), round(centre[1], 4)], "top": ceiling_z})
+    # banquettes along the core's sides and rear, tables before them
+    B = R["banquette"]
+    cx0, cx1, cy0, cy1 = core["x"][0], core["x"][1], core["y"][0], core["y"][1]
+    sides = [((cx0, cy0), (cx0, cy1), (-1.0, 0.0)), ((cx1, cy1), (cx1, cy0), (1.0, 0.0)), ((cx1, cy1), (cx0, cy1), (0.0, 1.0))]
+    for k, (a, b, out) in enumerate(sides):
+        rng = random.Random(f"{seed}:banquette:{k}")
+        L = math.dist(a, b)
+        U = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        mid = ((a[0] + b[0]) / 2 + out[0] * B["depth"] / 2, (a[1] + b[1]) / 2 + out[1] * B["depth"] / 2)
+        place([{"group": "banquettes", "kind": "sofa", "at": [round(mid[0], 4), round(mid[1], 4)], "face": face(out),
+                "size": [round(L - 0.2, 3), B["depth"]], "cushion": "ecru"}])
+        n = max(1, int((L - 0.4) // B["pitch"]))
+        for j in range(n):
+            s = (j + 0.5) * L / n
+            c = (a[0] + U[0] * s + out[0] * (B["depth"] + B["gap"] + B["table"][1] / 2),
+                 a[1] + U[1] * s + out[1] * (B["depth"] + B["gap"] + B["table"][1] / 2))
+            ch = (c[0] + out[0] * (B["table"][1] / 2 + R["chair_gap"]), c[1] + out[1] * (B["table"][1] / 2 + R["chair_gap"]))
+            place([{"group": "banquettes", "kind": "dining_table", "at": [round(c[0], 4), round(c[1], 4)],
+                    "face": face(out), "size": list(B["table"]), "cushion": "greige"},
+                   {"group": "banquettes", "kind": "dining_chair", "at": [round(ch[0], 4), round(ch[1], 4)],
+                    "face": face((-out[0], -out[1])), "size": [0.46, 0.5], "cushion": "greige"}],
+                  {"at": [round(c[0], 4), round(c[1], 4)], "top": ceiling})
+    # dining bands behind every storefront bay
+    zones = []
+    order = {"B": 0, "H": 0, "C": 1, "G": 1, "D": 2, "F": 2, "E": 2}   # the bays b8 sees first: they win any overlap
+    for bay in sorted(pd["bays"], key=lambda b: order[b["run"]]):
+        r = runs[bay["run"]]
+        U, N = r["along"], (-r["outward"][0], -r["outward"][1])        # N into the room
+        s0, s1 = bay["s"][0] + R["end_inset"], bay["s"][1] - R["end_inset"]
+        door = bay.get("storefront_door")                              # the door pane's index -> its span along the bay
+        door = bay["storefront_panes"][door] if door is not None else None
+        rng = random.Random(f"{seed}:{bay['id']}")
+        pt = lambda s, v, r=r: (r["p"][0] + r["along"][0] * s + r["outward"][0] * v, r["p"][1] + r["along"][1] * s + r["outward"][1] * v)  # noqa: E731
+        zones.append({"bay": bay["id"], "loop": [list(pt(s0, R["band_v"][0])), list(pt(s1, R["band_v"][0])),
+                                                list(pt(s1, R["band_v"][1])), list(pt(s0, R["band_v"][1]))]})
+        d0, d1 = (bay["s"][0] + door[0], bay["s"][0] + door[1]) if door else (None, None)
+        for row in R["rows"]:
+            if row.get("beside_door") and door:                       # by the glass: one table in each gap beside the door
+                spots = [(a + b) / 2 for a, b in ((s0, d0 - R["door_aisle"]), (d1 + R["door_aisle"], s1))
+                         if b - a >= row["table"][0] + 0.1]
+            else:                                                     # deeper: evenly, but not straight behind the door
+                n = max(1, int((s1 - s0) // row.get("pitch", 1.8)))
+                spots = [s0 + (k + 0.5) * (s1 - s0) / n for k in range(n)]
+                if door:
+                    spots = [s for s in spots if abs(s - (d0 + d1) / 2) >= R["behind_door"]]
+            for s in spots:
+                s += rng.uniform(-0.06, 0.06)
+                chairs = row["chairs"] if rng.random() > 0.15 else 2
+                table_set(rng, pt(s, row["v"]), U, N, row["table"], chairs, bay["id"], ceiling)
+        plants.append({"at": [round(c, 4) for c in pt(s0 - 0.2, (R["band_v"][0] + R["band_v"][1]) / 2)], "z": z})
+    # the entrance zone under the wood ceiling
+    rng = random.Random(f"{seed}:entrance")
+    E = R["entrance"]
+    wc = R["wood_ceiling"]
+    for y in E["rows_y"]:
+        for x in E["cols_x"]:
+            if abs(x) < 0.1 and y == E["rows_y"][0]:
+                continue                                              # keep the way in from the doors clear
+            top = wc["z"] - wc["slat"][1] if wc["y"][0] < y < wc["y"][1] else ceiling
+            two = rng.random() < 0.4
+            table_set(rng, (x + rng.uniform(-0.05, 0.05), y), (1.0, 0.0), (0.0, 1.0), [0.75, 0.75] if two else [1.2, 0.8],
+                      2 if two else 4, "entrance", top)
+    bar = dict(R["bar"])
+    bar["stool_x"] = [round(bar["x"][0] + (k + 0.5) * (bar["x"][1] - bar["x"][0]) / bar["stools"], 3) for k in range(bar["stools"])]
+    plants += [{"at": [bar["x"][0] - 0.6, -0.3], "z": z}, {"at": [bar["x"][1] + 0.6, -0.3], "z": z}]
+    return {"comment": "AI 635 ground-floor restaurant: dining bands behind every storefront bay (2-top and 4-top rows, an "
+                       "aisle behind each storefront door), the entrance zone under a slatted wood ceiling, banquettes on "
+                       "the core's side and rear walls, the bar on the core's front facing the entrance, a pendant over "
+                       "every table, potted plants at the band ends and the bar",
+            "seed": seed, "z": z, "ceiling": ceiling, "config": R, "zones": zones, "items": items, "pendants": pendants,
+            "plants": plants, "bar": bar, "core": core, "skipped_sets": skipped}

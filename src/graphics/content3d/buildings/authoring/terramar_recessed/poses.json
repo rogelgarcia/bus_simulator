@@ -59,7 +59,8 @@
                 631,
                 632,
                 633,
-                634
+                634,
+                635
             ]
         },
         {
@@ -255,7 +256,8 @@
                 624,
                 646,
                 648,
-                628
+                628,
+                635
             ],
             "location": [
                 -6.5,
@@ -862,7 +864,8 @@
             "label": "The B chamfer cafe at eye level: market umbrellas, round tables and woven chairs on the sidewalk pavers under the canopies",
             "items": [
                 632,
-                633
+                633,
+                635
             ],
             "location": [
                 12.8,
@@ -921,6 +924,29 @@
                 17.8
             ],
             "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "restaurant_through_entrance",
+            "group": "interior",
+            "label": "Into the ground-floor restaurant through the entrance doors at eye level: the wood ceiling, tables under pendants, the bar at the back",
+            "items": [
+                635
+            ],
+            "location": [
+                0.4,
+                -17.5,
+                1.6
+            ],
+            "target": [
+                0.0,
+                -6.0,
+                2.0
+            ],
+            "vfov_deg": 45.0,
             "resolution": [
                 1920,
                 1080

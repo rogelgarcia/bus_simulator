@@ -344,7 +344,7 @@ The rebuild (AI 642) superseded the exterior edit items; the props and interiors
 | props | 632 | DONE (rebuild, site): `RB_SITE` beside the building: a 6 m paved sidewalk along the front runs, 8 café sets (square cream market umbrellas, round wood tables, 23 woven chairs) before the chamfer storefronts |
 | props | 633 | DONE (rebuild, site): 4 tall procedural street palms in limestone tree pits (the two main ones at b8's positions through `CAM_B8`), charcoal entrance pots with cycads, 2 CC0 street lamps |
 | interior | 634 | DONE (rebuild): seven units a residential floor (partitions cut flush on pilasters, core, columns, a mullion), warm plaster, a downlight grid; the glass lets shadow rays through so the rooms are lit |
-| interior | 635 | Ground-floor restaurant (retargeted to the rebuild) |
+| interior | 635 | DONE (rebuild): dining bands behind every storefront, the entrance zone under a slatted teak ceiling, the bar on the core's teak-panelled front, banquettes; a pendant over every table and a warm area-light fill |
 | interior | 636 | Upper-podium dining room (retargeted to the rebuild) |
 | interior | 637 | Residential units: sheer curtains and furniture (retargeted to the rebuild) |
 | interior | 638 | Penthouse interior (retargeted to the rebuild) |
@@ -512,6 +512,7 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks |
 | `layer_roof_furniture.py` | the roof terrace's furniture (AI 630), `RB_PROPS/RB_ROOF_FURNITURE`, from `plan["props"]["roof_furniture"]` (`props_layout.py`) |
 | `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
+| `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
 | `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
@@ -1025,6 +1026,46 @@ also tagged on `b8_calibrated`, `front_centre_bays` and `chamfer_left_balconies`
 - the checks and `terramar_rebuild.audit.json`.
 
 The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre634.blend`.
+
+**Ground-floor restaurant (AI 635, interior).** b8 shows a warm-lit restaurant behind the storefronts and the entrance:
+wood tables and chairs, banquettes, pendant lights, plants, a bar toward the back and a warm wood ceiling near the
+entrance. `props_layout.restaurant_l0()` writes `plan["interior"]["restaurant_l0"]`, and `layer_restaurant_l0.py` builds
+`RB_INTERIOR/RB_RESTAURANT_L0` on AI 634's base (the ground floor between its floor plate and ceiling).
+
+| Zone | What stands there |
+| --- | --- |
+| dining bands | behind every storefront bay, 1.3–5.1 m in from the glass: a row of 2-tops by the glass (one in each gap beside the door, an aisle kept behind it) and a row of 1.2 x 0.8 m 4-tops at a 1.8 m pitch |
+| entrance | under the slatted teak ceiling (x ±2.85, y −10.95 to −6.0, underside z 4.16): a 3 x 3 grid of 2- and 4-tops, the front centre spot left free |
+| bar | against the core's front, facing the entrance: a teak counter with a stone top, the back cabinet, three shelves with warm LED strips under them, six stools; the core's front is panelled in teak |
+| banquettes | along the core's sides and rear, each with tables and chairs before it |
+
+**Placement.** Every set (a table, its chairs and its pendant) is checked against the footprints already placed, and a
+set that would overlap is skipped. Placement order is banquettes, entrance, then the bays b8 sees first (B/H, then C/G,
+then D/F/E), so the visible zones win any overlap. The skipped sets are recorded in `skipped_sets` (C0, G0, D1, D2, F0,
+F1). The seed (635) varies the layout: positions jitter, about 15% of the 4-top tables seat two, and the entrance mixes
+2- and 4-tops.
+
+**Counts:** 46 tables, 110 chairs, 3 banquettes, 46 pendants, 15 plants (the game's viburnum in AI 627's charcoal pots,
+at the bands' ends and beside the bar).
+
+**Light.**
+- A pendant hangs over every table: cord, dark bronze drum shade and a warm diffuser at emission 400. Under the wood
+  ceiling each pendant hangs from the nearest slat.
+- The ambient light comes from 18 warm area lights (about 2700 K, 20 W per m² of zone, 5.1 kW in all), placed under
+  the ceiling over every zone. They are out of camera, glossy and transmission rays, so only their light shows. At
+  30 W/m² and a neutral colour the bar wall washed out pale; 20 W/m², a warmer colour and the teak wall read like b8's
+  warm interior.
+- From the b8 stand the entrance now shows a warm, furnished room with lit pendants and the bar, where it was a grey
+  pane. The reference's interior is still brighter.
+
+Audit: 98 objects, 0 z-fights, 0 penetrations. Footprint overlaps: 0, and every piece except the banquettes stands
+0.45 m clear of the core. Hidden parts visible from b8: 0 px. New pose: `restaurant_through_entrance`. 635 is also tagged
+on `b8_calibrated`, `entrance_sign`, `stone_cladding_closeup` and `cafe_closeup`, and `interior_ground_glass` already
+carried it. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/635_interior_ground_floor_restaurant/`:
+- `poses/rebuild_pre635_vs_rebuild/`: 6 sheets;
+- the checks and `terramar_rebuild.audit.json`.
+
+The "before" file is `tests/artifacts/blender/terramar_recessed/rebuild/terramar_rebuild_pre635.blend`.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 

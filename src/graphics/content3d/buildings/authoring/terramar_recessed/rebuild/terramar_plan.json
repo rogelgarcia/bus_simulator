@@ -29589,6 +29589,3575 @@
           1.3
         ]
       ]
+    },
+    "restaurant_l0": {
+      "comment": "AI 635 ground-floor restaurant: dining bands behind every storefront bay (2-top and 4-top rows, an aisle behind each storefront door), the entrance zone under a slatted wood ceiling, banquettes on the core's side and rear walls, the bar on the core's front facing the entrance, a pendant over every table, potted plants at the band ends and the bar",
+      "seed": 635,
+      "z": 0.15,
+      "ceiling": 5.38,
+      "config": {
+        "band_v": [
+          -1.3,
+          -5.1
+        ],
+        "rows": [
+          {
+            "v": -1.75,
+            "table": [
+              0.7,
+              0.7
+            ],
+            "chairs": 2,
+            "beside_door": true
+          },
+          {
+            "v": -3.95,
+            "table": [
+              1.2,
+              0.8
+            ],
+            "chairs": 4,
+            "pitch": 1.8
+          }
+        ],
+        "end_inset": 0.5,
+        "door_aisle": 0.15,
+        "behind_door": 0.6,
+        "chair_gap": 0.42,
+        "pendant": {
+          "drop_to": 2.45,
+          "shade_r": 0.17,
+          "shade_h": 0.22,
+          "cord_r": 0.006
+        },
+        "entrance": {
+          "x": [
+            -2.8,
+            2.8
+          ],
+          "y": [
+            -10.4,
+            -3.2
+          ],
+          "rows_y": [
+            -9.6,
+            -7.3,
+            -5.0
+          ],
+          "cols_x": [
+            -1.65,
+            0.0,
+            1.65
+          ]
+        },
+        "wood_ceiling": {
+          "x": [
+            -2.85,
+            2.85
+          ],
+          "y": [
+            -10.95,
+            -6.0
+          ],
+          "z": 4.2,
+          "slat": [
+            0.06,
+            0.04
+          ],
+          "pitch": 0.12
+        },
+        "bar": {
+          "x": [
+            -2.6,
+            2.6
+          ],
+          "counter_y": [
+            -0.65,
+            0.0
+          ],
+          "back_y": [
+            0.4,
+            0.78
+          ],
+          "counter_h": 1.08,
+          "back_h": 2.2,
+          "stools": 6
+        },
+        "banquette": {
+          "depth": 0.62,
+          "gap": 0.5,
+          "table": [
+            0.7,
+            0.7
+          ],
+          "pitch": 1.5
+        },
+        "core_clear": 0.45,
+        "fill": {
+          "rgb": [
+            1.0,
+            0.7,
+            0.42
+          ],
+          "w_per_m2": 20.0,
+          "below": 0.12,
+          "strip": 2.4
+        }
+      },
+      "zones": [
+        {
+          "bay": "B0",
+          "loop": [
+            [
+              4.9399666156999995,
+              -9.2215551843
+            ],
+            [
+              7.6590051628,
+              -6.502516637199999
+            ],
+            [
+              4.9719985628,
+              -3.8155100371999997
+            ],
+            [
+              2.2529600157,
+              -6.5345485842999995
+            ]
+          ]
+        },
+        {
+          "bay": "B1",
+          "loop": [
+            [
+              9.0025084628,
+              -5.159013337199999
+            ],
+            [
+              11.616117356199998,
+              -2.5454044438000003
+            ],
+            [
+              8.929110756199998,
+              0.14160215619999983
+            ],
+            [
+              6.3155018628,
+              -2.4720067371999996
+            ]
+          ]
+        },
+        {
+          "bay": "H0",
+          "loop": [
+            [
+              -11.6161255306,
+              -2.5453962694
+            ],
+            [
+              -9.0025166372,
+              -5.1590051628
+            ],
+            [
+              -6.315510037199999,
+              -2.4719985628
+            ],
+            [
+              -8.9291189306,
+              0.14161033060000028
+            ]
+          ]
+        },
+        {
+          "bay": "H1",
+          "loop": [
+            [
+              -7.659013337199999,
+              -6.5025084628
+            ],
+            [
+              -4.939974790099999,
+              -9.2215470099
+            ],
+            [
+              -2.2529681900999994,
+              -6.5345404099
+            ],
+            [
+              -4.972006737199999,
+              -3.8155018628
+            ]
+          ]
+        },
+        {
+          "bay": "C0",
+          "loop": [
+            [
+              12.2,
+              -1.1358000000000001
+            ],
+            [
+              12.2,
+              1.1357999999999997
+            ],
+            [
+              8.4,
+              1.1357999999999997
+            ],
+            [
+              8.4,
+              -1.1358000000000001
+            ]
+          ]
+        },
+        {
+          "bay": "G0",
+          "loop": [
+            [
+              -12.2,
+              1.1358000000000001
+            ],
+            [
+              -12.2,
+              -1.1357999999999997
+            ],
+            [
+              -8.4,
+              -1.1357999999999997
+            ],
+            [
+              -8.4,
+              1.1358000000000001
+            ]
+          ]
+        },
+        {
+          "bay": "D0",
+          "loop": [
+            [
+              11.6161255306,
+              2.5453962694
+            ],
+            [
+              9.4395087632,
+              4.7220130368
+            ],
+            [
+              6.752502163199999,
+              2.0350064368000003
+            ],
+            [
+              8.9291189306,
+              -0.14161033060000028
+            ]
+          ]
+        },
+        {
+          "bay": "D1",
+          "loop": [
+            [
+              8.0960054632,
+              6.065516336799999
+            ],
+            [
+              6.065477001999999,
+              8.096044798
+            ],
+            [
+              3.378470401999999,
+              5.409038197999999
+            ],
+            [
+              5.408998863199999,
+              3.3785097367999994
+            ]
+          ]
+        },
+        {
+          "bay": "D2",
+          "loop": [
+            [
+              4.721973701999999,
+              9.439548098000001
+            ],
+            [
+              2.545427645299999,
+              11.6160941547
+            ],
+            [
+              -0.14157895470000126,
+              8.9290875547
+            ],
+            [
+              2.034967101999999,
+              6.752541498000001
+            ]
+          ]
+        },
+        {
+          "bay": "E0",
+          "loop": [
+            [
+              1.1358000000000001,
+              12.2
+            ],
+            [
+              -1.1357999999999997,
+              12.2
+            ],
+            [
+              -1.1357999999999997,
+              8.4
+            ],
+            [
+              1.1358000000000001,
+              8.4
+            ]
+          ]
+        },
+        {
+          "bay": "F0",
+          "loop": [
+            [
+              -2.5453962694,
+              11.6161255306
+            ],
+            [
+              -4.7220130368,
+              9.4395087632
+            ],
+            [
+              -2.0350064368000003,
+              6.752502163199999
+            ],
+            [
+              0.14161033060000028,
+              8.9291189306
+            ]
+          ]
+        },
+        {
+          "bay": "F1",
+          "loop": [
+            [
+              -6.065516336799999,
+              8.0960054632
+            ],
+            [
+              -8.096044798,
+              6.065477001999999
+            ],
+            [
+              -5.409038197999999,
+              3.378470401999999
+            ],
+            [
+              -3.3785097367999994,
+              5.408998863199999
+            ]
+          ]
+        },
+        {
+          "bay": "F2",
+          "loop": [
+            [
+              -9.439548098000001,
+              4.721973701999999
+            ],
+            [
+              -11.6160941547,
+              2.545427645299999
+            ],
+            [
+              -8.9290875547,
+              -0.14157895470000126
+            ],
+            [
+              -6.752541498000001,
+              2.034967101999999
+            ]
+          ]
+        }
+      ],
+      "items": [
+        {
+          "group": "banquettes",
+          "kind": "sofa",
+          "at": [
+            -3.91,
+            3.4
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            5.0,
+            0.62
+          ],
+          "cushion": "ecru"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            -5.07,
+            1.6667
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            -5.84,
+            1.6667
+          ],
+          "face": [
+            1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            -5.07,
+            3.4
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            -5.84,
+            3.4
+          ],
+          "face": [
+            1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            -5.07,
+            5.1333
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            -5.84,
+            5.1333
+          ],
+          "face": [
+            1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "sofa",
+          "at": [
+            3.91,
+            3.4
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            5.0,
+            0.62
+          ],
+          "cushion": "ecru"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            5.07,
+            5.1333
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            5.84,
+            5.1333
+          ],
+          "face": [
+            -1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            5.07,
+            3.4
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            5.84,
+            3.4
+          ],
+          "face": [
+            -1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            5.07,
+            1.6667
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            5.84,
+            1.6667
+          ],
+          "face": [
+            -1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "sofa",
+          "at": [
+            0.0,
+            6.31
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            7.0,
+            0.62
+          ],
+          "cushion": "ecru"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            2.7,
+            7.47
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            2.7,
+            8.24
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            0.9,
+            7.47
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            0.9,
+            8.24
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            -0.9,
+            7.47
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            -0.9,
+            8.24
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_table",
+          "at": [
+            -2.7,
+            7.47
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "banquettes",
+          "kind": "dining_chair",
+          "at": [
+            -2.7,
+            8.24
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_table",
+          "at": [
+            4.9475,
+            -8.5776
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            4.3904,
+            -8.0211
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            5.4873,
+            -9.1405
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_table",
+          "at": [
+            7.0216,
+            -6.5035
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            6.4639,
+            -5.9392
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            7.5527,
+            -7.0311
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_table",
+          "at": [
+            3.7742,
+            -6.6397
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            2.9946,
+            -6.2545
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            3.4166,
+            -5.8308
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            4.1243,
+            -7.4213
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            4.5462,
+            -7.0224
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_table",
+          "at": [
+            5.0841,
+            -5.3298
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            4.2964,
+            -4.945
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            4.73,
+            -4.54
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            5.4608,
+            -6.1389
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B0",
+          "kind": "dining_chair",
+          "at": [
+            5.8662,
+            -5.7174
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_table",
+          "at": [
+            8.9819,
+            -4.5432
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            8.4567,
+            -4.0106
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            9.5102,
+            -5.0948
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_table",
+          "at": [
+            10.9255,
+            -2.5996
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            10.3949,
+            -2.0742
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            11.4672,
+            -3.154
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_table",
+          "at": [
+            7.7863,
+            -2.6275
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            6.983,
+            -2.2773
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            7.4076,
+            -1.8484
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            8.1647,
+            -3.4151
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            8.5959,
+            -2.9797
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_table",
+          "at": [
+            9.0991,
+            -1.3147
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            8.2922,
+            -0.9428
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            8.7168,
+            -0.5308
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            9.4591,
+            -2.1162
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "B1",
+          "kind": "dining_chair",
+          "at": [
+            9.8857,
+            -1.6727
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_table",
+          "at": [
+            -10.9623,
+            -2.5629
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -10.4047,
+            -2.0046
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -11.499,
+            -3.0883
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_table",
+          "at": [
+            -9.026,
+            -4.4991
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -8.4917,
+            -3.935
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -9.5637,
+            -5.0334
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_table",
+          "at": [
+            -9.0825,
+            -1.3314
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -8.7331,
+            -0.5344
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -8.2733,
+            -0.9464
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -9.8772,
+            -1.7141
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -9.4674,
+            -2.1144
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_table",
+          "at": [
+            -7.7543,
+            -2.6595
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -7.3685,
+            -1.8793
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -6.9444,
+            -2.2789
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -8.5529,
+            -3.0308
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H0",
+          "kind": "dining_chair",
+          "at": [
+            -8.1193,
+            -3.4439
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_table",
+          "at": [
+            -6.9627,
+            -6.5625
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -6.432,
+            -6.0327
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -7.5157,
+            -7.0876
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_table",
+          "at": [
+            -4.9549,
+            -8.5703
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -4.4173,
+            -8.0452
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -5.5113,
+            -9.097
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_table",
+          "at": [
+            -5.0811,
+            -5.3327
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -4.7058,
+            -4.5237
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -4.2756,
+            -4.9625
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -5.8782,
+            -5.7172
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -5.4401,
+            -6.124
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_table",
+          "at": [
+            -3.776,
+            -6.6379
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -3.4136,
+            -5.8332
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -2.9872,
+            -6.2576
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -4.5722,
+            -7.0249
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "H1",
+          "kind": "dining_chair",
+          "at": [
+            -4.161,
+            -7.4195
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "C0",
+          "kind": "dining_table",
+          "at": [
+            11.75,
+            -0.6496
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "C0",
+          "kind": "dining_chair",
+          "at": [
+            10.9732,
+            -0.6583
+          ],
+          "face": [
+            1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "C0",
+          "kind": "dining_chair",
+          "at": [
+            12.5066,
+            -0.6499
+          ],
+          "face": [
+            -1.0,
+            0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "G0",
+          "kind": "dining_table",
+          "at": [
+            -11.75,
+            0.6505
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "G0",
+          "kind": "dining_chair",
+          "at": [
+            -10.9705,
+            0.6556
+          ],
+          "face": [
+            -1.0,
+            -0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "G0",
+          "kind": "dining_chair",
+          "at": [
+            -12.5154,
+            0.6589
+          ],
+          "face": [
+            1.0,
+            0.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_table",
+          "at": [
+            10.7776,
+            2.7475
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            10.223,
+            2.1911
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            11.3254,
+            3.2937
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_table",
+          "at": [
+            8.6708,
+            1.7431
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            8.309,
+            0.9637
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            7.8797,
+            1.3946
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            9.4704,
+            2.1289
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D0",
+          "kind": "dining_chair",
+          "at": [
+            9.0456,
+            2.5196
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D1",
+          "kind": "dining_table",
+          "at": [
+            7.3189,
+            6.2062
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D1",
+          "kind": "dining_chair",
+          "at": [
+            6.7672,
+            5.6794
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D1",
+          "kind": "dining_chair",
+          "at": [
+            7.8461,
+            6.739
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D2",
+          "kind": "dining_table",
+          "at": [
+            3.9258,
+            9.5993
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D2",
+          "kind": "dining_chair",
+          "at": [
+            3.3835,
+            9.063
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "D2",
+          "kind": "dining_chair",
+          "at": [
+            4.4742,
+            10.1564
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_table",
+          "at": [
+            0.5851,
+            11.75
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            0.5872,
+            10.9623
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            0.5744,
+            12.511
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_table",
+          "at": [
+            0.0389,
+            9.55
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            0.3498,
+            8.7361
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            -0.2556,
+            8.7481
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            0.3498,
+            10.363
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "E0",
+          "kind": "dining_chair",
+          "at": [
+            -0.254,
+            10.374
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F0",
+          "kind": "dining_table",
+          "at": [
+            -2.738,
+            10.7871
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F0",
+          "kind": "dining_chair",
+          "at": [
+            -2.1737,
+            10.2469
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F0",
+          "kind": "dining_chair",
+          "at": [
+            -3.2905,
+            11.314
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F1",
+          "kind": "dining_table",
+          "at": [
+            -6.2476,
+            7.2775
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F1",
+          "kind": "dining_chair",
+          "at": [
+            -5.7148,
+            6.7455
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F1",
+          "kind": "dining_chair",
+          "at": [
+            -6.7996,
+            7.8272
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_table",
+          "at": [
+            -9.6296,
+            3.8955
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.7,
+            0.7
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -9.0865,
+            3.3617
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -10.1896,
+            4.4574
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_table",
+          "at": [
+            -8.6509,
+            1.7629
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -7.8576,
+            1.3864
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -8.2763,
+            0.9631
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -9.0329,
+            2.5543
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "F2",
+          "kind": "dining_chair",
+          "at": [
+            -9.427,
+            2.1289
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            -1.6149,
+            -9.6
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.75,
+            0.75
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.6153,
+            -8.8007
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.6341,
+            -10.3761
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            1.6934,
+            -9.6
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.3773,
+            -8.7642
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.9831,
+            -8.7661
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.3872,
+            -10.4343
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.9861,
+            -10.4208
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            -1.6755,
+            -7.3
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.75,
+            0.75
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.6626,
+            -6.5018
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.6707,
+            -8.0886
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            -0.0047,
+            -7.3
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -0.2925,
+            -6.4854
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            0.3107,
+            -6.4681
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -0.3068,
+            -8.1346
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            0.3119,
+            -8.131
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            1.6516,
+            -7.3
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.75,
+            0.75
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.6667,
+            -6.4918
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.6435,
+            -8.0986
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            -1.6954,
+            -5.0
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            1.2,
+            0.8
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.991,
+            -4.1808
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.4076,
+            -4.1683
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -2.0119,
+            -5.8231
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            -1.4032,
+            -5.8096
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            0.0434,
+            -5.0
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.75,
+            0.75
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            0.0398,
+            -4.1933
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            0.0629,
+            -5.7835
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_table",
+          "at": [
+            1.698,
+            -5.0
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.75,
+            0.75
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.6959,
+            -4.2174
+          ],
+          "face": [
+            -0.0,
+            -1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        },
+        {
+          "group": "entrance",
+          "kind": "dining_chair",
+          "at": [
+            1.7024,
+            -5.7823
+          ],
+          "face": [
+            0.0,
+            1.0
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige"
+        }
+      ],
+      "pendants": [
+        {
+          "at": [
+            -5.07,
+            1.6667
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -5.07,
+            3.4
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -5.07,
+            5.1333
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            5.07,
+            5.1333
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            5.07,
+            3.4
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            5.07,
+            1.6667
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            2.7,
+            7.47
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            0.9,
+            7.47
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -0.9,
+            7.47
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -2.7,
+            7.47
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            4.9475,
+            -8.5776
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            7.0216,
+            -6.5035
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            3.7742,
+            -6.6397
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            5.0841,
+            -5.3298
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            8.9819,
+            -4.5432
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            10.9255,
+            -2.5996
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            7.7863,
+            -2.6275
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            9.0991,
+            -1.3147
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -10.9623,
+            -2.5629
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -9.026,
+            -4.4991
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -9.0825,
+            -1.3314
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -7.7543,
+            -2.6595
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -6.9627,
+            -6.5625
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -4.9549,
+            -8.5703
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -5.0811,
+            -5.3327
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -3.776,
+            -6.6379
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            11.75,
+            -0.6496
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -11.75,
+            0.6505
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            10.7776,
+            2.7475
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            8.6708,
+            1.7431
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            7.3189,
+            6.2062
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            3.9258,
+            9.5993
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            0.5851,
+            11.75
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            0.0389,
+            9.55
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -2.738,
+            10.7871
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -6.2476,
+            7.2775
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -9.6296,
+            3.8955
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -8.6509,
+            1.7629
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            -1.6149,
+            -9.6
+          ],
+          "top": 4.16
+        },
+        {
+          "at": [
+            1.6934,
+            -9.6
+          ],
+          "top": 4.16
+        },
+        {
+          "at": [
+            -1.6755,
+            -7.3
+          ],
+          "top": 4.16
+        },
+        {
+          "at": [
+            -0.0047,
+            -7.3
+          ],
+          "top": 4.16
+        },
+        {
+          "at": [
+            1.6516,
+            -7.3
+          ],
+          "top": 4.16
+        },
+        {
+          "at": [
+            -1.6954,
+            -5.0
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            0.0434,
+            -5.0
+          ],
+          "top": 5.38
+        },
+        {
+          "at": [
+            1.698,
+            -5.0
+          ],
+          "top": 5.38
+        }
+      ],
+      "plants": [
+        {
+          "at": [
+            3.455,
+            -8.0195
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            7.5176,
+            -3.9569
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -10.414,
+            -1.0605
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -6.4569,
+            -5.0176
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            10.3,
+            -1.3358
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -10.3,
+            1.3358
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            10.414,
+            1.0605
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            6.8939,
+            4.5806
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            3.5199,
+            7.9546
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            1.3358,
+            10.3
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -1.0605,
+            10.414
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -4.5806,
+            6.8939
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -7.9546,
+            3.5199
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            -3.2,
+            -0.3
+          ],
+          "z": 0.15
+        },
+        {
+          "at": [
+            3.2,
+            -0.3
+          ],
+          "z": 0.15
+        }
+      ],
+      "bar": {
+        "x": [
+          -2.6,
+          2.6
+        ],
+        "counter_y": [
+          -0.65,
+          0.0
+        ],
+        "back_y": [
+          0.4,
+          0.78
+        ],
+        "counter_h": 1.08,
+        "back_h": 2.2,
+        "stools": 6,
+        "stool_x": [
+          -2.167,
+          -1.3,
+          -0.433,
+          0.433,
+          1.3,
+          2.167
+        ]
+      },
+      "core": {
+        "x": [
+          -3.6,
+          3.6
+        ],
+        "y": [
+          0.8,
+          6.0
+        ]
+      },
+      "skipped_sets": [
+        "C0",
+        "G0",
+        "D1",
+        "D2",
+        "F0",
+        "F1"
+      ]
     }
   }
 }
