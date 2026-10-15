@@ -9,6 +9,7 @@ import { LANDSCAPE_LIGHTING, LANDSCAPE_LIGHTING_TIERS } from '../../engine3d/lan
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
 import { LANDSCAPE_SURROUND, landscapeSurroundOption } from '../../engine3d/landscape/LandscapeSurroundModel.js';
 import { landscapeOceanQuality, landscapeOceanSeaState, landscapeOceanSurface } from '../../engine3d/landscape/ocean/LandscapeOceanModel.js';
+import { LANDSCAPE_ECOSYSTEM, landscapeEcosystemOption } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemModel.js';
 
 const canvas = document.getElementById('game-canvas');
 const parameters = new URL(location.href).searchParams;
@@ -59,8 +60,13 @@ const surround = landscapeSurroundOption(parameters.get('landscapeSurround') ?? 
 const ocean = landscapeOceanSurface(parameters.get('landscapeOcean')), seaState = landscapeOceanSeaState(parameters.get('landscapeSeaState')), oceanQuality = landscapeOceanQuality(parameters.get('landscapeOceanQuality'));
 const oceanTime = parameters.has('landscapeOceanTime') ? Number(parameters.get('landscapeOceanTime')) : null;
 if (oceanTime !== null && !(Number.isFinite(oceanTime) && oceanTime >= 0)) throw new Error(`landscapeOceanTime must be a nonnegative number of seconds; received ${parameters.get('landscapeOceanTime')}`);
+// landscapeEcosystem=auto|off|<recipe url> (AI 599 D4): the instanced ecosystem renderer over the development recipe (off by default until the streamer is integrated);
+// landscapeEcosystemDiagnostic=none|lod|layer|rank|fade selects its inspection view
+const ecosystem = landscapeEcosystemOption(parameters.get('landscapeEcosystem') ?? LANDSCAPE_ECOSYSTEM.defaultMode);
+const ecosystemDiagnostic = mode('landscapeEcosystemDiagnostic', LANDSCAPE_ECOSYSTEM.diagnostics, 'none');
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
-    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode, ocean, seaState, oceanQuality, oceanTime });
+    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode, ocean, seaState, oceanQuality, oceanTime,
+    ecosystem: ecosystem.mode === 'url' ? ecosystem.url : ecosystem.mode, ecosystemDiagnostic });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -77,6 +83,12 @@ window.__landscapeTestHooks = Object.freeze({
     readFrame: region => view.readFrame(region),
     oceanReadback: index => { const result = view.ocean?.readback?.(index) ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
     oceanFoamReadback: () => { const result = view.ocean?.foamReadback?.() ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
+    // AI 599 D4 ecosystem renderer: controls {diagnostic, wind, contact, shadows, visible} (resolves with snapshot().ecosystem), the tile injection hook (the streamer's
+    // role once integrated; rejects when the share denies the tile), its removal, and the drawn instance under a client position
+    setEcosystem: options => view.setEcosystem(options),
+    ecosystemInjectTile: tile => view.ecosystemInjectTile(tile),
+    ecosystemRemoveTile: id => view.ecosystemRemoveTile(id),
+    ecosystemPick: (clientX, clientY) => view.ecosystemPick(clientX, clientY),
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),

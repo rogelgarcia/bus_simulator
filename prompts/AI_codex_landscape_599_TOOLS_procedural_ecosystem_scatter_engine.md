@@ -87,13 +87,13 @@ final ecosystems.
 
 ### D2. Deterministic hierarchical generation
 
-- [ ] **Cell grids.** Generate on world-anchored cell grids sized per layer: large cells for trees and
+- [x] **Cell grids.** Generate on world-anchored cell grids sized per layer: large cells for trees and
   boulders, small cells for grass and pebbles. Distributions have blue-noise quality, with no grid
   artifacts and no seams at cell borders.
-- [ ] **Ownership and stability.** Every feature is owned by exactly one cell, the one containing its
+- [x] **Ownership and stability.** Every feature is owned by exactly one cell, the one containing its
   anchor. Regenerating or editing a region changes only that region and its halo; instance IDs elsewhere
   stay stable.
-- [ ] **Offline and runtime generation.** Large, static layers are generated offline in the bake. Dense,
+- [x] **Offline and runtime generation.** Large, static layers are generated offline in the bake. Dense,
   small layers are generated on demand at runtime, in workers or GPU passes. Where both Node and the
   browser evaluate a layer, they produce identical results.
 - [ ] **Ecological simulation.** Provide an optional offline simulation (for example seed dispersal,
@@ -123,15 +123,15 @@ final ecosystems.
 
 ### D4. Instanced renderer
 
-- [ ] **Drawing and culling.** Draw instanced batches per tile and LOD, with frustum and distance
+- [x] **Drawing and culling.** Draw instanced batches per tile and LOD, with frustum and distance
   culling and stable LOD selection with hysteresis. Use dithered cross-fades instead of pops.
-- [ ] **Impostors.** Support impostors that work with instancing. The existing per-object CPU-updated
+- [x] **Impostors.** Support impostors that work with instancing. The existing per-object CPU-updated
   impostor must be adapted or replaced.
-- [ ] **Terrain contact and hooks.**
+- [x] **Terrain contact and hooks.**
   - Instances conform to the terrain using exact height queries, slope alignment and sinking.
   - Provide hooks for terrain blending: contact darkening and colour matching.
   - Provide a wind-animation hook and shadow-caster LOD and culling hooks for AI 600.
-- [ ] **Inspection.** Diagnostics show instance identity, layer and rule trace when an instance is
+- [x] **Inspection.** Diagnostics show instance identity, layer and rule trace when an instance is
   picked, plus density heatmaps and LOD colouring.
 - [ ] **Gate.** No popping or swimming at normal travel speeds on the AI 577 camera paths. Terrain
   contact holds on slopes. Diagnostics match the resident data.
@@ -214,6 +214,88 @@ manifest attachment gating. The full landscape unit suite passes (see the D1 com
 
 **Limitations.** No generation, streaming or rendering yet (D2–D4); the development recipe's densities are placeholders tuned in D5; the swim
 zone is a rectangle approximating the synthesis constraint band (data, replaceable).
+
+### D2. Deterministic hierarchical generation — delivered 2026-10-15
+
+**Summary.** Every layer generates on a world-anchored lattice (site spacing `cell.meters / sitesPerAxis`): a site's rank comes from one committed
+64 × 64 toroidal void-and-cluster table (`EcosystemBlueNoise.js`, regenerated and byte-compared by the `landscape/ecosystem/blue-noise` leaf), a
+site is a candidate when `rank < density`, so every density threshold is a blue-noise subset that is seamless across cells and changes only where
+the density changes, and a rank-sorted tile prefix is a lower-density version of the tile. Per site (`EcosystemGeneration.js`, pure, shared by the
+Node bake and the browser worker): sites whose rank exceeds the layer's largest reachable density are skipped unsampled; the jittered position; the
+D1 input vector from the exact native triangle (height, normal, slope), the field and geology pages, the planning references (road edge distance,
+district distance, the open-view corridor) and exact Euclidean distance transforms of the cover classes over the cell grown by 40 m; override
+parameters; the exclusion zones in recipe order unless an include mask lifts them; density = curve groups × biome `where` × clumping noise × scales;
+competition against the bucketed features of higher-priority layers within `max(rA + rB, clearance)`; variation from independent hash channels. A
+child layer spawns `count` children per parent feature at hashed radii and directions, owned by the anchor's cell, kept by its hash against the local
+density. Overrides apply last on the exact ground. `generateEcosystemLayerCells` memoizes the referenced cells of higher-priority layers (one ring,
+bounded by validation), so one cell, a sub-area or the whole landscape generate identical bytes. The `landscape-ecosystem` v1 sidecar
+(`EcosystemSidecar.js`) embeds the recipe and overrides, binds the terrain revision and every native hash like the fields, lists one content-addressed
+tile index per offline layer and content-addressed payloads, and keys each tile by the algorithm, recipe identity, cell, density scale, the natives
+inside its dependency reach, the field and geology revisions and the override entries touching it, so a native edit stales exactly the tiles that
+could have read it (8 × 8 stale cells as the fields). The `landscape/ecosystem` leaf (`tools/bake_landscape/ecosystem/`) generates every offline
+layer over coastal v3, gates determinism (8 cells per layer regenerated byte-identically), seams (4 cells per layer reproduced inside their 3 × 3
+block), close pairs (0) and the spatial statistics, writes the receipt and publishes with validation (every byte re-read).
+
+**Spec and sources.** `src/app/landscape/ecosystem/{EcosystemBlueNoise,EcosystemLattice,EcosystemCellSources,EcosystemGeneration,EcosystemStatistics,
+EcosystemSidecar,EcosystemSidecarPayload}.js`; `tools/bake_landscape/ecosystem/{README.md,jobs.mjs,EcosystemJob.mjs,EcosystemBake.mjs,EcosystemFileSources.mjs,
+EcosystemPublication.mjs,blue_noise/BlueNoiseJob.mjs}` (registered in `tools/bake_landscape/jobs.mjs`); `tools/bake_landscape/CacheBundle.mjs` learns the
+`ecosystem/manifest.json` pointer. Spec sections 3–4 of `LANDSCAPE_ECOSYSTEM.md`.
+
+**Validation.** `tests/node/unit/landscape_ecosystem_{blue_noise,generation,sidecar}.test.js` (28 tests with `landscape_ecosystem_fixture.js`): the table is
+a permutation whose selections at 2 / 10 / 30 % beat white noise (nearest-neighbour mean 5.83 / 2.58 / 1.23 vs 3.71 / 1.68 / 1.09 spacings) and stay
+isotropic; determinism across runs; a cell alone equals the cell inside its 3 × 3 block; a native edit changes only the tiles whose dependency reach
+intersects it and keeps every other record bit-identical; competition, parent/child, exclusions, overrides; the jittered lattice at full density fails
+the anisotropy test the blue-noise selection passes; sidecar validation, content keys, staleness, loaders, publication round trip. Published on v3:
+revision `ecosystem-2db5078ccfd7dfae52d97808` (identical over three runs, one from an empty directory): boulders 2,068 instances in 143 tiles, shrubs
+2,973 in 592; generation 17–20 s, gates 3.2 s, 495 MiB RSS; sidecar 781,278 bytes (manifest 87,731, indexes 391,087, 735 tile payloads 302,460); min
+nearest-neighbour 5.81 m (bound 1.2) and 10.18 m (bound 2.0); anisotropy χ² boulders 2.36 (pass), shrubs 55.7 (fails on the linear woodland-edge
+habitat: informational, the statistic is reported per layer). Densities: boulders 2,901/km² of rock ground (target 3,000), shrubs 343/km² of grass
+(target 6,000: the placeholder curves cap at 0.09–0.14 and most grass lies in excluded planning districts; D5 tunes). Receipts
+`tests/artifacts/screens/landscape/ai599/d2/`.
+
+**Limitations.** The runtime layers (pebbles, boulder scree) are declared and generated by the same code but drawn only once D3 streams them; the
+Node/browser determinism gate is D3's; `distance.cover.*` saturates at 40 m and `distance.layer.*` at the generation halo (pure functions of position);
+the anisotropy gate is informational on habitats that are themselves linear.
+
+### D4. Instanced renderer — delivered 2026-10-15
+
+**Summary.** `createLandscapeEcosystemRenderer` (`src/graphics/engine3d/landscape/ecosystem/`) draws one `THREE.Mesh` per (tile, LOD band) over an
+`InstancedBufferGeometry` that shares the asset geometry and binds the tile's rank-sorted records as one interleaved instance buffer (anchor, scale,
+normal, yaw, variant, rank, tint); the admitted rank prefix is the instance count (coarse coverage under budget pressure, `setDrawFraction`). Culling:
+three.js frustum culls each tile by a bounding sphere from its cell bounds, height range and asset height; a (tile, band) draw is visible only when the
+camera's distance range to the tile meets the band, with a 1.1 hysteresis so the set does not flicker. The vertex program builds the instance frame
+(yaw about the up axis mixed from world up to the ground normal by the layer's slope weight, sunk by the alignment, right-handed), fades each instance
+by its distance across the band (`ecosystemLodBands`: fade-in and fade-out ramps of `fadeMeters` around each boundary, the last band ending at the view
+distance), collapses faded vertices behind the far plane, and for impostors builds the camera-facing card of the distant catalog in the shader (nearest
+of the 16 views by azimuth tile and elevation row, the card hung from the view's projected root point, its atlas rectangle as texture coordinates): the
+CPU updater of `DistantTreeBillboard.js` moved to the GPU, so LOD5 instances. The fragment program dithers the fade (8 × 8 Bayer shifted by the instance
+rank, so neighbours dither out of step), alpha-tests the leaf and card atlases with their tangent-space normals, darkens the lowest metres toward the
+ground (`uEcosystemContact`), applies the per-instance tint, lights the opaque surface with the landscape chunks (`landscapeReflectedRadiance`,
+`landscapeAirLight`, `landscapeAerialPerspective`) and writes linear radiance for the frame pipeline; the diagnostic views (LOD band, layer, rank, fade)
+compile in on request and write display-ready colours with the alpha-0 sentinel. Hooks: wind (`uEcosystemWind`: direction, strength, time; sway ∝ height
+fraction², strength 0 = still), contact darkening, `castShadow` per LOD from `layer.shadow` (AI 600), lighting-tier rebuilds that relink in parallel and
+swap at once. Asset sets: deterministic placeholder rocks (noise-displaced icospheres flattened to the base, 3 variants × 3 LODs at 320 / 80 / 20
+triangles, pebbles 80 / 20) and the catalog's distant LODs (arrowwood viburnum LOD3 36, LOD4 12, LOD5 2 triangles through GLTFLoader + KTX2Loader with
+shared textures), reserved in the ecosystem share. Picking tests instance bounding spheres on the CPU and returns the record and structural id. The
+viewer holds the share (`createLandscapeEcosystemLedger`, 64 / 96 MiB, a standing reservation like the ocean's) and wires the renderer behind
+`landscapeEcosystem` (`off` by default until D3 integrates the streamer).
+
+**Spec and sources.** `src/graphics/engine3d/landscape/ecosystem/{LandscapeEcosystemModel,EcosystemPlaceholderRocks,EcosystemCatalogAssets,EcosystemAssetSets,
+LandscapeEcosystemMaterials,LandscapeEcosystemRenderer}.js`, shaders `materials/landscape/ecosystem_instance.{vert,frag}.glsl` + `LandscapeEcosystemShaderLoader.js`,
+viewer `LandscapeView.js` / `main.js` / `LandscapePanel.js`. Spec section 6 of `LANDSCAPE_ECOSYSTEM.md`.
+
+**Validation.** `tests/node/unit/landscape_ecosystem_model.test.js` (6 tests: LOD bands and fade mirror, impostor view selection against `selectDistantView`,
+dither permutation, option parser, share). `tests/headless/e2e/landscape_ecosystem_render.pwtest.js` on coastal v3 (1 passed, 1.1 min): synthetic tiles of every
+asset set injected at NW-04 and NW-06 draw with the expected draws and instances (draws per tile = the layer's LOD count), 10 materials link as 3 program
+variants in 126–139 ms in parallel with empty info logs, the LOD colour diagnostic agrees with the picked instance's band on 1,097 of 1,098 pixels, a 40-step
+dolly toward the tiles shows per-frame mean differences of median 4.34 and peak 7.72 (no pop above 3 × the median), picking the screen centre returns the
+aimed instance and record at 5.55 m, the boulder covers its anchor pixel and ends 35 rows below it against a 40-row rim projection (terrain contact), removal
+and disposal return the share to zero; the lighting suite still passes with the default off. Asset reservations 27.7 MB CPU = GPU (the viburnum textures
+dominate). Evidence `tests/artifacts/screens/landscape/ai599/d4/`.
+
+**Limitations.** Wind was verified only as a clock advance, shadows only as flags (no shadow maps exist before AI 600), species other than viburnum and
+orthographic cameras untested; the development recipe and the vegetation assets are served to the suite through a route (D3 extends the server); the
+terrain program logs an intermittent Direct3D X4008 warning on some boots (pre-existing).
 
 ## On completion
 
