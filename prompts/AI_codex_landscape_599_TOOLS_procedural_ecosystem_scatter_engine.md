@@ -63,26 +63,26 @@ final ecosystems.
 
 ### D1. Ecosystem recipe model
 
-- [ ] **Layers.** Define a versioned, validated recipe in which biomes are ordered sets of layers. Each
+- [x] **Layers.** Define a versioned, validated recipe in which biomes are ordered sets of layers. Each
   layer declares:
   - its asset set, LOD chain and variation (scale, rotation and tint distributions);
   - footprint and clearance radii;
   - alignment: upright, slope-aligned, or partly sunk into the ground.
-- [ ] **Rule inputs.** Rules read:
+- [x] **Rule inputs.** Rules read:
   - AI 596 geology channels, terrain fields and AI 598 surface layers;
   - soil and cover;
   - slope, aspect, altitude, moisture, light and shoreline distance;
   - distance to roads, districts, water and other layers.
-- [ ] **Rule behaviour.** Rules express:
+- [x] **Rule behaviour.** Rules express:
   - density curves;
   - clustering and clumping: groves, companion species, parent and child patterns;
   - spacing and competition with priorities between layers;
   - inclusion and exclusion zones: plan reservations, road clearances, the swim zone, the open-view
     corridor.
-- [ ] **Overrides.** Provide data-only hooks for later fine tuning: region parameter overrides,
+- [x] **Overrides.** Provide data-only hooks for later fine tuning: region parameter overrides,
   include/exclude masks, and pinned or removed instance IDs. They apply in a documented order after
   generation.
-- [ ] **Gate.** Schema validation and rejection tests pass. A recipe round-trips through save and load.
+- [x] **Gate.** Schema validation and rejection tests pass. A recipe round-trips through save and load.
   The existing dressing inputs map onto the new model without changing their documented meaning.
 
 ### D2. Deterministic hierarchical generation
@@ -177,6 +177,43 @@ final ecosystems.
 
 Record each deliverable here when it passes: a summary, spec and source locations, validation results,
 measurements, limitations and artifact paths.
+
+### D1. Ecosystem recipe model — delivered 2026-10-15
+
+**Summary.** `landscape-ecosystem-recipe` v1 (`src/app/landscape/ecosystem/`): biomes are ordered sets of layers (descending competition
+priority, validated); a layer declares its asset set (`placeholder-rocks` or `catalog-distant` with LOD levels), generation mode (offline or
+runtime), world-anchored cell (`meters` × `sitesPerAxis`, so the site spacing is `meters / sitesPerAxis`), footprint and clearance radii, jitter,
+alignment (upright, slope or sunk with `slopeWeight`, `sinkMeters`), variation (scale distribution, yaw mode, tint value and channel ranges), its
+LOD chain to the view distance with a fade band, shadow-caster hooks, and rules. Rules read 96 named inputs (`ECOSYSTEM_RULE_INPUTS` plus one
+`distance.layer.<id>` per layer) with documented neutral values: terrain slope, aspect (as north/east components, trig-free) and altitude;
+fields moisture, light, shore distance, flow, deposition, rock exposure and convexity; semantic and natural soil weights; land-cover class and
+distances to cover classes; every AI 596 geology channel and label; distances to roads, districts and water; the five AI577 dressing inputs.
+Density terms are piecewise-linear curves; terms sharing a `group` combine by maximum (any-of habitats), groups multiply; clumping noise,
+parent/child spawning, priority competition with clearances and exclusion zones (`planning-cover`, `roads`, `districts`, `water`, `faces`,
+`view-corridor`, recipe zones with margins) complete the layer. Validation rejects lattices too dense for the footprints, LOD chains that miss the
+view distance, competition against lower priorities, halos wider than half a competitor's cell (locality) and unknown inputs or zones; the recipe
+identity is the SHA-256 of its canonical JSON. `landscape-ecosystem-overrides` v1 carries region parameter overrides (density and scale
+multipliers), include/exclude masks and pinned or removed instance ids, applied in the documented order (region parameters and include masks
+during generation; exclude masks, removed ids, then pinned instances after). The `ecosystem-instance-v1` record (twelve float32 plus three
+int32 per instance) and the structural instance ids (`<layer>:<sx>,<sz>[:<child>]`, `<layer>:pin:<name>`) are the contract D2–D4 share. The
+terrain manifest gains the `content-layers-v1` capability under which `attachments` may name content layers (`landscape-ecosystem` kind); without
+it attachments stay empty as before, and the published v3 manifest is untouched (the sidecar is found beside the manifest, like the fields).
+
+**Spec and sources.** `src/app/landscape/ecosystem/{EcosystemRecipe,EcosystemRules,EcosystemInputs,EcosystemOverrides,EcosystemTiles,index}.js`
+(re-exported from `src/app/landscape/index.js`), `LandscapeManifest.js` (capability and attachment validation), the development recipe
+`tools/bake_landscape/ecosystem/recipes/coastal-v3-ecosystem-v1.json` (boulders and shrubs offline, pebbles and boulder scree at runtime, the
+declared targets per km² with their reference basis). The canonical spec `specs/landscape/LANDSCAPE_ECOSYSTEM.md` is written in D6 with the
+generation, streaming and rendering contracts.
+
+**Validation.** `tests/node/unit/landscape_ecosystem_recipe.test.js` (9 tests): the development recipe validates, fills defaults and round-trips
+through JSON unchanged; the identity ignores key order and follows every parameter; 24 rejection cases; competitors and halos; curve
+interpolation and clamping, group maximum and product, the trace; the input sampler against synthetic sources (neutral values without sidecars,
+every geology label, distance saturation at 256 m) reproducing `sampleLandscapeDressingInputs` exactly for the display soil and planning share;
+exclusion zones; the record codec round trip, rank sort and malformed payload rejection; override resolution and the post-generation order;
+manifest attachment gating. The full landscape unit suite passes (see the D1 commit).
+
+**Limitations.** No generation, streaming or rendering yet (D2–D4); the development recipe's densities are placeholders tuned in D5; the swim
+zone is a rectangle approximating the synthesis constraint band (data, replaceable).
 
 ## On completion
 

@@ -2,7 +2,7 @@
 // @ts-check
 export { LANDSCAPE_LAND_COVER_CATALOG, LANDSCAPE_SOIL_CATALOG } from './LandscapeCatalog.js';
 export { LANDSCAPE_SCHEMA_VERSION, LANDSCAPE_MAX_CHUNK_SAMPLES, LANDSCAPE_SUPPORTED_CAPABILITIES, LANDSCAPE_PROVENANCE_KINDS, LANDSCAPE_SYNTHESIS_PROVENANCE_KIND, LANDSCAPE_SYNTHESIS_PROVENANCE_STATEMENT,
-    createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest } from './LandscapeManifest.js';
+    createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest, LANDSCAPE_CONTENT_LAYERS_CAPABILITY, LANDSCAPE_ATTACHMENT_KINDS } from './LandscapeManifest.js';
 export { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CHUNK_BYTE_LIMIT, encodeLandscapeChannel, decodeLandscapeChannel, loadLandscapeManifest, loadLandscapeChunk, loadLandscapeOverview } from './LandscapePayload.js';
 export { landscapeGridToWorld, landscapeWorldToGrid, landscapeCityTileToWorld, landscapeWorldToCityTile } from './LandscapeCoordinates.js';
 export { sampleLandscapeChunk, createLandscapeSelectionContext } from './LandscapeSampling.js';
@@ -48,3 +48,4 @@ export { landscapeSurfaceDetailUsesNaturalSoil } from './LandscapeSurfaceDetail.
 export { LANDSCAPE_SYNTHESIS_RECIPE_FORMAT, LANDSCAPE_SYNTHESIS_SCHEMA_VERSION, LANDSCAPE_SYNTHESIS_LIMITS, LANDSCAPE_SYNTHESIS_COVER_POLICIES, LANDSCAPE_SYNTHESIS_OUTPUT_CHANNELS,
     LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
     canonicalLandscapeSynthesisJson, landscapeSynthesisRecipeIdentity, landscapeSynthesisOperatorSeed, landscapeSynthesisEffectiveSeed } from './LandscapeSynthesisRecipe.js';
+export * from './ecosystem/index.js';

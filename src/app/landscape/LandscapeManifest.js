@@ -6,7 +6,10 @@ import { clonePlainData, freezeData, nearlyEqual, requireBounds, requireConditio
 
 export const LANDSCAPE_SCHEMA_VERSION = 1;
 export const LANDSCAPE_MAX_CHUNK_SAMPLES = 257 * 257;
-export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, 'chunk-hierarchy-v1']);
+/** AI 599 D1: a manifest declaring this capability may carry attachments (content layers published beside it) of the kinds below. */
+export const LANDSCAPE_CONTENT_LAYERS_CAPABILITY = 'content-layers-v1';
+export const LANDSCAPE_ATTACHMENT_KINDS = Object.freeze(['landscape-ecosystem']);
+export const LANDSCAPE_SUPPORTED_CAPABILITIES = Object.freeze(['heightfield', 'land-cover', 'coarse-preview', LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, 'chunk-hierarchy-v1', LANDSCAPE_CONTENT_LAYERS_CAPABILITY]);
 // AI 596 D3: terrain the synthesis engine generated carries an explicit, machine-checkable statement that it was never measured; its native
 // resolution is the grid spacing by definition and the synthesis block says which spacing the operators actually ran at, so an upsampled
 // result can never pass as finer source detail
@@ -115,6 +118,24 @@ function validateSynthesisProvenance(provenance, grid) {
     requireCondition(synthesis.upsampled === (synthesis.sourceSpacingMeters > provenance.nativeResolutionMeters), 'provenance.synthesis.upsampled must be true exactly when sourceSpacingMeters exceeds nativeResolutionMeters');
 }
 
+// attachments stay empty unless the manifest declares content-layers-v1 (AI 599 D1): then each names one content layer published beside the
+// manifest by id, kind and relative URL with its revision, so a reader without the capability still refuses content it cannot interpret
+function validateLandscapeAttachments(manifest) {
+    requireCondition(Array.isArray(manifest.attachments), 'attachments must be an array');
+    if (!manifest.capabilities.includes(LANDSCAPE_CONTENT_LAYERS_CAPABILITY)) { requireCondition(manifest.attachments.length === 0, 'attachments must be empty; unsupported content capability'); return; }
+    requireCondition(manifest.attachments.length <= 32, 'at most 32 attachments');
+    const ids = new Set();
+    for (const attachment of manifest.attachments) {
+        requireCondition(!!attachment && typeof attachment === 'object' && Object.keys(attachment).sort().join(',') === 'id,kind,revision,url', 'attachment must declare exactly id, kind, url and revision');
+        requireId(attachment.id, 'attachment.id');
+        requireCondition(!ids.has(attachment.id), `duplicate attachment ${attachment.id}`);
+        ids.add(attachment.id);
+        requireCondition(LANDSCAPE_ATTACHMENT_KINDS.includes(attachment.kind), `unsupported attachment kind ${attachment.kind}`);
+        requireRelativeUrl(attachment.url, 'attachment.url');
+        requireId(attachment.revision, 'attachment.revision');
+    }
+}
+
 /** @param {unknown} input @returns {LandscapeManifest} */
 export function validateLandscapeManifest(input) {
     const manifest = clonePlainData(input);
@@ -189,7 +210,7 @@ export function validateLandscapeManifest(input) {
         referenceIds.add(reference.id);
     }
     validateLandscapeAuthoring(manifest);
-    requireCondition(Array.isArray(manifest.attachments) && manifest.attachments.length === 0, 'attachments must be empty; unsupported content capability');
+    validateLandscapeAttachments(manifest);
     requireCondition(manifest.cityBinding === undefined, 'D1 cityBinding is reserved; unsupported city-binding capability');
     return freezeData(manifest);
 }
