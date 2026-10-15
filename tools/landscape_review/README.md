@@ -179,6 +179,17 @@ python tools/landscape_review/periodicity.py --image <capture.png> --region left
 It detrends every row of the region's luminance, averages the normalized autocorrelation over the rows and reports the
 strongest correlation beyond the minimum lag; above the threshold the sea counts as repeating (exit code 1).
 
+`ecosystem_statistics.py` (AI 599) plots the spatial statistics an ecosystem bake receipt records per layer
+(`tests/artifacts/screens/landscape/ai599/<step>/ecosystem-bake.json`, written by `node tools/bake.mjs --target landscape/ecosystem`):
+the pair correlation g(r) against a Poisson process of the same intensity, the rose of nearest-neighbour directions with the
+anisotropy chi-square verdict, and the achieved instances per km² of each layer's best cover against its declared target:
+
+```text
+python tools/landscape_review/ecosystem_statistics.py --receipt <ecosystem-bake.json> --output <statistics.png> [--title "..."]
+```
+
+Pillow and NumPy only; fixed colours and layout, so the same receipt gives the same PNG.
+
 `--ocean-debug <0-14>` replaces the shading by one of the ocean surface's verification views after the settle (see
 `ocean_surface.frag.glsl`; 7 the per-cascade depth fades, 8 the AI 597 D2 shore wave: red its depth weight, green its
 crest sharpening, blue its bore strength; 9 the D3 foam: red its density, green its coverage, blue the shoreline supply the sand

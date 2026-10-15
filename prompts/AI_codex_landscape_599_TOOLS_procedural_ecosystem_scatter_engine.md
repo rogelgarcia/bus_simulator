@@ -138,14 +138,14 @@ final ecosystems.
 
 ### D5. Proof layers at scale
 
-- [ ] **Two layers.** Run two real layers end-to-end on the coastal terrain: a boulder layer on rock and
+- [x] **Two layers.** Run two real layers end-to-end on the coastal terrain: a boulder layer on rock and
   bluff ground, and a shrub layer on scrub and woodland edges. Use placeholder assets if AI 602 assets
   are not ready yet.
-- [ ] **Targets.** Declare target densities per km² for trees, shrubs, rocks, ground cover and clutter,
+- [x] **Targets.** Declare target densities per km² for trees, shrubs, rocks, ground cover and clutter,
   derived from the references and the D1 rules.
-- [ ] **Scaling.** Measure scaling at 1×, 2× and 4× the target counts: instances, draws, triangles,
+- [x] **Scaling.** Measure scaling at 1×, 2× and 4× the target counts: instances, draws, triangles,
   memory, upload, CPU and GPU frame time.
-- [ ] **Gate.** Report scaling curves and the bottlenecks found, with a recommended budget for AI
+- [x] **Gate.** Report scaling curves and the bottlenecks found, with a recommended budget for AI
   601–603.
 
 ### D6. Integrated acceptance
@@ -307,6 +307,71 @@ the self-serving surround suite passes on v3 with the ecosystem active. The GPU 
 **Limitations.** Budget-pressure degradation (the admitted rank prefix) and the stale `active-partial` path are covered at unit and inspection level only;
 `ecosystemPickTrace` is unexercised by a suite (the positional trace is); a worker cancelled mid-job is terminated and loses its caches (the pool's
 semantics); the streamer file is 470 lines.
+
+### D5. Proof layers at scale — delivered 2026-10-15
+
+**Summary.** The development recipe's two real layers run end to end on coastal terrain v3 through the engine: `boulders` (placeholder rocks: rock
+soil, talus, the wave-cut platform and the bluff toe, sunk and slope-aligned) and `shrubs` (the catalog's arrowwood viburnum LOD3/4/5: scrub, the
+woodland-edge mantle within 35 m of forest cover, foredune and bluff-crown scrub), beside the runtime proofs `pebbles` and `boulder-scree`. The
+recipe was tuned once against the receipt (curve maxima and the clumping contrast of the shrubs, the boulder habitat maxima) and re-published as
+`ecosystem-4c1692c4e6e0a9844e84a67c`. Targets are declared per km² in `recipe.targets` with their reference basis (boulders 3,000 of rock ground,
+shrubs 6,000 at woodland edges and back-dune scrub, trees 25,000 of closed forest, pebbles 1.5 M, ground cover 1 M, clutter 5 M). Scaling was
+measured at 1×, 2× and 4× the recipe's density (`--set landscape/ecosystem:density=<n>`, each a published sidecar) and with the ecosystem off,
+at NW-03, NW-04, NW-06, NW-07 and NW-10 plus a 90-frame travel from NW-03 to NW-04, with 30 warm-up and 120 sampled frames per stop
+(`tests/headless/e2e/landscape_ecosystem_scaling.pwtest.js`, composed by `tools/landscape_review/ecosystem_scaling.py`). Review captures with the
+ecosystem on and off and in the LOD-band diagnostic come from `tools/landscape_review/capture.mjs` (new `--ecosystem` and `--ecosystem-diagnostic`
+options) and `composite.py`; the spatial statistics are plotted by `tools/landscape_review/ecosystem_statistics.py`.
+
+**Targets and achieved densities** (`d5/bake/ecosystem-bake-x1.json`; per km² of the native cover class the instances stand on):
+
+| Layer | Instances (tiles) | Achieved | Target | Note |
+| --- | ---: | --- | --- | --- |
+| boulders | 2,258 (143) | 3,192 on exposed rock, 282 on sand (platform and toe), 179 on forest soil (talus and crowns) | 3,000 of rock ground | met |
+| shrubs | 12,433 (619) | 1,377 on grass, 1,384 on forest soil, 2,872 on exposed rock (the bluff crown), 705 on sand (foredune) | 6,000 in the edge and scrub bands | the classes average over their whole area; the edge band is a 35 m mantle inside the forest class, so the class average is not the band density (not measured per band); most grass lies inside the excluded districts |
+| pebbles (runtime) | ≈ 8,300 resident at NW-04, 5,400 at NW-03 (drawn within 60 m) | — | 1.5 M (a near-field density) | drawn density only, by design |
+
+Nearest-neighbour minimum 5.54 m (boulders, bound 1.2) and 2.56 m (shrubs, bound 2.0); close pairs 0; anisotropy χ² 3.1 (boulders, isotropic) and
+58.7 (shrubs, the linear crown and edge habitats). The 2× and 4× sidecars hold 4,606 / 24,871 and 9,139 / 49,627 instances (nearest minima 1.38 / 2.03 m,
+every bound kept), 2.27 and 4.03 MB; generation 23.6 / 28.7 / 34.4 s.
+
+**Scaling** (`d5/scaling.md`, `scaling.png`; RTX 3060 through ANGLE/D3D11, 1920 × 1080, cache on at 752/720 MiB, the animated ocean at its fixed
+time, the GPU shared with Blender at 20–35 %):
+
+| Run | NW-04 resident tiles / instances / draws / ecosystem triangles | NW-03 | NW-06 | Share CPU / GPU MiB (NW-04) | Frame median ms (all stops) | GPU median ms (NW-03 … NW-10) | Travel peak upload MiB/frame |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| off | 0 / 0 / 0 / 0 | 0 | 0 | — | 17.5–17.6 (vsync) | 8.3–9.1 | 5.59 |
+| 1× | 46 / 8,957 / 65 / 1.52 M | 34 / 5,461 / 51 | 48 / 638 / 44 | 46.3 / 27.0 | 17.4–17.6 | 8.2–8.9 | 6.11 |
+| 2× | 47 / 9,449 / 66 | 35 / 5,779 / 52 | 50 / 1,279 / 47 | 46.5 / 27.2 | 17.5–17.6 | 8.4–8.7 | 6.11 |
+| 4× | 47 / 10,402 / 66 | 35 / 6,402 / 52 | 50 / 2,499 / 47 | 46.7 / 27.3 | 17.5–17.6 | 8.5–8.8 | 6.11 |
+
+The frame stays vsync-bound at every run and stop and the GPU pass sits inside the run-to-run noise of the baseline (the ecosystem's share of the
+8.2–9.1 ms pass is below 0.5 ms at these counts); CPU frame work 2.3–3.0 ms; the main-thread plan 0.11 ms mean, 3.5–3.9 ms peak; the worker round
+trip 138–153 ms mean (817–1,261 ms peak) over 209–215 loads on the travel; the ecosystem's own uploads peak at 88 KB per frame; the share holds
+46–47 MiB CPU (assets 47.7 MB CPU, 27.7 MB GPU: the viburnum textures) and 27 MiB GPU; the programs link in 145–384 ms. Resident instances at the
+poses grow less than the density because the runtime pebbles (density 1 in every run: the scale applies to the offline layers at bake time and the
+runtime scale was left at 1) dominate the near field.
+
+**Bottlenecks found and the recommended budget for AI 601–603.** (1) The merged-variant geometry submits every variant's triangles per instance (the
+other variants collapse): 1.52 M triangles submitted for 8,957 instances at NW-04 of which about a third rasterise. Cheap for 320-triangle rocks and
+36-triangle shrub panels, it would be the first wall for the 3,788–9,666-triangle LOD0 trees: AI 601 must draw per variant (variant-sorted records
+with one draw range per variant, or one instance buffer per variant). (2) Texture memory, not records: one species' distant set costs 27.7 MB GPU
+against 0.5 MB for 9,000 records; the 480 MiB of LOD0 and 300 MiB of LOD1 textures of the five species cannot live inside a 96 MiB share, so
+AI 601 needs its own texture residency by LOD and distance and a share of its own (plan 160–256 MiB GPU for vegetation textures, accounted like this
+share). (3) The worker: one tile per round trip at 140–270 ms and one attach per frame fill about 60 tiles per second; dense near-field layers
+(AI 603's millions per km²) must generate on coarser cells or on the GPU, since the generator samples about 15 µs per site and the rank cull only
+helps sparse layers. (4) Records: 190,000 trees are 11 MB of records and ids, well inside the share; a landscape-wide dense layer must stay runtime
+and distance-bound. Recommended: keep `LANDSCAPE_ECOSYSTEM.budgets` at 64 / 96 MiB for rocks, shrubs and clutter records; AI 601 adds a vegetation
+texture share; AI 602 publishes its scanned rocks as a new asset kind with per-variant draws; AI 603 generates its near-field layers at runtime on
+16–32 m cells within 60–100 m.
+
+**Validation and evidence.** `tests/artifacts/screens/landscape/ai599/d5/`: `bake/` (the four receipts and logs, `statistics-x1.png`), `scaling/<off|x1|x2|x4>/`
+(report.json, report.md, a screenshot per stop), `scaling.md`, `scaling.png`, `captures/{before,after,lod}/` (receipts per pose) and
+`captures/composites/NW-03..NW-10.png` (`[off | on]`) and `lod-sheet.png`. Every scaling run passed its budget and upload assertions; the review tools'
+unit tests pass with the new options.
+
+**Limitations.** Placeholder rocks and the catalog's viburnum stand in for AI 602 and AI 604 assets; the shrub target is declared per edge band but the
+receipt measures per cover class; the runtime layers were not scaled (their scale is a runtime switch, `setEcosystem({density})`, not measured here);
+GPU timing was taken with Blender holding 20–35 % of the GPU; wind, shadows and the AI 600 lighting are out of scope.
 
 ### D4. Instanced renderer — delivered 2026-10-15
 

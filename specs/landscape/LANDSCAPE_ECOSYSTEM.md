@@ -1,7 +1,7 @@
 # Landscape ecosystem engine (AI 599)
 
-Status: D1 (ecosystem recipe model), D2 (deterministic hierarchical generation), D3 (content-layer streaming) and D4 (instanced renderer)
-delivered 2026-10-15 on `codex/landscape`; D5 (proof layers at scale) and D6 (integrated acceptance) follow, each recorded here when it passes. This page is the canonical contract of the natural-content placement and rendering framework the roadmap's layers L3–L6 share
+Status: D1 (ecosystem recipe model), D2 (deterministic hierarchical generation), D3 (content-layer streaming), D4 (instanced renderer) and
+D5 (proof layers at scale) delivered 2026-10-15 on `codex/landscape`; D6 (integrated acceptance) follows and is recorded here when it passes. This page is the canonical contract of the natural-content placement and rendering framework the roadmap's layers L3–L6 share
 (`LANDSCAPE_NATURAL_WORLD_ROADMAP.md` §4–§6): how biomes and layers are declared, how features are generated deterministically per
 world-anchored cell, how the generated tiles are published and streamed through the landscape residency contracts, and how they are drawn as
 culled, LOD-selected instanced batches. AI 601 (forests), AI 602 (rocks and cliffs) and AI 603 (ground vegetation and clutter) deliver their
@@ -339,6 +339,24 @@ share); `landscape_ecosystem_render.pwtest.js` on coastal v3 (synthetic tiles of
 a 40-step dolly with per-frame mean differences of median 4.34 and peak 7.72 (no pop above 3 × the median), picking the aimed instance at 5.55 m,
 the boulder covering its anchor pixel and ending 35 rows below it against a 40-row rim projection, removal and disposal to zero).
 
-## 7. Proof layers, measurements and acceptance (D5, D6)
+## 7. Proof layers and scaling (D5)
 
-Pending D5 and D6.
+The development recipe's `boulders` (placeholder rocks on rock soil, talus, the platform and the bluff toe) and `shrubs` (the catalog's arrowwood
+viburnum on scrub, the woodland-edge mantle, foredune and bluff-crown scrub) run end to end on coastal v3 beside the runtime `pebbles` and
+`boulder-scree`, published as `ecosystem-4c1692c4e6e0a9844e84a67c` (2,258 boulders in 143 tiles, 12,433 shrubs in 619; `d5/bake/`). Targets are
+declared per km² in `recipe.targets` with their reference basis; achieved per cover class: boulders 3,192 per km² of exposed rock (target 3,000),
+shrubs 1,377 on grass, 1,384 on forest soil and 2,872 on the bluff crown (the 6,000 target names the 35 m edge band, which the per-class receipt
+does not isolate). Scaling at 1×, 2× and 4× the density (`landscape_ecosystem_scaling.pwtest.js`, `d5/scaling.md`, RTX 3060 at 1920 × 1080, cache
+on, the GPU shared with Blender): resident at NW-04 46–47 tiles with 8,957 / 9,449 / 10,402 instances in 65–66 draws, the share 46–47 MiB CPU and
+27 MiB GPU (the viburnum textures 27.7 MB of it), the frame vsync-bound at 17.5 ms in every run including the baseline without the ecosystem, the GPU
+pass 8.2–9.1 ms in every run (the ecosystem below the run-to-run noise at these counts), CPU frame work 2.3–3.0 ms, the plan 0.11 ms mean, the
+worker round trip 138–153 ms mean, the ecosystem's uploads 88 KB per frame at most. Bottlenecks for the content prompts: the merged-variant draws
+submit every variant's triangles per instance (1.52 M submitted for 8,957 instances, a third rasterised: AI 601 draws per variant); texture
+memory dominates (one species' distant set 27.7 MB against 0.5 MB of records: AI 601 needs its own texture residency by LOD and distance); the
+worker fills about 60 tiles per second (dense near-field layers generate on coarse cells or the GPU); records themselves are cheap (190,000 trees
+≈ 11 MB). Tools: `capture.mjs --ecosystem auto|off|<url> --ecosystem-diagnostic lod`, `ecosystem_statistics.py`, `ecosystem_scaling.py`; evidence
+`tests/artifacts/screens/landscape/ai599/d5/` (`captures/composites/NW-03..NW-10.png` `[off | on]`, `lod-sheet.png`, `scaling.png`, `bake/statistics-x1.png`).
+
+## 8. Integrated acceptance (D6)
+
+Pending D6.

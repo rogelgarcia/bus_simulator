@@ -5,105 +5,877 @@
   "name": "Coastal terrain v3 ecosystem (AI 599): boulder and shrub proof layers, runtime pebble and scree proofs",
   "seed": 599001,
   "zones": {
-    "swim-zone": { "type": "rectangle", "minX": 700, "maxX": 980, "minZ": 184, "maxZ": 936 }
+    "swim-zone": {
+      "type": "rectangle",
+      "minX": 700,
+      "maxX": 980,
+      "minZ": 184,
+      "maxZ": 936
+    }
   },
   "assets": {
-    "rocks": { "kind": "placeholder-rocks", "variants": 3, "seed": 599101, "footprintRadiusMeters": 0.55, "heightMeters": 1.0, "lods": [{ "level": 0, "triangles": 320 }, { "level": 1, "triangles": 80 }, { "level": 2, "triangles": 20 }] },
-    "pebbles": { "kind": "placeholder-rocks", "variants": 3, "seed": 599102, "footprintRadiusMeters": 0.07, "heightMeters": 0.12, "lods": [{ "level": 0, "triangles": 80 }, { "level": 1, "triangles": 20 }] },
-    "shrubs": { "kind": "catalog-distant", "species": "arrowwood_viburnum", "variants": ["mature_01", "mature_02", "mature_03"], "footprintRadiusMeters": 1.0, "heightMeters": 2.6, "lods": [{ "level": 3 }, { "level": 4 }, { "level": 5 }] }
+    "rocks": {
+      "kind": "placeholder-rocks",
+      "variants": 3,
+      "seed": 599101,
+      "footprintRadiusMeters": 0.55,
+      "heightMeters": 1.0,
+      "lods": [
+        {
+          "level": 0,
+          "triangles": 320
+        },
+        {
+          "level": 1,
+          "triangles": 80
+        },
+        {
+          "level": 2,
+          "triangles": 20
+        }
+      ]
+    },
+    "pebbles": {
+      "kind": "placeholder-rocks",
+      "variants": 3,
+      "seed": 599102,
+      "footprintRadiusMeters": 0.07,
+      "heightMeters": 0.12,
+      "lods": [
+        {
+          "level": 0,
+          "triangles": 80
+        },
+        {
+          "level": 1,
+          "triangles": 20
+        }
+      ]
+    },
+    "shrubs": {
+      "kind": "catalog-distant",
+      "species": "arrowwood_viburnum",
+      "variants": [
+        "mature_01",
+        "mature_02",
+        "mature_03"
+      ],
+      "footprintRadiusMeters": 1.0,
+      "heightMeters": 2.6,
+      "lods": [
+        {
+          "level": 3
+        },
+        {
+          "level": 4
+        },
+        {
+          "level": 5
+        }
+      ]
+    }
   },
   "layers": {
     "boulders": {
-      "id": "boulders", "label": "Boulders on rock, talus, the platform and the bluff toe", "assetSet": "rocks", "generation": "offline",
-      "cell": { "meters": 256, "sitesPerAxis": 64 }, "footprint": { "radiusMeters": 0.55, "clearanceMeters": 1.0 }, "jitter": 0.35,
-      "alignment": { "mode": "sunk", "slopeWeight": 0.6, "sinkMeters": 0.15, "sinkScalesWithSize": true },
-      "variation": { "scale": { "min": 0.5, "max": 2.2, "distribution": "log-uniform" }, "yaw": "random", "tint": { "value": [0.85, 1.1], "channels": { "r": [0.97, 1.03], "g": [0.97, 1.03], "b": [0.95, 1.02] } } },
-      "viewDistanceMeters": 900, "lods": [{ "level": 0, "distanceMeters": 120 }, { "level": 1, "distanceMeters": 350 }, { "level": 2, "distanceMeters": 900 }], "fadeMeters": 25,
-      "shadow": { "castLevels": [0, 1], "maxDistanceMeters": 350 },
+      "id": "boulders",
+      "label": "Boulders on rock, talus, the platform and the bluff toe",
+      "assetSet": "rocks",
+      "generation": "offline",
+      "cell": {
+        "meters": 256,
+        "sitesPerAxis": 64
+      },
+      "footprint": {
+        "radiusMeters": 0.55,
+        "clearanceMeters": 1.0
+      },
+      "jitter": 0.35,
+      "alignment": {
+        "mode": "sunk",
+        "slopeWeight": 0.6,
+        "sinkMeters": 0.15,
+        "sinkScalesWithSize": true
+      },
+      "variation": {
+        "scale": {
+          "min": 0.5,
+          "max": 2.2,
+          "distribution": "log-uniform"
+        },
+        "yaw": "random",
+        "tint": {
+          "value": [
+            0.85,
+            1.1
+          ],
+          "channels": {
+            "r": [
+              0.97,
+              1.03
+            ],
+            "g": [
+              0.97,
+              1.03
+            ],
+            "b": [
+              0.95,
+              1.02
+            ]
+          }
+        }
+      },
+      "viewDistanceMeters": 900,
+      "lods": [
+        {
+          "level": 0,
+          "distanceMeters": 120
+        },
+        {
+          "level": 1,
+          "distanceMeters": 350
+        },
+        {
+          "level": 2,
+          "distanceMeters": 900
+        }
+      ],
+      "fadeMeters": 25,
+      "shadow": {
+        "castLevels": [
+          0,
+          1
+        ],
+        "maxDistanceMeters": 350
+      },
       "rules": {
         "density": [
-          { "group": "habitat", "input": "soil.rock", "curve": [[0, 0], [1, 0.09]] },
-          { "group": "habitat", "input": "geology.depositType.talus", "curve": [[0, 0], [1, 0.12]] },
-          { "group": "habitat", "input": "geology.coastalZone.platform", "curve": [[0, 0], [1, 0.1]] },
-          { "group": "habitat", "input": "geology.coastalZone.bluff-toe", "curve": [[0, 0], [1, 0.12]] },
-          { "group": "habitat", "input": "rockExposure", "curve": [[0.3, 0], [0.9, 0.07]] },
-          { "input": "slopeDegrees", "curve": [[0, 1], [30, 1], [42, 0]] },
-          { "input": "shoreDistanceMeters", "curve": [[-3, 0], [1, 1]] }
+          {
+            "group": "habitat",
+            "input": "soil.rock",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.1
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.depositType.talus",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.13
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.platform",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.11
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.bluff-toe",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.13
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "rockExposure",
+            "curve": [
+              [
+                0.3,
+                0
+              ],
+              [
+                0.9,
+                0.08
+              ]
+            ]
+          },
+          {
+            "input": "slopeDegrees",
+            "curve": [
+              [
+                0,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                42,
+                0
+              ]
+            ]
+          },
+          {
+            "input": "shoreDistanceMeters",
+            "curve": [
+              [
+                -3,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
         ],
-        "clumping": { "wavelengthMeters": 40, "contrast": 0.5, "threshold": 0.5, "octaves": 2 },
-        "competition": { "priority": 30, "clearanceMeters": 1.0, "against": "all" },
-        "exclusions": [{ "zone": "planning-cover", "marginMeters": 2 }, { "zone": "roads", "marginMeters": 3 }, { "zone": "districts", "marginMeters": 2 }, { "zone": "faces" }, { "zone": "swim-zone" }, { "zone": "view-corridor" }]
+        "clumping": {
+          "wavelengthMeters": 40,
+          "contrast": 0.5,
+          "threshold": 0.5,
+          "octaves": 2
+        },
+        "competition": {
+          "priority": 30,
+          "clearanceMeters": 1.0,
+          "against": "all"
+        },
+        "exclusions": [
+          {
+            "zone": "planning-cover",
+            "marginMeters": 2
+          },
+          {
+            "zone": "roads",
+            "marginMeters": 3
+          },
+          {
+            "zone": "districts",
+            "marginMeters": 2
+          },
+          {
+            "zone": "faces"
+          },
+          {
+            "zone": "swim-zone"
+          },
+          {
+            "zone": "view-corridor"
+          }
+        ]
       }
     },
     "shrubs": {
-      "id": "shrubs", "label": "Shrubs on scrub, foredune scrub, the bluff crown and woodland edges", "assetSet": "shrubs", "generation": "offline",
-      "cell": { "meters": 128, "sitesPerAxis": 32 }, "footprint": { "radiusMeters": 1.0, "clearanceMeters": 1.5 }, "jitter": 0.25,
-      "alignment": { "mode": "upright", "slopeWeight": 0.15, "sinkMeters": 0.05, "sinkScalesWithSize": false },
-      "variation": { "scale": { "min": 0.7, "max": 1.3, "distribution": "uniform" }, "yaw": "random", "tint": { "value": [0.9, 1.08], "channels": { "r": [0.96, 1.04], "g": [0.95, 1.05], "b": [0.96, 1.02] } } },
-      "viewDistanceMeters": 600, "lods": [{ "level": 3, "distanceMeters": 90 }, { "level": 4, "distanceMeters": 220 }, { "level": 5, "distanceMeters": 600 }], "fadeMeters": 20,
-      "shadow": { "castLevels": [3], "maxDistanceMeters": 220 },
+      "id": "shrubs",
+      "label": "Shrubs on scrub, foredune scrub, the bluff crown and woodland edges",
+      "assetSet": "shrubs",
+      "generation": "offline",
+      "cell": {
+        "meters": 128,
+        "sitesPerAxis": 32
+      },
+      "footprint": {
+        "radiusMeters": 1.0,
+        "clearanceMeters": 1.5
+      },
+      "jitter": 0.25,
+      "alignment": {
+        "mode": "upright",
+        "slopeWeight": 0.15,
+        "sinkMeters": 0.05,
+        "sinkScalesWithSize": false
+      },
+      "variation": {
+        "scale": {
+          "min": 0.7,
+          "max": 1.3,
+          "distribution": "uniform"
+        },
+        "yaw": "random",
+        "tint": {
+          "value": [
+            0.9,
+            1.08
+          ],
+          "channels": {
+            "r": [
+              0.96,
+              1.04
+            ],
+            "g": [
+              0.95,
+              1.05
+            ],
+            "b": [
+              0.96,
+              1.02
+            ]
+          }
+        }
+      },
+      "viewDistanceMeters": 600,
+      "lods": [
+        {
+          "level": 3,
+          "distanceMeters": 90
+        },
+        {
+          "level": 4,
+          "distanceMeters": 220
+        },
+        {
+          "level": 5,
+          "distanceMeters": 600
+        }
+      ],
+      "fadeMeters": 20,
+      "shadow": {
+        "castLevels": [
+          3
+        ],
+        "maxDistanceMeters": 220
+      },
       "rules": {
         "density": [
-          { "group": "habitat", "input": "cover.grass", "curve": [[0, 0], [1, 0.09]] },
-          { "group": "habitat", "input": "distance.cover.forest", "curve": [[0, 0.14], [12, 0.14], [35, 0]] },
-          { "group": "habitat", "input": "geology.coastalZone.foredune", "curve": [[0, 0], [1, 0.06]] },
-          { "group": "habitat", "input": "geology.coastalZone.bluff-crown", "curve": [[0, 0], [1, 0.07]] },
-          { "input": "cover.forest", "curve": [[0, 1], [1, 0.12]] },
-          { "input": "slopeDegrees", "curve": [[0, 1], [32, 1], [45, 0]] },
-          { "input": "moisture", "curve": [[0, 0.45], [0.5, 1], [1, 0.75]] },
-          { "input": "shoreDistanceMeters", "curve": [[15, 0], [40, 1]] },
-          { "input": "dressing.shrubSuitability", "curve": [[0, 0.25], [1, 1]] }
+          {
+            "group": "habitat",
+            "input": "cover.grass",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.26
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "distance.cover.forest",
+            "curve": [
+              [
+                0,
+                0.4
+              ],
+              [
+                12,
+                0.4
+              ],
+              [
+                35,
+                0
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.foredune",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.14
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.bluff-crown",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.16
+              ]
+            ]
+          },
+          {
+            "input": "cover.forest",
+            "curve": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                0.12
+              ]
+            ]
+          },
+          {
+            "input": "slopeDegrees",
+            "curve": [
+              [
+                0,
+                1
+              ],
+              [
+                32,
+                1
+              ],
+              [
+                45,
+                0
+              ]
+            ]
+          },
+          {
+            "input": "moisture",
+            "curve": [
+              [
+                0,
+                0.6
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                0.85
+              ]
+            ]
+          },
+          {
+            "input": "shoreDistanceMeters",
+            "curve": [
+              [
+                15,
+                0
+              ],
+              [
+                40,
+                1
+              ]
+            ]
+          },
+          {
+            "input": "dressing.shrubSuitability",
+            "curve": [
+              [
+                0,
+                0.5
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
         ],
-        "clumping": { "wavelengthMeters": 25, "contrast": 0.6, "threshold": 0.45, "octaves": 2 },
-        "competition": { "priority": 20, "clearanceMeters": 1.5, "against": "all" },
-        "exclusions": [{ "zone": "planning-cover", "marginMeters": 2 }, { "zone": "roads", "marginMeters": 3 }, { "zone": "districts", "marginMeters": 2 }, { "zone": "water", "marginMeters": 15 }, { "zone": "faces" }, { "zone": "swim-zone" }, { "zone": "view-corridor" }]
+        "clumping": {
+          "wavelengthMeters": 25,
+          "contrast": 0.5,
+          "threshold": 0.45,
+          "octaves": 2
+        },
+        "competition": {
+          "priority": 20,
+          "clearanceMeters": 1.5,
+          "against": "all"
+        },
+        "exclusions": [
+          {
+            "zone": "planning-cover",
+            "marginMeters": 2
+          },
+          {
+            "zone": "roads",
+            "marginMeters": 3
+          },
+          {
+            "zone": "districts",
+            "marginMeters": 2
+          },
+          {
+            "zone": "water",
+            "marginMeters": 15
+          },
+          {
+            "zone": "faces"
+          },
+          {
+            "zone": "swim-zone"
+          },
+          {
+            "zone": "view-corridor"
+          }
+        ]
       }
     },
     "pebbles": {
-      "id": "pebbles", "label": "Pebbles and small stones on talus, the platform, the backshore and exposed rock (runtime proof layer)", "assetSet": "pebbles", "generation": "runtime",
-      "cell": { "meters": 32, "sitesPerAxis": 64 }, "footprint": { "radiusMeters": 0.07, "clearanceMeters": 0 }, "jitter": 0.3,
-      "alignment": { "mode": "sunk", "slopeWeight": 1, "sinkMeters": 0.02, "sinkScalesWithSize": true },
-      "variation": { "scale": { "min": 0.6, "max": 1.6, "distribution": "log-uniform" }, "yaw": "random", "tint": { "value": [0.8, 1.15], "channels": { "r": [0.95, 1.05], "g": [0.95, 1.05], "b": [0.95, 1.05] } } },
-      "viewDistanceMeters": 60, "lods": [{ "level": 0, "distanceMeters": 25 }, { "level": 1, "distanceMeters": 60 }], "fadeMeters": 8,
-      "shadow": { "castLevels": [], "maxDistanceMeters": 0 },
+      "id": "pebbles",
+      "label": "Pebbles and small stones on talus, the platform, the backshore and exposed rock (runtime proof layer)",
+      "assetSet": "pebbles",
+      "generation": "runtime",
+      "cell": {
+        "meters": 32,
+        "sitesPerAxis": 64
+      },
+      "footprint": {
+        "radiusMeters": 0.07,
+        "clearanceMeters": 0
+      },
+      "jitter": 0.3,
+      "alignment": {
+        "mode": "sunk",
+        "slopeWeight": 1,
+        "sinkMeters": 0.02,
+        "sinkScalesWithSize": true
+      },
+      "variation": {
+        "scale": {
+          "min": 0.6,
+          "max": 1.6,
+          "distribution": "log-uniform"
+        },
+        "yaw": "random",
+        "tint": {
+          "value": [
+            0.8,
+            1.15
+          ],
+          "channels": {
+            "r": [
+              0.95,
+              1.05
+            ],
+            "g": [
+              0.95,
+              1.05
+            ],
+            "b": [
+              0.95,
+              1.05
+            ]
+          }
+        }
+      },
+      "viewDistanceMeters": 60,
+      "lods": [
+        {
+          "level": 0,
+          "distanceMeters": 25
+        },
+        {
+          "level": 1,
+          "distanceMeters": 60
+        }
+      ],
+      "fadeMeters": 8,
+      "shadow": {
+        "castLevels": [],
+        "maxDistanceMeters": 0
+      },
       "rules": {
         "density": [
-          { "group": "habitat", "input": "geology.depositType.talus", "curve": [[0, 0], [1, 0.5]] },
-          { "group": "habitat", "input": "geology.coastalZone.platform", "curve": [[0, 0], [1, 0.55]] },
-          { "group": "habitat", "input": "geology.coastalZone.backshore", "curve": [[0, 0], [1, 0.2]] },
-          { "group": "habitat", "input": "soil.rock", "curve": [[0, 0], [1, 0.3]] },
-          { "group": "habitat", "input": "rockExposure", "curve": [[0.2, 0], [0.9, 0.35]] },
-          { "input": "slopeDegrees", "curve": [[0, 1], [35, 1], [50, 0]] },
-          { "input": "shoreDistanceMeters", "curve": [[-1, 0], [0.5, 1]] }
+          {
+            "group": "habitat",
+            "input": "geology.depositType.talus",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.5
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.platform",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.55
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "geology.coastalZone.backshore",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.2
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "soil.rock",
+            "curve": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.3
+              ]
+            ]
+          },
+          {
+            "group": "habitat",
+            "input": "rockExposure",
+            "curve": [
+              [
+                0.2,
+                0
+              ],
+              [
+                0.9,
+                0.35
+              ]
+            ]
+          },
+          {
+            "input": "slopeDegrees",
+            "curve": [
+              [
+                0,
+                1
+              ],
+              [
+                35,
+                1
+              ],
+              [
+                50,
+                0
+              ]
+            ]
+          },
+          {
+            "input": "shoreDistanceMeters",
+            "curve": [
+              [
+                -1,
+                0
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          }
         ],
-        "competition": { "priority": 10, "clearanceMeters": 0.3, "against": "all" },
-        "exclusions": [{ "zone": "planning-cover" }, { "zone": "roads", "marginMeters": 1 }, { "zone": "districts", "marginMeters": 1 }, { "zone": "faces" }, { "zone": "swim-zone" }]
+        "competition": {
+          "priority": 10,
+          "clearanceMeters": 0.3,
+          "against": "all"
+        },
+        "exclusions": [
+          {
+            "zone": "planning-cover"
+          },
+          {
+            "zone": "roads",
+            "marginMeters": 1
+          },
+          {
+            "zone": "districts",
+            "marginMeters": 1
+          },
+          {
+            "zone": "faces"
+          },
+          {
+            "zone": "swim-zone"
+          }
+        ]
       }
     },
     "boulder-scree": {
-      "id": "boulder-scree", "label": "Scree stones around boulders (runtime parent/child proof layer)", "assetSet": "pebbles", "generation": "runtime",
-      "cell": { "meters": 64, "sitesPerAxis": 16 }, "footprint": { "radiusMeters": 0.1, "clearanceMeters": 0 }, "jitter": 0.2,
-      "alignment": { "mode": "sunk", "slopeWeight": 1, "sinkMeters": 0.03, "sinkScalesWithSize": true },
-      "variation": { "scale": { "min": 0.4, "max": 1.0, "distribution": "uniform" }, "yaw": "random", "tint": { "value": [0.85, 1.1], "channels": { "r": [0.97, 1.03], "g": [0.97, 1.03], "b": [0.95, 1.02] } } },
-      "viewDistanceMeters": 80, "lods": [{ "level": 0, "distanceMeters": 30 }, { "level": 1, "distanceMeters": 80 }], "fadeMeters": 10,
-      "shadow": { "castLevels": [], "maxDistanceMeters": 0 },
+      "id": "boulder-scree",
+      "label": "Scree stones around boulders (runtime parent/child proof layer)",
+      "assetSet": "pebbles",
+      "generation": "runtime",
+      "cell": {
+        "meters": 64,
+        "sitesPerAxis": 16
+      },
+      "footprint": {
+        "radiusMeters": 0.1,
+        "clearanceMeters": 0
+      },
+      "jitter": 0.2,
+      "alignment": {
+        "mode": "sunk",
+        "slopeWeight": 1,
+        "sinkMeters": 0.03,
+        "sinkScalesWithSize": true
+      },
+      "variation": {
+        "scale": {
+          "min": 0.4,
+          "max": 1.0,
+          "distribution": "uniform"
+        },
+        "yaw": "random",
+        "tint": {
+          "value": [
+            0.85,
+            1.1
+          ],
+          "channels": {
+            "r": [
+              0.97,
+              1.03
+            ],
+            "g": [
+              0.97,
+              1.03
+            ],
+            "b": [
+              0.95,
+              1.02
+            ]
+          }
+        }
+      },
+      "viewDistanceMeters": 80,
+      "lods": [
+        {
+          "level": 0,
+          "distanceMeters": 30
+        },
+        {
+          "level": 1,
+          "distanceMeters": 80
+        }
+      ],
+      "fadeMeters": 10,
+      "shadow": {
+        "castLevels": [],
+        "maxDistanceMeters": 0
+      },
       "rules": {
-        "density": [{ "input": "slopeDegrees", "curve": [[0, 1], [45, 1], [60, 0]] }],
-        "parent": { "layer": "boulders", "count": [2, 6], "radiusMeters": [0.7, 2.4], "inheritScale": 0.5 },
-        "competition": { "priority": 5, "clearanceMeters": 0.2, "against": ["boulders", "shrubs", "pebbles"] },
-        "exclusions": [{ "zone": "water" }, { "zone": "faces" }]
+        "density": [
+          {
+            "input": "slopeDegrees",
+            "curve": [
+              [
+                0,
+                1
+              ],
+              [
+                45,
+                1
+              ],
+              [
+                60,
+                0
+              ]
+            ]
+          }
+        ],
+        "parent": {
+          "layer": "boulders",
+          "count": [
+            2,
+            6
+          ],
+          "radiusMeters": [
+            0.7,
+            2.4
+          ],
+          "inheritScale": 0.5
+        },
+        "competition": {
+          "priority": 5,
+          "clearanceMeters": 0.2,
+          "against": [
+            "boulders",
+            "shrubs",
+            "pebbles"
+          ]
+        },
+        "exclusions": [
+          {
+            "zone": "water"
+          },
+          {
+            "zone": "faces"
+          }
+        ]
       }
     }
   },
   "biomes": {
-    "coastal-natural": { "label": "Natural land of the coastal terrain: rock and bluff ground, scrub, woodland edges", "layers": ["boulders", "shrubs", "pebbles", "boulder-scree"] }
+    "coastal-natural": {
+      "label": "Natural land of the coastal terrain: rock and bluff ground, scrub, woodland edges",
+      "layers": [
+        "boulders",
+        "shrubs",
+        "pebbles",
+        "boulder-scree"
+      ]
+    }
   },
   "targets": {
-    "boulders": { "perSquareKilometer": 3000, "basis": "R10 and R08: boulder-strewn platforms and talus toes hold about one boulder per 15-20 m2 locally (50,000/km2 in the strewn band); averaged over the rock class of coastal v3 (255,202 samples, 0.24 km2) with its bare faces and crowns the layer targets 3,000/km2 of rock ground" },
-    "shrubs": { "perSquareKilometer": 6000, "basis": "R03 and R08: scrub mantles at woodland edges and back-dune scrub hold about one shrub per 150 m2 (6,700/km2) with clumping; the open grass class (645,862 samples, 0.62 km2) and the forest edge band carry the layer" },
-    "trees": { "perSquareKilometer": 25000, "basis": "R07 and R01: closed broadleaf forest at about one mature crown per 40 m2 (25,000/km2) over the forest class (8,039,340 samples, 7.67 km2); AI 601 declares the closure per habitat" },
-    "pebbles": { "perSquareKilometer": 1500000, "basis": "R10: cobble and pebble aprons at 1-5 stones per m2 on talus, the platform and the backshore; the runtime layer draws within 60 m, so the count is a density, not a resident total" },
-    "ground-cover": { "perSquareKilometer": 1000000, "basis": "R03 and R02: grass clumps, forbs and moss cushions at about one visible clump per m2 at 2 m eye height (AI 603)" },
-    "clutter": { "perSquareKilometer": 5000000, "basis": "R10 and R02: litter, twigs, pebbles and shells at about five items per m2 near the camera (AI 603); drawn within tens of metres only" }
+    "boulders": {
+      "perSquareKilometer": 3000,
+      "basis": "R10 and R08: boulder-strewn platforms and talus toes hold about one boulder per 15-20 m2 locally (50,000/km2 in the strewn band); averaged over the rock class of coastal v3 (255,202 samples, 0.24 km2) with its bare faces and crowns the layer targets 3,000/km2 of rock ground"
+    },
+    "shrubs": {
+      "perSquareKilometer": 6000,
+      "basis": "R03 and R08: scrub mantles at woodland edges and back-dune scrub hold about one shrub per 150 m2 (6,700/km2) with clumping; the open grass class (645,862 samples, 0.62 km2) and the forest edge band carry the layer"
+    },
+    "trees": {
+      "perSquareKilometer": 25000,
+      "basis": "R07 and R01: closed broadleaf forest at about one mature crown per 40 m2 (25,000/km2) over the forest class (8,039,340 samples, 7.67 km2); AI 601 declares the closure per habitat"
+    },
+    "pebbles": {
+      "perSquareKilometer": 1500000,
+      "basis": "R10: cobble and pebble aprons at 1-5 stones per m2 on talus, the platform and the backshore; the runtime layer draws within 60 m, so the count is a density, not a resident total"
+    },
+    "ground-cover": {
+      "perSquareKilometer": 1000000,
+      "basis": "R03 and R02: grass clumps, forbs and moss cushions at about one visible clump per m2 at 2 m eye height (AI 603)"
+    },
+    "clutter": {
+      "perSquareKilometer": 5000000,
+      "basis": "R10 and R02: litter, twigs, pebbles and shells at about five items per m2 near the camera (AI 603); drawn within tens of metres only"
+    }
   }
 }
