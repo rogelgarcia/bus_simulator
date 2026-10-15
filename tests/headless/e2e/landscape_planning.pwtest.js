@@ -8,14 +8,18 @@ import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 const artifacts = path.resolve(`tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd6'}/planning`);
 const source = path.resolve('assets/public/landscape/coastal-city/manifest.json');
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
-const canvasGrid = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
-    const canvas = document.getElementById('game-canvas'), gl = canvas.getContext('webgl2'), pixel = new Uint8Array(4), samples = [];
+// AI 597 D7: the grid is read through the viewer's readFrame hook, inside the frame after the final pass; under the frame pipeline the linear
+// frame target stays bound between frames (programs and uploads key on it), so a raw readPixels between frames reads that target and fails
+const canvasGrid = page => page.evaluate(async () => {
+    const canvas = document.getElementById('game-canvas');
+    const { data, width, height } = await window.__landscapeTestHooks.readFrame({ left: 0, top: 0, width: canvas.width, height: canvas.height });
+    const samples = [];
     for (let row = 1; row < 10; row++) for (let column = 1; column < 16; column++) {
-        gl.readPixels(Math.floor(canvas.width * column / 16), Math.floor(canvas.height * row / 10), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-        samples.push([...pixel.slice(0, 3)]);
+        const x = Math.floor(canvas.width * column / 16), y = height - 1 - Math.floor(canvas.height * row / 10), k = (y * width + x) * 4;
+        samples.push([data[k], data[k + 1], data[k + 2]]);
     }
-    resolve(samples);
-})));
+    return samples;
+});
 async function settle(page) {
     await expect.poll(async () => { const state = await snapshot(page); return state.streaming?.settled && state.appearance?.settled && state.planning?.settled; }, { timeout: 45000 }).toBe(true);
     return snapshot(page);

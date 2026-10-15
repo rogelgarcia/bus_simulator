@@ -1128,6 +1128,12 @@ void main() {
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
-    if (uDiagnostic >= 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 1.0);
+    // the inspection views from 5 up are raw colours after the display transform; under the AI 597 D5 frame pipeline alpha 0 is the sentinel the
+    // final pass passes through untouched (the near pass keeps its blend weight: it never draws an inspection view)
+#ifdef LANDSCAPE_SURFACE_CACHE_NEAR
+    if (uDiagnostic >= 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, nearWeight);
+#else
+    if (uDiagnostic >= 5 && uAppearanceReady > 0.5) gl_FragColor = vec4(color, 0.0);
+#endif
 #endif
 }

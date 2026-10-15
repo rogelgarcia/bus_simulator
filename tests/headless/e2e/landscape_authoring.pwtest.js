@@ -50,6 +50,8 @@ test('Landscape D2: rendering precision does not move soil queries outside fract
 });
 
 test('Landscape D2: native area, raise and sand, persistent reopen, stale refusal, and revert', async ({ page }) => {
+    // two viewer loads with the surface cache on settle their appearance in about eighteen seconds each (AI 597 D7: the default minute ran out in a full regression)
+    test.setTimeout(120000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width: 1920, height: 1080 });

@@ -358,10 +358,18 @@ export class LandscapeView {
      * clock of a replaced ocean carries over. Resolves once decided.
      * @param {number} sequence the load this ocean belongs to @param {any} loaded the loaded landscape
      */
-    async loadOcean(sequence, loaded) {
+    loadOcean(sequence, loaded) {
+        // the in-flight load is remembered so a disposal lets it release its own reservations before the share goes
+        const pending = this.loadOceanNow(sequence, loaded).finally(() => { if (this.oceanLoading === pending) this.oceanLoading = null; });
+        this.oceanLoading = pending;
+        return pending;
+    }
+
+    async loadOceanNow(sequence, loaded) {
         const request = ++this.oceanSequence, previousClock = this.ocean?.clock.snapshot() ?? null;
         this.ocean?.dispose();
         this.ocean = null;
+        this.oceanLoading = null;
         this.oceanFailure = null;
         this.water?.setSurfaceDrawn(true);
         this.lighting.setOceanSurface(false);
@@ -1406,7 +1414,10 @@ export class LandscapeView {
         this.water?.dispose();
         this.water = null;
         this.ocean?.dispose(); this.ocean = null;
-        this.releaseOceanShare();
+        // a load still in flight releases its reservations when its abort lands; the share's standing reservation follows it
+        const loading = this.oceanLoading;
+        if (loading) loading.catch(() => {}).then(() => this.releaseOceanShare());
+        else this.releaseOceanShare();
         this.pipeline?.dispose(); this.pipeline = null;
         this.loadingPlanning?.dispose(); this.loadingPlanning = null;
         this.planning?.dispose(); this.planning = null;

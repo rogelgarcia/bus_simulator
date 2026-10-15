@@ -114,6 +114,11 @@ Frame intervals stay at the 60 Hz vsync (median 17.5 ms, p95 18.1–18.2 ms) in 
 
 ## Limitations
 
+- Since AI 597 (2026-10-14) the animated sea draws the water column, the interface and the air light of submerged terrain itself (the
+  terrain hands them over while the animated surface draws and the camera is above the water), the static coastal wet band is carried in
+  time by the swash sheet, and the whole frame renders through a linear half-float target with a final tone-mapping pass; the flat AI577
+  plane stays as `landscapeOcean=flat` and composes in linear light too ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md)).
+
 - Measurements come from one GPU, driver and browser build; program occupancy moves single views by
   ±1–5 ms between structurally equivalent programs, and absolute timings drift with machine load, so only
   paired comparisons are tight.

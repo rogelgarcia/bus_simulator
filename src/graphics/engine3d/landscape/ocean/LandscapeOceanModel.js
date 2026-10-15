@@ -117,9 +117,10 @@ export const LANDSCAPE_OCEAN_SEA_STATES = Object.freeze({
  * specular roughness (LEAN). low is the explicit low-cost path.
  */
 export const LANDSCAPE_OCEAN_QUALITIES = Object.freeze({
-    low: Object.freeze({ label: 'Low: two cascades at 128 texels, 1 m cells', texels: 128, cascadeLengths: Object.freeze([1600, 100]), ringCells: 64, baseCellMeters: 1, lean: false }),
-    medium: Object.freeze({ label: 'Medium: three cascades at 256 texels, 0.5 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25]), ringCells: 128, baseCellMeters: .5, lean: true }),
-    high: Object.freeze({ label: 'High: four cascades at 256 texels, 0.25 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25, 3.125]), ringCells: 192, baseCellMeters: .25, lean: true })
+    // light: the D5 caustics and terrain reflection; the low preset is the explicit low-cost path (two cascades, no LEAN, no caustic taps, no reflection march)
+    low: Object.freeze({ label: 'Low: two cascades at 128 texels, 1 m cells, no caustics or terrain reflection', texels: 128, cascadeLengths: Object.freeze([1600, 100]), ringCells: 64, baseCellMeters: 1, lean: false, light: false }),
+    medium: Object.freeze({ label: 'Medium: three cascades at 256 texels, 0.5 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25]), ringCells: 128, baseCellMeters: .5, lean: true, light: true }),
+    high: Object.freeze({ label: 'High: four cascades at 256 texels, 0.25 m cells', texels: 256, cascadeLengths: Object.freeze([1600, 200, 25, 3.125]), ringCells: 192, baseCellMeters: .25, lean: true, light: true })
 });
 
 /** The largest cascade count a program variant compiles (the uniform arrays and samplers are sized by it). */

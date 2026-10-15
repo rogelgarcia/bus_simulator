@@ -57,7 +57,9 @@ test('Landscape D7: switching landscapes cancels in-flight detail and releases t
         return route.fulfill({ status: bytes ? 200 : 404, contentType: key.endsWith('.json') ? 'application/json' : 'application/octet-stream', body: Buffer.from(bytes ?? []) });
     });
     await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
-    await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 20000 }).toBe(true);
+    // the uncached boot of the default landscape reports ready after about 12 s on the reference GPU (the animated sea of AI 597 adds about half a
+    // second of loads beside the stream's); the switch below is what this test times, so the boot poll leaves room for a loaded machine
+    await expect.poll(async () => (await snapshot(page)).planning?.ready, { timeout: 40000 }).toBe(true);
     await page.evaluate(() => window.addEventListener('pagehide', () => {
         sessionStorage.setItem('landscape-d7-disposed', JSON.stringify(window.__landscapeTestHooks.snapshot()));
     }, { once: true }));

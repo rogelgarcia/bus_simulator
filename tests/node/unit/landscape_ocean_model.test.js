@@ -26,7 +26,10 @@ test('Ocean model: presets and options validate, the far plane is the camera far
         assert.ok(preset.wind.speedMetersPerSecond > 0 && preset.wind.fetchKilometres > 0 && preset.swell.heightMeters > 0 && preset.swell.periodSeconds > 0 && preset.depthMeters > 0);
         assert.equal(preset.choppiness.length, LANDSCAPE_OCEAN_MAX_CASCADES);
     }
-    for (const preset of Object.values(LANDSCAPE_OCEAN_QUALITIES)) assert.ok(preset.ringCells % 4 === 0 && preset.cascadeLengths.length <= LANDSCAPE_OCEAN_MAX_CASCADES);
+    for (const preset of Object.values(LANDSCAPE_OCEAN_QUALITIES)) assert.ok(preset.ringCells % 4 === 0 && preset.cascadeLengths.length <= LANDSCAPE_OCEAN_MAX_CASCADES && typeof preset.light === 'boolean');
+    // the low preset is the explicit low-cost path: no LEAN, no caustics or terrain reflection; the shipped and the high presets light the water
+    assert.equal(LANDSCAPE_OCEAN_QUALITIES.low.light, false); assert.equal(LANDSCAPE_OCEAN_QUALITIES.low.lean, false);
+    assert.ok(LANDSCAPE_OCEAN_QUALITIES.medium.light && LANDSCAPE_OCEAN_QUALITIES.high.light);
 });
 
 test('Ocean cascades: adjacent bands share their bound, nothing is simulated twice, the coarsest keeps every longer wave', () => {

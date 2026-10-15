@@ -50,7 +50,9 @@ if (!ROUTE) throw new Error(`LANDSCAPE_RESOLUTION_ROUTE must be one of ${Object.
 const SURROUND = process.env.LANDSCAPE_RESOLUTION_SURROUND ?? null;
 if (SURROUND !== null && SURROUND !== 'on' && SURROUND !== 'off' && !/^[^\s]+\.json$/.test(SURROUND)) throw new Error(`LANDSCAPE_RESOLUTION_SURROUND must be on, off or a manifest URL ending in .json; received ${SURROUND}`);
 const SURROUND_PARAMETER = SURROUND === null ? null : SURROUND === 'on' ? 'auto' : SURROUND;
-const viewerAddress = () => landscapeViewerUrl(`/screens/landscape_fabrication.html${SURROUND_PARAMETER ? `?landscapeSurround=${encodeURIComponent(SURROUND_PARAMETER)}` : ''}`);
+// the flat sea: the suite pins the stream's startup requests (no native height payload before the first covered frame); the animated ocean of
+// AI 597 loads the extent field's level-2 chunks and the swash band's native beach chunks at boot through the same loaders (the ocean suite covers those)
+const viewerAddress = () => landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeOcean=flat${SURROUND_PARAMETER ? `&landscapeSurround=${encodeURIComponent(SURROUND_PARAMETER)}` : ''}`);
 const POSE_FILE = path.join(root, ROUTE.poseFile);
 // top-down orthographic probe camera: 60 m of ground over 1056 px asks the planner for every level whose error exceeds 0.085 m, so the finest level
 // is resident on relief; the 0.3 m target offset keeps the look-at basis defined and tilts the rays by 0.001 rad

@@ -211,7 +211,8 @@ Terrain raycasts and native height/soil/submerged queries always use the actual
 heightfield. The water reference never converts seabed elevation into sea level.
 Since AI 597 D1 the drawn sea is the animated ocean ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md)):
 `landscapeOcean=animated|flat` (default animated; `flat` keeps the AI577 plane as the inspection
-surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|medium|high` and
+surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|medium|high` (low is the explicit low-cost path: two
+cascades, no LEAN roughness, no caustics or terrain reflection) and
 `landscapeOceanTime=<seconds>` (a fixed simulation clock for captures); the toolbar's *Ocean* button
 switches animated and flat, the test hook `setOcean({surface, seaState, quality, clock})` drives it and
 `snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share; since D2 `shore`:

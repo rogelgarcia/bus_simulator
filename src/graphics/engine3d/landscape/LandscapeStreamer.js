@@ -215,17 +215,21 @@ export class LandscapeStreamer {
     async linkProgram(model, camera) {
         const started = performance.now(), parallel = this.renderer.extensions.has('KHR_parallel_shader_compile');
         this.renderer.compile(model.mesh, camera, this.scene);
-        const program = this.renderer.properties.get(model.mesh.material).currentProgram;
+        const current = () => this.renderer.properties.get(model.mesh.material).currentProgram;
+        let program = current();
         if (typeof program?.isReady !== 'function') throw new Error('[Landscape] The renderer did not create a terrain program to compile');
         const gl = this.renderer.getContext();
         gl.flush(); // submits the queued compile and link so the driver progresses while nothing else is drawn
-        while (!this.disposed && !program.isReady()) {
+        // a tier or variant switch while this waits replaces the material's program and deletes the old one (AI 597 D7: the lighting suite's
+        // runtime tier switches polled a deleted program, GL_INVALID_VALUE on every poll): follow the current program, never a deleted one
+        const linked = () => { const latest = current(); if (latest && latest !== program) program = latest; return typeof program?.isReady === 'function' && program.program !== undefined && program.isReady(); };
+        while (!this.disposed && !linked()) {
             if (gl.isContextLost()) throw new Error('[Landscape] The WebGL context was lost while the terrain program compiled');
             if (performance.now() - started > PROGRAM_COMPILE_WAIT_MS) break;
             await new Promise(resolve => setTimeout(resolve, 16));
         }
         if (this.disposed) throw new DOMException('Landscape stream disposed while its terrain program compiled', 'AbortError');
-        return { parallel, milliseconds: performance.now() - started, timedOut: !program.isReady() };
+        return { parallel, milliseconds: performance.now() - started, timedOut: !linked() };
     }
 
     /**

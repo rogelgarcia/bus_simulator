@@ -15,10 +15,12 @@ const wideView = { position: [4400, 6000, -4300], target: [2000, 0, 2000], proje
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
 const consumerLeases = (state, names) => state.budget.entries.flatMap(entry => entry.leases).filter(lease => names.includes(lease.consumer));
 
+// the flat sea: the suite pins the terrain stream's own requests and worker dispatches (the animated ocean of AI 597 loads the extent field's
+// level-2 chunks and the swash band's native beach chunks at boot through the same loaders; the ocean suite covers those)
 async function open(page) {
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOcean=flat'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready || window.__landscapeTestHooks?.snapshot().lastError, null, { timeout: 60000 });
     const state = await snapshot(page);
     expect(state.lastError).toBeNull();

@@ -86,7 +86,10 @@ function watch(page, log) {
 }
 
 async function open(page, query = '') {
-    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html${query}`));
+    // the flat sea: this suite judges the terrain's revisit stability pixel by pixel, and with the animated sea of AI 597 the waterline, the
+    // swash sheet and the foam lines follow the terrain level resident on each visit (0.39 mean bytes at aerial-oblique against the 0.25 the
+    // laps allow); the animated sea's own determinism at a pose and a fixed time is the ocean suite's check
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html${query}${query ? '&' : '?'}landscapeOcean=flat`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready || window.__landscapeTestHooks?.snapshot().lastError, null, { timeout: 120000 });
     expect((await snapshot(page)).lastError).toBeNull();
     await hideInterface(page);

@@ -1,8 +1,8 @@
 # Landscape ocean (AI 597)
 
 Status: D1 (spectral ocean surface), D2 (depth-aware shore waves), D3 (foam lifecycle) and D4 (swash and wet beach) delivered
-2026-10-12, D5 (water colour, refraction and light) 2026-10-14, D6 (inland water) closed 2026-10-14 with no inland water published on
-`codex/landscape`; D7 pending (acceptance). This page is the canonical contract of the animated sea of the landscape
+2026-10-12, D5 (water colour, refraction and light) 2026-10-14, D6 (inland water) closed 2026-10-14 with no inland water published,
+D7 (integrated acceptance) delivered 2026-10-14 on `codex/landscape`: the prompt is DONE. This page is the canonical contract of the animated sea of the landscape
 viewer: what it is, how it is encoded and driven, how it integrates with the AI577 water optics and the AI 596 terrain,
 and what it costs. Every number is copied from a receipt under `tests/artifacts/screens/landscape/ai597/` (paths given).
 
@@ -272,6 +272,82 @@ water level per body (a raster or polygons, derived from the pond candidates as 
 draw it as a second instance of the surface at that level with the `calm` sea state and the flow direction from the drainage channels;
 today the surface, the water column and the light are bound to the sea level and the extent field.
 
+## 6. Presets and cost (D7)
+
+### Quality presets (`LANDSCAPE_OCEAN_QUALITIES`, `landscapeOceanQuality=low|medium|high`, the test hook `setOcean({quality})`)
+
+| Preset | Cascades (patch lengths) | FFT | Rings (cells per side × finest cell) | LEAN | Caustics, terrain reflection (D5) | Share estimate (`landscapeOceanResources`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `low` | 2 (1600, 100 m) | 128² | 64 × 1 m | off | off | 36.4 MiB GPU / 30.3 MiB CPU |
+| `medium` (default) | 3 (1600, 200, 25 m) | 256² | 128 × 0.5 m | on | on | 48.1 MiB GPU / 31.0 MiB CPU |
+| `high` | 4 (1600, 200, 25, 3.125 m) | 256² | 192 × 0.25 m | on | on | 53.7 MiB GPU / 32.3 MiB CPU |
+
+`low` is the explicit low-cost path: two cascades at 128 texels, one-metre cells, no LEAN roughness, and the D5 light terms that cost
+per pixel switched off (the caustic taps and the reflection march; the refraction read, the water column and the crest scattering
+stay, as does everything of D2–D4). The share held in the ledger is the same 48 / 80 MiB for every preset (one standing reservation
+for the view's lifetime, §1).
+
+### Sea-state presets (`LANDSCAPE_OCEAN_SEA_STATES`, `landscapeSeaState=calm|moderate|rough`, `setOcean({seaState})`)
+
+| Preset | Wind (speed, heading, fetch) | Swell (height, period, heading, spread) | Hs at medium (continuous) | Shore train (period, deep wavelength) |
+| --- | --- | --- | --- | --- |
+| `calm` | 3 m/s, 80°, 15 km | 0.25 m, 8 s, 95°, ±30° | 0.34 m | 8 s, 100 m |
+| `moderate` (default) | 7 m/s, 85°, 60 km | 0.6 m, 8.5 s, 95°, ±25° | 1.29 m | 8.5 s, 113 m |
+| `rough` | 12 m/s, 75°, 150 km | 1.5 m, 11 s, 100°, ±20° | 3.17 m | 11 s, 189 m |
+
+Every preset is deterministic in the clock (`landscapeOceanTime`); a sea-state switch re-marches the shore train, resets the foam
+state and re-reads the swash inputs; a quality switch rebuilds the simulation and the surface inside the held share.
+
+### Cost at the water review poses
+
+ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11), 1920x1080, 90 warm-up + 180 sampled frames, GPU frame time median / p95 ms (EXT_disjoint_timer_query around the frame's render, the ocean simulation batch separate), coastal-city-v3 with the surround, the animated ocean's clock free-running from 30 s, moderate sea state; 2026-10-15T01:51:54.367Z.
+
+## Surface cache on
+
+| Pose | Flat reference | Low (2 cascades, no light) | Medium (shipped) | High | Medium − flat | Draws (medium) |
+| --- | --- | --- | --- | --- | --- | --- |
+| NW-09 | 8.4 / 9.7 | 11.7 / 14.3 | 13.5 / 20.2 | 14.3 / 20.2 | 5.2 | 72 |
+| NW-10 | 7.3 / 9.5 | 12.2 / 14.1 | 14.9 / 19.5 | 12.8 / 19.0 | 7.6 | 95 |
+| NW-11 | 11.2 / 12.7 | 14.0 / 17.8 | 11.8 / 21.0 | 14.5 / 22.6 | 0.5 | 116 |
+| NW-12 | 6.7 / 8.8 | 13.8 / 16.5 | 14.3 / 19.1 | 14.3 / 19.8 | 7.6 | 77 |
+| OS-01 | 4.2 / 5.4 | 9.9 / 12.5 | 12.7 / 16.8 | 13.6 / 17.1 | 8.5 | 52 |
+| OS-04 | 5.4 / 6.9 | 11.7 / 13.7 | 13.1 / 20.2 | 11.8 / 20.4 | 7.7 | 67 |
+| OS-06 | 5.8 / 7.0 | 11.7 / 14.7 | 14.3 / 17.8 | 13.9 / 19.9 | 8.6 | 45 |
+| OS-07 | 2.9 / 4.2 | 8.6 / 10.9 | 12.3 / 16.1 | 14.1 / 17.6 | 9.4 | 29 |
+
+## Surface cache off
+
+| Pose | Flat reference | Low (2 cascades, no light) | Medium (shipped) | High | Medium − flat | Draws (medium) |
+| --- | --- | --- | --- | --- | --- | --- |
+| NW-09 | 12.6 / 14.9 | 13.5 / 18.5 | 14.7 / 18.1 | 13.3 / 23.8 | 2.1 | 58 |
+| NW-10 | 16.6 / 17.6 | 16.4 / 17.5 | 17.0 / 17.9 | 17.4 / 18.6 | 0.4 | 83 |
+| NW-11 | 24.7 / 26.5 | 23.9 / 25.8 | 23.2 / 24.7 | 22.6 / 23.2 | -1.5 | 110 |
+| NW-12 | 9.2 / 11.4 | 13.6 / 18.9 | 13.1 / 19.8 | 13.5 / 21.1 | 3.9 | 71 |
+| OS-01 | 15.0 / 20.1 | 16.8 / 18.0 | 16.7 / 17.4 | 16.5 / 16.8 | 1.7 | 48 |
+| OS-04 | 18.4 / 19.0 | 17.6 / 18.5 | 16.5 / 17.8 | 17.7 / 18.4 | -1.9 | 64 |
+| OS-06 | 7.8 / 8.5 | 13.1 / 16.1 | 14.3 / 17.2 | 14.5 / 20.9 | 6.5 | 41 |
+| OS-07 | 8.6 / 9.1 | 11.5 / 14.7 | 11.4 / 20.3 | 12.6 / 18.7 | 2.8 | 27 |
+
+Across the 8 poses the shipped preset costs 6.9 ms more than the flat reference with the cache on and 1.7 ms with it off; the low path saves 1.7 / 0.1 ms against medium (cache on / off); high adds 0.3 / 0.2 ms over medium. The uncached v3 path stays GPU-bound (AI 596 D6): the surface cache, not the sea, decides whether the frame holds 60 Hz there.
+
+### Regressions in both surface-cache modes
+
+cache on: 84 passed, 3 skipped across 25 suites; cache off: 84 passed, 3 skipped across 25 suites. Every suite file ran in its own Playwright invocation (a fresh browser): the suites that take the base address each against a fresh v2 default server on port 8002 (its process tree killed and the port proven free between suites), the three self-serving suites (ocean, surround, resolution) with the port proven free before each, since a suite's server lingers on the port after its afterAll (run 2 and run 3 lost them to EADDRINUSE behind the ocean suite; run 4 with one shared server and browser per mode showed cross-suite coupling: the fabrication handoff read another selection, the large-editing report calls and the authoring edit test ran past their budgets and the lifecycle switch gap grew with the run, while each suite passes alone). Logs and the table under `tests/artifacts/screens/landscape/ai597/d7/regressions/`.
+
+## 7. Handoff (what the next prompts consume)
+
+- **Sea level and picking** stay the contract of §1: Y = 0 authoritative, water never picked, `landscapeOcean=flat` the inspection mode.
+- **The frame pipeline (D5)** is the place for frame-wide passes: every material writes linear radiance into the RGBA16F target, the
+  first ocean ring copies the opaque frame into `uOceanScene`, the final pass tone-maps and filters edges. A mist, fog or post pass
+  (AI 600) reads the same target; its depth is a renderbuffer today (a depth texture is the next step if a pass needs it).
+- **Wet and foam state for the ecosystem prompts**: the swash sheet carries the beach's wet state in time (`uLandscapeOcean.y` tells the
+  terrain the sheet draws it); the foam state's sand channel is the shoreline's foam supply; the wrack line lies at the highest remembered
+  run-up (`ocean_swash.glsl`); the shore distance (`uOceanField.y`, signed, exact) and the coastal zones (`LandscapeOceanCoast.js`) are
+  the sea-side inputs AI 603's habitats can read.
+- **Budgets for AI 598**: the ocean share is 48 / 80 MiB, the pipeline 20 bytes per drawing-buffer pixel outside the ledger, and the
+  uncached v3 path is GPU-bound (§6, `LANDSCAPE_PERFORMANCE.md`); the low preset is the cost lever the sea offers.
+- **Inland water (D6)** waits for a published water level per body (§2f).
+
 ## 3. Runtime (D1–D5)
 
 | Part | Where | What |
@@ -337,6 +413,10 @@ today the surface, the water column and the light are bound to the sea level and
   (`snap_probe.mjs`, `creep_probe.mjs`, `shift_probe.mjs`, `xcorr_probe.mjs`, `ring_probe.mjs`, `plane_probe.mjs`), the before/after frames under
   `pass/creep/` and `pass/hole_fix/`, the re-rendered `pass/beach-forward/clip.mp4` (the flickering render kept as
   `pass/beach-forward-before-hole-fix/`); unit test `landscape_ocean_model.test.js` (the annulus indices and the hole bound).
+
+- D7 (`tests/artifacts/screens/landscape/ai597/d7/`, README.md there): the same-condition tables `d7/perf/PERF.md` (`measure_presets.mjs`,
+  the receipt `measure_presets.json`), the regression logs and table `d7/regressions/` (every landscape suite, both surface-cache modes),
+  the unit run `d7/unit-run5.log`; unit test `landscape_ocean_model.test.js` (the presets' light flag).
 
 ## 5. Known limitations after D5
 

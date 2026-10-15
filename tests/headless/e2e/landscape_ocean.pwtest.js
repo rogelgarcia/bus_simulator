@@ -86,15 +86,35 @@ async function readFrame(page, key, region) {
  * sea region inherits that refinement until it stops). Gives up after twelve rounds and returns the last read.
  */
 async function convergedFrame(page, key, region) {
-    let last = await readFrame(page, `${key}-converging`, region);
-    for (let round = 0; round < 12; round++) {
-        await frames(page, 3);
+    let last = await readFrame(page, `${key}-converging`, region), quiet = 0;
+    // AI 597 D7: two quiet rounds six frames apart, after the viewer reports settled again; a single quiet pair three frames apart fell between
+    // two refinement batches on a warm machine with the cache off, and the restored-time frame then differed by the seabed's refinement
+    for (let round = 0; round < 16; round++) {
+        await settled(page);
+        await frames(page, 6);
         const next = await readFrame(page, key, region);
         const difference = await compareFrames(page, `${key}-converging`, key);
-        if (difference.mean < .02) return { ...next, rounds: round + 1, difference };
+        if (difference.mean < .02) { quiet++; if (quiet >= 2) return { ...next, rounds: round + 1, difference }; } else quiet = 0;
         last = await readFrame(page, `${key}-converging`, region);
     }
-    return { ...last, rounds: 12, converged: false };
+    return { ...last, rounds: 16, converged: false };
+}
+
+/**
+ * Writes stored frames as PNGs under the suite's artifacts (evidence when a determinism check fails: the frames themselves say whether the
+ * sea or the seabed under it moved), plus the amplified difference of the first two keys.
+ */
+async function saveFrames(page, keys, directory) {
+    await mkdir(directory, { recursive: true });
+    const urls = await page.evaluate(keys => {
+        const png = (width, height, fill) => { const c = document.createElement('canvas'); c.width = width; c.height = height; const ctx = c.getContext('2d'), img = ctx.createImageData(width, height); fill(img.data); ctx.putImageData(img, 0, 0); return c.toDataURL('image/png'); };
+        const out = {};
+        for (const key of keys) { const f = window.__oceanFrames[key]; if (f) out[key] = png(f.width, f.height, d => { d.set(f.data); for (let i = 3; i < d.length; i += 4) d[i] = 255; }); }
+        const a = window.__oceanFrames[keys[0]], b = window.__oceanFrames[keys[1]];
+        if (a && b) out[`${keys[0]}_vs_${keys[1]}_x4`] = png(a.width, a.height, d => { for (let i = 0; i < d.length; i += 4) { d[i] = Math.min(255, Math.abs(a.data[i] - b.data[i]) * 4); d[i + 1] = Math.min(255, Math.abs(a.data[i + 1] - b.data[i + 1]) * 4); d[i + 2] = Math.min(255, Math.abs(a.data[i + 2] - b.data[i + 2]) * 4); d[i + 3] = 255; } });
+        return out;
+    }, keys);
+    for (const [name, url] of Object.entries(urls)) await writeFile(path.join(directory, `${name}.png`), Buffer.from(url.split(',')[1], 'base64'));
 }
 
 /** Mean and maximum absolute luminance difference between two stored frames. */
@@ -204,12 +224,16 @@ test('Landscape AI 597 D1: the animated ocean streams beside v3, carries the pre
         await readFrame(page, 'stepped', seaRegion);
         const stepped = await compareFrames(page, 'first', 'stepped');
         await page.evaluate(time => window.__landscapeTestHooks.setOcean({ clock: { time } }), FIXED_TIME);
+        // AI 597 D7: the restored frame is read once the streams are settled again, so a terrain refinement that lands between the first read and
+        // this one (the seabed shows through the refraction) never counts against the sea's own determinism
+        await settled(page);
         await frames(page, 2);
         await readFrame(page, 'restored', seaRegion);
         const restored = await compareFrames(page, 'first', 'restored');
         evidence.determinism = { same, stepped, restored, region: seaRegion, convergence: { rounds: first.rounds, difference: first.difference ?? null } };
         // the first read waits for the terrain under the sea to stop refining (convergedFrame); the sea's own determinism is then judged against
         // the step: a half-second step moves the sea by more than ten times any residual drift, the restored time undoes it
+        if (same.mean >= 1 || restored.mean >= 1) await saveFrames(page, ['first', 'restored', 'second', 'stepped'], path.join(artifacts, 'determinism-failure'));
         expect(same.mean, `same time: ${JSON.stringify(same)}`).toBeLessThan(1);
         expect(restored.mean, `restored: ${JSON.stringify(restored)}`).toBeLessThan(1);
         expect(stepped.mean, `stepped: ${JSON.stringify(stepped)} against ${JSON.stringify({ same, restored })}`).toBeGreaterThan(10 * Math.max(same.mean, restored.mean, .1));
@@ -677,7 +701,7 @@ test('Landscape AI 597 D5: the frame pipeline, the refracted seabed, the water t
         expect(ocean.surface.scene).toBe(true);
         expect(ocean.surface.drawnLastFrame).toBe(true);
         expect(ocean.surface.water).toMatchObject({ oceanicDepthMeters: [...LANDSCAPE_OCEAN.water.oceanic.depthMeters], surfWeight: LANDSCAPE_OCEAN.water.surf.weight, oceanic: landscapeOceanWaterType('oceanic'), surf: landscapeOceanWaterType('surf') });
-        expect(ocean.surface.light).toEqual({ caustics: { contrast: LANDSCAPE_OCEAN.light.caustics.contrast, fadeMeters: [...LANDSCAPE_OCEAN.light.caustics.fadeMeters] }, crest: { strength: LANDSCAPE_OCEAN.light.crest.strength } });
+        expect(ocean.surface.light).toEqual({ enabled: true, caustics: { contrast: LANDSCAPE_OCEAN.light.caustics.contrast, fadeMeters: [...LANDSCAPE_OCEAN.light.caustics.fadeMeters] }, crest: { strength: LANDSCAPE_OCEAN.light.crest.strength }, terrainReflection: LANDSCAPE_OCEAN.light.terrainReflection });
         // the terrain hands its column to the sea while the animated surface draws (the lighting switch), the swash too
         expect(boot.lighting.uniforms.ocean).toEqual([1, 1, 0, 0]);
         evidence.boot = { pipeline: boot.pipeline, surface: { scene: ocean.surface.scene, water: ocean.surface.water, light: ocean.surface.light }, lighting: boot.lighting.uniforms.ocean };

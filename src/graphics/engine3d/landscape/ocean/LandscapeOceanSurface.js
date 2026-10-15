@@ -86,10 +86,10 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
         uOceanFoam: { value: fields.extent.texture }, uOceanFoamLook: { value: new THREE.Vector4(0, foam.coverage.threshold, foam.coverage.softness, foam.albedo) },
         uOceanFoamPattern: { value: new THREE.Vector4(foam.patternMeters[0], foam.patternMeters[1], foam.patternMeters[2], foam.patternMeters[3]) }, uOceanFoamFold: { value: new THREE.Vector2(foam.folding.threshold, foam.folding.span) },
         // AI 597 D5: the local water types, the caustics and the crest scattering (ocean_light.glsl)
-        uOceanWater: { value: new THREE.Vector4(LANDSCAPE_OCEAN.water.oceanic.depthMeters[0], LANDSCAPE_OCEAN.water.oceanic.depthMeters[1], LANDSCAPE_OCEAN.water.surf.weight, LANDSCAPE_OCEAN.light.terrainReflection ? 1 : 0) },
+        uOceanWater: { value: new THREE.Vector4(LANDSCAPE_OCEAN.water.oceanic.depthMeters[0], LANDSCAPE_OCEAN.water.oceanic.depthMeters[1], LANDSCAPE_OCEAN.water.surf.weight, LANDSCAPE_OCEAN.light.terrainReflection && preset.light ? 1 : 0) },
         uOceanOceanicAttenuation: { value: new THREE.Vector3(...landscapeOceanWaterType('oceanic').attenuation) }, uOceanOceanicBackscatter: { value: new THREE.Vector3(...landscapeOceanWaterType('oceanic').backscatter) },
         uOceanSurfAttenuation: { value: new THREE.Vector3(...landscapeOceanWaterType('surf').attenuation) }, uOceanSurfBackscatter: { value: new THREE.Vector3(...landscapeOceanWaterType('surf').backscatter) },
-        uOceanLight: { value: new THREE.Vector4(LANDSCAPE_OCEAN.light.caustics.contrast, LANDSCAPE_OCEAN.light.caustics.fadeMeters[0], LANDSCAPE_OCEAN.light.caustics.fadeMeters[1], LANDSCAPE_OCEAN.light.crest.strength) },
+        uOceanLight: { value: new THREE.Vector4(preset.light ? LANDSCAPE_OCEAN.light.caustics.contrast : 0, LANDSCAPE_OCEAN.light.caustics.fadeMeters[0], LANDSCAPE_OCEAN.light.caustics.fadeMeters[1], LANDSCAPE_OCEAN.light.crest.strength) },
         uOceanOptics: { value: new THREE.Vector4(reference.meanSquareSlope * BASE_SLOPE_SHARE, preset.lean ? 1 : 0, REFLECTION_HORIZON_BAND, LANDSCAPE_SKY_REFLECTION.width / (2 * Math.PI)) },
         uOceanMorph: { value: new THREE.Vector2(LANDSCAPE_OCEAN.morph.start, LANDSCAPE_OCEAN.morph.end) }, uOceanLevel: { value: seaLevel }, uOceanDebug: { value: 0 } };
     simulation.displacement.forEach((texture, index) => { shared[`uOceanDisplacement${index}`] = { value: texture }; });
@@ -197,7 +197,7 @@ export function createLandscapeOceanSurface({ renderer, scene, ledger, quality, 
                 reflection: environment ? environment.model : 'sky-harmonics', programCompile: { ...programCompile }, ready, visible, drawnLastFrame: renderInfo !== null && renderInfo.frame - drawnFrame < framePasses, morph: { ...LANDSCAPE_OCEAN.morph },
                 // D5: the frame pipeline's scene copy read through the refraction, the local water types and the light terms
                 scene: pipeline !== null, water: { oceanicDepthMeters: [...LANDSCAPE_OCEAN.water.oceanic.depthMeters], surfWeight: LANDSCAPE_OCEAN.water.surf.weight, oceanic: landscapeOceanWaterType('oceanic'), surf: landscapeOceanWaterType('surf') },
-                light: { caustics: { contrast: LANDSCAPE_OCEAN.light.caustics.contrast, fadeMeters: [...LANDSCAPE_OCEAN.light.caustics.fadeMeters] }, crest: { strength: LANDSCAPE_OCEAN.light.crest.strength } },
+                light: { enabled: preset.light, caustics: { contrast: shared.uOceanLight.value.x, fadeMeters: [...LANDSCAPE_OCEAN.light.caustics.fadeMeters] }, crest: { strength: LANDSCAPE_OCEAN.light.crest.strength }, terrainReflection: shared.uOceanWater.value.w > 0 },
                 foam: { active: shared.uOceanFoamLook.value.x > 0, coverageThreshold: shared.uOceanFoamLook.value.y, softness: shared.uOceanFoamLook.value.z, albedo: shared.uOceanFoamLook.value.w },
                 cascadeFades: cascadeInfo.map(info => ({ zeroMeters: info.z, fullMeters: info.w })), shore: shoreState ? { active: true, ...shoreState, handover: { ...handover }, time: shared.uOceanTime.value } : { active: false, handover: { ...handover }, time: shared.uOceanTime.value } };
         },

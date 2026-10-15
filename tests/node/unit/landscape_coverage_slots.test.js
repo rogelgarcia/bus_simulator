@@ -130,8 +130,9 @@ test('Terrain diagnostics: shader branches, palettes and soil review colors matc
     for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
     assert.match(shader, /if \(uDiagnostic == 5\) color = surfaceCoverageColor\(coverage\);/, 'surface coverage shows unlit weights');
     assert.match(shader, /else if \(uDiagnostic >= 6\) color = terrainInputDiagnostic\(coverage, world, dx, dy, normal, positionDx, positionDy\);/, 'the AI577 D5 inspection views are unlit');
-    assert.match(shader, /#include <colorspace_fragment>\s+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 1\.0\);\s+#endif/,
-        'unlit diagnostics bypass tone mapping');
+    // AI 597 D7: under the frame pipeline the raw colour carries alpha 0, the final pass's pass-through sentinel (the near pass keeps its weight)
+    assert.match(shader, /#include <colorspace_fragment>\s+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+(?:\/\/[^\n]*\s+)*#ifdef LANDSCAPE_SURFACE_CACHE_NEAR\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, nearWeight\);\s+#else\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 0\.0\);\s+#endif\s+#endif/,
+        'unlit diagnostics bypass tone mapping and carry the frame pipeline sentinel');
     assert.equal(count(/hierarchyCoverage\(world, dx, dy, warped, warpedDx, warpedDy\)/g), 1, 'the inlined hierarchy reconstruction is evaluated once, keeping FXC compile time unchanged');
     assert.match(shader, /vec2 warped = uSurfaceWarpEnabled > 0\.5 \? world \+ landscapeSurfaceWarp\(world\) : world;\s+vec2 warpedDx = dFdx\(warped\), warpedDy = dFdy\(warped\);/,
         'warped coordinates and their footprint derivatives are taken in uniform control flow at the top of main');

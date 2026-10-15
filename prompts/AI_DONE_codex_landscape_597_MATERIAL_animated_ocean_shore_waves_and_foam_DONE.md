@@ -1,4 +1,4 @@
-# Animated ocean, shore waves and foam (AI 597)
+# DONE — Animated ocean, shore waves and foam (AI 597)
 
 # Problem
 
@@ -159,10 +159,10 @@ queries.
 
 ### D7. Integrated acceptance
 
-- [ ] **Presets.** Provide quality presets with an explicit low-cost path, and sea-state presets.
-- [ ] **Measurements and regressions.** Run a full landscape regression in both surface-cache modes.
+- [x] **Presets.** Provide quality presets with an explicit low-cost path, and sea-state presets.
+- [x] **Measurements and regressions.** Run a full landscape regression in both surface-cache modes.
   Record same-condition performance tables at the water-related review poses.
-- [ ] **Spec.** Create a new canonical spec, `specs/landscape/LANDSCAPE_OCEAN.md`, and update the viewer
+- [x] **Spec.** Create a new canonical spec, `specs/landscape/LANDSCAPE_OCEAN.md`, and update the viewer
   and appearance specs and the roadmap status.
 
 ## Evidence and measurements
@@ -482,6 +482,73 @@ product, never a terrain edit) and a second instance of the surface at that leve
 channels; nothing of that is built, and the spec (§2f) records the gap for the product that would need it.
 
 **Artifacts.** None: there is no inland water to capture. The finding is recorded in the spec and the roadmap.
+
+### D7. Integrated acceptance — delivered 2026-10-14
+
+**Summary.** The quality presets (`low`, `medium` shipped, `high`) and the sea-state presets (`calm`, `moderate` shipped, `rough`) are
+the versioned constants of `LandscapeOceanModel.js`, selected by the viewer address (`landscapeOceanQuality`, `landscapeSeaState`) and
+the test hook; `low` became the explicit low-cost path (two cascades at 128 texels, one-metre cells, no LEAN roughness, and the D5
+caustic taps and reflection march switched off through the preset's `light` flag, reported in `snapshot().ocean.surface.light`).
+Every landscape suite ran with the surface cache on and off (`LANDSCAPE_TEST_SURFACE_CACHE`), the same-condition tables were
+measured at the water review poses for the flat reference and the three presets in both cache modes, the spec gained its presets,
+cost and handoff sections (§6, §7), and the viewer, appearance and roadmap specs record the delivery.
+
+**Validation.** After the foam fix (a8fb8f48) and the clipmap hole fix (9c7d802f) of 2026-10-14: cache on: 84 passed, 3 skipped across 25 suites; cache off: 84 passed, 3 skipped across 25 suites. Unit tests: the landscape unit set 618 passed, 0 failed (`d7/unit-run5.log`).
+
+**Measurements.** `d7/perf/PERF.md` (ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11), 1920x1080, 90 warm-up + 180 sampled frames, GPU medians): Across the 8 poses the shipped preset costs 6.9 ms more than the flat reference with the cache on and 1.7 ms with it off; the low path saves 1.7 / 0.1 ms against medium (cache on / off); high adds 0.3 / 0.2 ms over medium. The uncached v3 path stays GPU-bound (AI 596 D6): the surface cache, not the sea, decides whether the frame holds 60 Hz there. At NW-12: flat 6.7, low 13.8, medium 14.3, high 14.3 ms with the cache on; 9.2 / 13.6 / 13.1 / 13.5 ms off.
+
+**Artifacts.** `tests/artifacts/screens/landscape/ai597/d7/` (README.md: `perf/measure_presets.json`, `perf/PERF.md` (run 4, after the
+clipmap hole fix; the earlier runs kept beside them), `regressions/cache-<mode>-run5-base.log`, `regressions/cache-<mode>-run5-self.log`,
+`regressions/REGRESSIONS.md`, `unit-run5.log`, the probes of the run-3 failures `boot_probe.mjs`, `gap_probe.mjs`, `planning_probe.mjs`,
+`determinism_probe.mjs`, `stall_probe.mjs`).
+
+## Completion summary
+
+One line per completed change (the deliverable records above hold the details, the spec `specs/landscape/LANDSCAPE_OCEAN.md` is the
+canonical contract):
+
+- **D1** (856568c3) spectral ocean to the horizon: band-limited JONSWAP/TMA cascades on an FFT atlas, a camera-snapped CDLOD clipmap over
+  the surround, the deterministic clock, the flat AI577 plane kept as the inspection mode.
+- **D2** (b5e7e472, 14bb4dae) depth-aware shore waves: the swell fast-marched over the bathymetry with the finite-depth phase speed,
+  refraction toward the shore, depth-limited breaking on the bars and the foreshore, rock surge, the coast classes of the geology.
+- **D3** (10ff0f69) foam lifecycle: an extent-wide RG16F state pre-rolled to any fixed time (breakers, whitecaps, the shoreline line),
+  drawn through a world-space lace pattern.
+- **D4** (b8c23952, 9368173f) swash and wet beach: a sheet over the native beach band with Stockdon run-up cycles, a drying wet sand,
+  the wrack line and the foam the backwash leaves; the terrain hands its static wetting to it.
+- **D5** (5c7e70e7, 68465e8c) water colour, refraction and light: the linear frame pipeline, the refracted seabed through the water
+  column of three water types, caustics, crest scattering, a heightfield terrain reflection; the terrain hands its column to the sea.
+- **D6** (4bb2906e) inland water closed: AI 596 published no inland water surface (the record and the gap for a future product, §2f).
+- **Fixes of 2026-10-14** (a8fb8f48, 9c7d802f) found on the user's beach passes: the swash foam follows the smoothed shoreline on the land
+  side only (no islands, rings or spikes), and the clipmap rings draw an annulus and discard their hole (the coarsest ring had blended a flat
+  sheet over the whole sea near the camera, which flickered as the camera moved); the passes and probes under `tests/artifacts/screens/landscape/ai597/pass/`.
+- **D7** (the closing commit on `codex/landscape`) integrated acceptance: the presets with the explicit low-cost path, the regressions in both surface-cache
+  modes, the same-condition tables, the spec's presets, cost and handoff sections.
+
+Focused validation results: the ocean suite (`tests/headless/e2e/landscape_ocean.pwtest.js`, five tests D1–D5) 5 / 5 on 2026-10-14
+(D5 record); the full landscape regression cache on: 84 passed, 3 skipped across 25 suites; cache off: 84 passed, 3 skipped across 25 suites; unit tests 618 passed, 0 failed (`d7/unit-run5.log`).
+
+Before/after performance (GPU frame time median ms, RTX 3060 under ANGLE/D3D11, 1920 × 1080, 30 warm-up + 120 sampled frames, the
+surround active, the moderate sea state; the per-deliverable records hold each step's own paired run):
+
+| Step | NW-12 animated | NW-12 flat | NW-10 animated | NW-10 flat |
+| --- | --- | --- | --- | --- |
+| D1 (its own run) | 12.6 | 5.4 | 12.1 | 7.2 |
+| D2 (its own run) | 9.6 | 7.3 | 11.2 | 5.0 |
+| D3 (its own run) | 9.0 | 5.6 | 12.9 | 5.4 |
+| D4 (its own run) | 12.3 | 6.6 | 13.6 | 6.5 |
+| D5 (its own run) | 13.1 | 5.3 | 15.5 | 5.1 |
+| D7 low, cache on | 13.8 | 6.7 | 12.2 | 7.3 |
+| D7 medium, cache on | 14.3 | 6.7 | 14.9 | 7.3 |
+| D7 high, cache on | 14.3 | 6.7 | 12.8 | 7.3 |
+| D7 low, cache off | 13.6 | 9.2 | 16.4 | 16.6 |
+| D7 medium, cache off | 13.1 | 9.2 | 17.0 | 16.6 |
+| D7 high, cache off | 13.5 | 9.2 | 17.4 | 16.6 |
+
+The D1–D4 rows drew to the canvas with its multisampling; since D5 the frame renders through the linear pipeline without it, which is why the flat reference fell by about 1.3 ms at the water-level poses from D4 to D5 (D5 record). The per-pose conditions differ between runs by the machine's state at the time (the D4 record notes a loaded GPU); the D7 rows are one same-condition run (run 4 of `d7/perf/measure_presets.mjs`, 90 warm-up + 180 sampled frames with the cache-quiet wait, measured after the clipmap hole fix).
+
+Artifact paths: `tests/artifacts/screens/landscape/ai597/d1/` … `d7/` (a README.md per deliverable), the references under
+`tests/artifacts/screens/landscape/references/natural_world/user_coast/` (R08–R10 were never on disk: the user's coast photos and
+beach-video frames stood in, labelled as substitutes in every composite).
 
 ## On completion
 
