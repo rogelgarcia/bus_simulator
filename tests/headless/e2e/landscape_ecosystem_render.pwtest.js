@@ -3,8 +3,9 @@
 // draw with the injected counts, the LOD diagnostic colours agree with the band of the picked instance's distance, a dolly through the band
 // boundaries shows no frame-difference spike (the dithered cross-fades), picking the screen centre returns the aimed instance, a close low-angle
 // view shows the instance standing on its anchor, a removed tile returns its bytes and disposal leaves zero ecosystem bytes. The suite serves the
-// landscape itself on the verification port (like the surround suite) and answers the recipe and catalog requests the landscape server does not
-// serve from the repository files. LANDSCAPE_TEST_ECOSYSTEM_LANDSCAPE names the landscape directory (default coastal-city-v3).
+// landscape itself on the verification port (like the surround suite); since AI 599 D3 the recipe comes from the published sidecar and the server
+// serves the vegetation catalog, and the D3 streamer stands down (every layer hidden) so the injected tiles are the only ones the renderer holds.
+// LANDSCAPE_TEST_ECOSYSTEM_LANDSCAPE names the landscape directory (default coastal-city-v3).
 import { test, expect } from '@playwright/test';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -20,9 +21,6 @@ const SERVED_MANIFEST = '/assets/public/landscape/coastal-city/manifest.json';
 const landscapeDirectory = path.resolve(root, process.env.LANDSCAPE_TEST_ECOSYSTEM_LANDSCAPE ?? 'assets/public/landscape/coastal-city-v3');
 const artifacts = path.resolve(root, 'tests/artifacts/screens/landscape/ai599/d4');
 const viewport = { width: 1920, height: 1080 };
-// the landscape server serves src/, screens/ and the cache only: the recipe and the vegetation catalog are answered from the repository files
-const ROUTED = [['/tools/bake_landscape/ecosystem/recipes/', 'tools/bake_landscape/ecosystem/recipes'], ['/assets/public/vegetation_distant/', 'assets/public/vegetation_distant']];
-const MIME = { '.json': 'application/json', '.glb': 'model/gltf-binary', '.ktx2': 'image/ktx2' };
 // the natural-world poses NW-04 and NW-06 anchor the synthetic tiles; the layers cover the recipe's three asset sets
 const SITES = [{ name: 'NW-04', x: 1322, z: 2400 }, { name: 'NW-06', x: 2074, z: 3316 }];
 const LAYERS = [{ id: 'boulders', density: .08 }, { id: 'shrubs', density: .12 }, { id: 'pebbles', density: .15 }];
@@ -38,16 +36,6 @@ async function serve(directory, baseURL) {
         server.listen(Number(url.port), url.hostname, () => resolve(undefined));
     });
     return server;
-}
-
-async function routeRepositoryFiles(page) {
-    await page.route(url => ROUTED.some(([prefix]) => new URL(url).pathname.startsWith(prefix)), async route => {
-        const pathname = decodeURIComponent(new URL(route.request().url()).pathname), [prefix, directory] = ROUTED.find(([entry]) => pathname.startsWith(entry));
-        const relative = pathname.slice(prefix.length);
-        if (relative.split('/').includes('..')) return route.fulfill({ status: 403, body: 'invalid path' });
-        try { await route.fulfill({ status: 200, body: await readFile(path.resolve(root, directory, relative)), contentType: MIME[path.extname(relative)] ?? 'application/octet-stream' }); }
-        catch { await route.fulfill({ status: 404, body: 'not found' }); }
-    });
 }
 
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
@@ -144,14 +132,19 @@ test('Landscape AI 599 D4: the ecosystem renderer draws injected tiles with LOD 
     // shader compiler warnings (Direct3D X4008/X4122) are failures like the lighting suite treats them; the phase names the step that compiled the program
     page.on('console', message => { if (message.type() === 'error' && /shader|webgl|program|THREE|Landscape/i.test(message.text())) errors.push({ phase, text: message.text() }); if (message.type() === 'warning' && /shader|webgl|program|THREE/i.test(message.text())) warnings.push({ phase, text: message.text() }); });
     try {
-        await routeRepositoryFiles(page);
         const manifestUrl = `${baseURL}${SERVED_MANIFEST}`, manifest = await loadLandscapeManifest(manifestUrl), groundAt = createGroundSampler(manifest, manifestUrl);
         await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeEcosystem=auto&landscapeOcean=flat'));
+        const booted = await settled(page);
+        expect(booted.revision).toBe(manifest.revision);
+        expect(booted.ecosystem.status, `ecosystem: ${booted.ecosystem.reason}`).toBe('active');
+        // D3: the streamer stands down (every layer hidden), so the renderer holds exactly the injected tiles below; the home pose streams nothing anyway (4 km from the land)
+        expect(booted.ecosystem.tiles).toBe(0);
+        await page.evaluate(layers => window.__landscapeTestHooks.setEcosystem({ layers }), Object.fromEntries(Object.keys(recipe.layers).map(id => [id, false])));
         const boot = await settled(page), ecosystem = boot.ecosystem;
-        expect(boot.revision).toBe(manifest.revision);
         expect(ecosystem.mode).toBe('auto');
         expect(ecosystem.status, `ecosystem: ${ecosystem.reason}`).toBe('active');
         expect(ecosystem.recipeId).toBe(recipe.id);
+        expect(Object.values(ecosystem.controls.layers)).toEqual(Object.keys(recipe.layers).map(() => false));
         expect(ecosystem.programCompile.pending).toBe(false); expect(ecosystem.programCompile.timedOut).toBe(false);
         expect(ecosystem.programCompile.infoLogs, 'the ecosystem programs link without compiler warnings').toEqual([]);
         evidence.surfaceCache = { status: boot.appearance?.surfaceCache?.status ?? null, reason: boot.appearance?.surfaceCache?.reason ?? null, terrainProgramVariant: boot.terrainProgramVariant };
@@ -167,10 +160,12 @@ test('Landscape AI 599 D4: the ecosystem renderer draws injected tiles with LOD 
             }
             expect(set.cpuBytes).toBeGreaterThan(0); expect(set.gpuBytes).toBeGreaterThan(0);
         }
-        expect(ecosystem.share.cpuBytes).toBe(ecosystem.assets.cpuBytes); expect(ecosystem.share.gpuBytes).toBe(ecosystem.assets.gpuBytes);
+        // the share holds the asset sets and the streamer's standing reservations (the sidecar indexes and the worker's caches, D3), nothing else before the injection
+        expect(ecosystem.standing.cpuBytes).toBeGreaterThan(0); expect(ecosystem.standing.gpuBytes).toBe(0);
+        expect(ecosystem.share.cpuBytes).toBe(ecosystem.assets.cpuBytes + ecosystem.standing.cpuBytes); expect(ecosystem.share.gpuBytes).toBe(ecosystem.assets.gpuBytes);
         expect(ecosystem.share.cpuBytes).toBeLessThanOrEqual(LANDSCAPE_ECOSYSTEM.budgets.cpuBytes); expect(ecosystem.share.gpuBytes).toBeLessThanOrEqual(LANDSCAPE_ECOSYSTEM.budgets.gpuBytes);
         expect(ecosystemEntries(boot).map(entry => [entry.cpuBytes, entry.gpuBytes])).toEqual([[LANDSCAPE_ECOSYSTEM.budgets.cpuBytes, LANDSCAPE_ECOSYSTEM.budgets.gpuBytes]]);
-        expect(ecosystem.tiles).toBe(0);
+        expect(ecosystem.tiles).toBe(0); expect(ecosystem.resident).toBe(0);
         evidence.boot = { ecosystem: { ...ecosystem, tileRecords: undefined }, budget: { cpuBytes: boot.budget.cpuBytes, gpuBytes: boot.budget.gpuBytes, limits: boot.budget.limits } };
         // synthetic tiles of every asset set around NW-04 and NW-06, their records at the exact native ground of the served chunks
         phase = 'inject';
@@ -187,7 +182,8 @@ test('Landscape AI 599 D4: the ecosystem renderer draws injected tiles with LOD 
         const withTiles = (await settled(page)).ecosystem;
         expect(withTiles.tiles).toBe(tiles.length); expect(withTiles.instances).toBe(totalInstances); expect(withTiles.drawn).toBe(totalInstances);
         for (const { id } of LAYERS) { const layerTiles = tiles.filter(tile => tile.layerId === id); expect(withTiles.byLayer[id].tiles).toBe(layerTiles.length); expect(withTiles.byLayer[id].instances).toBe(layerTiles.reduce((sum, tile) => sum + tile.count, 0)); expect(withTiles.byLayer[id].meshes).toBe(layerTiles.length * recipe.layers[id].lods.length); }
-        expect(withTiles.share.cpuBytes).toBe(ecosystem.assets.cpuBytes + tileBytes); expect(withTiles.share.gpuBytes).toBe(ecosystem.assets.gpuBytes + tileBytes * 48 / 60);
+        expect(withTiles.share.cpuBytes).toBe(ecosystem.assets.cpuBytes + ecosystem.standing.cpuBytes + tileBytes); expect(withTiles.share.gpuBytes).toBe(ecosystem.assets.gpuBytes + tileBytes * 48 / 60);
+        expect(withTiles.resident, 'the hidden layers stream nothing beside the injected tiles').toBe(0);
         evidence.tiles = tiles.map(tile => ({ id: tile.id, site: tile.site, count: tile.count, bounds: tile.bounds, heightRange: tile.heightRange }));
         // an overview of NW-04: the boulders cell seen from the north-west, every band of the three layers in view
         phase = 'overview';

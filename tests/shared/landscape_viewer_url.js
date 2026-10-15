@@ -2,7 +2,8 @@
 // LANDSCAPE_TEST_SURFACE_CACHE=on|off adds landscapeSurfaceCache=<mode> to every landscape viewer address a suite opens, so each suite runs once with
 // the cache on and once off; unset, addresses are unchanged (the viewer default, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE since AI577 D7). An address that
 // already selects the cache keeps its own choice. The shipped budget of a run is the uncached profile, or with the cache on the cache's own profile for
-// drawing buffer (landscapeSurfaceCacheBudgets; 640/544 MiB at 1920x1080 and below since AI 596 D5, 512/448 before the surround share).
+// drawing buffer (landscapeSurfaceCacheBudgets; 752/720 MiB at 1920x1080 and below since AI 599 D3 added the ecosystem share, 688/624 in AI 597 D4,
+// 640/544 in AI 596 D5, 512/448 before the surround share).
 // AI 597: every viewer address also fixes the animated ocean's clock (landscapeOceanTime) at LANDSCAPE_TEST_OCEAN_TIME seconds (default 30), so
 // pixel comparisons across visits, modes and reloads see the same sea; LANDSCAPE_TEST_OCEAN_TIME=free leaves the clock running, and an address
 // that already sets landscapeOceanTime keeps its own value. LANDSCAPE_TEST_OCEAN=animated|flat selects the drawn sea surface for a whole run

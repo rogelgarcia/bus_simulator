@@ -11,11 +11,14 @@ import { LANDSCAPE_CACHE_GUIDE, LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTOR
 // The landscape cache is local and gitignored; a missing cache is served as an explicit 404, never as a broken server.
 const MANIFEST = `${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 export const SELECTION_FILE = 'tests/artifacts/screens/landscape/ai576/selection.latest.json';
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    '.glb': 'model/gltf-binary', '.ktx2': 'image/ktx2', '.wasm': 'application/wasm' };
 const isPbrMetadata = relative => relative === 'assets/public/pbr/_catalog_index.js' || /^assets\/public\/pbr\/[a-z0-9_]+\/pbr\.material\.(?:correction\.)?config\.js$/.test(relative);
 // the game's calibrated sky and catalog HDR environments (and their calibration/provenance JSON) light the viewer like the game
 const isLightingAsset = relative => /^assets\/public\/lighting\/(?:calibrated|hdri)\/[a-z0-9_.-]+\.(?:hdr|json)$/.test(relative);
-const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || isPbrMetadata(relative) || isLightingAsset(relative) || ['src/', 'screens/', 'debug_tools/', `${LANDSCAPE_CACHE_ROOT}/`].some(prefix => relative.startsWith(prefix));
+// the distant vegetation catalog the ecosystem's catalog-distant asset sets load (AI 599): one species directory of glTF binaries, KTX2 atlases and records, nothing beside it
+const isVegetationAsset = relative => /^assets\/public\/vegetation_distant\/[a-z0-9_]+\/[a-z0-9_.-]+\.(?:glb|ktx2|json)$/.test(relative);
+const isPublicPath = relative => relative === 'favicon.ico' || relative === 'index.html' || isPbrMetadata(relative) || isLightingAsset(relative) || isVegetationAsset(relative) || ['src/', 'screens/', 'debug_tools/', `${LANDSCAPE_CACHE_ROOT}/`].some(prefix => relative.startsWith(prefix));
 
 function reply(response, status, body) {
     response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });

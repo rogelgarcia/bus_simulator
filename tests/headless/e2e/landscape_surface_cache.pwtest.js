@@ -106,7 +106,7 @@ test('Landscape D6 surface cache: the root page precedes the first detailed cach
     expect(frames.filter(frame => frame.frameReady).every(frame => frame.root === 1), 'every detailed cached frame has the root page').toBe(true);
     expect(cache.generation.rootGeneratedAtMs).not.toBeNull();
     expect(cache.generation.program.ready).toBe(true);
-    // with the cache on, the viewer's shipped profile is the cache's own (640/544 MiB on a 1920x1080 display since AI 596 D5, 512/448 before): the 12-layer reference target and the
+    // with the cache on, the viewer's shipped profile is the cache's own (752/720 MiB on a 1920x1080 display since AI 599 D3, 640/544 in AI 596 D5, 512/448 before): the 12-layer reference target and the
     // 64-page windows of a 1920x1080 drawing buffer fit under its ceiling beside the streams (AI577 D7)
     expect(state.budget.limits).toEqual(LANDSCAPE_SURFACE_CACHE_BUDGETS);
     expect(state.surfaceCacheCapacity).toMatchObject({ ...state.canvas, targetSlots: 3072, windowPages: 64, reason: null, explicit: false, rebuilds: 0,
@@ -300,7 +300,7 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
     test.setTimeout(240000);
     const context = await browser.newContext({ baseURL: String(testInfo.project.use.baseURL), viewport: { width: 960, height: 540 } });
     try {
-        // AI577 D7: an address that does not select the cache runs the default mode (on) with the profile of its display's capacity (640/544 MiB here since AI 596 D5)
+        // AI577 D7: an address that does not select the cache runs the default mode (on) with the profile of its display's capacity (752/720 MiB here since AI 599 D3)
         const defaulted = await context.newPage(), defaultErrors = observeErrors(defaulted);
         await defaulted.goto('/screens/landscape_fabrication.html');
         await defaulted.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.ready, null, { timeout: 60000 });
@@ -320,9 +320,9 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
         expect(errors).toEqual([]);
         await page.evaluate(() => window.__landscapeTestHooks.dispose());
         await page.close();
-        // profiles without room for the minimum atlas above the streams' reserve (the uncached shipped 640/352 since AI 596 D5, the reduced 128/64 and
+        // profiles without room for the minimum atlas above the streams' reserve (the uncached shipped 752/528 since AI 599 D3, the reduced 128/64 and
         // 48/24 MiB) report why, and the tiles compile the uncached program from the start (no variant switch, so no bootstrap frame while it links)
-        for (const [cpu, gpu] of [[688, 432], [128, 64], [48, 24]]) {
+        for (const [cpu, gpu] of [[752, 528], [128, 64], [48, 24]]) {
             const small = await context.newPage(), smallErrors = observeErrors(small);
             await small.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeCpuMiB=${cpu}&landscapeGpuMiB=${gpu}&landscapeSurfaceCache=on`));
             await small.waitForFunction(() => window.__landscapeTestHooks?.snapshot()?.appearance?.surfaceCache?.status === 'unavailable', null, { timeout: 120000 });
@@ -335,7 +335,7 @@ test('Landscape D6 surface cache: viewer options select the mode, slot target an
             await small.evaluate(() => window.__landscapeTestHooks.dispose());
             await small.close();
         }
-        // with the cache on, the viewer refuses a budget above the cache's shipped profile (one MiB above it: 545 since the AI 596 D5 raise to 640/544)
+        // with the cache on, the viewer refuses a budget above the cache's shipped profile (one MiB above it: 721 since the AI 599 D3 raise to 752/720)
         const above = await context.newPage(), aboveFailures = [];
         above.on('pageerror', error => aboveFailures.push(error.message));
         await above.goto(landscapeViewerUrl(`/screens/landscape_fabrication.html?landscapeGpuMiB=${LANDSCAPE_SURFACE_CACHE_BUDGETS.gpuBytes / MiB + 1}&landscapeSurfaceCache=on`));

@@ -1,4 +1,4 @@
-// Declares the runtime contract of the instanced ecosystem renderer (AI 599 D4): its residency share, viewer option, LOD bands with cross-fades, impostor view selection and the dither matrix.
+// Declares the runtime contract of the instanced ecosystem renderer (AI 599 D4) and its streamer (D3): the residency share, viewer option, streaming constants, LOD bands with cross-fades, impostor view selection and the dither matrix.
 // @ts-check
 // Design: everything the shaders decide per vertex or fragment has its exact JavaScript mirror here (band fades, impostor view index, dither
 // threshold), so tests verify the GPU logic without a browser and the renderer's CPU culling agrees with what the vertex program draws. The
@@ -14,15 +14,24 @@ export const LANDSCAPE_ECOSYSTEM = Object.freeze({
     id: 'landscape-ecosystem-runtime-v1',
     // the one residency kind of every ecosystem reservation in the shared ledger (assets, tiles)
     kind: 'landscape-ecosystem',
-    // the share of the shared ledger the view holds for its lifetime while the ecosystem is on (phase B: the development recipe's assets and the injected tiles)
+    // the share of the shared ledger the view holds for its lifetime while the ecosystem is on: the asset sets, the resident tiles, the sidecar indexes
+    // and the worker's caches (AI 599 D3); LANDSCAPE_STREAMING_BUDGETS and the surface cache profile grew by exactly this share
     budgets: Object.freeze({ cpuBytes: 64 * MiB, gpuBytes: 96 * MiB }),
-    // the viewer's landscapeEcosystem option: auto draws the development recipe (the D3 streamer's sidecar once integrated), off never creates the renderer,
-    // any other value is a recipe URL (phase B; the integrator switches the default to auto)
+    // the viewer's landscapeEcosystem option: auto streams the sidecar published beside the landscape (a manifest attachment of kind landscape-ecosystem
+    // names another address), off never creates the renderer, any other value is a sidecar manifest URL
     modes: Object.freeze(['auto', 'off', 'url']),
-    defaultMode: 'off',
-    developmentRecipe: '/tools/bake_landscape/ecosystem/recipes/coastal-v3-ecosystem-v1.json',
+    defaultMode: 'auto',
+    sidecar: 'ecosystem/manifest.json',
     diagnostics: Object.freeze(['none', 'lod', 'layer', 'rank', 'fade']),
-    statuses: Object.freeze(['off', 'loading', 'active', 'failed', 'unavailable']),
+    // the view's statuses (off, loading, unavailable) around the streamer's own binding statuses
+    statuses: Object.freeze(['off', 'loading', 'active', 'active-partial', 'absent', 'disabled', 'invalid', 'binding-mismatch', 'stale', 'budget-denied', 'failed', 'unavailable']),
+    // AI 599 D3 streaming: jobs in flight across the layers; the keep disc beyond a layer's view distance (hysteresis); the ecosystem worker and its bounded
+    // caches of native chunks, sidecar pages and generated cells (their bytes are reserved in the share once); the main-thread cache of generated runtime
+    // tiles that left the keep disc (bytes, inside the share); the decode credit of the sidecar manifest (three times its 1 MiB limit: response bytes,
+    // parsed JSON, validated clone) and of each layer index (bytes, parsed, frozen and the worker's copy); the share of a runtime cell's sites reserved
+    // before its count is known; failed tiles retry once after the delay
+    streaming: Object.freeze({ maxInFlight: 4, keepHysteresis: 1.15, workers: 1, workerPriority: 20, workerCache: Object.freeze({ chunks: 8, pages: 6, cells: 64, cellFraction: .25 }), runtimeCacheBytes: 8 * MiB,
+        sidecarDecodeBytes: 3 * MiB, indexDecodeFactor: 4, runtimeEstimateFraction: .5, maxAttempts: 2, retryDelayMs: 2500 }),
     // a (tile, LOD) draw that became visible stays visible until the tile's distance range leaves the band grown by this factor
     lodHysteresis: 1.1,
     // the distant vegetation catalog's impostor layout: azimuth tiles then elevation rows, 16 views per variant
@@ -52,14 +61,14 @@ export function createLandscapeEcosystemLedger(shared, limits = LANDSCAPE_ECOSYS
 }
 
 /**
- * Resolves the viewer's landscapeEcosystem option: 'auto', 'off' (the default while the streamer is not integrated) or a recipe URL.
+ * Resolves the viewer's landscapeEcosystem option: 'auto' (the sidecar published beside the landscape, the default), 'off' or a sidecar manifest URL.
  * @param {string|null|undefined} value @returns {Readonly<{mode:'auto'|'off'|'url',url:string|null}>}
  */
 export function landscapeEcosystemOption(value) {
     if (value === null || value === undefined || value === '') return Object.freeze({ mode: /** @type {'auto'|'off'} */ (LANDSCAPE_ECOSYSTEM.defaultMode), url: null });
-    if (typeof value !== 'string') throw new Error('[LandscapeEcosystem] landscapeEcosystem must be auto, off or a recipe URL');
+    if (typeof value !== 'string') throw new Error('[LandscapeEcosystem] landscapeEcosystem must be auto, off or a sidecar manifest URL');
     if (value === 'auto' || value === 'off') return Object.freeze({ mode: value, url: null });
-    if (!/\.json$/.test(value) || /\s/.test(value)) throw new Error(`[LandscapeEcosystem] landscapeEcosystem must be auto, off or a recipe URL ending in .json; received ${value}`);
+    if (!/\.json$/.test(value) || /\s/.test(value)) throw new Error(`[LandscapeEcosystem] landscapeEcosystem must be auto, off or a sidecar manifest URL ending in .json; received ${value}`);
     return Object.freeze({ mode: 'url', url: value });
 }
 

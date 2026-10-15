@@ -6,7 +6,7 @@ import { LANDSCAPE_NAVIGATION } from './LandscapeNavigationState.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 import { loadLandscapeOverview, createLandscapeSelectionContext, sampleLandscapeChunk, planLandscapeRegion, queryLandscapeSelection, landscapeQueryRadiusLimit, LandscapeResidencyBudget, LANDSCAPE_STREAMING_BUDGETS,
-    LANDSCAPE_DEFAULT_DIRECTORY, probeLandscapeCache, describeLandscapeCacheAvailability, validateEcosystemRecipe } from '../../../app/landscape/index.js';
+    LANDSCAPE_DEFAULT_DIRECTORY, probeLandscapeCache, describeLandscapeCacheAvailability } from '../../../app/landscape/index.js';
 import { LandscapePanel } from './LandscapePanel.js';
 import { LandscapeStreamer } from '../../engine3d/landscape/LandscapeStreamer.js';
 import { LandscapeAppearanceStreamer } from '../../engine3d/landscape/LandscapeAppearanceStreamer.js';
@@ -39,6 +39,8 @@ import { LANDSCAPE_OCEAN, LANDSCAPE_OCEAN_QUALITIES, LANDSCAPE_OCEAN_SEA_STATES,
 import { LANDSCAPE_ECOSYSTEM, createLandscapeEcosystemLedger, landscapeEcosystemDiagnostic, landscapeEcosystemOption } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemModel.js';
 import { createEcosystemAssetSets } from '../../engine3d/landscape/ecosystem/EcosystemAssetSets.js';
 import { createLandscapeEcosystemRenderer } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemRenderer.js';
+import { createLandscapeEcosystemStreamer } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemStreamer.js';
+import { landscapeEcosystemUrl } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemStreamingPlan.js';
 
 const DEFAULT_SOURCE = `/${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`;
 
@@ -106,18 +108,18 @@ export class LandscapeView {
      *   far-field surround when the landscape publishes its sidecar, 'off' never loads it, a manifest URL loads that surround (landscapeSurroundOption);
      *   ocean (AI 597) 'animated' draws the spectral sea instead of the flat reference plane, 'flat' keeps the AI577 plane as the inspection surface; seaState and
      *   oceanQuality select the presets (LANDSCAPE_OCEAN_SEA_STATES, LANDSCAPE_OCEAN_QUALITIES); oceanTime fixes the simulation clock at that time (captures), null runs it;
-     *   ecosystem (AI 599 D4) 'auto' draws the development recipe's instanced ecosystem (the streamer's sidecar once integrated), 'off' never creates the renderer, a recipe URL
-     *   draws that recipe (landscapeEcosystemOption); ecosystemDiagnostic selects its inspection view (LANDSCAPE_ECOSYSTEM.diagnostics)
+     *   ecosystem (AI 599 D3/D4) 'auto' streams the ecosystem sidecar published beside the landscape (or the one its manifest attachment names) into the instanced
+     *   renderer, 'off' never creates it, a sidecar manifest URL streams that sidecar (landscapeEcosystemOption); ecosystemDiagnostic selects its inspection view (LANDSCAPE_ECOSYSTEM.diagnostics)
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
         lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
         surfaceCache = LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, surfaceCacheSlots = null, surfaceCacheWindow = null, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy,
         surfaceCacheNear = 'on', surround = LANDSCAPE_SURROUND.defaultMode, ocean = LANDSCAPE_OCEAN.defaultSurface, seaState = LANDSCAPE_OCEAN.defaultSeaState, oceanQuality = LANDSCAPE_OCEAN.defaultQuality, oceanTime = null,
         ecosystem = LANDSCAPE_ECOSYSTEM.defaultMode, ecosystemDiagnostic = 'none' } = {}) {
-        // AI 599 D4: the instanced ecosystem renderer over the development recipe (phase B: tiles arrive through the test hook until the streamer is integrated)
+        // AI 599 D3: the ecosystem streamer (sidecar, worker, residency) owning D4's renderer and asset sets; its controls are kept across loads
         this.ecosystemOption = landscapeEcosystemOption(ecosystem);
         landscapeEcosystemDiagnostic(ecosystemDiagnostic);
-        this.ecosystemState = { diagnostic: ecosystemDiagnostic, wind: null, contact: null, shadows: { enabled: false }, visible: true };
+        this.ecosystemState = { diagnostic: ecosystemDiagnostic, wind: null, contact: null, shadows: { enabled: false }, visible: true, density: 1, overrides: null, layers: {} };
         this.ecosystem = null;
         this.ecosystemShare = null;
         this.ecosystemFailure = null;
@@ -266,7 +268,7 @@ export class LandscapeView {
             this.lighting.setSeaLevel(loaded.manifest.coordinates.seaLevel);
             // AI 597: the ocean's share is held before the streams and the surface cache start filling the ledger (ensureOceanShare)
             if (this.oceanOptions.surface === 'animated') this.ensureOceanShare();
-            // AI 599 D4: the ecosystem's share likewise, before anything else fills the ledger
+            // AI 599 D3: the ecosystem's share likewise, before anything else fills the ledger
             if (this.ecosystemOption.mode !== 'off') this.ensureEcosystemShare();
             // AI577 D6: the tiles compile the cached frame variant only where a surface cache can run (a rebinding runtime, or a device and budget profile
             // that admit one); otherwise they compile the uncached program from the start instead of drawing the cache's bootstrap while it links
@@ -319,7 +321,7 @@ export class LandscapeView {
             this.loadSurround(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Surround failed: ${error.message}`); } });
             // AI 597: the animated ocean also loads in the background (bathymetry field, spectrum, program); the flat reference draws until it is ready
             this.loadOcean(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Ocean failed: ${error.message}`); } });
-            // AI 599 D4: the ecosystem renderer loads in the background too (recipe, asset sets, programs); its failure is reported, never fatal to the load
+            // AI 599 D3: the ecosystem streams in the background too (sidecar, asset sets, programs, then tiles around the camera); its failure is reported, never fatal to the load
             this.loadEcosystem(sequence, loaded).catch(error => { if (error.name !== 'AbortError' && !this.disposed) { this.lastError = error.message; this.panel.notice(`Ecosystem failed: ${error.message}`); } });
             this.loadTiming.readyAtMs = performance.now();
             this.panel.references(planning.features);
@@ -460,9 +462,10 @@ export class LandscapeView {
     }
 
     /**
-     * AI 599 D4: creates the instanced ecosystem renderer of the loaded landscape in the background: the recipe (the option's URL, or the development
-     * recipe), its asset sets (placeholder rocks, catalog vegetation) reserved in the ecosystem share, and the renderer with its programs linked. A
-     * newer load or request supersedes it. Resolves once decided.
+     * AI 599 D3: streams the ecosystem of the loaded landscape in the background: the sidecar at the option's address (the manifest attachment, the
+     * sidecar beside the manifest, or an explicit URL) binds the loaded revision, its embedded recipe builds D4's asset sets and renderer inside the
+     * ecosystem share, and the streamer then brings the tiles around the camera in through the ecosystem worker. A sidecar that is absent, stale, unbound,
+     * invalid, denied or failed is reported in the snapshot (and as a notice unless merely absent). A newer load or request supersedes it. Resolves once decided.
      * @param {number} sequence the load this ecosystem belongs to @param {any} loaded the loaded landscape
      */
     loadEcosystem(sequence, loaded) {
@@ -477,26 +480,29 @@ export class LandscapeView {
         this.ecosystemFailure = null;
         if (this.ecosystemOption.mode === 'off') return null;
         if (!this.ensureEcosystemShare()) { this.panel.notice(`Ecosystem not drawn: ${this.ecosystemFailure}`); return null; }
-        const started = performance.now(), signal = this.loadAbort.signal, superseded = () => this.disposed || sequence !== this.loadSequence || request !== this.ecosystemSequence || loaded !== this.loaded;
-        let assets = null, renderer = null;
+        const signal = this.loadAbort.signal, share = this.ecosystemShare, superseded = () => this.disposed || sequence !== this.loadSequence || request !== this.ecosystemSequence || loaded !== this.loaded;
+        // D4's asset sets and renderer for the sidecar's recipe, built for the streamer, which owns and disposes them
+        const createRenderer = async (recipe, options) => {
+            const assets = await createEcosystemAssetSets({ recipe, renderer: this.renderer, ledger: share, signal: options.signal });
+            let renderer = null;
+            try {
+                renderer = createLandscapeEcosystemRenderer({ recipe, assetSets: assets, scene: this.scene, renderer: this.renderer, lighting: this.lighting, lightingTier: this.lighting.tier, ledger: share, camera: this.camera, framePasses: this.pipeline ? LANDSCAPE_FRAME_PIPELINE.passes : 1 });
+                await renderer.ready;
+            } catch (error) { renderer?.dispose(); assets.dispose(); throw error; }
+            return { renderer, assets };
+        };
         try {
-            const url = new URL(this.ecosystemOption.url ?? LANDSCAPE_ECOSYSTEM.developmentRecipe, location.href).href;
-            const response = await fetch(url, { signal, cache: 'no-store' });
-            if (!response.ok) throw new Error(`the ecosystem recipe ${url} answered HTTP ${response.status}`);
-            const recipe = validateEcosystemRecipe(await response.json());
-            if (superseded()) return null;
-            assets = await createEcosystemAssetSets({ recipe, renderer: this.renderer, ledger: this.ecosystemShare, signal });
-            if (superseded()) { assets.dispose(); return null; }
-            renderer = createLandscapeEcosystemRenderer({ recipe, assetSets: assets, scene: this.scene, renderer: this.renderer, lighting: this.lighting, lightingTier: this.lighting.tier, ledger: this.ecosystemShare, camera: this.camera,
-                framePasses: this.pipeline ? LANDSCAPE_FRAME_PIPELINE.passes : 1 });
-            await renderer.ready;
-            if (superseded()) { renderer.dispose(); assets.dispose(); return null; }
-            this.ecosystem = { recipe, assets, renderer, url, loadMs: performance.now() - started };
+            const url = landscapeEcosystemUrl(loaded.manifestUrl, loaded.manifest, this.ecosystemOption), planning = this.planning?.loaded === loaded ? { features: this.planning.features, dependency: this.planning.dependency ?? [] } : null;
+            const streamer = await createLandscapeEcosystemStreamer({ landscape: loaded, url, budget: share, createRenderer, planning, densityScale: this.ecosystemState.density, overrides: this.ecosystemState.overrides, signal, isTileInjected: id => this.ecosystemTiles.has(id) });
+            if (superseded()) { streamer.dispose(); return null; }
+            this.ecosystem = streamer;
+            // an inert ecosystem (absent, stale, unbound, invalid, denied or failed) holds nothing: the streams get the share's room back until the next load or switch
+            if (!streamer.renderer) this.releaseEcosystemShare();
             this.applyEcosystemState();
-            return this.ecosystem;
+            this.panel.active('ecosystem', streamer.renderer !== null);
+            if (!['active', 'active-partial', 'absent'].includes(streamer.status)) this.panel.notice(`Ecosystem not drawn (${streamer.status}): ${streamer.reason}`);
+            return streamer;
         } catch (error) {
-            renderer?.dispose();
-            assets?.dispose();
             if (error.name === 'AbortError') throw error;
             if (request === this.ecosystemSequence && !this.disposed) { this.ecosystemFailure = error.message; this.panel.notice(`Ecosystem failed: ${error.message}`); }
             return null;
@@ -522,64 +528,86 @@ export class LandscapeView {
         this.ecosystemShare = null;
     }
 
-    /** Disposes the renderer and asset sets and releases every injected tile's reservation; the share stays held. */
+    /** Disposes the streamer (its tiles, worker, renderer and asset sets) and releases every injected tile's reservation; the share stays held. */
     disposeEcosystem() {
         const ecosystem = this.ecosystem;
         this.ecosystem = null;
-        ecosystem?.renderer.dispose();
         for (const key of this.ecosystemTiles.values()) this.ecosystemShare?.release(key);
         this.ecosystemTiles.clear();
-        ecosystem?.assets.dispose();
+        ecosystem?.dispose();
+        this.panel?.active('ecosystem', false);
     }
 
     applyEcosystemState() {
-        const renderer = this.ecosystem?.renderer, state = this.ecosystemState;
+        const streamer = this.ecosystem, renderer = streamer?.renderer, state = this.ecosystemState;
         if (!renderer) return;
         renderer.setDiagnostic(state.diagnostic).catch(error => { if (!this.disposed) this.lastError = error.message; });
         if (state.wind) renderer.setWind(state.wind);
         if (state.contact) renderer.setContact(state.contact);
         renderer.setShadows(state.shadows);
         renderer.setVisible(state.visible);
+        for (const [layerId, visible] of Object.entries(state.layers)) if (streamer.recipe.layers[layerId]) streamer.setLayerVisible(layerId, visible);
     }
 
     /**
-     * AI 599 D4 ecosystem controls, kept across loads: diagnostic (LANDSCAPE_ECOSYSTEM.diagnostics), wind {directionX, directionZ, strength, time}, contact
-     * {strength, heightMeters}, shadows {enabled}, visible. Resolves with the ecosystem snapshot once applied (a diagnostic change relinks the programs).
-     * @param {{diagnostic?:string,wind?:any,contact?:any,shadows?:{enabled:boolean},visible?:boolean}} [options]
+     * AI 599 ecosystem controls, kept across loads: mode ('auto', 'off' or a sidecar manifest URL; a switch reloads the ecosystem alone, off releases every
+     * ecosystem byte), density (the runtime layers' density scale), overrides (a landscape-ecosystem-overrides document or null), layers ({layerId: visible}),
+     * diagnostic (LANDSCAPE_ECOSYSTEM.diagnostics), wind {directionX, directionZ, strength, time}, contact {strength, heightMeters}, shadows {enabled}, visible.
+     * Resolves with the ecosystem snapshot once applied (a diagnostic change relinks the programs).
+     * @param {{mode?:string,density?:number,overrides?:any,layers?:Record<string,boolean>,diagnostic?:string,wind?:any,contact?:any,shadows?:{enabled:boolean},visible?:boolean}} [options]
      */
-    async setEcosystem({ diagnostic, wind, contact, shadows, visible } = {}) {
+    async setEcosystem({ mode, density, overrides, layers, diagnostic, wind, contact, shadows, visible } = {}) {
         const state = this.ecosystemState;
         if (diagnostic !== undefined) { landscapeEcosystemDiagnostic(diagnostic); state.diagnostic = diagnostic; }
         if (wind !== undefined) state.wind = { ...(state.wind ?? {}), ...wind };
         if (contact !== undefined) state.contact = { ...(state.contact ?? {}), ...contact };
         if (shadows !== undefined) { if (typeof shadows?.enabled !== 'boolean') throw new Error('[Landscape] ecosystem shadows need a boolean enabled flag'); state.shadows = { enabled: shadows.enabled }; }
         if (visible !== undefined) { if (typeof visible !== 'boolean') throw new Error('[Landscape] ecosystem visibility must be boolean'); state.visible = visible; }
-        const renderer = this.ecosystem?.renderer;
+        if (density !== undefined) { if (!(Number.isFinite(density) && density >= 0 && density <= 16)) throw new Error('[Landscape] ecosystem density must be a number in 0..16'); state.density = density; }
+        if (layers !== undefined) {
+            if (!layers || typeof layers !== 'object' || !Object.values(layers).every(value => typeof value === 'boolean')) throw new Error('[Landscape] ecosystem layers must map layer ids to booleans');
+            Object.assign(state.layers, layers);
+        }
+        if (overrides !== undefined) state.overrides = overrides;
+        if (mode !== undefined) {
+            this.ecosystemOption = landscapeEcosystemOption(mode);
+            if (this.loaded && this.stream && !this.reloading) {
+                if (this.ecosystemOption.mode === 'off') { this.disposeEcosystem(); this.releaseEcosystemShare(); this.ecosystemFailure = null; }
+                else { try { await this.loadEcosystem(this.loadSequence, this.loaded); } catch (error) { if (error.name !== 'AbortError') throw error; } }
+            }
+            return this.ecosystemSnapshot();
+        }
+        const streamer = this.ecosystem, renderer = streamer?.renderer;
         if (renderer) {
             if (wind !== undefined) renderer.setWind(wind);
             if (contact !== undefined) renderer.setContact(contact);
             if (shadows !== undefined) renderer.setShadows(state.shadows);
             if (visible !== undefined) renderer.setVisible(visible);
+            if (layers !== undefined) for (const [layerId, value] of Object.entries(layers)) streamer.setLayerVisible(layerId, value);
+            if (density !== undefined) streamer.setDensityScale(density);
+            if (overrides !== undefined) await streamer.setOverrides(overrides);
             if (diagnostic !== undefined) await renderer.setDiagnostic(diagnostic);
         }
         return this.ecosystemSnapshot();
     }
 
     /**
-     * AI 599 D4 test hook (the streamer's role once integrated): reserves a tile's bytes in the ecosystem share (records + ids on the CPU, records on the GPU)
-     * and attaches it to the renderer; rejects with the reason when the share denies it. Plain arrays are accepted for the records and ids.
+     * AI 599 D4 test hook (the renderer's standalone path): reserves a tile's bytes in the ecosystem share (records + ids on the CPU, records on the GPU) and
+     * attaches it to the renderer; the streamer leaves an injected id alone (and drops its own copy first). Rejects with the reason when the share denies it,
+     * and reports the ecosystem unavailable when no renderer exists (no sidecar, or the option is off). Plain arrays are accepted for the records and ids.
      * @param {{id:string,layerId:string,cellX:number,cellZ:number,bounds:any,heightRange:number[],records:ArrayLike<number>,ids:ArrayLike<number>,count:number}} tile
      */
     async ecosystemInjectTile(tile) {
-        const ecosystem = this.ecosystem;
-        if (!ecosystem || !this.ecosystemShare) throw new Error('[Landscape] Load the ecosystem before injecting a tile');
+        const ecosystem = this.ecosystem, renderer = ecosystem?.renderer;
+        if (!renderer || !this.ecosystemShare) throw new Error(`[Landscape] The ecosystem renderer is unavailable (${ecosystem ? `${ecosystem.status}: ${ecosystem.reason}` : this.ecosystemSnapshot().status}); no tile can be injected`);
         if (!tile || typeof tile.id !== 'string') throw new Error('[Landscape] An ecosystem tile needs a string id');
         if (this.ecosystemTiles.has(tile.id)) throw new Error(`[Landscape] ecosystem tile ${tile.id} is already injected`);
+        ecosystem.evictTile(tile.id);
         const records = tile.records instanceof Float32Array ? tile.records : Float32Array.from(tile.records), ids = tile.ids instanceof Int32Array ? tile.ids : Int32Array.from(tile.ids);
         const key = `ecosystem/tile/${tile.id}`, admission = this.ecosystemShare.reserve(key, { cpuBytes: records.byteLength + ids.byteLength, gpuBytes: records.byteLength });
         if (!admission.admitted) throw new Error(`[Landscape] ecosystem tile ${tile.id} cannot fit the ecosystem share: ${admission.reason}`);
         try {
-            const attached = ecosystem.renderer.attachTile({ ...tile, records, ids });
+            const attached = renderer.attachTile({ ...tile, records, ids });
             this.ecosystemTiles.set(tile.id, key);
             return { ...attached, cpuBytes: records.byteLength + ids.byteLength, gpuBytes: records.byteLength };
         } catch (error) { this.ecosystemShare.release(key); throw error; }
@@ -587,9 +615,9 @@ export class LandscapeView {
 
     /** Detaches an injected tile and releases its reservation. @param {string} id */
     ecosystemRemoveTile(id) {
-        const key = this.ecosystemTiles.get(id);
-        if (!key || !this.ecosystem) throw new Error(`[Landscape] ecosystem tile ${String(id)} is not injected`);
-        this.ecosystem.renderer.detachTile(id);
+        const key = this.ecosystemTiles.get(id), renderer = this.ecosystem?.renderer;
+        if (!key || !renderer) throw new Error(`[Landscape] ecosystem tile ${String(id)} is not injected`);
+        renderer.detachTile(id);
         this.ecosystemShare.release(key);
         this.ecosystemTiles.delete(id);
         return this.ecosystemSnapshot();
@@ -605,22 +633,56 @@ export class LandscapeView {
         return renderer.pick(this.raycaster.ray);
     }
 
-    /** The ecosystem's snapshot: `mode` is the option, status off | loading | active | failed | unavailable; settled once decided and its programs are linked. */
+    /** The picked instance with its rule trace re-evaluated at the anchor in the ecosystem worker ({...pick, trace}), or null. @param {number} clientX @param {number} clientY */
+    async ecosystemPickTrace(clientX, clientY) {
+        const pick = this.ecosystemPick(clientX, clientY);
+        if (!pick) return null;
+        const record = pick.record, trace = await this.ecosystem.trace(pick.layerId, record.x, record.z, { siteX: record.siteX, siteZ: record.siteZ, child: record.child });
+        return { ...pick, trace };
+    }
+
+    /** The rule trace of a layer at a world position (the nearest lattice site of a site layer). @param {string} layerId @param {number} x @param {number} z */
+    ecosystemTrace(layerId, x, z) {
+        if (!this.ecosystem) throw new Error('[Landscape] Load the ecosystem before tracing a rule');
+        return this.ecosystem.trace(layerId, x, z);
+    }
+
+    /** SHA-256 of a cell's encoded tile as the browser worker produces it (the Node/browser determinism gate). @param {string} layerId @param {number} cellX @param {number} cellZ */
+    ecosystemHash(layerId, cellX, cellZ) {
+        if (!this.ecosystem) throw new Error('[Landscape] Load the ecosystem before hashing a cell');
+        return this.ecosystem.hashCell(layerId, cellX, cellZ);
+    }
+
+    /** A resident tile's summary (count, drawn, bounds, the SHA-256 of its held records), or null. @param {string} tileId */
+    ecosystemTile(tileId) { return this.ecosystem ? this.ecosystem.tileSummary(tileId) : Promise.resolve(null); }
+
+    /** Resident instances of a layer per cell. @param {string} layerId */
+    ecosystemHeatmap(layerId) {
+        if (!this.ecosystem) throw new Error('[Landscape] Load the ecosystem before reading its heatmap');
+        return this.ecosystem.heatmap(layerId);
+    }
+
+    /**
+     * The ecosystem's snapshot: the streamer's (status, binding, layers, residency, worker, determinism, timing) with the renderer's spread in and under
+     * `renderer`; `mode` is the option, status off | loading | unavailable (the budget cannot hold the share) or the streamer's binding status; settled
+     * once decided, its programs linked and every desired tile resident.
+     */
     ecosystemSnapshot() {
-        const mode = this.ecosystemOption.mode, renderer = this.ecosystem?.renderer ?? null;
-        const status = renderer ? 'active' : this.ecosystemFailure ? (this.ecosystemFailure.includes('below the shipped profile') ? 'unavailable' : 'failed') : mode === 'off' ? 'off' : 'loading';
+        const mode = this.ecosystemOption.mode, streamer = this.ecosystem, renderer = streamer?.renderer ?? null;
+        const status = streamer ? streamer.status : this.ecosystemFailure ? (this.ecosystemFailure.includes('below the shipped profile') ? 'unavailable' : 'failed') : mode === 'off' ? 'off' : 'loading';
         const share = this.ecosystemShare?.shareSnapshot() ?? { kind: LANDSCAPE_ECOSYSTEM.kind, cpuBytes: 0, gpuBytes: 0, peakCpuBytes: 0, peakGpuBytes: 0, limits: LANDSCAPE_ECOSYSTEM.budgets, denied: 0, entries: 0, reserved: false };
         const inert = { recipe: LANDSCAPE_ECOSYSTEM.id, tiles: 0, instances: 0, drawn: 0, draws: 0, triangles: 0, trianglesVisible: 0, byLayer: {}, byLevel: {}, diagnostic: this.ecosystemState.diagnostic, wind: null, contact: null, shadows: { ...this.ecosystemState.shadows, casters: 0 },
             visible: this.ecosystemState.visible, programCompile: null, frameCostMs: 0, drawnLastFrame: false, tileIds: [], tileRecords: [] };
-        const current = renderer ? renderer.snapshot() : inert;
-        return { mode, url: this.ecosystemOption.url, ...current, status, present: renderer !== null, reason: this.ecosystemFailure, settled: status !== 'loading' && !(current.programCompile?.pending),
-            recipeId: this.ecosystem?.recipe.id ?? null, recipeUrl: this.ecosystem?.url ?? null, loadMs: this.ecosystem?.loadMs ?? null, assets: this.ecosystem?.assets.snapshot() ?? null, share, injectedTiles: [...this.ecosystemTiles.keys()] };
+        const rendering = renderer ? renderer.snapshot() : inert, streaming = streamer ? streamer.snapshot() : { settled: true, standing: { cpuBytes: 0, gpuBytes: 0 }, layers: [], binding: null, revision: null, recipeId: null, uploadedBytesPerFrame: 0, peakUploadedBytesPerFrame: 0, degradationReason: null };
+        return { mode, url: streamer?.url ?? this.ecosystemOption.url, ...rendering, ...streaming, renderer: rendering, status, present: renderer !== null, reason: streamer ? streamer.reason : this.ecosystemFailure,
+            settled: status !== 'loading' && !(rendering.programCompile?.pending) && streaming.settled !== false, recipeId: streamer?.recipe?.id ?? null, loadMs: streamer?.loadMs ?? null, assets: streamer?.assets?.snapshot() ?? null, share,
+            controls: { density: this.ecosystemState.density, overrides: this.ecosystemState.overrides?.id ?? null, layers: { ...this.ecosystemState.layers } }, injectedTiles: [...this.ecosystemTiles.keys()] };
     }
 
     ecosystemLine() {
         const state = this.ecosystemSnapshot(), mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
         if (!state.present) return `Ecosystem ${state.status}${state.reason ? `: ${state.reason}` : ''}`;
-        return `Ecosystem ${state.recipeId}: ${state.tiles} tiles · ${state.instances} instances · ${state.draws} draws · ${state.triangles} triangles · CPU ${mib(state.share.cpuBytes)} / GPU est. ${mib(state.share.gpuBytes)} MiB · ${state.programCompile.pending ? 'linking' : 'ready'}${state.diagnostic === 'none' ? '' : ` · ${state.diagnostic} view`}`;
+        return `Ecosystem ${state.recipeId}: ${state.tiles} tiles (${state.pending} pending) · ${state.instances} instances · ${state.draws} draws · ${state.triangles} triangles · CPU ${mib(state.share.cpuBytes)} / GPU est. ${mib(state.share.gpuBytes)} MiB · ${state.programCompile.pending ? 'linking' : state.settled ? 'ready' : 'streaming'}${state.degradationReason ? ` · ${state.degradationReason}` : ''}${state.diagnostic === 'none' ? '' : ` · ${state.diagnostic} view`}`;
     }
 
     /**
@@ -851,7 +913,7 @@ export class LandscapeView {
             this.surround?.setLightingTier(tier);
             this.water?.setLightingTier(tier);
             this.ocean?.setLightingTier(tier);
-            this.ecosystem?.renderer.setLightingTier(tier).catch(error => { if (!this.disposed) this.lastError = error.message; });
+            this.ecosystem?.renderer?.setLightingTier(tier).catch(error => { if (!this.disposed) this.lastError = error.message; });
             this.backdrop.setLightingTier(tier);
         }
         if (response !== undefined) this.lighting.setResponse(response);
@@ -1386,6 +1448,7 @@ export class LandscapeView {
         if (action === 'water') return this.setWater(!this.waterVisible);
         if (action === 'surround') return this.setSurround(this.surroundOption.mode === 'off' ? LANDSCAPE_SURROUND.defaultMode : 'off');
         if (action === 'ocean') return this.setOcean({ surface: this.oceanOptions.surface === 'animated' ? 'flat' : 'animated' });
+        if (action === 'ecosystem') return this.setEcosystem({ mode: this.ecosystemOption.mode === 'off' ? LANDSCAPE_ECOSYSTEM.defaultMode : 'off' });
         if (action === 'focus-selection') return this.focusSelection();
         if (action === 'selection:radius') return this.setSelectionRadius(Number(this.panel.root.querySelector('[data-field="radius"]').value));
         if (action.startsWith('mode:')) return this.setMode(action.slice(5));
@@ -1433,7 +1496,7 @@ export class LandscapeView {
                 runtime: this.surfaceCacheRuntime?.available ? { targetSlots: this.surfaceCacheRuntime.fit.targetSlots, slots: this.surfaceCacheRuntime.fit.slots, windowPages: this.surfaceCacheRuntime.geometry.windowPages } : null },
             planning: this.planning?.snapshot() ?? { ready: false, settled: !this.reloading, features: [], errors: [], cpuBytes: 0, gpuBytes: 0 },
             bookmarks: this.bookmarkStore?.snapshot() ?? [], report: this.report,
-            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.surround?.stream?.uploadedBytes ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0),
+            uploadedBytesPerFrame: (this.stream?.snapshot().uploadedBytesPerFrame ?? 0) + (this.surround?.stream?.uploadedBytes ?? 0) + (this.appearance?.snapshot().uploadedBytesPerFrame ?? 0) + (this.planning?.uploadedBytes ?? 0) + (this.ecosystem?.uploadedBytes ?? 0),
             peakUploadedBytesPerFrame: this.peakUploadedBytes,
             renderer: { ...this.renderer.info.render, memory: { ...this.renderer.info.memory } },
             canvas: { width: this.canvas.width, height: this.canvas.height }
@@ -1503,8 +1566,6 @@ export class LandscapeView {
                 this.surround?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0)));
                 // AI 597: the ocean clock, simulation batch (its own timer query, before the frame timer) and ring placement
                 this.ocean?.update({ dt: rawDt, camera: this.camera });
-                // AI 599 D4: the ecosystem's per-tile LOD visibility and wind clock
-                this.ecosystem?.renderer.update({ dt: rawDt, camera: this.camera });
                 const surroundUploads = this.surround?.stream?.uploadedBytes ?? 0;
                 this.appearance?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - (geometryStats?.uploadedBytesPerFrame ?? 0) - surroundUploads));
                 const terrainUploads = (geometryStats?.uploadedBytesPerFrame ?? 0) + surroundUploads + (this.appearance?.uploadedBytes ?? 0);
@@ -1512,7 +1573,9 @@ export class LandscapeView {
                 // AI577 D6: surface cache demand and page generation run on the GPU before the frame, the indirection uploads with them
                 const cacheUploads = this.surfaceCacheRuntime?.update({ dt: rawDt, camera: this.camera, viewportHeight: this.canvas.height, viewportWidth: this.canvas.width,
                     uploadAllowance: Math.max(0, uploadLimit - terrainUploads - planningUploads), frameGpuMs: this.gpuTimer.getLastMs() }) ?? 0;
-                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads + cacheUploads);
+                // AI 599 D3: the ecosystem streams last with what the frame's allowance has left (its planning, one tile attach, the renderer's LOD visibility and wind clock)
+                const ecosystemUploads = this.ecosystem?.update(rawDt, this.camera, this.canvas.height, Math.max(0, uploadLimit - terrainUploads - planningUploads - cacheUploads)) ?? 0;
+                this.peakUploadedBytes = Math.max(this.peakUploadedBytes, terrainUploads + planningUploads + cacheUploads + ecosystemUploads);
             }
             if (this.stream && (!this.lastTelemetryUpdate || now - this.lastTelemetryUpdate > 250)) {
                 const stats = this.stream.snapshot();
@@ -1609,7 +1672,7 @@ export class LandscapeView {
         const loading = this.oceanLoading;
         if (loading) loading.catch(() => {}).then(() => this.releaseOceanShare());
         else this.releaseOceanShare();
-        // AI 599 D4: the ecosystem renderer, its tiles and asset sets, then the share once any load in flight has released its own reservations
+        // AI 599 D3: the ecosystem streamer (tiles, worker, renderer, asset sets), then the share once any load in flight has released its own reservations
         this.disposeEcosystem();
         const loadingEcosystem = this.ecosystemLoading;
         if (loadingEcosystem) loadingEcosystem.catch(() => {}).then(() => { this.disposeEcosystem(); this.releaseEcosystemShare(); });

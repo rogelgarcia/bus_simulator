@@ -60,8 +60,8 @@ const surround = landscapeSurroundOption(parameters.get('landscapeSurround') ?? 
 const ocean = landscapeOceanSurface(parameters.get('landscapeOcean')), seaState = landscapeOceanSeaState(parameters.get('landscapeSeaState')), oceanQuality = landscapeOceanQuality(parameters.get('landscapeOceanQuality'));
 const oceanTime = parameters.has('landscapeOceanTime') ? Number(parameters.get('landscapeOceanTime')) : null;
 if (oceanTime !== null && !(Number.isFinite(oceanTime) && oceanTime >= 0)) throw new Error(`landscapeOceanTime must be a nonnegative number of seconds; received ${parameters.get('landscapeOceanTime')}`);
-// landscapeEcosystem=auto|off|<recipe url> (AI 599 D4): the instanced ecosystem renderer over the development recipe (off by default until the streamer is integrated);
-// landscapeEcosystemDiagnostic=none|lod|layer|rank|fade selects its inspection view
+// landscapeEcosystem=auto|off|<sidecar manifest url> (AI 599 D3): auto streams the ecosystem sidecar published beside the landscape into the instanced renderer (absent on
+// landscapes without one), off never creates it; landscapeEcosystemDiagnostic=none|lod|layer|rank|fade selects its inspection view
 const ecosystem = landscapeEcosystemOption(parameters.get('landscapeEcosystem') ?? LANDSCAPE_ECOSYSTEM.defaultMode);
 const ecosystemDiagnostic = mode('landscapeEcosystemDiagnostic', LANDSCAPE_ECOSYSTEM.diagnostics, 'none');
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
@@ -83,12 +83,19 @@ window.__landscapeTestHooks = Object.freeze({
     readFrame: region => view.readFrame(region),
     oceanReadback: index => { const result = view.ocean?.readback?.(index) ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
     oceanFoamReadback: () => { const result = view.ocean?.foamReadback?.() ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
-    // AI 599 D4 ecosystem renderer: controls {diagnostic, wind, contact, shadows, visible} (resolves with snapshot().ecosystem), the tile injection hook (the streamer's
-    // role once integrated; rejects when the share denies the tile), its removal, and the drawn instance under a client position
+    // AI 599 ecosystem: controls {mode, density, overrides, layers, diagnostic, wind, contact, shadows, visible} (resolves with snapshot().ecosystem; a mode switch reloads
+    // the ecosystem alone), the renderer's standalone tile injection hook (rejects when the share denies the tile or no renderer exists), its removal, the drawn
+    // instance under a client position (synchronous), the same with its rule trace from the worker, a trace at a position, a cell's tile hash (the Node/browser
+    // determinism gate), a resident tile's summary with the SHA-256 of its records, and the resident instances of a layer per cell
     setEcosystem: options => view.setEcosystem(options),
     ecosystemInjectTile: tile => view.ecosystemInjectTile(tile),
     ecosystemRemoveTile: id => view.ecosystemRemoveTile(id),
     ecosystemPick: (clientX, clientY) => view.ecosystemPick(clientX, clientY),
+    ecosystemPickTrace: (clientX, clientY) => view.ecosystemPickTrace(clientX, clientY),
+    ecosystemTrace: (layerId, x, z) => view.ecosystemTrace(layerId, x, z),
+    ecosystemHash: (layerId, cellX, cellZ) => view.ecosystemHash(layerId, cellX, cellZ),
+    ecosystemTile: tileId => view.ecosystemTile(tileId),
+    ecosystemHeatmap: layerId => view.ecosystemHeatmap(layerId),
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),

@@ -184,8 +184,8 @@ test('Surface cache: the atlas fits whole 256-slot layers above the streams\' re
     assert.equal(LANDSCAPE_SURFACE_CACHE_BUDGETS.cpuBytes, LANDSCAPE_STREAMING_BUDGETS.cpuBytes);
     const fit = (cpu, gpu, options = {}) => fitLandscapeSurfaceCache({ limits: { cpuBytes: cpu * MIB, gpuBytes: gpu * MIB }, geometry: coastal, ...options });
     const brief = ({ slots, reason }) => ({ slots, reason });
-    // the cache's shipped 1920x1080 profile (640/544 MiB since AI 596 D5, 512/448 before: the streams' reserve and the profile both grew by the
-    // surround share) holds the 12-layer reference target under its unchanged 192 MiB ceiling (D6's 3/8 fraction capped the ceiling at 168 MiB and
+    // the cache's shipped 1920x1080 profile (752/720 MiB since AI 599 D3; 640/544 in AI 596 D5, 512/448 before: the streams' reserve and the profile grow
+    // by every share) holds the 12-layer reference target under its unchanged 192 MiB ceiling (D6's 3/8 fraction capped the ceiling at 168 MiB and
     // the target at 11 layers)
     const shipped = fitLandscapeSurfaceCache({ limits: LANDSCAPE_SURFACE_CACHE_BUDGETS, geometry: coastal });
     assert.deepEqual({ slots: shipped.slots, layers: shipped.layers, reason: shipped.reason }, { slots: LANDSCAPE_SURFACE_CACHE.targetSlots, layers: 12, reason: null });
@@ -224,7 +224,7 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
     const brief = size => { const capacity = landscapeSurfaceCacheCapacity(size); return { slots: capacity.targetSlots, window: capacity.windowPages, reason: capacity.reason }; };
     const reference = landscapeSurfaceCacheCapacity({ width: 1920, height: 1080 });
     assert.deepEqual({ slots: reference.targetSlots, window: reference.windowPages, reason: reference.reason, pixels: reference.pixels }, { slots: 3072, window: 64, reason: null, pixels: 2073600 });
-    assert.deepEqual({ ...landscapeSurfaceCacheBudgets(reference) }, { ...LANDSCAPE_SURFACE_CACHE_BUDGETS }, 'the reference keeps the shipped cache profile (640/544 MiB since AI 596 D5)');
+    assert.deepEqual({ ...landscapeSurfaceCacheBudgets(reference) }, { ...LANDSCAPE_SURFACE_CACHE_BUDGETS }, 'the reference keeps the shipped cache profile (752/720 MiB since AI 599 D3)');
     // smaller or equal drawing buffers keep the reference capacity (its LRU room and the root pyramid do not shrink with the view)
     for (const size of [{ width: 1920, height: 1032 }, { width: 1280, height: 720 }, { width: 960, height: 540 }, { width: 512, height: 512 }, { width: 1080, height: 1920 }, { width: 2048, height: 1012 }]) {
         assert.deepEqual(brief(size), { slots: 3072, window: 64, reason: null }, JSON.stringify(size));
@@ -251,9 +251,10 @@ test('Surface cache capacity (AI577 D7): slots, window and budget profile scale 
         return { gpuMiB: limits.gpuBytes / MIB, cpuMiB: limits.cpuBytes / MIB, cacheMiB: fit.gpuBytes / MIB, room: limits.gpuBytes - fit.gpuBytes };
     };
     const base = roomAt({ width: 1920, height: 1080 }), qhd = roomAt({ width: 2560, height: 1440 }), uhd = roomAt({ width: 3840, height: 2160 });
-    // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile); AI 597 D1: 608/748/1110 with the ocean's 64 MiB share
-    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [624, 764, 1126]);
-    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [688, 688, 688]);
+    // AI 596 D5: 544/684/1046 MiB (448/588/950 before the surround share of 96 MiB joined every profile); AI 597 D1: 608/748/1110 with the ocean's 64 MiB share,
+    // D4: 624/764/1126 with its 80 MiB share; AI 599 D3: 720/860/1222 with the ecosystem's 96 MiB share
+    assert.deepEqual([base.gpuMiB, qhd.gpuMiB, uhd.gpuMiB], [720, 860, 1222]);
+    assert.deepEqual([base.cpuMiB, qhd.cpuMiB, uhd.cpuMiB], [752, 752, 752]);
     assert.ok(Math.abs(uhd.cacheMiB - 674.1) < .1 && Math.abs(qhd.cacheMiB - 312.2) < .1 && Math.abs(base.cacheMiB - 172.3) < .1, `${base.cacheMiB} / ${qhd.cacheMiB} / ${uhd.cacheMiB} MiB`);
     for (const value of [qhd, uhd]) assert.ok(value.room >= base.room && value.room - base.room < MIB, 'the streams keep the reference room');
     assert.throws(() => landscapeSurfaceCacheBudgets({ targetSlots: 2816, windowPages: 64 }), /target slots/, 'below the reference');
@@ -571,9 +572,9 @@ test('Surface cache default (AI577 D7): a view runs the cache unless it selects 
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOcean=animated'), '/screens/landscape_fabrication.html?landscapeOcean=animated&landscapeOceanTime=12.5', 'an address that selects its surface keeps it');
         delete process.env.LANDSCAPE_TEST_OCEAN;
         delete process.env.LANDSCAPE_TEST_OCEAN_TIME;
-        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 688, gpuMiB: 624 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 688, gpuMiB: 764 });
-        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 688, gpuMiB: 1126 });
+        assert.deepEqual(landscapeShippedBudgetMiB(), { cpuMiB: 752, gpuMiB: 720 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 2560, height: 1440 }), { cpuMiB: 752, gpuMiB: 860 });
+        assert.deepEqual(landscapeShippedBudgetMiB({ width: 3840, height: 2160 }), { cpuMiB: 752, gpuMiB: 1222 });
         process.env.LANDSCAPE_TEST_SURFACE_CACHE = 'off';
         assert.equal(landscapeEffectiveSurfaceCache(), 'off');
         assert.equal(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeSource=coastal'), '/screens/landscape_fabrication.html?landscapeSource=coastal&landscapeSurfaceCache=off&landscapeOceanTime=30');

@@ -17,14 +17,16 @@ test('Ecosystem runtime: the contract constants, the option parser and the diagn
     assert.equal(LANDSCAPE_ECOSYSTEM.id, 'landscape-ecosystem-runtime-v1'); assert.equal(LANDSCAPE_ECOSYSTEM.kind, 'landscape-ecosystem');
     assert.ok(LANDSCAPE_ECOSYSTEM.budgets.cpuBytes % MiB === 0 && LANDSCAPE_ECOSYSTEM.budgets.gpuBytes % MiB === 0);
     assert.deepEqual([LANDSCAPE_ECOSYSTEM.budgets.cpuBytes / MiB, LANDSCAPE_ECOSYSTEM.budgets.gpuBytes / MiB], [64, 96]);
-    assert.deepEqual(LANDSCAPE_ECOSYSTEM.modes, ['auto', 'off', 'url']); assert.equal(LANDSCAPE_ECOSYSTEM.defaultMode, 'off');
+    // AI 599 D3: auto by default (the sidecar beside the landscape); a URL names a sidecar manifest, no longer a recipe
+    assert.deepEqual(LANDSCAPE_ECOSYSTEM.modes, ['auto', 'off', 'url']); assert.equal(LANDSCAPE_ECOSYSTEM.defaultMode, 'auto'); assert.equal(LANDSCAPE_ECOSYSTEM.sidecar, 'ecosystem/manifest.json');
     assert.deepEqual(LANDSCAPE_ECOSYSTEM.diagnostics, ['none', 'lod', 'layer', 'rank', 'fade']);
-    assert.deepEqual(landscapeEcosystemOption(undefined), { mode: 'off', url: null }); assert.deepEqual(landscapeEcosystemOption(''), { mode: 'off', url: null });
+    assert.deepEqual(landscapeEcosystemOption(undefined), { mode: 'auto', url: null }); assert.deepEqual(landscapeEcosystemOption(''), { mode: 'auto', url: null });
     assert.deepEqual(landscapeEcosystemOption('auto'), { mode: 'auto', url: null }); assert.deepEqual(landscapeEcosystemOption('off'), { mode: 'off', url: null });
-    assert.deepEqual(landscapeEcosystemOption('/tools/bake_landscape/ecosystem/recipes/coastal-v3-ecosystem-v1.json'), { mode: 'url', url: '/tools/bake_landscape/ecosystem/recipes/coastal-v3-ecosystem-v1.json' });
-    assert.throws(() => landscapeEcosystemOption('on'), /must be auto, off or a recipe URL/); assert.throws(() => landscapeEcosystemOption('a b.json'), /ending in \.json/); assert.throws(() => landscapeEcosystemOption(3), /recipe URL/);
+    assert.deepEqual(landscapeEcosystemOption('/assets/public/landscape/coastal-city/ecosystem/manifest.json'), { mode: 'url', url: '/assets/public/landscape/coastal-city/ecosystem/manifest.json' });
+    assert.throws(() => landscapeEcosystemOption('on'), /must be auto, off or a sidecar manifest URL/); assert.throws(() => landscapeEcosystemOption('a b.json'), /ending in \.json/); assert.throws(() => landscapeEcosystemOption(3), /sidecar manifest URL/);
     assert.equal(landscapeEcosystemDiagnostic('none'), 0); assert.equal(landscapeEcosystemDiagnostic('fade'), 4); assert.throws(() => landscapeEcosystemDiagnostic('lods'), /must be one of none, lod, layer, rank, fade/);
-    assert.match(LANDSCAPE_ECOSYSTEM.developmentRecipe, /^\/tools\/bake_landscape\/ecosystem\/recipes\/.*\.json$/);
+    assert.equal(LANDSCAPE_ECOSYSTEM.developmentRecipe, undefined, 'the recipe is embedded in the sidecar; no tools path is fetched at runtime');
+    assert.ok(Object.isFrozen(LANDSCAPE_ECOSYSTEM.streaming) && LANDSCAPE_ECOSYSTEM.streaming.maxInFlight === 4 && LANDSCAPE_ECOSYSTEM.streaming.keepHysteresis === 1.15 && LANDSCAPE_ECOSYSTEM.streaming.workers === 1);
     assert.ok(LANDSCAPE_ECOSYSTEM.lodHysteresis > 1 && LANDSCAPE_ECOSYSTEM.wind.strength === 0 && LANDSCAPE_ECOSYSTEM.contact.strength > 0 && LANDSCAPE_ECOSYSTEM.contact.strength < .5);
 });
 

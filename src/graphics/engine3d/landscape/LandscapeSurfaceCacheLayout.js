@@ -37,8 +37,8 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
     // LANDSCAPE_STREAMING_BUDGETS.gpuBytes: 352 MiB since AI 596 D5, the pre-D5 256 MiB plus the surround's 96 MiB share): a profile without room
     // above that reserve keeps the cache off. (D6 also capped them at 3/8 of the GPU limit, which bound no admitted target at 512/448 MiB and would
     // hold a 3840x2160 target to 24 of its 44 layers.)
-    // AI 597 D1: 416 MiB, the D5 reserve plus the ocean's 64 MiB share
-    streamReserveGpuBytes: 432 * 1024 * 1024,
+    // AI 597 D1: 416 MiB, the D5 reserve plus the ocean's 64 MiB share; D4: 432 MiB with the 80 MiB ocean share; AI 599 D3: 528 MiB, plus the ecosystem's 96 MiB share
+    streamReserveGpuBytes: 528 * 1024 * 1024,
     // an atlas the budget shrinks below this many slots (or the target, if smaller) is not used: it would truncate most views' demand to coarse
     // rings, below the uncached frame's quality
     minimumSlots: 1024,
@@ -70,7 +70,8 @@ export const LANDSCAPE_SURFACE_CACHE = Object.freeze({
  */
 // AI 597 D1: 672 / 608 MiB, the D5 profile plus the animated ocean's 32 / 64 MiB share (the cache ceiling stays 192 MiB); D2: 688 / 608 MiB, the
 // ocean share grew to 48 / 64 MiB; D4: 688 / 624 MiB, the share grew to 48 / 80 MiB with the swash sheet
-export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 688 * 1024 * 1024, gpuBytes: 624 * 1024 * 1024 });
+// AI 599 D3: 752 / 720 MiB, the D4 profile plus the ecosystem's 64 / 96 MiB share (the cache ceiling stays 192 MiB above the grown streams' reserve)
+export const LANDSCAPE_SURFACE_CACHE_BUDGETS = Object.freeze({ cpuBytes: 752 * 1024 * 1024, gpuBytes: 720 * 1024 * 1024 });
 
 /**
  * Surface cache mode of a landscape view that does not choose one (AI577 D7 decision: on). `landscapeSurfaceCache=on|off` (the view's surfaceCache
@@ -145,7 +146,7 @@ export function landscapeSurfaceCacheCapacity({ width, height }) {
 /**
  * Residency budget profile of a view that draws through the surface cache at a capacity: LANDSCAPE_SURFACE_CACHE_BUDGETS plus the GPU bytes of the
  * capacity's layers and indirection beyond the reference (indirection for the most mips a landscape may have), in whole MiB. The streams keep the
- * room they have at the reference; 1920x1080 keeps the reference profile exactly (640/544 MiB since AI 596 D5).
+ * room they have at the reference; 1920x1080 keeps the reference profile exactly (752/720 MiB since AI 599 D3; 640/544 in AI 596 D5, 688/624 in AI 597 D4).
  * @param {{targetSlots:number,windowPages:number}} capacity
  */
 export function landscapeSurfaceCacheBudgets({ targetSlots, windowPages }) {

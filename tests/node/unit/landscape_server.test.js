@@ -86,6 +86,35 @@ test('Landscape server: serves the game lighting environments the viewer is lit 
     }
 });
 
+test('Landscape server: serves one distant vegetation species directory (glTF, KTX2, records) with its content types, and nothing beside it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'landscape-vegetation-'));
+    const catalog = path.join(root, 'assets/public/vegetation_distant');
+    await mkdir(path.join(root, 'assets/public/landscape/coastal-city'), { recursive: true });
+    await writeFile(path.join(root, 'assets/public/landscape/coastal-city/manifest.json'), JSON.stringify({ id: 'coastal', revision: 'r1' }));
+    await mkdir(path.join(catalog, 'arrowwood_viburnum'), { recursive: true });
+    await mkdir(path.join(catalog, 'arrowwood_viburnum.1791401698337-11832.previous'), { recursive: true });
+    await mkdir(path.join(root, 'src/lib/basis/0.183.2'), { recursive: true });
+    for (const file of ['arrowwood_viburnum/mature_01_lod5.glb', 'arrowwood_viburnum/shared_leaf_color.ktx2', 'arrowwood_viburnum/index.json', 'arrowwood_viburnum/README.md', 'arrowwood_viburnum.1791401698337-11832.previous/index.json', 'notes.json']) await writeFile(path.join(catalog, file), 'x');
+    await writeFile(path.join(root, 'src/lib/basis/0.183.2/basis_transcoder.wasm'), 'w');
+    const server = createLandscapeServer({ root });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    try {
+        for (const [file, type] of [['arrowwood_viburnum/mature_01_lod5.glb', 'model/gltf-binary'], ['arrowwood_viburnum/shared_leaf_color.ktx2', 'image/ktx2'], ['arrowwood_viburnum/index.json', 'application/json']]) {
+            const response = await fetch(`${origin}/assets/public/vegetation_distant/${file}`);
+            assert.equal(response.status, 200, file); assert.equal(response.headers.get('content-type'), type, file);
+            await response.arrayBuffer();
+        }
+        assert.equal((await fetch(`${origin}/src/lib/basis/0.183.2/basis_transcoder.wasm`)).headers.get('content-type'), 'application/wasm');
+        for (const file of ['arrowwood_viburnum/README.md', 'arrowwood_viburnum.1791401698337-11832.previous/index.json', 'notes.json', 'arrowwood_viburnum']) assert.equal((await fetch(`${origin}/assets/public/vegetation_distant/${file}`)).status, 404, file);
+    } finally {
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+        assert.ok(path.basename(root).startsWith('landscape-vegetation-'));
+        await rm(root, { recursive: true, force: true });
+    }
+});
+
 test('Landscape server: serves a junctioned shared asset store but rejects links escaping it', async () => {
     const base = await mkdtemp(path.join(tmpdir(), 'landscape-junction-'));
     const root = path.join(base, 'worktree'), store = path.join(base, 'shared-assets'), outside = path.join(base, 'outside');
