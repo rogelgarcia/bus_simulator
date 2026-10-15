@@ -91,7 +91,8 @@ top of the spectral cascades (`chunks/landscape/ocean_shore.glsl`):
   `fields.extent.linearFiltering`); the float depth raster and the zone labels stay on the CPU for the sea-state
   recompute (21 bytes per texel, `LANDSCAPE_OCEAN.fields`), the surround keeps its RGBA16F depth.
 - **Drawing** phase `ω (t − T)`; amplitude `H / 2` × a group envelope (1 ± 0.35 over 7 swell periods, riding with the
-  phase) × a longshore value-noise variation (±0.25 at 90 m) × the exposure damping (toward 0.4 for a fully sheltered
+  phase) × a longshore value-noise variation (±0.1 at 90 m with a second octave at 37 m; ±0.25 and an octave at exactly 45 m until
+  2026-10-15: along a straight beach the swash front then repeated as lobes every 90 m) × the exposure damping (toward 0.4 for a fully sheltered
   shore, full within 60 m of the waterline, none beyond 220 m) × the weight `1 − smoothstep(7.2 m, 18 m, depth)`, the
   complement of the swell cascade's fade, so the open sea hands over once; the profile `cos s + ½ sharpen cos 2s` with
   `s = φ + 0.7 bore cos φ` (the front face compresses into a bore where `H / (γ h)` passes 0.8 on sand) and the Stokes
@@ -163,10 +164,12 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   3 cm over the sand plus 4 mm per metre of distance (2 mm until 2026-10-14: from 70 m up the coarser terrain level still rose through
   the sheet in small hollows and the front band ringed the holes), so the far band never fights the coarser terrain levels for depth, and
   seaward of the waterline sinks it 30 cm per metre of depth below the still water, so it never pokes up through a trough of the sea.
-- **Arrival** the train's crest reaches the waterline at phase 0; the sand follows its nearest waterline texel's travel time, read 2 m
-  past the waterline along the gradient of the exact shore distance and averaged over the 3 × 3 texels there (the marched time has local
-  maxima in the inner corners of the raster's staircased waterline; the breadth-first copy of the land side forms Manhattan arcs the front
-  would otherwise follow).
+- **Arrival** the train's crest reaches the waterline at phase 0; the sand follows the travel time 14 m seaward of its nearest waterline
+  point along the gradient of the exact shore distance, where the bore collapses into the swash, averaged along the shore over eleven taps
+  10 m apart. Read 2 m past the waterline (until 2026-10-15), where the marched phase speed vanishes, the crest's oblique sweep along the
+  shore compressed into a sawtooth of phase every 90 m on the swim beach and the sheet ran up in regular tongues, each outlined by its
+  foam (the repeating pattern of the aerial passes); no longshore averaging removes a phase ramp, but at the collapse point the sweep is the
+  bore's, three to four times longer, and the average blends the raster's staircase and the bars' local maxima into one gently uneven edge.
 - **Run-up** Stockdon et al. (2006) R2 of the sea state's swell, `1.1 (0.35 β √(H L) + 0.5 √(H L (0.563 β² + 0.004)))`, with H the
   continuous significant height, L the deep-water swell wavelength (`√(H L)` 12.05 m moderate) and β the foreshore slope of the longshore
   position: the field's sand height 8 m inland of the waterline over those 8 m, averaged along the shore, between a 0.02 floor and 14° (a
@@ -181,9 +184,9 @@ D5 calibrated wet surface in time and the terrain hands its static coastal wetti
   static band's core); the wrack line lies 2 m wide at the highest remembered excursion. Everything is analytic in the clock, so a fixed
   time repeats exactly and a sea-state switch only changes the inputs.
 - **Foam** the leading edge is a band 3 m wide along the beach behind the advancing front, thinning away as the sheet recedes (foam rides
-  the advance; the backwash leaves its foam on the sand instead); behind it the sheet carries 0.3 of the shoreline's supply thinning
-  seaward, and the backwash leaves 0.5 of it dying over 10 s, most where each run-up stalled (lines parallel to the shore at each
-  remembered excursion, never rings). All of it lies on the land side of the waterline: the water side is the rings' (their breaker and
+  the advance); behind it the sheet carries 0.3 of the shoreline's supply thinning seaward. The backwash leaves none on the sand
+  (`depositShare` 0 since 2026-10-15; until then it left 0.5 of the supply dying over 10 s at each remembered excursion, and those lines
+  parallel to the shore read as foam lying behind the swash on the aerial passes; the term stays in the shader for a nonzero share). All of it lies on the land side of the waterline: the water side is the rings' (their breaker and
   shoreline foam); a water-side band traced the level sets of the marched arrival time, with its local maxima in the inner corners of the
   staircased waterline, as closed loops (the islands of foam of 2026-10-14). The front's foam goes through the D3 lace; the carried and
   deposited foam draws as soft wisps over the pattern's high ground (the lace threshold at a low density keeps only its veins: a needle with

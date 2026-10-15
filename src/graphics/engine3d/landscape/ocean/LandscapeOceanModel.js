@@ -44,7 +44,7 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     // train under a group envelope (groupPeriods swell periods, +- groupAmplitude), a longshore variation and a Stokes crest sharpening at breaking;
     // the geology's shore exposure (exposureZones carry it, rockZones are rock) damps the train toward exposureFloor over the exposureRamp from the
     // shoreline. orbital scales the Gerstner horizontal displacement of the train
-    shore: Object.freeze({ gamma: .78, deepDepthFactor: .5, groupPeriods: 7, groupAmplitude: .35, longshoreWavelengthMeters: 90, longshoreAmplitude: .25, orbital: .8, rockReflection: .4,
+    shore: Object.freeze({ gamma: .78, deepDepthFactor: .5, groupPeriods: 7, groupAmplitude: .35, longshoreWavelengthMeters: 90, longshoreAmplitude: .1, orbital: .8, rockReflection: .4,
         sharpening: .6, exposureFloor: .4, exposureRamp: Object.freeze({ fullMeters: 60, zeroMeters: 220 }), rockZones: Object.freeze(['platform', 'bluff-toe']), exposureZones: Object.freeze(['bar', 'surf', 'swash']),
         beachZones: Object.freeze(['surf', 'swash']), sidecar: 'geology/manifest.json' }),
     // world-space envelope of the swell cascade (wave groups): 1 +- amplitude at the wavelength, in meters, so the patch never repeats exactly
@@ -67,7 +67,7 @@ export const LANDSCAPE_OCEAN = Object.freeze({
     // thinning seaward and the backwash leaves depositShare of it dying over depositSeconds; the water sheet reflects with filmMeanSquareSlope
     // under rippleShare of the finest cascade's slopes; sandAlbedo is the representative albedo of the calibrated wet ratio; estimateBytes the
     // resources estimate
-    swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 3, sheetFoamShare: .3, depositShare: .5, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
+    swash: Object.freeze({ landMeters: 100, seaMeters: 6, maxHeightMeters: 2.5, minHeightMeters: 1.5, liftMeters: .03, maxSlopeDegrees: 14, dryingSeconds: 60, cyclesRemembered: 8, frontFoamMeters: 3, sheetFoamShare: .3, depositShare: 0, depositSeconds: 10, filmMeanSquareSlope: .008, rippleShare: .5, sandAlbedo: .4, landSmoothingPasses: 3, estimateBytes: 8 * MiB }),
     // AI 597 D5 light through the water (ocean_light.glsl): the local water blends the AI577 clear coastal water (LANDSCAPE_WATER_OPTICS) toward
     // the oceanic water with the still-water depth (pure-water absorption of blue and green, molecular backscatter: the deep blue offshore)
     // and toward the stirred surf water with the breaking and the foam (sand in suspension: more backscatter and absorption, the milky

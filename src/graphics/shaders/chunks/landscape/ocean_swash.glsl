@@ -57,15 +57,18 @@ vec2 oceanSwashToWater(vec2 uv) {
     return length(gradient) > 1.0e-6 ? normalize(gradient) : vec2(0.0);
 }
 
-// the crest arrival the sand follows: the travel time at its nearest waterline texel, two metres past the waterline, averaged over the 3 x 3
-// texels there (the marched time has local maxima in the inner corners of the raster's staircased waterline; averaged, the fronts of two
-// waterline points meeting on the sand blend)
+// the crest arrival the sand follows: the travel time fourteen metres seaward of its nearest waterline point, where the bore collapses
+// into the swash, averaged along the shore over eleven taps ten metres apart. Read at the waterline itself (two metres past it until
+// 2026-10-15), where the marched phase speed vanishes, the crest's oblique sweep along the shore compressed into a sawtooth of phase every
+// 90 m on the swim beach: the sheet ran up in regular tongues, each outlined by its foam, and no longshore averaging removes a phase ramp.
+// At the collapse point the sweep is the bore's, three to four times longer, and the average along the shore blends the raster's
+// staircase and the bars' local maxima, so the sheet runs up as one gently uneven edge.
 float oceanSwashArrival(vec2 uv, vec2 toWater, float shoreDistance) {
-    vec2 texel = 1.0 / vec2(textureSize(uOceanField, 0));
-    vec2 foot = uv + toWater * (max(-shoreDistance, 0.0) + 2.0) * uOceanFieldBounds.zw;
+    vec2 foot = uv + toWater * (max(-shoreDistance, 0.0) + 14.0) * uOceanFieldBounds.zw;
+    vec2 along = vec2(-toWater.y, toWater.x) * 10.0 * uOceanFieldBounds.zw;
     float sum = 0.0;
-    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) sum += texture(uOceanShoreField, foot + vec2(float(i), float(j)) * texel).x;
-    return sum / 9.0;
+    for (int i = -5; i <= 5; i++) sum += texture(uOceanShoreField, foot + along * float(i)).x;
+    return sum / 11.0;
 }
 
 // the foreshore slope that drives the run-up at this longshore position (Stockdon uses the mean slope of the swash zone, not the local one,
@@ -94,7 +97,7 @@ OceanSwash oceanSwashAt(vec2 xz, float height) {
     // the wave-to-wave run-up: the group envelope and the longshore variation of the train, damped by the shore exposure like the train
     float sheltered = uOceanShoreExposure.x + (1.0 - uOceanShoreExposure.x) * field.w;
     vec2 p = xz / uOceanShoreWave.w + vec2(3.7, 11.9);
-    float longshore = 1.0 + uOceanShoreShape.y * (2.0 * (0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.0 + vec2(5.1, 2.3))) - 1.0);
+    float longshore = 1.0 + uOceanShoreShape.y * (2.0 * (0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.43 + vec2(5.1, 2.3))) - 1.0);
     float slope = oceanSwashSlope(uv, toWater, field.y);
     float base = oceanSwashRunup(slope) * longshore * sheltered;
     // the sheet is placed by the cross-shore distance, not by the sand's own height: the run-up R climbs the foreshore slope, so its edge

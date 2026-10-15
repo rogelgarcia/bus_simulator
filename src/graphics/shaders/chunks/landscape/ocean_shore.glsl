@@ -64,7 +64,7 @@ OceanShoreWave oceanShoreAt(vec2 xz) {
     float lag = uOceanTime - shore.x;
     float group = 1.0 + uOceanShoreShape.x * sin(6.283185307179586 * lag / uOceanShoreWave.y);
     vec2 p = xz / uOceanShoreWave.w + vec2(3.7, 11.9);
-    float longshore = 1.0 + uOceanShoreShape.y * (2.0 * (0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.0 + vec2(5.1, 2.3))) - 1.0);
+    float longshore = 1.0 + uOceanShoreShape.y * (2.0 * (0.65 * oceanValueNoise(p) + 0.35 * oceanValueNoise(p * 2.43 + vec2(5.1, 2.3))) - 1.0);
     wave.weight = 1.0 - smoothstep(uOceanShoreMix.x, uOceanShoreMix.y, field.x);
     // a surge over rock keeps its uncapped height, within the water it has (twice the sand cap plus a sheet)
     float height = min(field.z, 2.0 * uOceanShoreWave.z * field.x + 0.25);
