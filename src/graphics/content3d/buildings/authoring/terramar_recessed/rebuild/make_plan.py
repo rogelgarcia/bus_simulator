@@ -32,7 +32,9 @@ C = P.C
 APPROVED = "E"
 PLAN = os.path.join(HERE, "terramar_plan.json")
 GUARD_INSET = 0.15          # roof glass guard line inside the roof edge
-PENTHOUSE = {"x": [-5.0, 5.0], "y": [-1.0, 6.5], "height_m": 3.5}   # the game's 10 x 7.5 m, at the rear of the roof
+# the game's 10 x 7.5 m at the rear of the roof; 2026-10-15 the front wall pushed 1.2 m toward the terrace (10 x 8.7 m) so
+# the lobby in front of the core is 2.75 m deep, still under CAM_B8's sightline (plan["roof"]["sightline"])
+PENTHOUSE = {"x": [-5.0, 5.0], "y": [-2.2, 6.5], "height_m": 3.5}
 COLUMN_WIDTH = 0.9          # rounded chamfer column casing (AI 616: 0.9 wide)
 # Structure layer (AI 643)
 GROUND_FLOOR_LEVEL = 0.15   # one step above the street (the game stands the building on a 0.2 m base)
@@ -75,20 +77,36 @@ PODIUM = {"depth": 0.95, "pier_ext": 0.45, "column_pier": 0.9, "member": 0.06, "
 # b8's view (AI 642) with the aerial's openings, louvred annex, solar array and mechanical units
 ROOF = {"paving": 0.05,
         "penthouse": {"wall": 0.25, "parapet_top": 3.8, "roof_slab": [3.2, 3.5], "cap": {"overhang": 0.03, "height": 0.06},
+                      # 2026-10-15: the side openings, the annex and the plant moved 1.2 m forward with the front wall
                       "openings": [{"wall": "front", "kind": "door", "s": [-3.6, -2.6], "z": [0.0, 2.4]},
                                    {"wall": "front", "kind": "slider", "s": [0.5, 3.8], "z": [0.0, 2.6]},
-                                   {"wall": "right", "kind": "window", "s": [1.5, 2.7], "z": [0.0, 2.6]},
-                                   {"wall": "left", "kind": "door", "s": [1.5, 2.5], "z": [0.0, 2.4]},
+                                   {"wall": "right", "kind": "window", "s": [0.3, 1.5], "z": [0.0, 2.6]},
+                                   {"wall": "left", "kind": "door", "s": [0.3, 1.3], "z": [0.0, 2.4]},
                                    {"wall": "rear", "kind": "window", "s": [-3.0, -1.0], "z": [0.9, 2.6]},
                                    {"wall": "rear", "kind": "window", "s": [1.0, 3.0], "z": [0.9, 2.6]}],
-                      "frame": {"member": 0.06, "depth": 0.08}},
-        "annex": {"x": [-8.5, -5.0], "y": [0.0, 5.5], "height": 2.75, "post": 0.15, "beam": 0.25,
+                      "frame": {"member": 0.06, "depth": 0.08},
+                      # 2026-10-15: the core rises through the penthouse (the roof-access headhouse); its front face
+                      # opens on the lobby: the stair door and two lift doors, as frames and leaves on the face
+                      "core_doors": [{"kind": "stair", "x": [-2.45, -1.55], "h": 2.1},
+                                     {"kind": "lift", "x": [-0.05, 0.95], "h": 2.15},
+                                     {"kind": "lift", "x": [1.95, 2.95], "h": 2.15}],
+                      "call_panel": {"x": [1.41, 1.49], "z": [0.95, 1.2]}},
+        "annex": {"x": [-8.5, -5.0], "y": [-1.2, 4.3], "height": 2.75, "post": 0.15, "beam": 0.25,
                   "louvre": {"width": 0.15, "thickness": 0.03, "spacing": 0.30}, "pane": 1.5},
         "solar": {"margin": 0.35, "panel": 1.0, "gap": 0.45, "tilt_deg": 10.0, "clearance": 0.15, "thickness": 0.04,
                   "module": 1.0, "module_gap": 0.02, "rail": 0.05},
-        "units": [{"x": [-4.3, -2.7], "y": [-0.45, 0.55], "h": 1.1}, {"x": [-2.5, -1.1], "y": [-0.45, 0.45], "h": 0.95},
-                  {"x": [-4.3, -3.3], "y": [0.75, 1.45], "h": 0.7}],
-        "units_zone": {"x": [-4.4, -0.9], "y": [-0.45, 1.5]}}
+        # 2026-10-15: detailed plant (roof_units.py): two top-discharge condensing units along the front parapet, a
+        # side-discharge condenser behind them blowing out over the low parapet, their lines in a covered tray to the
+        # roof hood; service: the side with seamed panels; pipes: the outlet side and its range along that side
+        "units": [{"x": [-4.3, -2.7], "y": [-1.65, -0.65], "h": 1.1, "kind": "top_fan", "fans": 2, "blades": 4,
+                   "service": "-x", "tone": "warm", "pipes": {"side": "+y", "a": [-3.05, -2.8]}, "seed": 1},
+                  {"x": [-2.5, -1.2], "y": [-1.65, -0.75], "h": 0.95, "kind": "top_fan", "fans": 1, "blades": 5,
+                   "service": "-y", "tone": "cool", "pipes": {"side": "+y", "a": [-2.43, -2.18]}, "seed": 2},
+                  {"x": [-4.3, -3.65], "y": [-0.15, 0.85], "h": 0.8, "kind": "side_fan", "fan_side": "-x", "blades": 3,
+                   "service": "-y", "tone": "warm", "pipes": {"side": "-y", "a": [-4.1, -3.85]}, "seed": 3}],
+        "pipe_tray": {"x": [-4.2, -1.75], "y": [-0.45, -0.25]},
+        "roof_hood": {"x": [-1.75, -1.15], "y": [-0.62, 0.02]},
+        "units_zone": {"x": [-4.4, -0.9], "y": [-1.7, 0.95]}}
 # Materials layer (AI 648): the kit limestone (AI 640) on every stone face set, its panel joints cut as geometry
 # (b8: courses of storey / 5 on the pilasters, three courses across the sign band; large-format 1200 x ~670 mm panels),
 # warm wood, black steel, clear glass. tone = linear multiplier on the kit's base colour, calibrated against b8 boxes
@@ -109,14 +127,21 @@ MATERIALS = {
     "site_paving": {"set": "terramar_continuous_limestone", "repeat_m": 4.0, "tone": [0.74, 0.73, 0.71], "tile_m": 0.60,
                     "joint_m": 0.006, "joint_rgb": [0.27, 0.26, 0.24], "joint_roughness": 0.9, "roughness_gain": 1.0,
                     "normal_strength": 0.8, "slots": ["TM_RB_site_paving"]},
+    # seams (2026-10-14): where two stone pieces meet flush (a lintel on a pier, a band under a slab fascia, a jamb beside
+    # a pier) the joint is cut centred on the seam over the stretch they share; carry_hops: how many faces a vertical
+    # joint carries on over (the eased arris, then the stone return) past its own face
     "joints": {"width": 0.008, "bevel": 0.003, "depth": 0.006, "panel_max": 1.2, "course_target": 0.67, "margin": 0.004,
-               "vertical_min_height": 0.2,
+               "vertical_min_height": 0.2, "seams": True, "seam_min_length": 0.02, "carry_hops": 2,
                "seed": 648, "rgb": [0.20, 0.185, 0.165], "roughness": 0.9,
                "rules": {"TM_RB_pilaster": {"courses": True, "verticals": True},
                          "TM_RB_column": {"courses": True, "verticals": False},
                          "TM_RB_slab_fascia": {"courses": False, "verticals": True},
                          "TM_RB_podium_stone": {"courses": True, "verticals": True},
-                         "TM_RB_penthouse_stone": {"courses": True, "verticals": True}}},
+                         "TM_RB_penthouse_stone": {"courses": True, "verticals": True}},
+               # objects (2026-10-14): stone pieces whose face set is shared with non-stone uses, jointed by name in any
+               # part that holds them; base: a joint at the foot of their sides, where they stand on the paving (the
+               # site's raised limestone tree pits: blocks of at most panel_max, the coping's seam, the foot joint)
+               "objects": {"rb_site_tree_pits": {"slot": "TM_RB_paving", "courses": False, "verticals": True, "base": True}}},
     "wood": {"rgb": [0.46, 0.25, 0.10], "roughness": 0.5, "slots": ["TM_RB_wood"],
              "note": "warm teak reveals and linings, flat: no wood texture is installed"},
     "soffit": {"roughness": 0.5, "slots": ["TM_RB_soffit"],
@@ -129,6 +154,15 @@ MATERIALS = {
     "interior_floor": {"rgb": [0.42, 0.33, 0.24], "roughness": 0.55, "slots": ["TM_RB_floor"]},
     "concrete": {"rgb": [0.48, 0.47, 0.45], "roughness": 0.85, "slots": ["TM_RB_roof_top", "TM_RB_hidden"]},
 }
+# Stone returns and connection joints (2026-10-14; the user on the entrance recess: "the stone has no depth; there should
+# be a small stone on the side so it is 3d and not a wallpaper"). Where the limestone stops at another material on an
+# outside corner it wraps the corner: at the entrance and loggia openings a reveal stone `return` deep on the jambs and
+# under the heads (b8 shows stone reveals well into the portal before the wood), under the slab fascias the cladding's
+# own thickness `fascia_return`; each flush with the next material's face, its arris eased by `arris`. A shadow gap `gap`
+# wide and `gap_depth` deep (dark, the joint material) then separates it from the wood. Inside corners (stone side wall
+# -> wood panel) get the same gap. Read by the structure (entrance jambs, the slab edges' fascia -> soffit), the podium
+# (sign band, loggia jambs and lintel, linings) and the envelope (the front centre's wood reveal panels).
+RETURNS = {"return": 0.10, "fascia_return": 0.04, "arris": 0.004, "gap": 0.010, "gap_depth": 0.018}
 RUNS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -472,6 +506,13 @@ def main():
         "game_comparison": {"podium_m": [28, 22], "tower_m": [25, 19], "depth_difference_m": round(max(ys) - min(ys) - 22, 2)},
     }
     plan["cameras"] = cameras(cal, plan)
+    plan["returns"] = {**RETURNS, "comment": "2026-10-14 stone returns and connection joints: where the stone stops at "
+                                             "another material on an outside corner it wraps the corner (`return` at "
+                                             "the entrance and loggia jambs and heads, `fascia_return` under the slab "
+                                             "fascias; flush with the next material's face, arris eased by `arris`), "
+                                             "then a shadow gap `gap` wide and `gap_depth` deep (TM_RB_stone_joint) "
+                                             "before the wood; an inside corner (stone side wall -> wood panel) gets "
+                                             "the same gap"}
     plan["envelope"] = envelope(plan, wall_sharp, columns)
     plan["balconies"] = balconies(plan, poly, radii)
     plan["podium"] = podium(plan, poly, radii)

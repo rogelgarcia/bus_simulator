@@ -16,13 +16,22 @@
 #                 course joints  z-planes from joints.course_planes, cut into the course faces whose height holds the
 #                                groove with clearance (a lintel whose soffit sits on a plane is not cut there)
 #                 vertical joints per flat vertical face at least vertical_min_height tall: equal panels of at most
-#                                panel_max across its width, carried on over the stone soffit or top they meet
+#                                panel_max across its width, carried on over the faces they meet square (the stone
+#                                soffit or top, an eased arris and the stone return past it: joints.carry_hops)
+#                 seam joints    (2026-10-14) where two stone pieces meet flush (coplanar faces of different solids or
+#                                objects sharing an edge: a lintel beside a pier, a band under a slab fascia, a jamb
+#                                beside a pier) a joint centred on the seam, over the stretch the two faces share
+#                 objects        (2026-10-14) joints.objects joints named objects in whichever part holds them, on a
+#                                face set the rules leave alone elsewhere (the site's limestone tree pits on
+#                                TM_RB_paving); `base` adds a joint at the foot of their sides, where they meet the paving
 #               A joint is a groove `width` wide and `depth` deep with a `bevel` each side; its floor takes the joint
 #               material (TM_RB_stone_joint). Each panel (a region bounded by joint floors) gets its own UV offset,
 #               seeded, so the kit's 4 m repeat does not line up from panel to panel. An object is cut once: it is
 #               tagged rb_joints and skipped until its layer rebuilds it.
 #   writes      tests/artifacts/blender/terramar_recessed/rebuild/joint_layout.json (every original stone face with
 #               the joint centre lines on it, world space, for compose_joint_layout.py's per-run elevations)
+# joint_slot() gives the geometry layers TM_RB_stone_joint for the shadow gaps they model (2026-10-14: the stone
+# returns' gaps between stone and wood); this pass dresses it with the joints' colour.
 import hashlib
 import importlib
 import json
@@ -46,6 +55,14 @@ LAYER = "materials"
 STONE_GROUP = "TM_RB_limestone"
 JOINT_MATERIAL = "TM_RB_stone_joint"
 JOINT_LAYOUT = os.path.join(L.C.REBUILD_DIR, "joint_layout.json")
+
+
+def joint_slot():
+    """TM_RB_stone_joint for a layer's modelled shadow gaps: made dark if missing (this pass dresses it later)."""
+    if bpy.data.materials.get(JOINT_MATERIAL) is None:
+        mat = bpy.data.materials.new(JOINT_MATERIAL)
+        mat.diffuse_color = (0.20, 0.185, 0.165, 1.0)
+    return JOINT_MATERIAL
 
 
 # ---------------------------------------------------------------- materials
@@ -326,11 +343,120 @@ def polygon_line(points, n, c):
     return [(out[i], out[i + 1]) for i in range(0, len(out) - 1, 2)]
 
 
-def cut_joints(ob, jt, joint_mat):
-    """Cut the stone joints into one object; returns its stats and its layout record (or None if it has no stone)."""
+def rules_for(ob, jt):
+    """The joint rules by slot for one object: joints.rules, plus its own rule from joints.objects (2026-10-14)."""
+    rules = dict(jt["rules"])
+    own = jt.get("objects", {}).get(ob.name)
+    if own:
+        rules[own["slot"]] = own
+    return rules
+
+
+def solid_ids(me):
+    """The solid (connected vertex set) each polygon belongs to: pieces() builds every solid from its own vertices."""
+    parent = list(range(len(me.vertices)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for e in me.edges:
+        a, b = find(e.vertices[0]), find(e.vertices[1])
+        if a != b:
+            parent[a] = b
+    return [find(p.vertices[0]) for p in me.polygons]
+
+
+def seam_joints(objects, jt):
+    """Seams between flush stone pieces: coplanar stone faces of different solids (or objects) facing the same way and
+    sharing a stretch of a boundary edge. Returns {object name: {face index: [(t, s, e, e0, e1)]}}: the joint plane
+    t . p = s through the seam (t in the face's plane, square to the edge) and the shared stretch e0..e1 along e."""
+    tol, tol_c = 2e-4, 2e-4
+    recs, buckets = [], {}
+    for ob in objects:
+        me = ob.data
+        rules = rules_for(ob, jt)
+        names = [m.name if m else "" for m in me.materials]
+        if not any(n in rules for n in names):
+            continue
+        mw = ob.matrix_world
+        rot = mw.to_3x3()
+        sid = solid_ids(me)
+        for p in me.polygons:
+            if p.material_index >= len(names) or names[p.material_index] not in rules:
+                continue
+            n = (rot @ p.normal).normalized()
+            pts = [mw @ me.vertices[v].co for v in p.vertices]
+            c = n.dot(pts[0])
+            rec = (ob.name, p.index, sid[p.index], n, c, pts)
+            nk = tuple(round(x, 3) for x in n)
+            buckets.setdefault((nk, round(c / tol_c)), []).append(len(recs))
+            recs.append(rec)
+    out = {}
+    min_len = jt.get("seam_min_length", 0.02)
+    done = set()
+    for i, (oa, fa, sa, na, ca, pa) in enumerate(recs):
+        nk = tuple(round(x, 3) for x in na)
+        ck = round(ca / tol_c)
+        for j in [j for k in (ck - 1, ck, ck + 1) for j in buckets.get((nk, k), [])]:
+            if j <= i or (i, j) in done:
+                continue
+            ob_, fb, sb, nb, cb, pb = recs[j]
+            if (ob_ == oa and sb == sa) or na.dot(nb) < 1 - 1e-6 or abs(ca - cb) > tol_c:
+                continue
+            done.add((i, j))
+            ctr_a, ctr_b = sum(pa, Vector()) / len(pa), sum(pb, Vector()) / len(pb)
+            for k in range(len(pa)):
+                p0, p1 = pa[k], pa[(k + 1) % len(pa)]
+                if (p1 - p0).length < min_len:
+                    continue
+                e = (p1 - p0).normalized()
+                t = na.cross(e)
+                s = t.dot(p0)
+                for m in range(len(pb)):
+                    q0, q1 = pb[m], pb[(m + 1) % len(pb)]
+                    if abs(t.dot(q0) - s) > tol or abs(t.dot(q1) - s) > tol:
+                        continue                                       # not on the same line
+                    if (t.dot(ctr_a) - s) * (t.dot(ctr_b) - s) >= 0:
+                        continue                                       # not on opposite sides of it
+                    lo = max(min(e.dot(p0), e.dot(p1)), min(e.dot(q0), e.dot(q1)))
+                    hi = min(max(e.dot(p0), e.dot(p1)), max(e.dot(q0), e.dot(q1)))
+                    if hi - lo < min_len:
+                        continue
+                    tc, sc = canonical(t, s)
+                    for name, face in ((oa, fa), (ob_, fb)):       # a face may share one line with several pieces
+                        lst = out.setdefault(name, {}).setdefault(face, [])
+                        if all((tc - t2).length > 1e-4 or abs(sc - s2) > tol or abs(lo - a0) > tol or abs(hi - a1) > tol
+                               for t2, s2, _, a0, a1 in lst):
+                            lst.append((tc, sc, e.copy(), lo, hi))
+    return out
+
+
+def merge_stretches(recs, tol):
+    """One face's seams with the stretches along one line merged where they meet or overlap (a fascia over a pier and the
+    lintel beside it is one seam: no ramp, no doubled cut at the meeting point)."""
+    norm = []
+    for t, s, e, e0, e1 in recs:                                       # one spelling of each line's direction
+        ec, _ = canonical(e, 0.0)
+        norm.append((t, s, ec, e0, e1) if ec.dot(e) > 0 else (t, s, ec, -e1, -e0))
+    out = []
+    for t, s, e, e0, e1 in sorted(norm, key=lambda r: r[3]):
+        for k, (t2, s2, e2, a0, a1) in enumerate(out):
+            if (t - t2).length < 1e-4 and abs(s - s2) < tol and e.dot(e2) > 0.9999 and e0 <= a1 + tol and e1 >= a0 - tol:
+                out[k] = (t2, s2, e2, min(a0, e0), max(a1, e1))
+                break
+        else:
+            out.append((t, s, e, e0, e1))
+    return out
+
+
+def cut_joints(ob, jt, joint_mat, seams=None):
+    """Cut the stone joints into one object; returns its stats and its layout record (or None if it has no stone).
+    seams: {face index: [(t, s, e, e0, e1)]} from seam_joints()."""
     me = ob.data
     names = [m.name if m else "" for m in me.materials]
-    rules = jt["rules"]
+    rules = rules_for(ob, jt)
     stone_idx = {i for i, n in enumerate(names) if n in rules}
     if not stone_idx:
         return None, None
@@ -349,7 +475,8 @@ def cut_joints(ob, jt, joint_mat):
     bm.from_mesh(me)
     bm.transform(ob.matrix_world)
     bm.normal_update()
-    orig = bm.faces.layers.int.new("rb_orig")
+    foot = min((v.co.z for v in bm.verts), default=0.0)               # the paving a `base` object stands on (a coping
+    orig = bm.faces.layers.int.new("rb_orig")                          # on its own body meets it in a seam instead)
     faces = {}                    # orig id -> record of the original stone face
     for i, f in enumerate(bm.faces):
         f[orig] = i
@@ -357,7 +484,8 @@ def cut_joints(ob, jt, joint_mat):
             continue
         n = f.normal.copy()
         pts = [v.co.copy() for v in f.verts]
-        rec = {"n": n, "pts": pts, "slot": names[f.material_index], "z": [], "v": []}     # v: [(t, s)] vertical joint planes
+        rec = {"n": n, "pts": pts, "slot": names[f.material_index], "z": [], "v": [],     # v: [(t, s)] vertical joint planes
+               "s": merge_stretches((seams or {}).get(i, []), tol)}                     # s: [(t, s, e, e0, e1)] seams
         if abs(n.z) < 0.5 and f.material_index in course_idx:
             z0, z1 = min(p.z for p in pts), max(p.z for p in pts)
             rec["z"] = [zc for zc in jt["course_planes"] if z0 < zc - clear and z1 > zc + clear]
@@ -368,25 +496,43 @@ def cut_joints(ob, jt, joint_mat):
             s0, s1 = min(s), max(s)
             k = math.ceil((s1 - s0) / jt["panel_max"] - 1e-9)
             rec["v"] = [canonical(t, s0 + (s1 - s0) * j / k) for j in range(1, k)]
+        if abs(n.z) < 0.1 and rules[rec["slot"]].get("base") and min(p.z for p in pts) < foot + tol:
+            e = Vector((-n.y, n.x, 0.0)).normalized()                  # a joint at the foot: its strip from the foot up
+            ext = [p.dot(e) for p in pts]
+            rec["s"].append((Vector((0.0, 0.0, 1.0)), foot + half, e, min(ext), max(ext)))
         faces[i] = rec
-    for i, f in enumerate(bm.faces):                                   # a vertical joint carries on over the stone soffit
-        if i not in faces or not faces[i]["v"]:                        # or top it meets (a lintel's underside)
-            continue
-        for e in f.edges:
-            for h in e.link_faces:
-                hid = h[orig]
-                if hid == i or hid not in faces or abs(faces[hid]["n"].z) < 0.9:
-                    continue
-                for t, sj in faces[i]["v"]:                         # a soffit can meet the same plane from two faces
-                    s = [p.dot(t) for p in faces[hid]["pts"]]
-                    if min(s) < sj - clear and max(s) > sj + clear and all(abs(sj - s2) > tol or (t - t2).length > 1e-4
-                                                                        for t2, s2 in faces[hid]["v"]):
-                        faces[hid]["v"].append((t, sj))
+    # a vertical joint carries on over the stone faces it meets square (the soffit or top of a lintel; 2026-10-14: an
+    # eased arris and the stone return past it): one face past its own, further only across narrow faces (a bevel, a
+    # return), up to joints.carry_hops faces
+    adj = {i: {h[orig] for e in f.edges for h in e.link_faces} - {i} for i, f in enumerate(bm.faces) if i in faces}
+    narrow = 0.1
+    for i in [i for i in faces if faces[i]["v"]]:
+        for t, sj in list(faces[i]["v"]):
+            front, seen = [i], {i}
+            for hop in range(jt.get("carry_hops", 1)):
+                nxt = []
+                for fid in front:
+                    for hid in adj[fid]:
+                        if hid in seen or hid not in faces or abs(faces[hid]["n"].dot(t)) > 0.02:
+                            continue
+                        seen.add(hid)
+                        rec = faces[hid]
+                        s = [p.dot(t) for p in rec["pts"]]
+                        if not (min(s) < sj - clear and max(s) > sj + clear):
+                            continue
+                        if all(abs(sj - s2) > tol or (t - t2).length > 1e-4 for t2, s2 in rec["v"]):
+                            rec["v"].append((t, sj))       # a soffit can meet the same plane from two faces
+                        run = rec["n"].cross(t)                     # the joint's direction across this face
+                        w = [p.dot(run) for p in rec["pts"]]
+                        if max(w) - min(w) <= narrow:
+                            nxt.append(hid)
+                front = nxt
 
     def bisect(fs, co, no):
         """Cut faces fs; returns every face they became (bisect_plane's output holds the cut and the uncut ones)."""
         geom = fs + list({e for f in fs for e in f.edges}) + list({v for f in fs for v in f.verts})
-        res = bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-7, plane_co=co, plane_no=no)
+        res = bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=co, plane_no=no)    # float32: a vertex an
+        # earlier cut put on this plane (a neighbour's cut along a shared edge) reads ~1e-6 off it on a diagonal run
         return [g for g in res["geom"] if isinstance(g, bmesh.types.BMFace)]
 
     by_orig = {oid: [] for oid in faces}
@@ -399,6 +545,20 @@ def cut_joints(ob, jt, joint_mat):
             for off in offsets:
                 by_orig[oid] = bisect(by_orig[oid], t * (sj + off), t)
                 cuts += 1
+    for oid, rec in faces.items():                                     # seams, face by face: the groove's lines, and
+        done = []                                                      # where a shared stretch ends inside the face, a
+        for t, sj, e, e0, e1 in rec["s"]:                              # short ramp `bevel` long out of it
+            if not any((t - t2).length < 1e-4 and abs(sj - s2) < tol for t2, s2 in done):
+                done.append((t, sj))
+                for off in offsets:
+                    by_orig[oid] = bisect(by_orig[oid], t * (sj + off), t)
+                    cuts += 1
+            ext = [p.dot(e) for p in rec["pts"]]
+            for at, step in ((e0, -bev), (e1, bev)):
+                if min(ext) + tol < at + min(step, 0.0) and at + max(step, 0.0) < max(ext) - tol:
+                    for c in (at, at + step):
+                        by_orig[oid] = bisect(by_orig[oid], e * c, e)
+                        cuts += 1
     planes = sorted({zc for rec in faces.values() for zc in rec["z"]})
     for zc in planes:                                                  # course joints, plane by plane
         oids = [oid for oid, rec in faces.items() if zc in rec["z"]]
@@ -415,7 +575,8 @@ def cut_joints(ob, jt, joint_mat):
     def strips(oid, co):
         rec = faces[oid]
         return (any(abs(co.z - zc) <= half + tol for zc in rec["z"])
-                or any(abs(co.dot(t) - sj) <= half + tol for t, sj in rec["v"]))
+                or any(abs(co.dot(t) - sj) <= half + tol for t, sj in rec["v"])
+                or any(abs(co.dot(t) - sj) <= half + tol and e0 - tol <= co.dot(e) <= e1 + tol for t, sj, e, e0, e1 in rec["s"]))
     moves = []
     for v in bm.verts:
         normals = [faces[f[orig]]["n"] for f in v.link_faces if f[orig] in faces and strips(f[orig], v.co)]
@@ -504,9 +665,12 @@ def cut_joints(ob, jt, joint_mat):
     for oid, rec in faces.items():
         lines = [seg(a, b) for zc in rec["z"] for a, b in polygon_line(rec["pts"], Vector((0, 0, 1)), zc)]
         lines += [seg(a, b) for t, sj in rec["v"] for a, b in polygon_line(rec["pts"], t, sj)]
+        c0 = rec["n"].dot(rec["pts"][0])
+        lines += [seg(t * sj + e * e0 + rec["n"] * c0, t * sj + e * e1 + rec["n"] * c0) for t, sj, e, e0, e1 in rec["s"]]
         layout_faces.append({"slot": rec["slot"], "n": [round(c, 4) for c in rec["n"]],
                              "pts": [[round(c, 4) for c in p] for p in rec["pts"]], "joints": lines})
     stats = {"stone_faces": len(faces), "course_planes": len(planes), "vertical_joints": sum(len(r["v"]) for r in faces.values()),
+             "seam_joints": sum(len(r["s"]) for r in faces.values()),
              "bisects": cuts, "joint_floor_faces": floors, "panels": len(panels), "non_manifold": non_manifold,
              "degenerate_faces": degenerate, "non_planar_faces": non_planar}
     return stats, {"object": ob.name, "faces": layout_faces}
@@ -518,13 +682,20 @@ def build(plan):
     jt = dict(m["joints"], repeat_m=m["stone"]["repeat_m"])
     per_object, layout, skipped = {}, [], []
     root = bpy.data.collections.get(L.ROOT)
-    for ob in sorted(root.all_objects if root else [], key=lambda o: o.name):
+    named = [bpy.context.scene.objects.get(n) for n in jt.get("objects", {})]      # joints.objects, in any part
+    todo = []
+    for ob in sorted({*(root.all_objects if root else []), *[o for o in named if o is not None]}, key=lambda o: o.name):
         if ob.type != "MESH":
             continue
         if ob.get("rb_joints"):
             skipped.append(ob.name)
             continue
-        stats, rec = cut_joints(ob, jt, joint_mat)
+        todo.append(ob)
+    # seams pair the objects cut in this run only: a piece already cut has moved its edges, so a layer rebuilt alone
+    # gets its own half of a seam with a piece of another layer (target= rebuilds the whole part and cuts both halves)
+    seams = seam_joints(todo, jt) if jt.get("seams") else {}
+    for ob in todo:
+        stats, rec = cut_joints(ob, jt, joint_mat, seams.get(ob.name))
         if stats is None:
             continue
         per_object[ob.name] = stats
@@ -532,15 +703,19 @@ def build(plan):
         for key in ("non_manifold", "degenerate_faces", "non_planar_faces"):
             if stats[key]:
                 print(f"WARNING {ob.name}: {stats[key]} {key.replace('_', ' ')} after the joints")
-    if layout:
-        old = L.C.load_json(JOINT_LAYOUT) if os.path.exists(JOINT_LAYOUT) and skipped else {"objects": []}
-        keep = [o for o in old.get("objects", []) if o["object"] in skipped]
+    if layout:                                  # records are per part (the site's tree pits since 2026-10-14): keep the
+        part = os.environ.get("TM_RB_PART", "building")         # other parts' and this part's pieces not cut again
+        for rec in layout:
+            rec["part"] = part
+        old = L.C.load_json(JOINT_LAYOUT) if os.path.exists(JOINT_LAYOUT) else {"objects": []}
+        keep = [o for o in old.get("objects", []) if o.get("part", "building") != part or o["object"] in skipped]
         os.makedirs(os.path.dirname(JOINT_LAYOUT), exist_ok=True)
         with open(JOINT_LAYOUT, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"joints": {k: jt[k] for k in ("width", "bevel", "depth", "panel_max", "course_target", "seed")},
                        "objects": keep + layout}, fh)
     totals = {k: sum(s[k] for s in per_object.values())
-              for k in ("vertical_joints", "joint_floor_faces", "panels", "non_manifold", "degenerate_faces", "non_planar_faces")}
+              for k in ("vertical_joints", "seam_joints", "joint_floor_faces", "panels", "non_manifold", "degenerate_faces",
+                        "non_planar_faces")}
     return {"layer": LAYER, "dressed": len(dressed), "missing_slots": missing, "jointed_objects": len(per_object),
             "skipped_already_jointed": len(skipped), **totals, "per_object": per_object,
             "names": sorted(per_object)}

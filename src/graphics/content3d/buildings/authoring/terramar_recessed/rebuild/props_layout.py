@@ -10,6 +10,7 @@ Pure Python (make_plan.py writes the results to plan["props"]["balcony_plants"] 
 Floor 1 is the podium-roof terrace, whose edge planters are AI 628's. Every choice comes from one seeded generator
 per (floor, bay), so a bay keeps its planting when another changes, and no two balconies are alike.
 """
+import json
 import math
 import random
 
@@ -281,8 +282,9 @@ def podium_planters(plan, seed=628):
 # ---------------------------------------------------------------- AI 629: the roof terrace's planters and trees
 # b8 shows small palms and spiky rosettes (yucca / cycad-like) behind the roof guard against the sky, in clusters at the
 # front corners and along the chamfers, and low planting along the front between them. The aerial shows the perimeter
-# band all round and planter islands: one at the penthouse's front-left corner, a row of square planters between the
-# front lounge and the penthouse, and one by the right-hand lounge (clear of AI 630's seating zones and the doors).
+# band all round and planter islands. 2026-10-15 (the user: "is the grass area too cluttered?"): three islands instead of
+# six, kept near the edges so they frame AI 630's two zones and leave the middle open paving: one before the annex behind
+# the loungers, one behind the lounge by the penthouse's right corner, one on the right side strip.
 ROOF_BOX = {"depth": 0.63, "height": 0.30, "guard_gap": 0.03, "island_height": 0.50, "material": "TM_RB_paving",
             "greens": {"height": (0.35, 0.65), "radius": (0.25, 0.31), "spacing": 0.36},
             "inner_greens": {"height": (0.45, 0.80), "radius": (0.32, 0.42), "spacing": 0.55, "v": -0.62},
@@ -300,12 +302,9 @@ ROOF_CLUSTERS = {"HA": ["cycad", "palm", "cycad", "spiky"], "AB": ["spiky", "cyc
                  "GH": ["olive", "cycad"], "CD": ["olive", "cycad"], "DE": ["palm", "cycad"], "EF": ["cycad", "palm"],
                  "FG": ["cycad", "olive"], "B": ["cycad", "spiky", "cycad"], "H": ["cycad", "spiky", "cycad"],
                  "D": ["olive", "palm"], "F": ["palm", "olive"], "C": ["cycad"], "G": ["cycad"], "E": ["spiky"]}
-ROOF_ISLANDS = [{"id": "penthouse_left", "rect": [-7.6, -5.6, -3.2, -1.7], "kinds": ["palm", "cycad"], "shrubs": 3},
-                {"id": "row_1", "rect": [-4.95, -3.85, -4.55, -3.45], "kinds": ["olive"], "shrubs": 2},
-                {"id": "row_2", "rect": [-2.15, -1.05, -4.55, -3.45], "kinds": ["cycad"], "shrubs": 2},
-                {"id": "row_3", "rect": [1.05, 2.15, -4.55, -3.45], "kinds": ["palm"], "shrubs": 2},
-                {"id": "row_4", "rect": [3.85, 4.95, -4.55, -3.45], "kinds": ["olive"], "shrubs": 2},
-                {"id": "lounge_right", "rect": [5.6, 7.6, -3.2, -1.7], "kinds": ["cycad", "olive"], "shrubs": 3}]
+ROOF_ISLANDS = [{"id": "annex_front", "rect": [-7.8, -5.8, -3.4, -2.0], "kinds": ["palm", "cycad"], "shrubs": 3},
+                {"id": "lounge_back", "rect": [5.6, 7.6, -3.2, -1.8], "kinds": ["cycad", "olive"], "shrubs": 3},
+                {"id": "side_right", "rect": [10.2, 11.4, -0.6, 0.8], "kinds": ["palm"], "shrubs": 2}]
 RUN_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -478,22 +477,19 @@ def roof_planters(plan, seed=629):
 # ---------------------------------------------------------------- AI 630: the roof terrace's furniture
 # The aerial furnishes the terrace with a long dining table and about eight chairs on the west (along the H chamfer), a
 # lounge group of sofas and a coffee table on the east (along the B chamfer) and more lounge chairs at the front centre.
+# 2026-10-15 (the user: "no dinner table in the roof top"): the dining set is gone and the terrace holds two zones, the
+# lounge on the B chamfer and a pair of sun loungers mirrored on the H chamfer; the front centre stays open paving.
 # Each group stands in the frame of its run of the terrace loop (u along the run, v inward from the guard shoe's inner
 # line), far enough in to stay out of CAM_B8's view and clear of AI 629's planting (its ring reaches about 1.1 m in).
 # Every item has a facing (its local front, +v) in world terms; the layer models the pieces.
 CUSHIONS = [("offwhite", 0.5), ("ecru", 0.3), ("greige", 0.2)]
 ROOF_GROUPS = [
-    {"id": "dining", "run": "H", "u": 0.4, "v": 2.6, "items": [
-        ("dining_table", 0.0, 0.0, "in")]
-        + [("dining_chair", du, -0.80, "in") for du in (-0.8, 0.0, 0.8)]
-        + [("dining_chair", du, 0.80, "out") for du in (-0.8, 0.0, 0.8)]
-        + [("dining_chair", -1.55, 0.0, "+u"), ("dining_chair", 1.55, 0.0, "-u")]},
     {"id": "lounge", "run": "B", "u": -0.9, "v": 2.7, "items": [                 # an L: the armchairs flank the table
         ("coffee_table", 0.0, 0.0, "in"), ("sofa", 0.0, -1.0, "in"), ("armchair", -1.55, 0.1, "+u"),
         ("armchair", 1.55, 0.1, "-u"), ("side_table", -1.3, -1.0, "in"), ("side_table", 1.3, -1.0, "in")]},
-    {"id": "front_centre", "run": "A", "u": 0.0, "v": 3.6, "items": [               # a lounger's front is its foot end
-        ("low_table", 0.0, 0.0, "in"), ("armchair", -0.95, 0.0, "+u"), ("armchair", 0.95, 0.0, "-u"),
-        ("lounger", -3.4, -0.9, "out"), ("lounger", 3.4, -0.9, "out")]},           # feet towards the view
+    {"id": "loungers", "run": "H", "u": 0.9, "v": 2.6, "items": [                  # a lounger's front is its foot end
+        ("lounger", -0.62, 0.0, "out"), ("lounger", 0.62, 0.0, "out"),            # feet towards the view
+        ("side_table", 0.0, 0.62, "in")]},                                          # between the raised backs
 ]
 CLEAR_OF_GUARD = 1.2          # every footprint corner at least this far inside the guard shoe's inner line
 ITEM_SIZE = {"dining_table": (2.4, 0.95), "dining_chair": (0.48, 0.52), "sofa": (2.1, 0.9), "armchair": (0.85, 0.85),
@@ -1262,6 +1258,13 @@ def residential(plan, seed=637):
 # floor lamp; the right strip an armchair at the window. Downlights in the penthouse ceiling, warm fills under both
 # ceilings, plants in the corners. Every footprint is checked against the others, the walls, the core, the annex posts
 # and the door paths.
+# 2026-10-15 (the user: "that sofa in front of the glass doesn't make sense ... what there would be there? stairs?
+# elevators?"): the core is the roof-access headhouse, so the penthouse is its lobby. The front wall moved 1.2 m out
+# (a 2.75 m strip); the stair door and the two lift doors on the core's front face (layer_roof.py) open on it, and it
+# leads to the front door, the slider and the left door into the annex. It is kept clear: a slim teak console against
+# the front wall between the door and the slider, plants in the corners; the sofa, side tables, lamp and the right
+# strip's armchair are gone. The annex (moved forward with the front wall; the y values below are from its front,
+# annex["y"][0]) stays the amenity room: the kitchen and the lounge corner.
 PENTHOUSE = {"run": {"y": [2.8, 5.2], "depth": 0.6, "top_over": 0.02, "height": 0.9, "top": 0.04,
                      "shelf": {"z": 1.5, "depth": 0.3, "y": [3.0, 5.0], "thick": 0.03}},
              "island": {"x": [-7.4, -6.5], "y": [3.0, 4.8], "body_inset": [0.25, 0.05], "height": 0.92, "top": 0.04,
@@ -1269,12 +1272,16 @@ PENTHOUSE = {"run": {"y": [2.8, 5.2], "depth": 0.6, "top_over": 0.02, "height": 
              "pendant": {"drop_to": 1.75, "shade_r": 0.14, "shade_h": 0.2, "cord_r": 0.006},
              "downlight": {"radius": 0.08, "height": 0.015},
              "door_path": 0.2,
+             "console": {"size": [1.3, 0.38], "h": 0.78, "x": -1.05},
              "fill": {"rgb": [1.0, 0.70, 0.42], "w_per_m2": 15.0, "below": 0.12}}
 
 
 def penthouse(plan):
     rf, st = plan["roof"], plan["structure"]
-    P = PENTHOUSE
+    ay = rf["annex"]["y"][0]                                          # the annex's front: the kitchen's y are from it
+    P = json.loads(json.dumps(PENTHOUSE))
+    for part in (P["run"], P["run"]["shelf"], P["island"]):
+        part["y"] = [round(ay + v, 4) for v in part["y"]]
     top = rf["roof_top"]
     walk = top + rf["paving"]                                         # the annex stands on the terrace paving
     ph, an = rf["penthouse"], rf["annex"]
@@ -1300,18 +1307,17 @@ def penthouse(plan):
     ax0, ax1 = annex_in["x"]
     ay0, ay1 = annex_in["y"]
     items = [item("sofa", (-6.6, ay0 + 0.08 + 0.425), (0.0, 1.0), (2.0, 0.85), walk),
-             item("coffee_table", (-6.6, 1.6), (0.0, 1.0), (1.0, 0.55), walk, "greige"),
-             item("armchair", (ax0 + 0.14 + 0.4, 1.55), (1.0, 0.0), (0.8, 0.8), walk)]
-    lamps = [{"at": [-5.32, 0.55], "z": walk}]
-    # the front strip and the right strip of the penthouse
+             item("coffee_table", (-6.6, ay + 1.6), (0.0, 1.0), (1.0, 0.55), walk, "greige"),
+             item("armchair", (ax0 + 0.14 + 0.4, ay + 1.55), (1.0, 0.0), (0.8, 0.8), walk)]
+    lamps = [{"at": [-5.32, round(ay + 0.55, 4)], "z": walk}]
+    # the lobby (the front strip): a slim console against the front wall between the door and the slider, nothing else
     fy0, fy1 = inner["y"][0], core["y"][0]
-    items += [item("sofa", (2.15, fy1 - 0.02 - 0.425), (0.0, -1.0), (2.4, 0.85), top),
-              item("side_table", (0.55, 0.45), (0.0, -1.0), (0.45, 0.45), top, "greige"),
-              item("armchair", (4.2, 2.1), (1.0, 0.0), (0.8, 0.8), top),
-              item("side_table", (4.2, 2.85), (1.0, 0.0), (0.45, 0.45), top, "greige")]
-    lamps.append({"at": [3.65, 0.5], "z": top})
-    plants = [{"at": [-8.0, 2.55], "z": walk}, {"at": [-4.3, 0.3], "z": top}, {"at": [-4.2, 4.5], "z": top},
-              {"at": [4.2, 5.2], "z": top}]
+    co = P["console"]
+    console = item("coffee_table", (co["x"], fy0 + 0.02 + co["size"][1] / 2), (0.0, 1.0), co["size"], top)
+    console["h"] = co["h"]
+    items.append(console)
+    plants = [{"at": [-8.0, round(ay + 2.55, 4)], "z": walk}, {"at": [-4.35, round(fy0 + 0.4, 4)], "z": top},
+              {"at": [4.35, round(fy0 + 0.4, 4)], "z": top}, {"at": [-4.2, 4.5], "z": top}, {"at": [4.2, 5.2], "z": top}]
     I, R = P["island"], P["run"]
     stools = [[I["stools_x"], y] for y in blades if I["y"][0] + 0.25 <= y <= I["y"][1] - 0.25][::2]
     pendants = [{"at": [round((I["x"][0] + I["x"][1]) / 2, 4), y], "top": round(louvre_under, 4)} for _, y in stools]
@@ -1346,8 +1352,9 @@ def penthouse(plan):
              _rect_fill([core["x"][1], inner["x"][1]], [fy1, inner["y"][1]], ceiling),
              _rect_fill(annex_in["x"], annex_in["y"], round(louvre_under, 4))]
     return {"comment": "AI 638 penthouse: the annex holds the kitchen (counter run with a lit shelf on the penthouse wall, an "
-                       "island with stools and pendants from the louvres) and a lounge corner; the penthouse ring a sofa "
-                       "at the front slider and an armchair at the right window; downlights, warm fills, plants",
+                       "island with stools and pendants from the louvres) and a lounge corner; 2026-10-15: the penthouse "
+                       "ring is the lobby of the core (the roof-access headhouse: stair and lift doors on its front face), "
+                       "kept clear but for a console and plants; downlights, warm fills, plants",
             "config": P, "top": top, "walk": walk, "ceiling": ceiling, "louvre_under": round(louvre_under, 4),
             "annex_in": annex_in, "inner": inner, "core": core, "items": items, "lamps": lamps, "plants": plants,
             "stools": stools, "pendants": pendants, "downlights": dl, "fills": fills, "problems": problems}

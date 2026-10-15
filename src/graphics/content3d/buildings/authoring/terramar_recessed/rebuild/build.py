@@ -3,6 +3,7 @@
 #   blender -b --factory-startup --python build.py -- target=all [save=1]                 every part, then the composition
 #   blender -b --factory-startup --python build.py -- target=props                        one part from scratch
 #   blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_building.blend --python build.py -- layers=roof
+#   blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_site.blend --python build.py -- target=site layers=wear [wear=0]
 #   headed (MCP): open a part file (or File > New), then exec this file with the same argv after "--"
 #
 # The model is split into part files (2026-10-14), each owning one root collection; compose.py links the roots into
@@ -14,11 +15,16 @@
 #   terramar_site.blend       RB_SITE       the street: sidewalk, cafe, palms, lamps, entrance planters
 #   terramar_interiors.blend  TM_INTERIORS  the furnished interiors: restaurant, upper dining room, residential curtains and
 #                                           furniture, penthouse
-# Every layer is rebuild/layer_<name>.py with build(plan) and owns one collection under its part's root, which a rerun
-# empties and rebuilds; nothing else is touched. layers= alone picks the part its layers belong to. The materials pass
-# (layer_materials.py, AI 648) owns no collection: it re-dresses the file's TM_RB_* slots and cuts the stone joints into
-# the root's objects, so it runs after any geometry layer rebuilt (append materials=0 to skip it; layers=materials with
-# target= re-dresses a part already cut). The base scene, in every part, is refreshed each run:
+#   terramar_wear.blend       TM_WEAR       the wear module's overlay geometry (2026-10-14; empty until a feature adds some)
+# Every layer is rebuild/layer_<name>.py with build(plan) (or LAYER_MODULES' module and function) and owns one collection
+# under its part's root, which a rerun empties and rebuilds; nothing else is touched. layers= alone picks the part its
+# layers belong to. Two finishing passes own no collection and run after any geometry layer rebuilt (PART_FINISHING):
+#   materials  (layer_materials.py, AI 648) re-dresses the file's TM_RB_* slots and cuts the stone joints into the root's
+#              objects (materials=0 skips it; layers=materials with target= re-dresses a part already cut)
+#   wear       (layer_wear.py, 2026-10-14; building, props, site) splices the wear module into the exterior materials and
+#              writes its signals; it follows every materials pass (layers=wear re-applies it alone; wear=0 strips it,
+#              giving the part exactly as it was without the wear module)
+# The base scene, in every part, is refreshed each run:
 #   INSPECTION_RIG    the baseline's calibrated sky, sun, ground and rig cameras, appended once from the baseline .blend,
 #                     with its film settings (AgX, the game's calibrated exposure) -- the lighting render_poses.py uses
 #   RB_CAMERAS        CAM_B8 (fitted to the plan), CAM_AERIAL, CAM_REAR, CAM_TOP, from plan["cameras"]
@@ -43,15 +49,42 @@ importlib.reload(L)
 C = L.C
 # part -> (its root collection, the layers it builds in order; a later layer may stand on an earlier one). The site's
 # layers own RB_SITE themselves; its rebuild root is never created, so the materials pass only dresses it (no joints).
+# The wear part (2026-10-14) holds the wear module's overlay geometry, built from the features' overlays().
 PARTS = {"building": ("TM_BUILDING", ["structure", "envelope", "balconies", "podium", "roof", "interior_base"]),
          "props": ("TM_PROPS", ["balcony_plants", "podium_planters", "roof_planters", "roof_furniture", "awnings"]),
          "site": ("RB_SITE", ["site_cafe", "site_palms"]),
-         "interiors": ("TM_INTERIORS", ["restaurant_l0", "dining_l1", "residential", "penthouse"])}
+         "interiors": ("TM_INTERIORS", ["restaurant_l0", "dining_l1", "residential", "penthouse"]),
+         "wear": ("TM_WEAR", ["wear_overlays"])}
 LAYER_ROOT = {"site": "TM_SITE"}                                                # the root the site's layers never use
-FINISHING = "materials"                                                         # dresses (and cuts joints into) what the others built
+LAYER_MODULES = {"wear_overlays": ("layer_wear", "build_overlays")}            # (module, function); else layer_<name>.build
+# The finishing passes, in order, after any geometry layer: materials dresses (and cuts joints into) what the others
+# built; wear (layer_wear.py) splices the wear module into the exterior materials, so it follows every materials pass.
+# materials=0 skips the materials pass; wear=0 makes the wear pass strip the wear instead (the part as before it).
+FINISHING = ["materials", "wear"]
+PART_FINISHING = {"building": FINISHING, "props": FINISHING, "site": FINISHING, "interiors": ["materials"], "wear": []}
+
+
+def part_path(part):
+    return C.REBUILD_PARTS.get(part) or os.path.join(C.REBUILD_DIR, f"terramar_{part}.blend")
+
+
+def finishing(part, layers, opts):
+    """The requested layers with the finishing passes the part runs after them, in order."""
+    fin = PART_FINISHING[part]
+    geo = [s for s in layers if s not in FINISHING]
+    want = {s for s in layers if s in fin}
+    if "materials" in fin:
+        if opts.get("materials", "1") == "0":
+            want.discard("materials")
+        elif geo:
+            want.add("materials")
+    if "wear" in fin and ("materials" in want or (geo and opts.get("wear", "1") == "0")):
+        want.add("wear")                         # the materials pass rebuilt the trees the wear sits in
+    return geo + [s for s in fin if s in want]
 
 
 def part_of(layers):
+    layers = [s for s in layers if s not in FINISHING]
     parts = {p for p, (_, names) in PARTS.items() for s in layers if s in names}
     if len(parts) != 1:
         raise SystemExit(f"layers {layers} span parts {sorted(parts) or 'none'}; give target= (one of {sorted(PARTS)})")
@@ -138,26 +171,25 @@ def save(path):
 
 
 def build_part(part, layers, opts):
-    """Build the part's layers (and the materials pass) into the open session; save it to the part's file."""
+    """Build the part's layers (and its finishing passes) into the open session; save it to the part's file."""
     root, names = PARTS[part]
     os.environ["TM_RB_ROOT"] = LAYER_ROOT.get(part, root)
+    os.environ["TM_RB_PART"] = part
     importlib.reload(L)                             # pick up the part's root
-    if opts.get("materials", "1") == "1" and FINISHING not in layers and any(s != FINISHING for s in layers):
-        layers = layers + [FINISHING]
-    elif opts.get("materials", "1") == "0" and FINISHING in layers:
-        layers = [s for s in layers if s != FINISHING]
-    path = C.REBUILD_PARTS[part]
+    layers = finishing(part, layers, opts)
+    path = part_path(part)
     guard(path)
     plan = L.load_plan()
     if part not in LAYER_ROOT:
         L.ensure_collection(L.ROOT)
     base_scene(plan)
     summary = {}
-    for name in [s for s in names + [FINISHING] if s in layers]:
-        mod = importlib.import_module(f"layer_{name}")
+    for name in [s for s in names + FINISHING if s in layers]:
+        modname, fn = LAYER_MODULES.get(name, (f"layer_{name}", "build"))
+        mod = importlib.import_module(modname)
         importlib.reload(mod)
         t0 = time.time()
-        summary[name] = {**mod.build(plan), "seconds": round(time.time() - t0, 2)}
+        summary[name] = {**getattr(mod, fn)(plan), "seconds": round(time.time() - t0, 2)}
     for img in list(bpy.data.images):                  # images a rebuilt layer no longer uses
         if img.users == 0:
             bpy.data.images.remove(img)
@@ -189,12 +221,12 @@ def main():
         return summary
     layers = [s for s in opts.get("layers", "").split(",") if s]
     if target is None:
-        if not layers or layers == [FINISHING]:
+        if not [s for s in layers if s not in FINISHING]:
             raise SystemExit(f"give target= (one of {sorted(PARTS)} or all), or layers= of one part")
-        target = part_of([s for s in layers if s != FINISHING])
+        target = part_of(layers)
     if target not in PARTS:
         raise SystemExit(f"unknown target {target}; known: {sorted(PARTS)} or all")
-    known = PARTS[target][1] + [FINISHING]
+    known = PARTS[target][1] + PART_FINISHING[target]
     unknown = [s for s in layers if s not in known]
     if unknown:
         raise SystemExit(f"layer(s) {unknown} are not in part {target}; its layers: {known}")

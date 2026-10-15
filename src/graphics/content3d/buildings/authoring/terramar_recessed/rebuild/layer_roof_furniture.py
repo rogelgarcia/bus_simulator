@@ -3,9 +3,9 @@
 #
 # Run through build.py (layers=roof_furniture; needs the roof and roof_planters layers). Builds RB_PROPS/RB_ROOF_FURNITURE
 # under its part root, one object per item (rb_roof_furniture_<group>_<n>_<kind>):
-#   dining        a 2.4 m teak dining table and eight slat-back teak dining chairs with seat pads
 #   lounge        a three-seat sofa and two armchairs on open teak frames (outdoor), a coffee table, two side tables
-#   front_centre  two teak-framed armchairs round a slatted low table, two sun loungers with their feet towards the view
+#   loungers      two sun loungers with their feet towards the view and a side table between them (2026-10-15: the
+#                 dining set and the front-centre armchairs are gone; the middle of the terrace is open paving)
 # Materials: the detailed furniture's (furniture_materials.py): TM_RB_furn_teak, TM_RB_furn_metal and the group's seeded
 # cushion tone, TM_RB_furn_fabric_<offwhite|ecru|greige>. The paving tiles are the materials pass's roof_paving family
 # on the deck's own face set (TM_RB_roof_paving).

@@ -6,7 +6,9 @@
 #                   jambs against the pilasters and the rounded chamfer columns (shaped to the column's arc), head and
 #                   sill rails, mullions, and a transom across every pane 0.4 m below the head
 #   rb_glass_f<n>   glass (TM_RB_glass): a lower light (the slider) and an upper light (above the transom) per pane
-#   rb_wood_f<n>    the front centre bay's warm wood reveal panels (TM_RB_wood), floors 1-4
+#   rb_wood_f<n>    the front centre bay's warm wood reveal panels (TM_RB_wood), floors 1-4; where a panel meets a
+#                   pilaster's stone side it stops short by a shadow gap (2026-10-14, plan["returns"]), floored by a
+#                   dark backer strip (TM_RB_stone_joint) gap_depth behind the panel's face
 # Frames and glass sit on the tower wall line (frame depth 0.12, glass 0.024, centred). Pieces meet face to face:
 # sills on the slab tops, heads under the slab undersides, jambs against pilasters and columns, glass between frame
 # members. The sliding panes are listed per bay in plan["envelope"] (doors) for the balconies layer.
@@ -19,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import envelope_layout  # noqa: E402
+import layer_materials as M  # noqa: E402
 import rb_lib as L  # noqa: E402
 
 importlib.reload(L)
@@ -83,6 +86,8 @@ def build(plan):
     env = plan["envelope"]
     col = plan["structure"]["columns"]
     d, m, g = env["frame_depth"] / 2, env["member"], env["glass"] / 2
+    rt = plan["returns"]
+    joint = M.joint_slot()
     made = []
     for floor, (z0, z1) in enumerate(env["storeys"], start=1):
         frames, glass, wood = [], [], []
@@ -113,8 +118,13 @@ def build(plan):
                     lo = m
                 else:
                     hi = length - m
-            for w0, w1 in wood_spans:
-                wood.append(L.piece(box(w0, w1, -d, d), [(z0, z1)], "TM_RB_wood"))
+            for w0, w1 in wood_spans:                          # a panel against a pilaster: the shadow gap first
+                a0 = rt["gap"] if bay["ends"][0] == "pilaster" and w0 < 1e-6 else 0.0
+                a1 = rt["gap"] if bay["ends"][1] == "pilaster" and w1 > length - 1e-6 else 0.0
+                wood.append(L.piece(box(w0 + a0, w1 - a1, -d, d), [(z0, z1)], "TM_RB_wood"))
+                for s0, s1 in ((w0, w0 + a0), (w1 - a1, w1)):
+                    if s1 - s0 > 1e-6:
+                        wood.append(L.piece(box(s0, s1, -d, d - rt["gap_depth"]), [(z0, z1)], joint))
             for r0, r1 in gaps(lo, hi, wood_spans):            # head and sill rails between full-height pieces
                 frames.append(L.piece(box(r0, r1, -d, d), [(zh, z1), (z0, zs)], "TM_RB_frame"))
             panes = [tuple(p) for p in var["panes"]]

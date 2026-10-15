@@ -2284,11 +2284,11 @@
       "outline": [
         [
           -5.0,
-          -1.0
+          -2.2
         ],
         [
           5.0,
-          -1.0
+          -2.2
         ],
         [
           5.0,
@@ -2303,7 +2303,7 @@
         27.25,
         30.75
       ],
-      "hidden_from_b8_up_to_m": 5.49,
+      "hidden_from_b8_up_to_m": 4.83,
       "note": "kept out of b8's view: CAM_B8 sees over the roof edge only above this height at its front wall"
     }
   },
@@ -2738,6 +2738,14 @@
         1500
       ]
     }
+  },
+  "returns": {
+    "return": 0.1,
+    "fascia_return": 0.04,
+    "arris": 0.004,
+    "gap": 0.01,
+    "gap_depth": 0.018,
+    "comment": "2026-10-14 stone returns and connection joints: where the stone stops at another material on an outside corner it wraps the corner (`return` at the entrance and loggia jambs and heads, `fascia_return` under the slab fascias; flush with the next material's face, arris eased by `arris`), then a shadow gap `gap` wide and `gap_depth` deep (TM_RB_stone_joint) before the wood; an inside corner (stone side wall -> wood panel) gets the same gap"
   },
   "envelope": {
     "frame_depth": 0.12,
@@ -8221,8 +8229,8 @@
           "wall": "right",
           "kind": "window",
           "s": [
-            1.5,
-            2.7
+            0.3,
+            1.5
           ],
           "z": [
             0.0,
@@ -8233,8 +8241,8 @@
           "wall": "left",
           "kind": "door",
           "s": [
-            1.5,
-            2.5
+            0.3,
+            1.3
           ],
           "z": [
             0.0,
@@ -8269,6 +8277,42 @@
       "frame": {
         "member": 0.06,
         "depth": 0.08
+      },
+      "core_doors": [
+        {
+          "kind": "stair",
+          "x": [
+            -2.45,
+            -1.55
+          ],
+          "h": 2.1
+        },
+        {
+          "kind": "lift",
+          "x": [
+            -0.05,
+            0.95
+          ],
+          "h": 2.15
+        },
+        {
+          "kind": "lift",
+          "x": [
+            1.95,
+            2.95
+          ],
+          "h": 2.15
+        }
+      ],
+      "call_panel": {
+        "x": [
+          1.41,
+          1.49
+        ],
+        "z": [
+          0.95,
+          1.2
+        ]
       }
     },
     "annex": {
@@ -8277,8 +8321,8 @@
         -5.0
       ],
       "y": [
-        0.0,
-        5.5
+        -1.2,
+        4.3
       ],
       "height": 2.75,
       "post": 0.15,
@@ -8308,42 +8352,101 @@
           -2.7
         ],
         "y": [
-          -0.45,
-          0.55
+          -1.65,
+          -0.65
         ],
-        "h": 1.1
+        "h": 1.1,
+        "kind": "top_fan",
+        "fans": 2,
+        "blades": 4,
+        "service": "-x",
+        "tone": "warm",
+        "pipes": {
+          "side": "+y",
+          "a": [
+            -3.05,
+            -2.8
+          ]
+        },
+        "seed": 1
       },
       {
         "x": [
           -2.5,
-          -1.1
+          -1.2
         ],
         "y": [
-          -0.45,
-          0.45
+          -1.65,
+          -0.75
         ],
-        "h": 0.95
+        "h": 0.95,
+        "kind": "top_fan",
+        "fans": 1,
+        "blades": 5,
+        "service": "-y",
+        "tone": "cool",
+        "pipes": {
+          "side": "+y",
+          "a": [
+            -2.43,
+            -2.18
+          ]
+        },
+        "seed": 2
       },
       {
         "x": [
           -4.3,
-          -3.3
+          -3.65
         ],
         "y": [
-          0.75,
-          1.45
+          -0.15,
+          0.85
         ],
-        "h": 0.7
+        "h": 0.8,
+        "kind": "side_fan",
+        "fan_side": "-x",
+        "blades": 3,
+        "service": "-y",
+        "tone": "warm",
+        "pipes": {
+          "side": "-y",
+          "a": [
+            -4.1,
+            -3.85
+          ]
+        },
+        "seed": 3
       }
     ],
+    "pipe_tray": {
+      "x": [
+        -4.2,
+        -1.75
+      ],
+      "y": [
+        -0.45,
+        -0.25
+      ]
+    },
+    "roof_hood": {
+      "x": [
+        -1.75,
+        -1.15
+      ],
+      "y": [
+        -0.62,
+        0.02
+      ]
+    },
     "units_zone": {
       "x": [
         -4.4,
         -0.9
       ],
       "y": [
-        -0.45,
-        1.5
+        -1.7,
+        0.95
       ]
     },
     "comment": "AI 647 roof: heights are above the roof slab top (z 27.250). Guard halves meet at the front and rear centres; the terrace runs from the guard shoe to the penthouse walls; every part above the roof stays under CAM_B8's sightline over the roof edge (sightline).",
@@ -9210,7 +9313,7 @@
         5.0
       ],
       "y": [
-        -1.0,
+        -2.2,
         6.5
       ]
     },
@@ -9221,8 +9324,8 @@
           4.4
         ],
         "y": [
-          -0.4,
-          0.5848
+          -1.6,
+          -0.6152
         ]
       },
       {
@@ -9231,8 +9334,8 @@
           4.4
         ],
         "y": [
-          1.0348,
-          2.0196
+          -0.1652,
+          0.8196
         ]
       },
       {
@@ -9241,8 +9344,8 @@
           4.4
         ],
         "y": [
-          2.4696,
-          3.4544
+          1.2696,
+          2.2544
         ]
       },
       {
@@ -9251,34 +9354,44 @@
           4.4
         ],
         "y": [
-          3.9044,
-          4.8892
+          2.7044,
+          3.6892
+        ]
+      },
+      {
+        "x": [
+          -4.4,
+          4.4
+        ],
+        "y": [
+          4.1392,
+          5.124
         ]
       }
     ],
     "sightline": {
       "penthouse_front_wall": {
-        "y": -1.0,
+        "y": -2.2,
         "height_above_roof_m": 3.86,
-        "hidden_up_to_m": 5.149,
+        "hidden_up_to_m": 4.531,
         "hidden": true
       },
       "solar_front_row": {
-        "y": -0.4,
+        "y": -1.6,
         "height_above_roof_m": 3.864,
-        "hidden_up_to_m": 5.458,
+        "hidden_up_to_m": 4.84,
         "hidden": true
       },
       "units": {
-        "y": -0.45,
+        "y": -1.65,
         "height_above_roof_m": 4.6,
-        "hidden_up_to_m": 5.433,
+        "hidden_up_to_m": 4.815,
         "hidden": true
       },
       "annex": {
-        "y": 0.0,
+        "y": -1.2,
         "height_above_roof_m": 3.05,
-        "hidden_up_to_m": 5.664,
+        "hidden_up_to_m": 5.046,
         "hidden": true
       }
     },
@@ -10248,6 +10361,9 @@
       "course_target": 0.67,
       "margin": 0.004,
       "vertical_min_height": 0.2,
+      "seams": true,
+      "seam_min_length": 0.02,
+      "carry_hops": 2,
       "seed": 648,
       "rgb": [
         0.2,
@@ -10275,6 +10391,14 @@
         "TM_RB_penthouse_stone": {
           "courses": true,
           "verticals": true
+        }
+      },
+      "objects": {
+        "rb_site_tree_pits": {
+          "slot": "TM_RB_paving",
+          "courses": false,
+          "verticals": true,
+          "base": true
         }
       },
       "datums": [
@@ -25435,24 +25559,24 @@
           ]
         },
         {
-          "id": "island_penthouse_left",
+          "id": "island_annex_front",
           "kind": "island",
           "loop": [
             [
-              -7.6,
-              -3.2
+              -7.8,
+              -3.4
             ],
             [
-              -5.6,
-              -3.2
+              -5.8,
+              -3.4
             ],
             [
-              -5.6,
-              -1.7
+              -5.8,
+              -2.0
             ],
             [
-              -7.6,
-              -1.7
+              -7.8,
+              -2.0
             ]
           ],
           "z": 27.3,
@@ -25461,201 +25585,116 @@
             {
               "model": "arrowwood_viburnum/mature_01",
               "at": [
-                -6.3133,
-                -2.2795
+                -6.6355,
+                -2.5813
               ],
               "z": 27.76,
-              "height": 0.415,
-              "radius": 0.287,
-              "rot_deg": 52.3
-            },
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                -7.2953,
-                -2.2526
-              ],
-              "z": 27.76,
-              "height": 0.531,
-              "radius": 0.287,
-              "rot_deg": 242.8
-            },
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                -6.0701,
-                -2.884
-              ],
-              "z": 27.76,
-              "height": 0.622,
-              "radius": 0.257,
-              "rot_deg": 183.9
-            }
-          ]
-        },
-        {
-          "id": "island_row_1",
-          "kind": "island",
-          "loop": [
-            [
-              -4.95,
-              -4.55
-            ],
-            [
-              -3.85,
-              -4.55
-            ],
-            [
-              -3.85,
-              -3.45
-            ],
-            [
-              -4.95,
-              -3.45
-            ]
-          ],
-          "z": 27.3,
-          "height": 0.5,
-          "plants": [
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                -4.6055,
-                -3.6781
-              ],
-              "z": 27.76,
-              "height": 0.618,
-              "radius": 0.279,
-              "rot_deg": 119.6
-            },
-            {
-              "model": "arrowwood_viburnum/mature_03",
-              "at": [
-                -4.3011,
-                -4.0359
-              ],
-              "z": 27.76,
-              "height": 0.6,
-              "radius": 0.277,
-              "rot_deg": 261.7
-            }
-          ]
-        },
-        {
-          "id": "island_row_2",
-          "kind": "island",
-          "loop": [
-            [
-              -2.15,
-              -4.55
-            ],
-            [
-              -1.05,
-              -4.55
-            ],
-            [
-              -1.05,
-              -3.45
-            ],
-            [
-              -2.15,
-              -3.45
-            ]
-          ],
-          "z": 27.3,
-          "height": 0.5,
-          "plants": [
-            {
-              "model": "arrowwood_viburnum/mature_01",
-              "at": [
-                -1.4271,
-                -3.9586
-              ],
-              "z": 27.76,
-              "height": 0.601,
-              "radius": 0.266,
-              "rot_deg": 185.5
-            },
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                -1.7085,
-                -4.1926
-              ],
-              "z": 27.76,
-              "height": 0.59,
-              "radius": 0.22,
-              "rot_deg": 65.2
-            }
-          ]
-        },
-        {
-          "id": "island_row_3",
-          "kind": "island",
-          "loop": [
-            [
-              1.05,
-              -4.55
-            ],
-            [
-              2.15,
-              -4.55
-            ],
-            [
-              2.15,
-              -3.45
-            ],
-            [
-              1.05,
-              -3.45
-            ]
-          ],
-          "z": 27.3,
-          "height": 0.5,
-          "plants": [
-            {
-              "model": "arrowwood_viburnum/mature_01",
-              "at": [
-                1.3495,
-                -4.0331
-              ],
-              "z": 27.76,
-              "height": 0.436,
+              "height": 0.464,
               "radius": 0.286,
-              "rot_deg": 108.1
+              "rot_deg": 62.3
             },
             {
               "model": "arrowwood_viburnum/mature_01",
               "at": [
-                1.569,
-                -4.074
+                -6.3369,
+                -2.8879
               ],
               "z": 27.76,
-              "height": 0.451,
-              "radius": 0.29,
-              "rot_deg": 211.8
+              "height": 0.574,
+              "radius": 0.282,
+              "rot_deg": 15.6
+            },
+            {
+              "model": "arrowwood_viburnum/mature_03",
+              "at": [
+                -6.0419,
+                -2.3831
+              ],
+              "z": 27.76,
+              "height": 0.441,
+              "radius": 0.294,
+              "rot_deg": 66.1
             }
           ]
         },
         {
-          "id": "island_row_4",
+          "id": "island_lounge_back",
           "kind": "island",
           "loop": [
             [
-              3.85,
-              -4.55
+              5.6,
+              -3.2
             ],
             [
-              4.95,
-              -4.55
+              7.6,
+              -3.2
             ],
             [
-              4.95,
-              -3.45
+              7.6,
+              -1.8
             ],
             [
-              3.85,
-              -3.45
+              5.6,
+              -1.8
+            ]
+          ],
+          "z": 27.3,
+          "height": 0.5,
+          "plants": [
+            {
+              "model": "arrowwood_viburnum/mature_02",
+              "at": [
+                7.2632,
+                -2.7462
+              ],
+              "z": 27.76,
+              "height": 0.582,
+              "radius": 0.282,
+              "rot_deg": 113.3
+            },
+            {
+              "model": "arrowwood_viburnum/mature_03",
+              "at": [
+                5.829,
+                -2.2095
+              ],
+              "z": 27.76,
+              "height": 0.598,
+              "radius": 0.248,
+              "rot_deg": 359.9
+            },
+            {
+              "model": "arrowwood_viburnum/mature_03",
+              "at": [
+                6.4543,
+                -2.8032
+              ],
+              "z": 27.76,
+              "height": 0.532,
+              "radius": 0.275,
+              "rot_deg": 64.2
+            }
+          ]
+        },
+        {
+          "id": "island_side_right",
+          "kind": "island",
+          "loop": [
+            [
+              10.2,
+              -0.6
+            ],
+            [
+              11.4,
+              -0.6
+            ],
+            [
+              11.4,
+              0.8
+            ],
+            [
+              10.2,
+              0.8
             ]
           ],
           "z": 27.3,
@@ -25664,83 +25703,24 @@
             {
               "model": "arrowwood_viburnum/mature_03",
               "at": [
-                4.4815,
-                -4.1645
+                10.4273,
+                -0.1927
               ],
               "z": 27.76,
-              "height": 0.555,
-              "radius": 0.245,
-              "rot_deg": 12.0
-            },
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                4.5874,
-                -3.8128
-              ],
-              "z": 27.76,
-              "height": 0.567,
-              "radius": 0.287,
-              "rot_deg": 331.1
-            }
-          ]
-        },
-        {
-          "id": "island_lounge_right",
-          "kind": "island",
-          "loop": [
-            [
-              5.6,
-              -3.2
-            ],
-            [
-              7.6,
-              -3.2
-            ],
-            [
-              7.6,
-              -1.7
-            ],
-            [
-              5.6,
-              -1.7
-            ]
-          ],
-          "z": 27.3,
-          "height": 0.5,
-          "plants": [
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                7.0112,
-                -2.9821
-              ],
-              "z": 27.76,
-              "height": 0.568,
-              "radius": 0.278,
-              "rot_deg": 102.8
-            },
-            {
-              "model": "arrowwood_viburnum/mature_02",
-              "at": [
-                6.9741,
-                -2.4195
-              ],
-              "z": 27.76,
-              "height": 0.455,
-              "radius": 0.255,
-              "rot_deg": 3.9
+              "height": 0.459,
+              "radius": 0.292,
+              "rot_deg": 269.0
             },
             {
               "model": "arrowwood_viburnum/mature_01",
               "at": [
-                6.0966,
-                -2.0698
+                10.8928,
+                0.0935
               ],
               "z": 27.76,
-              "height": 0.602,
-              "radius": 0.269,
-              "rot_deg": 148.9
+              "height": 0.411,
+              "radius": 0.299,
+              "rot_deg": 253.1
             }
           ]
         }
@@ -26386,135 +26366,84 @@
           "rot_deg": 288.9
         },
         {
-          "place": "penthouse_left",
+          "place": "annex_front",
           "kind": "palm",
           "model": "proc/palm_2",
           "at": [
-            -7.05,
-            -2.45
+            -7.25,
+            -2.7
           ],
           "z": 27.76,
-          "height": 2.623,
-          "radius": 0.807,
-          "rot_deg": 175.0
+          "height": 2.421,
+          "radius": 0.74,
+          "rot_deg": 15.2
         },
         {
-          "place": "penthouse_left",
+          "place": "annex_front",
           "kind": "cycad",
-          "model": "proc/cycad_1",
+          "model": "proc/cycad_2",
           "at": [
-            -6.15,
-            -2.45
+            -6.35,
+            -2.7
           ],
           "z": 27.76,
-          "height": 1.524,
-          "radius": 0.702,
-          "rot_deg": 311.0
+          "height": 1.731,
+          "radius": 0.714,
+          "rot_deg": 43.4
         },
         {
-          "place": "row_1",
-          "kind": "olive",
-          "model": "silver_linden/mature_01",
-          "at": [
-            -4.4,
-            -4.0
-          ],
-          "z": 27.76,
-          "height": 2.193,
-          "radius": 0.633,
-          "rot_deg": 325.0,
-          "companion": {
-            "model": "silver_linden/mature_02",
-            "rot_deg": 110.8,
-            "height": 1.848,
-            "radius": 0.602
-          }
-        },
-        {
-          "place": "row_2",
+          "place": "lounge_back",
           "kind": "cycad",
           "model": "proc/cycad_0",
           "at": [
-            -1.6,
-            -4.0
+            6.15,
+            -2.5
           ],
           "z": 27.76,
-          "height": 1.895,
-          "radius": 0.774,
-          "rot_deg": 67.2
+          "height": 1.979,
+          "radius": 0.716,
+          "rot_deg": 157.7
         },
         {
-          "place": "row_3",
-          "kind": "palm",
-          "model": "proc/palm_0",
-          "at": [
-            1.6,
-            -4.0
-          ],
-          "z": 27.76,
-          "height": 2.483,
-          "radius": 0.766,
-          "rot_deg": 131.5
-        },
-        {
-          "place": "row_4",
+          "place": "lounge_back",
           "kind": "olive",
           "model": "silver_linden/mature_02",
           "at": [
-            4.4,
-            -4.0
+            7.05,
+            -2.5
           ],
           "z": 27.76,
-          "height": 2.326,
-          "radius": 0.699,
-          "rot_deg": 105.1,
+          "height": 1.948,
+          "radius": 0.704,
+          "rot_deg": 168.8,
           "companion": {
             "model": "silver_linden/mature_03",
-            "rot_deg": 255.8,
-            "height": 2.086,
-            "radius": 0.664
+            "rot_deg": 279.1,
+            "height": 1.658,
+            "radius": 0.669
           }
         },
         {
-          "place": "lounge_right",
-          "kind": "cycad",
-          "model": "proc/cycad_1",
+          "place": "side_right",
+          "kind": "palm",
+          "model": "proc/palm_2",
           "at": [
-            6.15,
-            -2.45
+            10.8,
+            0.1
           ],
           "z": 27.76,
-          "height": 2.163,
-          "radius": 0.72,
-          "rot_deg": 197.0
-        },
-        {
-          "place": "lounge_right",
-          "kind": "olive",
-          "model": "silver_linden/mature_03",
-          "at": [
-            7.05,
-            -2.45
-          ],
-          "z": 27.76,
-          "height": 1.958,
-          "radius": 0.602,
-          "rot_deg": 274.0,
-          "companion": {
-            "model": "silver_linden/mature_01",
-            "rot_deg": 51.1,
-            "height": 1.618,
-            "radius": 0.572
-          }
+          "height": 2.606,
+          "radius": 0.723,
+          "rot_deg": 339.7
         }
       ],
       "feature_counts": {
         "spiky": 9,
-        "cycad": 24,
+        "cycad": 23,
         "palm": 8,
-        "olive": 12
+        "olive": 10
       },
-      "shrubs": 376,
+      "shrubs": 370,
       "keep_inside": [
         [
           -5.0602,
@@ -27112,12 +27041,12 @@
       },
       "islands": [
         {
-          "id": "penthouse_left",
+          "id": "annex_front",
           "rect": [
-            -7.6,
-            -5.6,
-            -3.2,
-            -1.7
+            -7.8,
+            -5.8,
+            -3.4,
+            -2.0
           ],
           "kinds": [
             "palm",
@@ -27126,70 +27055,31 @@
           "shrubs": 3
         },
         {
-          "id": "row_1",
-          "rect": [
-            -4.95,
-            -3.85,
-            -4.55,
-            -3.45
-          ],
-          "kinds": [
-            "olive"
-          ],
-          "shrubs": 2
-        },
-        {
-          "id": "row_2",
-          "rect": [
-            -2.15,
-            -1.05,
-            -4.55,
-            -3.45
-          ],
-          "kinds": [
-            "cycad"
-          ],
-          "shrubs": 2
-        },
-        {
-          "id": "row_3",
-          "rect": [
-            1.05,
-            2.15,
-            -4.55,
-            -3.45
-          ],
-          "kinds": [
-            "palm"
-          ],
-          "shrubs": 2
-        },
-        {
-          "id": "row_4",
-          "rect": [
-            3.85,
-            4.95,
-            -4.55,
-            -3.45
-          ],
-          "kinds": [
-            "olive"
-          ],
-          "shrubs": 2
-        },
-        {
-          "id": "lounge_right",
+          "id": "lounge_back",
           "rect": [
             5.6,
             7.6,
             -3.2,
-            -1.7
+            -1.8
           ],
           "kinds": [
             "cycad",
             "olive"
           ],
           "shrubs": 3
+        },
+        {
+          "id": "side_right",
+          "rect": [
+            10.2,
+            11.4,
+            -0.6,
+            0.8
+          ],
+          "kinds": [
+            "palm"
+          ],
+          "shrubs": 2
         }
       ]
     },
@@ -27198,159 +27088,6 @@
       "seed": 630,
       "z": 27.3,
       "items": [
-        {
-          "group": "dining",
-          "kind": "dining_table",
-          "at": [
-            -6.9487,
-            -5.1198
-          ],
-          "face": [
-            0.70711,
-            0.7071
-          ],
-          "size": [
-            2.4,
-            0.95
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -8.0603,
-            -5.1377
-          ],
-          "face": [
-            0.7042,
-            0.71
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -7.4995,
-            -5.6902
-          ],
-          "face": [
-            0.66771,
-            0.74442
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -6.9571,
-            -6.2426
-          ],
-          "face": [
-            0.71078,
-            0.70342
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -6.9515,
-            -4.0072
-          ],
-          "face": [
-            -0.74834,
-            -0.66331
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -6.3802,
-            -4.5364
-          ],
-          "face": [
-            -0.74766,
-            -0.66408
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -5.8128,
-            -5.1225
-          ],
-          "face": [
-            -0.71014,
-            -0.70406
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -8.0467,
-            -4.0181
-          ],
-          "face": [
-            0.7029,
-            -0.71129
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "dining",
-          "kind": "dining_chair",
-          "at": [
-            -5.8377,
-            -6.2118
-          ],
-          "face": [
-            -0.72638,
-            0.6873
-          ],
-          "size": [
-            0.48,
-            0.52
-          ],
-          "cushion": "offwhite"
-        },
         {
           "group": "lounge",
           "kind": "coffee_table",
@@ -27454,96 +27191,61 @@
           "cushion": "offwhite"
         },
         {
-          "group": "front_centre",
-          "kind": "low_table",
-          "at": [
-            0.0,
-            -7.22
-          ],
-          "face": [
-            -0.0,
-            1.0
-          ],
-          "size": [
-            0.9,
-            0.55
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "front_centre",
-          "kind": "armchair",
-          "at": [
-            -0.9317,
-            -7.216
-          ],
-          "face": [
-            0.99954,
-            -0.03021
-          ],
-          "size": [
-            0.85,
-            0.85
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "front_centre",
-          "kind": "armchair",
-          "at": [
-            0.9421,
-            -7.2396
-          ],
-          "face": [
-            -1.0,
-            -0.0025
-          ],
-          "size": [
-            0.85,
-            0.85
-          ],
-          "cushion": "offwhite"
-        },
-        {
-          "group": "front_centre",
+          "group": "loungers",
           "kind": "lounger",
           "at": [
-            -3.4,
-            -8.12
+            -7.0335,
+            -5.035
           ],
           "face": [
-            0.0,
-            -1.0
+            -0.70711,
+            -0.7071
           ],
           "size": [
             0.7,
             2.0
           ],
-          "cushion": "offwhite"
+          "cushion": "ecru"
         },
         {
-          "group": "front_centre",
+          "group": "loungers",
           "kind": "lounger",
           "at": [
-            3.4,
-            -8.12
+            -6.1567,
+            -5.9118
           ],
           "face": [
-            0.0,
-            -1.0
+            -0.70711,
+            -0.7071
           ],
           "size": [
             0.7,
             2.0
           ],
-          "cushion": "offwhite"
+          "cushion": "ecru"
+        },
+        {
+          "group": "loungers",
+          "kind": "side_table",
+          "at": [
+            -6.1567,
+            -5.035
+          ],
+          "face": [
+            0.70711,
+            0.7071
+          ],
+          "size": [
+            0.44,
+            0.44
+          ],
+          "cushion": "ecru"
         }
       ],
       "clear_of_guard_m": 1.2,
       "groups": [
-        "dining",
         "lounge",
-        "front_centre"
+        "loungers"
       ]
     },
     "storefront_awnings": {
@@ -44472,12 +44174,12 @@
       ]
     },
     "penthouse": {
-      "comment": "AI 638 penthouse: the annex holds the kitchen (counter run with a lit shelf on the penthouse wall, an island with stools and pendants from the louvres) and a lounge corner; the penthouse ring a sofa at the front slider and an armchair at the right window; downlights, warm fills, plants",
+      "comment": "AI 638 penthouse: the annex holds the kitchen (counter run with a lit shelf on the penthouse wall, an island with stools and pendants from the louvres) and a lounge corner; 2026-10-15: the penthouse ring is the lobby of the core (the roof-access headhouse: stair and lift doors on its front face), kept clear but for a console and plants; downlights, warm fills, plants",
       "config": {
         "run": {
           "y": [
-            2.8,
-            5.2
+            1.6,
+            4.0
           ],
           "depth": 0.6,
           "top_over": 0.02,
@@ -44487,8 +44189,8 @@
             "z": 1.5,
             "depth": 0.3,
             "y": [
-              3.0,
-              5.0
+              1.8,
+              3.8
             ],
             "thick": 0.03
           }
@@ -44499,8 +44201,8 @@
             -6.5
           ],
           "y": [
-            3.0,
-            4.8
+            1.8,
+            3.6
           ],
           "body_inset": [
             0.25,
@@ -44522,6 +44224,14 @@
           "height": 0.015
         },
         "door_path": 0.2,
+        "console": {
+          "size": [
+            1.3,
+            0.38
+          ],
+          "h": 0.78,
+          "x": -1.05
+        },
         "fill": {
           "rgb": [
             1.0,
@@ -44542,8 +44252,8 @@
           -5.0
         ],
         "y": [
-          0.11499999999999999,
-          5.385
+          -1.085,
+          4.185
         ]
       },
       "inner": {
@@ -44552,7 +44262,7 @@
           4.75
         ],
         "y": [
-          -0.75,
+          -1.9500000000000002,
           6.25
         ]
       },
@@ -44571,7 +44281,7 @@
           "kind": "sofa",
           "at": [
             -6.6,
-            0.62
+            -0.58
           ],
           "face": [
             0.0,
@@ -44588,7 +44298,7 @@
           "kind": "coffee_table",
           "at": [
             -6.6,
-            1.6
+            0.4
           ],
           "face": [
             0.0,
@@ -44605,7 +44315,7 @@
           "kind": "armchair",
           "at": [
             -7.845,
-            1.55
+            0.35
           ],
           "face": [
             1.0,
@@ -44619,102 +44329,52 @@
           "cushion": "ecru"
         },
         {
-          "kind": "sofa",
+          "kind": "coffee_table",
           "at": [
-            2.15,
-            0.355
+            -1.05,
+            -1.74
           ],
           "face": [
             0.0,
-            -1.0
+            1.0
           ],
           "size": [
-            2.4,
-            0.85
+            1.3,
+            0.38
           ],
           "z": 27.25,
-          "cushion": "ecru"
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            0.55,
-            0.45
-          ],
-          "face": [
-            0.0,
-            -1.0
-          ],
-          "size": [
-            0.45,
-            0.45
-          ],
-          "z": 27.25,
-          "cushion": "greige"
-        },
-        {
-          "kind": "armchair",
-          "at": [
-            4.2,
-            2.1
-          ],
-          "face": [
-            1.0,
-            0.0
-          ],
-          "size": [
-            0.8,
-            0.8
-          ],
-          "z": 27.25,
-          "cushion": "ecru"
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            4.2,
-            2.85
-          ],
-          "face": [
-            1.0,
-            0.0
-          ],
-          "size": [
-            0.45,
-            0.45
-          ],
-          "z": 27.25,
-          "cushion": "greige"
+          "cushion": "ecru",
+          "h": 0.78
         }
       ],
       "lamps": [
         {
           "at": [
             -5.32,
-            0.55
+            -0.65
           ],
           "z": 27.3
-        },
-        {
-          "at": [
-            3.65,
-            0.5
-          ],
-          "z": 27.25
         }
       ],
       "plants": [
         {
           "at": [
             -8.0,
-            2.55
+            1.35
           ],
           "z": 27.3
         },
         {
           "at": [
-            -4.3,
-            0.3
+            -4.35,
+            -1.55
+          ],
+          "z": 27.25
+        },
+        {
+          "at": [
+            4.35,
+            -1.55
           ],
           "z": 27.25
         },
@@ -44736,36 +44396,36 @@
       "stools": [
         [
           -7.62,
+          2.1
+        ],
+        [
+          -7.62,
+          2.7
+        ],
+        [
+          -7.62,
           3.3
-        ],
-        [
-          -7.62,
-          3.9
-        ],
-        [
-          -7.62,
-          4.5
         ]
       ],
       "pendants": [
         {
           "at": [
             -6.95,
+            2.1
+          ],
+          "top": 30.21
+        },
+        {
+          "at": [
+            -6.95,
+            2.7
+          ],
+          "top": 30.21
+        },
+        {
+          "at": [
+            -6.95,
             3.3
-          ],
-          "top": 30.21
-        },
-        {
-          "at": [
-            -6.95,
-            3.9
-          ],
-          "top": 30.21
-        },
-        {
-          "at": [
-            -6.95,
-            4.5
           ],
           "top": 30.21
         }
@@ -44773,27 +44433,27 @@
       "downlights": [
         [
           -4.0,
-          0.025
+          -0.575
         ],
         [
           -2.4,
-          0.025
+          -0.575
         ],
         [
           -0.8,
-          0.025
+          -0.575
         ],
         [
           0.8,
-          0.025
+          -0.575
         ],
         [
           2.4,
-          0.025
+          -0.575
         ],
         [
           4.0,
-          0.025
+          -0.575
         ],
         [
           -4.175,
@@ -44824,10 +44484,10 @@
         {
           "c": [
             0.0,
-            0.025
+            -0.575
           ],
           "w": 9.5,
-          "d": 1.55,
+          "d": 2.75,
           "angle": 0.0,
           "top": 30.45
         },
@@ -44854,7 +44514,7 @@
         {
           "c": [
             -6.6925,
-            2.75
+            1.55
           ],
           "w": 3.385,
           "d": 5.27,

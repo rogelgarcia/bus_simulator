@@ -11,8 +11,13 @@
 #   rb_penthouse_roof      its roof slab over the core, and the parapet cap
 #   rb_penthouse_frames / _glass / _doors   black frames, glass, the wood door leaves
 #   rb_annex_*             the glazed annex on the penthouse's -X side: posts, beams, louvred roof, glazing
+#   rb_penthouse_core_doors   (2026-10-15) the core rises through the penthouse as the roof-access headhouse: on its
+#                          front face the stair door (teak leaf, black frame, lever) and two lift doors (brushed steel
+#                          frames and centre-opening leaves) with a call panel between them, opening on the lobby
 #   rb_solar_panels / rb_solar_rails        tilted panel rows on edge rails, clear of the units
-#   rb_roof_units          the mechanical units
+#   rb_roof_units          the mechanical plant (roof_units.py, 2026-10-15; was three plain boxes): two top-discharge
+#                          condensing units and a side-discharge one on rails, their insulated lines in a covered
+#                          tray to the roof hood
 # Every object above the roof carries rb_hide_from_b8: check_layers.py renders them red from CAM_B8 and counts them
 # (they stay under the sightline over the roof edge; plan["roof"]["sightline"] has the margins).
 import importlib
@@ -20,12 +25,16 @@ import math
 import os
 import sys
 
+import bmesh
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
+import roof_units as RU  # noqa: E402
 
 importlib.reload(L)
+importlib.reload(RU)
 
 COLLECTION = "RB_ROOF"
 LAYER = "roof"
@@ -56,6 +65,39 @@ class Wall:
     @property
     def mid(self):
         return (self.thick[0] + self.thick[1]) / 2
+
+
+def core_doors(plan, coll, z):
+    """The stair and lift doors on the core's front face (y = the core's outer front), standing on the penthouse floor:
+    surface frames and leaves (the core stays one solid), each piece's back on the face."""
+    ph = plan["roof"]["penthouse"]
+    y = plan["structure"]["core"]["outer"]["y"][0]
+    out = lambda d0, d1: (y - d1, y - d0)  # noqa: E731  (depths in front of the face -> y span)
+    items = []
+    for dr in ph["core_doors"]:
+        x0, x1 = dr["x"]
+        z1 = z + dr["h"]
+        if dr["kind"] == "stair":
+            fw, fd = 0.06, 0.025
+            items += [L.piece(rect(x0 - fw, x0, *out(0.0, fd)), [(z, z1 + fw)], "TM_RB_frame"),
+                      L.piece(rect(x1, x1 + fw, *out(0.0, fd)), [(z, z1 + fw)], "TM_RB_frame"),
+                      L.piece(rect(x0, x1, *out(0.0, fd)), [(z1, z1 + fw)], "TM_RB_frame"),
+                      L.piece(rect(x0, x1, *out(0.0, 0.012)), [(z, z1)], "TM_RB_wood"),
+                      L.piece(rect(x1 - 0.17, x1 - 0.05, *out(0.012, 0.06)), [(z + 1.02, z + 1.04)], "TM_RB_frame")]
+        else:
+            fw, fd, hd = 0.08, 0.03, 0.12
+            gap = 0.006
+            xm = (x0 + x1) / 2
+            items += [L.piece(rect(x0 - fw, x0, *out(0.0, fd)), [(z, z1 + hd)], RU.LIFT_STEEL),
+                      L.piece(rect(x1, x1 + fw, *out(0.0, fd)), [(z, z1 + hd)], RU.LIFT_STEEL),
+                      L.piece(rect(x0, x1, *out(0.0, fd)), [(z1, z1 + hd)], RU.LIFT_STEEL),
+                      L.piece(rect(x0, xm - gap / 2, *out(0.0, 0.012)), [(z, z1)], RU.LIFT_STEEL),
+                      L.piece(rect(xm + gap / 2, x1, *out(0.0, 0.012)), [(z, z1)], RU.LIFT_STEEL)]
+    cp = ph["call_panel"]
+    items.append(L.piece(rect(cp["x"][0], cp["x"][1], *out(0.0, 0.008)), [(z + cp["z"][0], z + cp["z"][1])],
+                         RU.LIFT_STEEL))
+    RU.materials()
+    return L.pieces("rb_penthouse_core_doors", coll, items, tags("penthouse_door", "penthouse_core_doors", True))
 
 
 def build(plan):
@@ -121,6 +163,7 @@ def build(plan):
                   ([(z_top, z_top + ch)], [(cap_out, "TM_RB_penthouse_stone"), (cap_in, "TM_RB_penthouse_stone")],
                    [([cap_out, cap_in], "TM_RB_penthouse_stone", "TM_RB_penthouse_stone")])]
     made.append(L.pieces("rb_penthouse_roof", coll, roof_items, tags("penthouse", "penthouse_roof", True)))
+    made.append(core_doors(plan, coll, top))
 
     # the annex: posts, beams, louvred roof, glazing on its three open sides
     an = rf["annex"]
@@ -178,8 +221,9 @@ def build(plan):
         rails.append(L.piece(rect(x0, x1, y1 - rw, y1), [(z_roof, zb1 - rw * math.tan(tilt))], "TM_RB_frame"))
     made.append(L.boxes("rb_solar_panels", coll, hexas, "TM_RB_solar", tags("solar", "solar_panels", True)))
     made.append(L.pieces("rb_solar_rails", coll, rails, tags("solar", "solar_rails", True)))
-    units = [L.piece(rect(u["x"][0], u["x"][1], u["y"][0], u["y"][1]), [(z_roof, z_roof + u["h"])], "TM_RB_unit", mat_bottom="TM_RB_hidden")
-             for u in rf["units"]]
-    made.append(L.pieces("rb_roof_units", coll, units, tags("unit", "roof_units", True)))
+    RU.materials()
+    bm = bmesh.new()
+    slots = RU.plant(bm, rf, z_roof)
+    made.append(RU.to_object("rb_roof_units", coll, bm, slots, tags("unit", "roof_units", True)))
     return {"collection": COLLECTION, "objects": len(made), "faces": sum(len(o.data.polygons) for o in made),
             "solar_modules": len(hexas), "louvres": len(blades), "names": [o.name for o in made]}

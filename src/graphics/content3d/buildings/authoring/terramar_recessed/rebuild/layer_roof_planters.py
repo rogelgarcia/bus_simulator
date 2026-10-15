@@ -163,9 +163,10 @@ def build(plan):
         for i, p in enumerate(bx["plants"]):
             placed += [(bx["kind"] == "ring", x) for x in instances(coll, p, protos, f"rb_roof_plant_{bx['id']}_{i + 1}")]
     counts = {}
+    islands = {i["id"] for i in rp["islands"]}                       # the island features stand in the open
     for f in rp["features"]:
         counts[f["place"]] = counts.get(f["place"], 0) + 1
-        perimeter = not f["place"].startswith(("penthouse", "row_", "lounge"))
+        perimeter = f["place"] not in islands
         placed += [(perimeter, x) for x in instances(coll, f, protos, f"rb_roof_plant_{f['place']}_{counts[f['place']]}")]
     fits = {ob.name: palm_fit(M) for _, (ob, M, proto) in placed if proto.get("rb_fit_aniso")}
     loop = [tuple(q) for q in rp["keep_inside"]]

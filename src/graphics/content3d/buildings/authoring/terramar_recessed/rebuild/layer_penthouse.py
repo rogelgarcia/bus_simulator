@@ -2,14 +2,14 @@
 #
 # Run through build.py (layers=penthouse; needs the roof layer, and reuses AI 634/635/637's materials and pieces). Builds
 # RB_INTERIOR/RB_PENTHOUSE under its part root; every object carries rb_hide_from_b8 like the penthouse itself:
-#   rb_penthouse_furn_<n>_<kind>  the annex's lounge corner, the sofa at the front slider, the armchair at the right
-#                           window, and the island's three bar stools (seat 0.66): one object per item, the detailed
-#                           furniture placed by layer_roof_furniture.furnish
+#   rb_penthouse_furn_<n>_<kind>  the annex's lounge corner, the lobby's console (2026-10-15: the penthouse ring is the
+#                           core's lobby; the sofa and armchair are gone) and the island's three bar stools (seat 0.66):
+#                           one object per item, the detailed furniture placed by layer_roof_furniture.furnish
 #   rb_penthouse_kitchen    in the annex: a teak counter run with a stone top on the penthouse wall and a lit shelf over
 #                           it, the island (teak body, stone top overhanging the stool side)
 #   rb_penthouse_pendants   pendants over the island, hung from the louvre blades
 #   rb_penthouse_downlights small warm lights in the penthouse ceiling (AI 634's TM_RB_ceiling_light)
-#   rb_penthouse_lamps      floor lamps by both sofas (AI 637's)
+#   rb_penthouse_lamps      a floor lamp by the annex sofa (AI 637's)
 #   rb_penthouse_pots, rb_penthouse_plant_<n>  potted plants in the corners (AI 635's)
 #   rb_penthouse_fill_<n>   warm area lights under both ceilings, out of camera and reflection rays
 import importlib

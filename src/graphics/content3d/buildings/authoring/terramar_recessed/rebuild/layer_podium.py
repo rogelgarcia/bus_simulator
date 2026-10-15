@@ -14,6 +14,10 @@
 #   rb_podium_lanterns    small dark lanterns on the entrance jambs and the chamfers' outer piers
 #   rb_sign_<line>        TERRA & MAR / COASTAL KITCHEN as real letters (traced from the kit's masks by trace_sign.py,
 #                         30 mm deep, 15 mm off the sign band), the kit's maps planar-mapped onto them
+# Stone returns (2026-10-14, plan["returns"]): the entrance and loggia openings read as thick stone. Their jambs' front
+# corners wrap into the opening (the structure's entrance jambs, the loggia jambs here: return_loop), the sign band and
+# the loggia lintel are a stone face slab whose eased underside is the head's return, over a body with a recessed shadow
+# gap before the wood soffit; the wood linings start behind a shadow gap whose floor is a dark backer strip.
 import importlib
 import os
 import sys
@@ -24,6 +28,8 @@ import bpy
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import layer_materials as M  # noqa: E402
+import layer_structure as S  # noqa: E402
 import rb_lib as L  # noqa: E402
 
 importlib.reload(L)
@@ -53,6 +59,64 @@ def rect(x0, x1, y0, y1):
 
 
 glass_frame = L.glass_frame                                         # shared with the roof layer (rb_lib)
+STONE = "TM_RB_podium_stone"
+
+
+def eased_slab(loop, z0, z1, mats, top, bottom, arris, eased):
+    """A prism (per-edge side materials) whose edges passing eased(p, q) get a chamfer of `arris`: an extra solid for
+    pieces_with(), built straight into its bmesh (rb_lib's pieces only extrude plan loops)."""
+    def add(bm, slots):
+        before = set(bm.verts)
+        L._add_solid(bm, slots, [(z0, z1)], [(loop, mats)], [([loop], top, bottom)])
+        new = set(bm.verts) - before
+        edges = [e for e in bm.edges if e.verts[0] in new and e.verts[1] in new and eased(e.verts[0].co, e.verts[1].co)]
+        bmesh.ops.bevel(bm, geom=edges, offset=arris, offset_type="OFFSET", segments=1, profile=0.5, affect="EDGES",
+                        clamp_overlap=True, material=slots.index(STONE))
+    return add
+
+
+def pieces_with(name, coll, items, extras, tg):
+    """rb_lib.pieces() with extra solids added by callables (bm, slots) -> None."""
+    bm = bmesh.new()
+    slots = []
+    for spans, boundary, regions in items:
+        L._add_solid(bm, slots, spans, boundary, regions)
+    for add in extras:
+        add(bm, slots)
+    return L.finish(name, coll, bm, slots, tg)
+
+
+def head(x_face, x_body, y_front, y_back, z0, z1, rt, joint, slot):
+    """An opening's stone head (2026-10-14): a face slab rt["return"] deep between the jambs' returns (|x| <= x_face),
+    whose eased underside is the head's stone return; it stops `slot` short of each return, a dark joint between their
+    eased edges. Behind it the body (|x| <= x_body, back to y_back) with a shadow gap rt["gap"] wide recessed
+    rt["gap_depth"] into its underside, then the wood soffit, flush with the return. Returns (items, extras) for
+    pieces_with()."""
+    x_face -= slot
+    yr, yg, d = y_front + rt["return"], y_front + rt["return"] + rt["gap"], rt["gap_depth"]
+    hid = "TM_RB_hidden"
+
+    def eased(p, q):                                                   # the front's bottom edge and vertical ends
+        front = abs(p.y - y_front) < 1e-6 and abs(q.y - y_front) < 1e-6
+        return front and ((abs(p.z - z0) < 1e-6 and abs(q.z - z0) < 1e-6) or abs(p.x - q.x) < 1e-6)
+    slab = eased_slab(rect(-x_face, x_face, y_front, yr), z0, z1, [STONE, STONE, joint, STONE], hid, STONE,
+                      rt["arris"], eased)
+    body = [(-x_body, yr), (x_body, yr), (x_body, yg), (x_body, y_back), (-x_body, y_back), (-x_body, yg)]
+    upper = ([(z0 + d, z1)], [(body, [hid, hid, hid, STONE, hid, hid])],
+             [([rect(-x_body, x_body, yr, yg)], hid, joint), ([rect(-x_body, x_body, yg, y_back)], hid, hid)])
+    lower = ([(z0, z0 + d)], [(rect(-x_body, x_body, yg, y_back), ["TM_RB_wood", hid, "TM_RB_wood", hid])],
+             [([rect(-x_body, x_body, yg, y_back)], hid, "TM_RB_wood")])
+    return [upper, lower], [slab]
+
+
+def lining(sgn, x_face, y_front, y_end, z0, z1, lw, rt, joint, wood):
+    """A jamb's wood lining (lw thick on its face at sgn * x_face) held back behind the stone return by the shadow gap,
+    whose floor is a dark backer strip rt["gap_depth"] under the lining's face (2026-10-14)."""
+    y0, y1 = y_front + rt["return"], y_front + rt["return"] + rt["gap"]
+    x0, x1 = sorted((sgn * x_face, sgn * (x_face - lw)))
+    wood.append(L.piece(rect(x0, x1, y1, y_end), [(z0, z1)], "TM_RB_wood"))
+    x0, x1 = sorted((sgn * x_face, sgn * (x_face - lw + rt["gap_depth"])))
+    wood.append(L.piece(rect(x0, x1, y0, y1), [(z0, z1)], joint))
 
 
 def sign_material(line):
@@ -191,17 +255,20 @@ def build(plan):
                               "TM_RB_paving", mat_bottom="TM_RB_hidden"))
         L.guard_along([r.pt(s0, pd["guard_v"]), r.pt(s1, pd["guard_v"])], z_u0, g, guards)
 
-    # the entrance volume (front y_front .. y_back = the podium line), between the structure's jambs
+    # the entrance volume (front y_front .. y_back = the podium line), between the structure's jambs (their stone returns
+    # reach lw into the opening, flush with the linings); the sign band is a head of stone returns (2026-10-14)
     ent, ed = pd["entrance"], pd["entrance_detail"]
     x_in = ent["half_width"] - ent["jamb"]
     yf, yb = ent["y_front"], ent["y_back"]
-    lintels.append(L.piece(rect(-x_in, x_in, yf, yb), [(ed["lintel_bottom"], z_g1)], "TM_RB_podium_stone",
-                           mat_top="TM_RB_hidden", mat_bottom="TM_RB_wood"))
+    rt = plan["returns"]
+    joint = M.joint_slot()
     vy0, vy1 = ed["vestibule_y"]
     lw = ed["wood_lining"]
+    slot = plan["materials"]["joints"]["width"] / 2                # the head slab short of the jambs' returns
+    items, extras = head(x_in - lw, x_in, yf, yb, ed["lintel_bottom"], z_g1, rt, joint, slot)
+    lintels += items
     for sgn in (-1, 1):
-        x0, x1 = sorted((sgn * x_in, sgn * (x_in - lw)))
-        wood.append(L.piece(rect(x0, x1, yf, vy0), [(z_g0, ed["lintel_bottom"])], "TM_RB_wood"))
+        lining(sgn, x_in, yf, vy0, z_g0, ed["lintel_bottom"], lw, rt, joint, wood)
     grid = ed["grid_x"]
     vbox = lambda a, b: rect(a, b, vy0, vy1)  # noqa: E731
     vmid = (vy0 + vy1) / 2
@@ -222,16 +289,15 @@ def build(plan):
                (-(lg["half_width"] - lw), yb), (-(gx - shoe), yb)]
     paving.append(L.piece(terrace, [(z_u0, z_u0 + pd["paving"])], "TM_RB_paving", mat_bottom="TM_RB_hidden"))
     L.guard_along([(-gx, yb), (-gx, gy), (gx, gy), (gx, yb)], z_u0, g, guards)    # one mitred run round the terrace
-    for sgn in (-1, 1):                                            # front centre: stone jambs and the loggia
-        x0, x1 = sorted((sgn * lg["half_width"], sgn * ent["half_width"]))
-        lintels.append(L.piece(rect(x0, x1, yb, yb + depth), [(z_u0, z_u1)], "TM_RB_podium_stone",
-                               mat_top="TM_RB_hidden", mat_bottom="TM_RB_hidden"))
-        x0, x1 = sorted((sgn * lg["half_width"], sgn * (lg["half_width"] - lw)))
-        wood.append(L.piece(rect(x0, x1, yb, lg["back_y"][0]), [(z_u0, lg["head"])], "TM_RB_wood"))
+    for sgn in (-1, 1):                                            # front centre: stone jambs (their returns) and the loggia
+        loop, mats = S.return_loop(sgn * ent["half_width"], sgn * lg["half_width"], yb, yb + depth, lw, rt, STONE, joint)
+        lintels.append(([(z_u0, z_u1)], [(loop, mats)], [([loop], "TM_RB_hidden", "TM_RB_hidden")]))
+        lining(sgn, lg["half_width"], yb, lg["back_y"][0], z_u0, lg["head"], lw, rt, joint, wood)
         x0, x1 = sorted((sgn * grid[-1], sgn * lg["half_width"]))   # the loggia's wood panels reach the stone jambs
         wood.append(L.piece(rect(x0, x1, lg["back_y"][0], lg["back_y"][1]), [(z_u0, lg["head"])], "TM_RB_wood"))
-    lintels.append(L.piece(rect(-lg["half_width"], lg["half_width"], yb, lg["back_y"][1]), [(lg["head"], z_u1)],
-                           "TM_RB_podium_stone", mat_top="TM_RB_hidden", mat_bottom="TM_RB_wood"))
+    items, more = head(lg["half_width"] - lw, lg["half_width"], yb, lg["back_y"][1], lg["head"], z_u1, rt, joint, slot)
+    lintels += items
+    extras += more
     lbox = lambda a, b: rect(a, b, lg["back_y"][0], lg["back_y"][1])  # noqa: E731
     lmid = (lg["back_y"][0] + lg["back_y"][1]) / 2
     lgbox = lambda a, b: rect(a, b, lmid - gd, lmid + gd)  # noqa: E731
@@ -258,7 +324,7 @@ def build(plan):
                                  ("rb_entrance_frames", efr, "podium_frame"), ("rb_entrance_glass", egl, "podium_glass"),
                                  ("rb_podium_guards", guards, "guard"), ("rb_podium_paving", paving, "paving"),
                                  ("rb_podium_wood", wood, "podium_wood"), ("rb_podium_lanterns", lamps, "lantern")):
-        made.append(L.pieces(name, coll, items, tags(element, name)))
+        made.append(pieces_with(name, coll, items, extras if name == "rb_podium_lintels" else [], tags(element, name)))
     signs = [sign_letters(coll, line, pd["sign"], yf) for line in pd["sign"]["lines"]]
     made += [s for s in signs if s is not None]
     return {"collection": COLLECTION, "objects": len(made), "faces": sum(len(o.data.polygons) for o in made),

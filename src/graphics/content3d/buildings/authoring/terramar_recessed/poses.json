@@ -1,5 +1,5 @@
 {
-    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check | final (the UHD 3840x2160 completion captures) | detail (close-ups for review, rendered at pct=200). Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
+    "comment": "AI 639 comparison poses for the Terra & Mar edit prompts (AI 615-638). Blender config frame: metres, z up, front run A faces -Y, street z 0, base z 0.201. vfov_deg = vertical field of view (sensor fit VERTICAL). 'items' = the edit prompt ids a pose serves (render an item's evidence with items=<id>); 'group' = target | full | exterior | props | interior | check | final (the UHD 3840x2160 completion captures) | detail (close-ups for review, rendered at pct=200) | wear (close-ups of the wear and weathering features, 2026-10-14). Plain look-at cameras; the lighting is the file's own INSPECTION_RIG (the game's calibrated sky and sun, az 45 / el 55 from the front right). Poses with 'plan_camera' take their camera from the rebuild plan (rebuild/terramar_plan.json: CAM_B8 fitted to the plan with its lens shift, the orthographic top, the rear view); 'reference': 'b8' puts b8.png beside the pose's sheets (AI 643).",
     "poses": [
         {
             "name": "b8_target",
@@ -524,7 +524,7 @@
         {
             "name": "penthouse_front_slider",
             "group": "interior",
-            "label": "Into the penthouse front strip through the front slider from the roof terrace: the sofa facing the glass, the side table, the floor lamp, the downlights",
+            "label": "Into the penthouse lobby through the front slider from the roof terrace: the lift doors and the call panel on the core, the downlights (the sofa, side table and lamp before 2026-10-15)",
             "items": [
                 638
             ],
@@ -539,6 +539,29 @@
                 28.3
             ],
             "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "penthouse_roof_units",
+            "group": "exterior",
+            "label": "The mechanical units on the penthouse roof, close up from above its front-left corner: fan guards, coil fins, service panels, rails, the pipe tray to the roof penetration",
+            "items": [
+                647
+            ],
+            "location": [
+                -7.6,
+                -7.4,
+                35.4
+            ],
+            "target": [
+                -2.5,
+                -0.7,
+                30.9
+            ],
+            "vfov_deg": 28.0,
             "resolution": [
                 1920,
                 1080
@@ -1401,6 +1424,699 @@
                 27.6
             ],
             "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_base_front",
+            "group": "wear",
+            "label": "Wear close-up: the front podium base low from the sidewalk, looking left along run A to the H/A corner: the left entrance jamb, the charcoal pot, the corner piers and the H chamfer under its canopies (street splash band)",
+            "items": [],
+            "location": [
+                -0.6,
+                -16.6,
+                1.35
+            ],
+            "target": [
+                -5.4,
+                -10.8,
+                0.75
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_base_corner",
+            "group": "wear",
+            "label": "Wear close-up: the A/B corner base low from the sidewalk: the rounded corner pier, the B0 bay under its canopy, the right pot, a tree pit's rim (street splash band)",
+            "items": [],
+            "location": [
+                13.2,
+                -15.8,
+                1.4
+            ],
+            "target": [
+                6.4,
+                -9.4,
+                0.8
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_roof_lounge",
+            "group": "wear",
+            "label": "Wear close-up: the roof lounge from the front left at standing height: the teak-framed sofa and armchairs, the coffee and side tables (teak weathering)",
+            "items": [],
+            "location": [
+                4.1,
+                -9.0,
+                29.0
+            ],
+            "target": [
+                6.7,
+                -5.6,
+                27.7
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_roof_dining",
+            "group": "wear",
+            "label": "Wear close-up: the roof dining table and its slat-back chairs from the front right, standing height (teak weathering)",
+            "items": [],
+            "location": [
+                -4.3,
+                -8.4,
+                29.3
+            ],
+            "target": [
+                -7.0,
+                -5.1,
+                27.75
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_roof_loungers",
+            "group": "wear",
+            "label": "Wear close-up: the front-centre sun lounger, armchair and low table from the left, standing height (teak weathering)",
+            "items": [],
+            "location": [
+                -1.2,
+                -9.8,
+                29.3
+            ],
+            "target": [
+                1.6,
+                -7.7,
+                27.6
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_umbrella_top",
+            "group": "wear",
+            "label": "Wear close-up: a B chamfer cafe umbrella from first-floor height across the sidewalk: the canvas top, the hem and the valance (fabric fade, dust line)",
+            "items": [],
+            "location": [
+                12.6,
+                -15.6,
+                4.6
+            ],
+            "target": [
+                9.71,
+                -9.69,
+                2.3
+            ],
+            "vfov_deg": 32.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_awning_top",
+            "group": "wear",
+            "label": "Wear close-up: the B chamfer storefront canopy from above the sidewalk: the slat tops, the fascia and its bottom edge, the umbrellas below (fabric fade, dust line)",
+            "items": [],
+            "location": [
+                10.6,
+                -13.6,
+                7.6
+            ],
+            "target": [
+                7.2,
+                -9.0,
+                4.2
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_valance_hem",
+            "group": "wear",
+            "label": "Wear close-up: an umbrella's valance at eye level, close: the flaps' hems and the canopy edge (dust line)",
+            "items": [],
+            "location": [
+                11.0,
+                -11.6,
+                1.75
+            ],
+            "target": [
+                10.2,
+                -10.3,
+                2.35
+            ],
+            "vfov_deg": 35.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_awning_fascia",
+            "group": "wear",
+            "label": "Wear close-up: a B chamfer storefront canopy's front fascia from the sidewalk, long lens: the fascia's face and its bottom edge where the rain drips off (fabric fade, dust line)",
+            "items": [],
+            "location": [
+                10.1,
+                -11.8,
+                2.4
+            ],
+            "target": [
+                8.04,
+                -9.66,
+                4.0
+            ],
+            "vfov_deg": 28.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_glass_storefront",
+            "group": "wear",
+            "label": "Wear close-up: the H chamfer storefront glass at eye level from the sidewalk (dust film on the street-level glazing, the restaurant behind)",
+            "items": [],
+            "location": [
+                -13.0,
+                -17.5,
+                1.65
+            ],
+            "target": [
+                -8.5,
+                -10.0,
+                2.2
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_glass_sliders",
+            "group": "wear",
+            "label": "Wear close-up: the B chamfer residential slider stack, floors 1-3, telephoto from across the street (per-pane film, panes under the balconies, curtains behind)",
+            "items": [],
+            "location": [
+                2.0,
+                -24.0,
+                12.0
+            ],
+            "target": [
+                6.0,
+                -7.8,
+                15.0
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_frames_rails",
+            "group": "wear",
+            "label": "Wear close-up: the entrance-top guard over the street from first-floor height, looking down on its top rail and shoe, the loggia frames behind (powder-coat chalking on the up-facing faces)",
+            "items": [],
+            "location": [
+                -1.6,
+                -15.2,
+                8.7
+            ],
+            "target": [
+                -0.4,
+                -11.4,
+                6.5
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_frames_annex",
+            "group": "wear",
+            "label": "Wear close-up: the penthouse annex from above the roof terrace: its louvred top, its frame and the roof guard's rail (powder-coat chalking where the sky reaches)",
+            "items": [],
+            "location": [
+                -1.8,
+                -4.6,
+                32.6
+            ],
+            "target": [
+                -6.6,
+                2.4,
+                29.6
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_frames_balcony",
+            "group": "wear",
+            "label": "Wear close-up: a B chamfer balcony from outside its guard: the guard's top rail and the slider frames under the slab",
+            "items": [],
+            "location": [
+                10.4,
+                -11.9,
+                18.6
+            ],
+            "target": [
+                6.9,
+                -8.4,
+                17.4
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_dust_balcony_corner",
+            "group": "wear",
+            "label": "Wear close-up: on the front right balcony, floor 3, looking at the right pilaster: the paving's dust film, its drift against the window wall and into the inside corner with the pilaster, a pot's rim",
+            "items": [],
+            "location": [
+                6.1,
+                -9.62,
+                18.15
+            ],
+            "target": [
+                3.55,
+                -9.55,
+                16.9
+            ],
+            "vfov_deg": 58.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_dust_balcony_chamfer",
+            "group": "wear",
+            "label": "Wear close-up: along the B chamfer balcony, floor 3, past column B1 toward the front: the dust film under the slab above, the drift at the wall's and the column's foot",
+            "items": [],
+            "location": [
+                10.7,
+                -4.55,
+                18.2
+            ],
+            "target": [
+                7.05,
+                -7.15,
+                16.9
+            ],
+            "vfov_deg": 56.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_dust_podium_top",
+            "group": "wear",
+            "label": "Wear close-up: the podium top at the A-H corner from above the street: the floor-1 terrace under floor 2's balcony, the lip in front of the guard, the edge planters' rims",
+            "items": [],
+            "location": [
+                -6.4,
+                -14.2,
+                12.9
+            ],
+            "target": [
+                -4.6,
+                -10.4,
+                10.15
+            ],
+            "vfov_deg": 48.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_dust_roof_corner",
+            "group": "wear",
+            "label": "Wear close-up: the roof terrace's front-left corner: the open deck, its tile joints, the troughs and the guard shoe",
+            "items": [],
+            "location": [
+                -2.2,
+                -7.4,
+                29.2
+            ],
+            "target": [
+                -5.4,
+                -10.0,
+                27.3
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_joints_sidewalk",
+            "group": "wear",
+            "label": "Wear close-up: the sidewalk tiles and the entrance pier's foot at eye level: the paving joints",
+            "items": [],
+            "location": [
+                3.2,
+                -17.4,
+                1.55
+            ],
+            "target": [
+                1.2,
+                -13.6,
+                0.1
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_balconies",
+            "group": "wear",
+            "label": "Wear close-up: the H chamfer's balcony slab fascias, floors 2-4, from outside at floor 3 (runoff streaks below guard joints and the shoe end at the left pilaster)",
+            "items": [],
+            "location": [
+                -16.2,
+                -13.7,
+                15.5
+            ],
+            "target": [
+                -9.2,
+                -6.7,
+                17.0
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_podium_edge",
+            "group": "wear",
+            "label": "Wear close-up: the H chamfer podium edge under the floor-1 edge planters, from across the street at 7.5 m (streaks below the planters' weep holes onto the podium stone)",
+            "items": [],
+            "location": [
+                -15.5,
+                -13.0,
+                7.5
+            ],
+            "target": [
+                -9.5,
+                -7.0,
+                9.6
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_front_podium",
+            "group": "wear",
+            "label": "Wear close-up: the front podium edge between the corner piers (shoe ends at the pilasters, the A/B corner)",
+            "items": [],
+            "location": [
+                1.0,
+                -21.0,
+                8.0
+            ],
+            "target": [
+                0.5,
+                -11.0,
+                9.4
+            ],
+            "vfov_deg": 36.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_upper_corner",
+            "group": "wear",
+            "label": "Wear close-up: the A/B corner's upper floors and the B chamfer from the front right (fascia streaks floors 4-5)",
+            "items": [],
+            "location": [
+                14.0,
+                -19.0,
+                19.0
+            ],
+            "target": [
+                6.5,
+                -9.5,
+                22.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_lantern",
+            "group": "wear",
+            "label": "Wear close-up: the left entrance jamb's lantern at eye level (a rust streak below its fixing)",
+            "items": [],
+            "location": [
+                -1.6,
+                -15.5,
+                2.3
+            ],
+            "target": [
+                -3.165,
+                -12.15,
+                2.6
+            ],
+            "vfov_deg": 28.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_runoff_sill_corner",
+            "group": "wear",
+            "label": "Wear close-up: a rear-right (D) bay's upper recess sill corner, the slab edge and ground lintel down to the canopy",
+            "items": [],
+            "location": [
+                15.0,
+                10.9,
+                3.2
+            ],
+            "target": [
+                10.07,
+                5.94,
+                5.2
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_cavity_soffit",
+            "group": "wear",
+            "label": "Wear close-up: the B chamfer's floor-3 balcony from outside its guard, level with the column B1: the floor-4 soffit meeting the glazing head and the column, the paving meeting the glazing foot and the column base (cavity soot)",
+            "items": [],
+            "location": [
+                10.7,
+                -8.2,
+                14.6
+            ],
+            "target": [
+                8.0,
+                -5.6,
+                15.4
+            ],
+            "vfov_deg": 64.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_cavity_pilaster",
+            "group": "wear",
+            "label": "Wear close-up: the left front pilaster at floor 3 from the street side: its junctions with the slab fascias and soffits, the loggia's wood reveal and soffit (cavity soot)",
+            "items": [],
+            "location": [
+                -0.6,
+                -15.2,
+                17.6
+            ],
+            "target": [
+                -3.1,
+                -10.4,
+                18.3
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "wear_cavity_terrace",
+            "group": "wear",
+            "label": "Wear close-up: the penthouse's front stone wall rising from the roof terrace paving, low along its foot: the wall's foot, the recessed door's jambs, a planter's base (cavity soot)",
+            "items": [],
+            "location": [
+                -0.6,
+                -3.0,
+                28.0
+            ],
+            "target": [
+                -3.6,
+                -1.0,
+                27.6
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "returns_entrance_jamb",
+            "group": "detail",
+            "label": "Stone returns (2026-10-14): the left entrance jamb's inner head corner from below right, where the stone face meets the wood lining and the wood soffit, the lantern on the jamb",
+            "items": [],
+            "location": [
+                -1.55,
+                -13.75,
+                1.75
+            ],
+            "target": [
+                -2.95,
+                -12.15,
+                3.6
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "returns_loggia_corner",
+            "group": "detail",
+            "label": "Stone returns (2026-10-14): the loggia's left stone jamb and lintel over the entrance terrace, where the stone meets the wood lining and soffit",
+            "items": [],
+            "location": [
+                -1.0,
+                -11.95,
+                6.9
+            ],
+            "target": [
+                -2.95,
+                -11.0,
+                8.7
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "returns_residential_reveal",
+            "group": "detail",
+            "label": "Stone returns (2026-10-14): the left pilaster's inner face meeting the floor-2 wood reveal panel of the front centre loggia, the slab edges above and below",
+            "items": [],
+            "location": [
+                -1.2,
+                -12.6,
+                15.4
+            ],
+            "target": [
+                -2.65,
+                -9.6,
+                14.9
+            ],
+            "vfov_deg": 36.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "returns_slab_soffit",
+            "group": "detail",
+            "label": "Stone returns (2026-10-14): a balcony slab edge from below, where the stone fascia turns onto the wood soffit (front left, floor 2)",
+            "items": [],
+            "location": [
+                -6.5,
+                -12.6,
+                12.4
+            ],
+            "target": [
+                -6.0,
+                -11.0,
+                13.2
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "returns_tree_pit_base",
+            "group": "detail",
+            "label": "Stone returns (2026-10-14): the front-left limestone tree pit's corner low over the sidewalk: the foot joint where it stands on the paving, the coping's seam",
+            "items": [],
+            "location": [
+                -5.6,
+                -17.4,
+                0.75
+            ],
+            "target": [
+                -7.1,
+                -15.5,
+                0.25
+            ],
+            "vfov_deg": 32.0,
             "resolution": [
                 1920,
                 1080

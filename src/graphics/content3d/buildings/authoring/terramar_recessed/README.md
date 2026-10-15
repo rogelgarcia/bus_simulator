@@ -492,6 +492,7 @@ the composition.
 | `terramar_props.blend` | `TM_PROPS` | the props on the building | balcony_plants, podium_planters, roof_planters, roof_furniture, awnings |
 | `terramar_site.blend` | `RB_SITE` | the street | site_cafe (sidewalk, café), site_palms (palms, pits, entrance pots, lamps) |
 | `terramar_interiors.blend` | `TM_INTERIORS` | the furnished interiors | restaurant_l0, dining_l1, residential, penthouse |
+| `terramar_wear.blend` | `TM_WEAR` | the wear module's overlays (2026-10-14): the runoff streak decals | wear_overlays |
 | `terramar_composition.blend` | — | building + props (+ site, interiors) | links the four roots: `TERRAMAR_REBUILD` (local) holds `TM_BUILDING`, `TM_PROPS` and `TM_INTERIORS`; `RB_SITE` sits beside it |
 
 Why four parts and not two:
@@ -540,17 +541,30 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 
 | Script | Does |
 | --- | --- |
-| `build.py` | the entry: `target=` (building, props, site, interiors or all), or `layers=` of one part; refuses any file but that part's (or an unsaved session); sets the part's root, refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under the part's root, then the materials pass; `target=all` builds every part from scratch and composes |
-| `compose.py` | the composition (2026-10-14): links the four parts' roots into `terramar_composition.blend` beside the base scene (local `TERRAMAR_REBUILD` holding the building, props and interiors; `RB_SITE` beside it) |
+| `build.py` | the entry: `target=` (building, props, site, interiors, wear or all), or `layers=` of one part; refuses any file but that part's (or an unsaved session); sets the part's root, refreshes the base scene, then runs `layer_<name>.py` for each requested layer, which empties and rebuilds only its own collection under the part's root, then the finishing passes (`materials`, then `wear` in the building, props and site; `wear=0` strips the wear); `target=all` builds every part from scratch and composes |
+| `compose.py` | the composition (2026-10-14): links the parts' roots into `terramar_composition.blend` beside the base scene (local `TERRAMAR_REBUILD` holding the building, props, interiors and, when built, the wear overlays `TM_WEAR`; `RB_SITE` beside it) and sets the wear switch ON |
+| `layer_wear.py` | the wear finishing pass (2026-10-14): strips any previous wear, builds the `TM_WEAR_*` node groups, flags the exterior objects, writes the signals and the features' attributes, splices `TM_WEAR_layer` into the exterior materials; `build_overlays()` is the wear part's layer; standalone on a scratch copy (see "Wear and weathering") |
+| `wear.py` | the wear switch on a saved file, normally the composition: `wear=on\|off\|debug\|clear`, `strengths=` (every feature not given takes its default; `all:<v>` sets them all first), `signal=`, `save=1` |
+| `wear/` | the wear module: `controls.py` (switch), `classes.py` (slot -> class), `context.py` (the part, walking surfaces, ray scene), `signals.py`, `nodes.py` (builder, groups, insert / remove), `registry.py` (features in ORDER, the contract), `overlays.py` (the wear part), `scratch.py` (private part copies), `sheets.py` (evidence sheets, exact diffs), `features/` (below) |
+| `wear/features/teak_weather.py` | wear feature (ORDER 20): outdoor teak, café wood and the architecture's wood greying toward silver on the faces the sky reaches (`teak_open`) |
+| `wear/features/fabric_fade.py` | wear feature (30): the café umbrellas' canvas a touch sun-faded on top, a faint dust line along the hems (`fabric_hem`, `fabric_piece`) |
+| `wear/features/metal_chalk.py` | wear feature (50): the black powder coat (frames, rails, louvres, storefront canopies) greyer and matt where the sky reaches it, per member (`chalk`) |
+| `wear/features/splash_zone.py` | wear feature (100): the street-splash band at the foot of the walls, its height from the rain reaching the pavement in front (`splash`) |
+| `wear/features/ledge_dust.py` | wear feature (110): dust on the up-facing ledges and floors, kept where sheltered, rinsed where open, drifted into the lee (`ledge`, `ledge_rain`, render-time occlusion) |
+| `wear/features/cavity_soot.py` | wear feature (120): soot in the inside corners and junctions (render-time occlusion), less where rain rinses (`soot_shelter`) |
+| `wear/features/joint_dirt.py` | wear feature (130): dirt in the stone joints (horizontal and sheltered runs hold more, `jrun`) and the paving's tile joints (`tile`, `tjoint`) |
+| `wear/features/runoff_streaks.py` | wear feature (220): faint runoff streaks below drip points and rust under a lantern, one ray-traced decal each in the wear part (atlas generated into `tests/artifacts/blender/terramar_recessed/rebuild/wear/runoff_streaks/`) |
+| `wear/features/glass_film.py` | wear feature (300): an even dust and salt film per pane of the exterior glazing, duller and hazier, never lighter (`pane_film`) |
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
 | `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots) |
 | `layer_podium.py` / `podium_layout.py` / `trace_sign.py` | the podium layer, `RB_PODIUM`, its layout, and the sign tracer (kit masks -> letter outlines) |
 | `layer_roof.py` | the roof layer, `RB_ROOF` (its layout is `plan["roof"]`, written by `make_plan.py`) |
+| `roof_units.py` | the penthouse roof's mechanical plant into a caller's bmesh (2026-10-15): top-discharge condensing units (rails on pads, feet, finned coil faces behind a wire guard, seamed service panels, fans with pitched blades under domed guards) and a side-discharge condenser, the insulated lines, the covered pipe tray and the roof hood; `plant(bm, plan["roof"], z)`, `materials()` (`TM_RB_unit_*`, `TM_RB_lift_steel`); test renders with `-- out=` |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
-| `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects; `build.py` runs it after any geometry layer it rebuilds |
+| `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects (since 2026-10-14 also the seams between flush pieces and the named `joints.objects`, such as the site's tree pits); `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks; `fit_scales` fits every instance to its target (the detailed palms within 10 % xy / z) |
@@ -1415,6 +1429,477 @@ New poses: `umbrella_closeup` and `umbrella_underside`. Evidence is in
   valance; v2: before the straighter ribs);
 - `ref/`: the b8 crops; `b8_cafe_strip_b8_pre_post.png`: b8, before and after in `CAM_B8`;
 - the checks, both audits and `umbrella_clearance.json`.
+
+### Roof and penthouse adjustments (2026-10-15)
+
+The user: "no dinner table in the roof top. improve the quality of the machines on top of penthouse. that sofa in front
+of the glass in the penthouse doesn't make sense. think logically about the structures inside ... is the grass area too
+cluttered? should we increase the room area (just a bit)?"
+
+- **Terrace (props).** The dining set is gone. Two zones remain: the lounge on the B chamfer, and two sun loungers with a
+  side table mirrored on the H chamfer (feet towards the view). The front-centre armchairs and low table are gone, so
+  the middle is open paving. Three planter islands instead of six, near the edges: `annex_front` (before the annex,
+  behind the loungers), `lounge_back` (behind the lounge, by the penthouse's right corner) and `side_right` (the right
+  side strip). The perimeter ring and its clearance checks are unchanged: 0 perimeter plants past the guard (closest
+  3.2 cm), furniture at least 1.25 m inside the guard, 0 footprint problems. `layer_roof_planters.py` now tells the
+  island plants by the plan's island ids.
+- **Penthouse enlarged.** The front wall moved 1.2 m toward the terrace (`PENTHOUSE` y −2.2…6.5, 10 x 8.7 m). The
+  side door and window, the annex (−1.2…4.3), the plant zone and the units moved with it. Solar rows: 5 rows, 37
+  modules (was 28). The sightline still holds: front wall 3.86 m against 4.53 m, units 4.6 m against 4.82 m, solar
+  3.86 m against 4.84 m, annex 3.05 m against 5.05 m. `check_layers.py`: 0 px.
+- **The penthouse's space.** The core (stair and two lifts, x ±3.6, y 0.8…6.0) rises through the penthouse, so the
+  penthouse is the roof-access headhouse:
+  - the 2.75 m front strip is its **lobby**. The stair door (teak leaf, black frame) and the two lift doors (brushed
+    steel frames, centre-opening leaves, a call panel between them) are on the core's front face
+    (`rb_penthouse_core_doors`, surface pieces; the shafts are not modelled);
+  - the lobby leads to the front door and the slider onto the terrace, and through the left door into the annex. It is
+    kept clear: a slim teak console (1.3 x 0.38 m) against the front wall between the door and the slider, and plants
+    in the front corners. The sofa, side tables, floor lamp and the right strip's armchair are gone;
+  - the glazed annex is still the amenity room (kitchen run and island, lounge corner). Its layout is now measured from
+    the annex's front.
+- **Rooftop plant (`roof_units.py`).** It replaces the three grey boxes:
+  - two top-discharge condensing units along the front parapet (two fans and one fan; light grey powder coat in two
+    tones);
+  - a side-discharge condenser behind them, blowing out over the low parapet;
+  - every unit has finned coil faces behind a wire guard, a seamed service side with screws, a handle and a nameplate,
+    and stands on galvanised rails on rubber pads;
+  - the fans have 3–5 pitched, swept blades on a hub and motor bracket, under domed ring-and-spoke guards;
+  - the insulated lines leave each unit's pipe cover and drop into a covered galvanised tray, which runs to a roof
+    hood;
+  - 24.5 k triangles, one object (`rb_roof_units`), all under the sightline. New pose: `penthouse_roof_units`.
+
+Checks:
+- the audit: 697 objects, 0 z-fights, 0 penetrations; the site: 42 objects, 0 / 0;
+- hidden parts visible from b8: 0 px;
+- a fresh `target=all save=0` build runs clean.
+
+Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/roof_adjust/`:
+- `poses/pre_roofadj_vs_rebuild/`: 7 sheets;
+- `units_test/`: the module's test renders;
+- the checks and both audits.
+
+### Stone returns and connection joints (2026-10-14)
+
+The user, on the entrance recess where the stone pier meets the orange wood lining, and on a tree pit's foot: "i'm
+missing some joints, the connections are too flat; where it is orange for example, the stone has no depth; there should
+be a small stone on the side so it is 3d and not a wallpaper". Where the limestone stopped, the next material started on
+the same edge, so nothing showed the stone's thickness; flush stone pieces met in seams without a joint. The values live
+in `plan["returns"]` (`make_plan.RETURNS`):
+
+| Value | | Used for |
+| --- | --- | --- |
+| `return` | 0.10 m | the reveal stone of the entrance and loggia openings, on the jambs and under the heads (b8 shows stone reveals well into the portal before the wood; 40 mm read as a hairline from the street) |
+| `fascia_return` | 0.04 m | under the slab fascias: the cladding's own thickness |
+| `arris` | 4 mm | the eased outside corner of every return |
+| `gap`, `gap_depth` | 10 mm, 18 mm | the shadow gap between stone and wood, its faces in `TM_RB_stone_joint` |
+
+The junctions, and what each got:
+
+| Junction | Was | Now | Where |
+| --- | --- | --- | --- |
+| entrance jambs -> wood lining | the stone face stopped at the corner, the lining's edge flush with it | the jamb's front corner wraps 0.10 m into the opening, flush with the lining, arris eased (`layer_structure.return_loop`); a shadow gap floored by a dark backer strip; the lining now starts 0.11 m back (`layer_podium.lining`) | structure, podium |
+| sign band underside -> wood soffit | the wood met the stone face at the arris | a 0.10 m stone face slab, front edges eased, its underside the head's return, stopping 4 mm short of each jamb return (a dark joint between their arrises); behind it the body with the gap recessed into its underside, then the wood soffit, flush (`head`) | podium |
+| loggia jambs and lintel -> wood linings and soffit | as the entrance | as the entrance | podium |
+| front centre wood reveal panels -> pilaster sides (inside corner) | the panel butted the stone | the panel stops 10 mm short, the gap floored 18 mm behind its face | envelope |
+| balcony and roof slab fascias -> wood soffits | the soffit's edge was the fascia's bottom arris | a 40 mm stone strip under the fascia, arris eased, a 10 x 18 mm gap, then the soffit. The slab is two stacked spans welded into one solid (`stacked_slab`), so each fascia stays one face top to bottom; the strip stays one piece per fascia face (`finish_kept`) | structure |
+| flush stone pieces: pier / lintel, piers, lintels and jambs / slab fascia (5.38, 5.79, 9.76), loggia jamb / corner pier, penthouse walls / head pieces | a coplanar seam: no groove, only a jump in the map | a seam joint centred on the seam over the stretch the two faces share | materials |
+| the site's limestone tree pits -> sidewalk | no joint at the foot or the coping | a joint at the foot of every side, seams at the coping and its corners | materials (`joints.objects`) |
+| storefront and upper-recess reveals, pilaster and column edges at the frames, penthouse openings | already stone round the corner (0.25-0.90 m reveals) | unchanged; their flush seams now carry joints | - |
+
+The materials pass (`layer_materials.py`):
+- **Seam joints** (`joints.seams`): a pre-pass pairs coplanar stone faces of different solids or objects that face the
+  same way and share a stretch of an edge (at least `seam_min_length`). Each gets a joint centred on the seam over that
+  stretch. Stretches along one line merge; where a stretch ends inside a face, the groove ramps out over the bevel length.
+- **Carry:** a vertical joint carries on over the faces it meets square: one face past its own (a lintel's soffit, as
+  before), further only across narrow faces (the eased arris, then the return), up to `joints.carry_hops` (2).
+- **Objects** (`joints.objects`): named objects jointed in whichever part holds them (`rb_site_tree_pits` on
+  `TM_RB_paving`); `base` adds the foot joint. `joint_layout.json` records now carry their part.
+- **Float32:** the bisect now snaps vertices within 10 µm to the plane. A neighbour's cut along a shared edge reads ~1e-6
+  m off the plane on the diagonal runs, and the old 1e-7 left slivers.
+- `joint_slot()` gives the layers `TM_RB_stone_joint` for the gaps they model.
+
+A layer rebuilt alone cuts only its own half of a seam with another layer's piece; `target=building` cuts both. The
+building now has 22 jointed objects, 1367 vertical joints (the carried ones counted per face), 1290 seam and foot joint
+records, 1408 panels; the self-checks (degenerate, non-planar, non-manifold) are all 0. The site's tree pits get 137.
+
+Checks:
+- the audit: 710 objects, 0 z-fights, 0 penetrations; the site: 42 objects, 0 / 0;
+- hidden parts visible from b8: 0 px;
+- a fresh `target=all save=0` build runs clean.
+
+New poses: `returns_entrance_jamb`, `returns_loggia_corner`, `returns_residential_reveal`, `returns_slab_soffit`,
+`returns_tree_pit_base`. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/stone_returns/`:
+- `poses/pre_returns_vs_rebuild/`: [before | after] for 12 poses (b8 first for `b8_calibrated`); the "before" renders
+  are tag `pre_returns`;
+- `zoom/`: [before | after] crops of the corners, the storefront seams, the entrance head and the penthouse walls;
+- `site_pit/`: the tree pit before and after, both rendered from the site part, and `zoom_returns_tree_pit_base.png`;
+- the checks (`check_sheet.png`, `checks.json`) and both audits.
+
+The site part was re-dressed with `build.py -- target=site layers=materials`, which re-runs its wear pass.
+
+### Wear and weathering (2026-10-14)
+
+The user asked for wear and weathering "as a separate module that can be enabled / disabled. non-destructive". The
+module lives in `rebuild/wear/` (nine features in `rebuild/wear/features/`), with the finishing pass
+`rebuild/layer_wear.py` and the switch `rebuild/wear.py`. It follows the user's standing rules for wear (learnt on the
+Bradbury, whose wear layer it copies the ideas of, never the code):
+- every mark has a physical reason and a place;
+- no noise, no mottle;
+- nothing repeats: per-instance variation comes from seeds on stable ids;
+- subtle: b8 shows a new, almost pristine building, so the wear reads as a few years of weather, not neglect.
+
+The composition is saved with the wear ON, every feature at its default strength (1.0).
+
+**Turning it off, on or to debug.** The switch lives in the composition's scene, so one switch drives every part.
+
+From the command line (`save=1` keeps the setting in the composition; without it the setting lasts the session, e.g.
+chained with a render):
+
+```
+C=tests/artifacts/blender/terramar_recessed/rebuild/terramar_composition.blend
+W=src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/wear.py
+blender -b $C --python $W -- wear=off save=1                                  # off: exactly the unworn building
+blender -b $C --python $W -- wear=on save=1                                   # on: every feature at its default
+blender -b $C --python $W -- wear=on strengths=runoff_streaks:0,glass_film:0.5 save=1   # one off, one at half
+blender -b $C --python $W -- wear=on strengths=all:0,cavity_soot:1            # one feature alone
+blender -b $C --python $W -- wear=clear save=1                                # remove the properties (absent = off)
+blender -b $C --python $W -- list=1                                           # print the switch, change nothing
+# debug: every worn surface clay, each feature's mask in its colour; signal=<name> shows a signal as a ramp
+blender -b $C --python $W --python src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- wear=debug poses=wear_base_front tag=wear_debug
+blender -b $C --python $W --python src/graphics/content3d/buildings/authoring/terramar_recessed/render_poses.py -- wear=debug signal=sky poses=wear_base_front tag=wear_sky
+```
+
+Every `wear.py` run sets every feature: the strengths it is given, the others their default. A run therefore never
+inherits a value an earlier run left in the scene.
+
+In the Blender UI, open the composition:
+- **Scene Properties > Custom Properties:** `tm_wear` (0 off, 1 on, 2 debug) and `tm_wear_<feature>` (the strength;
+  1.0 is the calibrated look, 0 turns the feature off), plus `tm_wear_signal` for the debug ramps. A render (F12)
+  picks the values up; a rendered viewport may refresh only on its next update (toggle its shading).
+- **Outliner, View Layer:** the collection `TM_WEAR` under `TERRAMAR_REBUILD` holds the overlay decals (the runoff
+  streaks). Its checkbox ("Exclude from View Layer") must follow the switch by hand: excluded while off; inside it
+  `TM_WEAR_runoff_streaks` excluded while that strength is 0, `TM_WEAR_DEBUG` included in debug only. `wear.py` sets
+  these itself. A decal left included while off still renders clear, because its material reads the switch.
+
+To take the wear out of the part files altogether: `build.py -- target=<building|props|site> layers=wear wear=0`. The
+parts then come out exactly as before the module.
+
+**The switch.**
+
+| Property | Value |
+| --- | --- |
+| `tm_wear` | 0 off, 1 on, 2 debug |
+| `tm_wear_<feature>` | the feature's strength: 1.0 is its calibrated look, 0 turns it off |
+| `tm_wear_signal` | debug only: k > 0 shows the k-th signal as a blue-green-yellow ramp |
+
+- The shaders read the properties with Attribute nodes of type View Layer. A property that is absent reads 0, so a
+  scene that sets nothing renders exactly as before the module.
+- The linked materials read the composition's scene, so one switch drives every part.
+- `compose.py` sets the composition ON, every feature at its default strength. The env `TM_WEAR_MODE=off|on|debug`
+  overrides that.
+
+**The layers.** The module has three layers. None of them changes a layer's geometry or a material's own nodes: they
+splice in.
+1. **Shader.** One node group, `TM_WEAR_layer`, sits in each worn material between the material's own outputs and its
+   Principled BSDF.
+   - It routes only the sockets the features acting on that class write (Base Color and Roughness almost everywhere;
+     Metallic on the canvas; Specular on the glass). The glass also routes Transmission, which only the debug view
+     changes (`nodes.DEBUG_ROUTES`), so a worn pane shows as clay.
+   - It chains the feature groups `TM_WEAR_F_<name>` in ORDER.
+   - It mixes the result back by `active = (tm_wear > 0.5) * tm_wear_exposed * (1 - indoor)`, where `indoor` (a
+     signal, below) is 1 on the face corners that look into a room; the glass is exempt, since its film shows from
+     both sides.
+   - Inside each feature group, every output is mixed by `Strength > 0`. A mix by 0 returns its first input exactly,
+     so off is the old shading bit for bit, and so is a feature at strength 0 (Cycles then also folds away that
+     feature's nodes, its occlusion included).
+   - The kit limestone's Principled sits inside `TM_RB_limestone`. A material using it gets a worn copy of that group per
+     class (`TM_WEAR~TM_RB_limestone~stone`, `~paving`) with the layer spliced in inside.
+2. **Signals.** The pass writes FLOAT attributes `tm_wear_<signal>` on the exterior meshes: extra data, the geometry is
+   untouched. It writes them only on the meshes carrying a class some feature acts on; `signals=all` writes them on
+   every exterior mesh, for the debug view.
+
+   | Signal | Domain | Meaning |
+   | --- | --- | --- |
+   | `ground` | point | height above the walking surface the point stands over |
+   | `level` | point | the z of that walking surface: below 1.0 at street level (the street, the sidewalk, the ground slab in the bays, the pits' and pots' soil); 5.82 the entrance top; 10.20 the podium terrace; the balconies; 27.30 the roof |
+   | `sky` | face corner | the upward sky exposure: the share of 64 cosine-weighted directions over the upper hemisphere that leave the ray scene (an open top reads about 1, an open wall about 0.5) |
+   | `panel` | face | a seeded value in [0, 1) per stone panel (faces bounded by the joint floors), or per loose island |
+   | `indoor` | face corner | 1 where the corner looks into a room: no direction in front of the face leaves the ray scene without the guards (the glazing counts as a wall, a guard's glass, free at its top, does not). The layer's own gate, written on the building part's worn meshes that have such corners |
+
+   - The walking surfaces come from the plan, so every part sees the same ones.
+   - `sky` and `indoor` are sampled per face corner, from a point 5 cm in from the corner along its bisector and 2 cm
+     out along the face's true normal. A direction behind the face counts as blocked by it. A back face nearer than
+     12 cm means the point started inside a neighbour (the paving over a wall's foot), and the ray goes on past it.
+   - The building's exterior objects reach indoors in places: the wood reveals straddle the glazing line, and the
+     frames, the podium piers, the columns and the penthouse walls have room sides. `indoor` keeps those faces clean
+     (114,155 corners); a face crossing the glazing line fades across it.
+   - The ray scene is the part's own fixed geometry plus plan proxies of the other parts: the building's massing, the
+     storefront canopies, the tree pits and the entrance pots. The movable café sets and roof furniture are left out.
+   - Object flags: `tm_wear_exposed = 1` on every exterior object (the building's `RB_INTERIOR` stays unflagged, so a
+     material shared with an interior object stays clean indoors), and `tm_wear_seed`, a seeded value per object.
+   - The features add their own attributes: `foot`, `foot_h`, `splash`, `edge`, `edge_h`, `edge_rain`, `soot_shelter`,
+     `jrun`, `tile`, `tjoint`, `chalk_a`..`chalk_f`, `teak_ea`, `teak_eb`, `teak_ha`, `teak_hb`, `teak_gap`, `teak_open`,
+     `teak_end1`, `teak_end2`, `teak_foot`, `fabric_hem`, `fabric_r`, `fabric_piece`, `fabric_seam`, `pane_grime`,
+     `pane_bottom`, `pane_left`, `pane_right` (the registry refuses two features declaring one name). Since the edge
+     rework no feature reads `ground` or `level`; they are written with `signals=all` for the debug view.
+3. **Overlays.** `terramar_wear.blend` (part `wear`, root `TM_WEAR`, one layer `wear_overlays`) holds geometry that only
+   exists when worn, built by the features' `overlays()`: one collection `TM_WEAR_<name>` per feature (today
+   `TM_WEAR_runoff_streaks`, 30 decals), and `TM_WEAR_DEBUG` for markers shown in debug only.
+   - The composition links `TM_WEAR` under `TERRAMAR_REBUILD`, so the audit checks it.
+   - The switch excludes `TM_WEAR` from the view layer while off, and a feature's own collection while its strength is
+     0. An overlay's material also reads the switch and scales with the strength.
+   - Decals sit 4 mm proud of their surface (the audit counts same-facing faces within 3 mm as coplanar).
+   - Images go to `tests/artifacts/blender/terramar_recessed/rebuild/wear/<feature>/`.
+
+**Material classes** (`wear/classes.py`, by slot name):
+
+| Class | Slots | Features |
+| --- | --- | --- |
+| `stone` | slab fascia, pilaster, column, podium stone, penthouse stone | splash_zone, ledge_dust, cavity_soot, joint_dirt (bevels) |
+| `paving` | paving (also the tree pits and roof troughs), threshold, slab top, roof paving, site paving | splash_zone, ledge_dust, cavity_soot, joint_dirt (tile joints) |
+| `joint` | `TM_RB_stone_joint` | splash_zone, ledge_dust, joint_dirt |
+| `wood_ext` | `TM_RB_wood` (reveals, doors, linings) | teak_weather, cavity_soot, splash_zone |
+| `soffit` | `TM_RB_soffit` | cavity_soot |
+| `steel` | `TM_RB_frame`, `TM_RB_louvre`, `TM_RB_awning` (the storefront canopies are charcoal metal) | metal_chalk |
+| `glass_ext` | `TM_RB_glass` | glass_film |
+| `planter` | planter metal and pots | splash_zone (entrance pots), ledge_dust |
+| `furn_teak`, `cafe_wood` | `TM_RB_furn_teak`; `TM_RB_cafe_wood` | teak_weather |
+| `fabric` | `TM_RB_cafe_canopy` (the umbrellas' canvas) | fabric_fade |
+| `concrete` | `TM_RB_roof_top` | ledge_dust |
+
+Interior materials get no group: partition, ceiling, floor, core, hidden, and the furniture fabrics.
+
+**The features**, in ORDER (each module's header has the long form):
+- **teak_weather** (20; furniture teak, café wood, the architecture's wood). Outdoor teak weathers at its edges and ends
+  only; board faces keep their oiled colour. Arrises (convex edges of 40° or more, eased-corner facets) go silver-grey
+  and rougher within about 5 mm, wider and stronger toward a member's ends; end grain turns a darker grey; feet darken
+  over about 3.5 cm above their floor; slat sides along open joints darken. It follows `teak_open` (sheltered wood gets
+  nothing) and varies per piece ("last oiled") and per board. The band is exact geometry: per face corner the in-plane
+  distance to the face's arrises (`teak_ea`/`teak_eb`, `teak_ha`/`teak_hb`).
+- **fabric_fade** (30; the café umbrellas' canvas). Dirt at the canvas edges only; the panels stay clean. A drip line
+  over the lowest 16 mm of every piece of canvas (valance bottoms, hem, vent cap; `fabric_hem`), a 16 mm line on each rib
+  seam (from the umbrella's `rb_seam` UV map, each seam its own amount and reach) and a 3 cm ring at the vent opening.
+  Per umbrella and per flap seeded; light, since b8's umbrellas are new.
+- **metal_chalk** (50; frames, guard rails and shoes, lantern bodies, louvres, storefront canopies). The powder coat
+  chalks along exposed arrises only: a fine lighter line a few millimetres wide; faces keep their colour. An arris is a
+  convex edge whose two faces are both free (short ray probes; a mullion into its rail, a sill on stone, a frame on the
+  wall or a slat's ends are junctions, not arrises). Its dose is the sky the arris sees, seeded per member and corner,
+  1.5x round exposed ends. Each face keeps up to six sides as `chalk_a`..`chalk_f`, so the line is exact at any distance.
+- **splash_zone** (100; stone, paving, joint, planter, wood_ext). Street grime in the junctions where walls, piers,
+  jambs, tree pits and pots stand on the street-level paving, never over a whole face: a narrow gradient a few cm up the
+  wall and out on the floor, climbing 1.5-6 cm higher where the pavement in front takes rain (`splash`). `foot` / `foot_h`
+  mark the junction faces; a short-reach Ambient Occlusion (12 cm) draws the gradient at render time, so cross-part
+  junctions (the site's sidewalk against the building's piers) are exact. Every 1.35 m plan cell gives its stretch a
+  presence (about a quarter absent), amount and width; inside corners are strongest.
+- **ledge_dust** (110; paving, stone, joint, planter, concrete). Dust drifted into the edges and inside corners of the
+  floors above the street (podium terrace, balconies, roof deck, entrance top), fading out within about 10 cm; the open
+  floor stays clean. `edge` / `edge_h` mark the junctions, `edge_rain` keeps all the dust in a sheltered junction and
+  45 % in a rinsed one; occlusion over 22 cm; its own stretch draws as in splash_zone.
+- **cavity_soot** (120; stone, soffits, paving, wood). Soot and dust where the air stalls, from Cycles' Ambient
+  Occlusion over 0.30 m: only the occlusion inside concave junctions counts (soffits meeting the glazing heads, the
+  columns and pilasters, the reveals' inner corners, terrace walls' feet, planter bases). `soot_shelter` (face corner)
+  keeps it in the sheltered junctions and lets a rinsed one keep 40 %. Each stone panel varies by ±15 %. At full: 18 %
+  darker, 30 % greyer, a touch warm, roughness +0.06.
+- **joint_dirt** (130; joint floors, their stone bevels, the tiled paving). Dirt lodged in the joints. `jrun` (face)
+  sorts each joint floor by its run: course joints and joints on tops 1.0, vertical joints 0.45, soffit joints 0.5,
+  each run within ±25 % by seed; the up-facing 3 mm lower bevels take 45 % of their joint. The `sky` signal rinses it:
+  an open wall's joints keep 60 %. The paving's drawn tile joints (roof deck, sidewalk) are found again from the
+  object's x / y, one seeded value per joint line. At a full, sheltered run: 21 % darker, 52 % greyer, roughness
+  +0.075.
+- **runoff_streaks** (220; overlays). Faint rain-runoff streaks below the few places where water leaves an edge: the
+  guard glass joints over the slab fascias, the roof guard's joints, the rounded corners, the guard shoes' ends at the
+  front pilasters, the podium planters' weep holes, the upper recesses' sill corners, and rust under one of the four
+  lanterns. 30 of 396 candidates carry one, by seeded probability (a little more often up high; the same place on the
+  next floor four times less often). Each streak draws its own amount, length (0.3-1.6 m), width, spread, wander and
+  rivulets. Its path is ray-cast on the building part: it stops at an arris, a recess head or an obstacle, is drawn
+  into a nearby vertical joint, and hangs a little at bed joints and at its drip edge. Each is one decal, camera rays
+  only, a tinted Transparent BSDF over a generated atlas, so it darkens and greys the stone's own shaded colour.
+- **glass_film** (300; exterior glass). A grime margin along each pane's edges, where water and dust dry against the
+  frame: densest at the bottom gasket, gone by about 2.8 cm, gathering into the two bottom corners, a faint side margin
+  low down, nothing under the head; the pane's field stays clear. Per pane (`pane_grime`): 22 % cleaned lately, street
+  level more, sheltered panes more. `pane_bottom`, `pane_left`, `pane_right` give the pane's own frame per face corner,
+  so the margin is exact. It darkens and dulls; it never lightens the glass.
+
+**Integration fixes (2026-10-14).** The feature agents built and checked their features in private scratch copies.
+Integrating them changed the framework:
+1. **`sky` was wrong.** Its rays started along the averaged vertex normal and landed inside the neighbouring geometry
+   (frames, guard shoes, the paving over the walls' feet), so every floor and junction read sheltered (sky 0). It is
+   now sampled per face corner, off the true face normal (see Signals). Open fascias and piers now read about 0.5,
+   balcony floors under the slab above 0.14-0.22, and the stone tops on the roof about 1.0.
+   - `joint_dirt` was the only reader. It had been calibrated with sky 0, i.e. everything sheltered. Its rinse now
+     works, so its amounts went up by 1.5 and its rinsed share from 0.5 to 0.6: an open facade's joints look as
+     calibrated (0.9 of it), sheltered ones 1.5 times that.
+2. Overlays sit 4 mm proud, not 2 mm (`OverlayContext.PROUD`; `runoff_streaks` already used 4 mm).
+3. A feature at strength 0 has its `TM_WEAR_<name>` excluded, so strength 0 is exact for an overlay feature too.
+4. `nodes.overlay_material` scales with the strength (alpha = 1 − (1 − a)^s). `runoff_streaks` ships its own
+   camera-only material, which already scaled its tint by the strength.
+5. `controls.apply()` sets every registered feature (given strengths, the others their default), so switch runs are
+   reproducible; `strengths=all:<v>` sets them all first.
+6. `TM_RB_awning` is charcoal metal: class `steel`, so `metal_chalk` acts on the storefront canopies and
+   `fabric_fade` (now the umbrellas only) does not.
+7. The registry refuses two features declaring the same attribute. The overlay layer drops the collections of
+   features no longer registered. `TM_WEAR_SKIP=<names>` drops features in one process (the scratch reference below).
+8. Builder helpers `b.ao(distance, samples)` and `b.coords(space)` (the features keep their own working code). The
+   glass routes Transmission for the debug view. The debug colours are now distinct: `metal_chalk` yellow,
+   `teak_weather` green, `fabric_fade` red.
+9. **Indoor gate** (found by the interior check): the room sides of exterior objects weathered too, e.g. the wood
+   reveal's room side seen from `detail_residential_inside` (up to 39 levels). The `indoor` signal and the gate in
+   `TM_WEAR_layer` fix it. A first version counted the balcony guards' glass as walls and closed off the paving along
+   the guard; the indoor test now sees through objects with `rb_element = "guard"`. The pass on the building takes
+   about 100 s instead of 55 s.
+
+**Edges-only rework (2026-10-15).** Reviewing one picture per feature, the user rejected whole-surface wear: *"if the
+wear or dirt is applied over an entire surface, instead of edges, or forming a pattern, then it has no value"*. Six
+features that tinted whole faces (splash_zone's band, ledge_dust's floors, glass_film's even film, metal_chalk's faces,
+teak_weather's tops, fabric_fade's canopy tops) were rebuilt in place to act only along junctions, edges, arrises, hems
+and seams, as described above. joint_dirt, cavity_soot and runoff_streaks already did. Each was checked in a private
+scratch copy: off and every strength at 0 render 0 px different, and a feature at 0 equals its absence (0 px). The
+building's wear pass grew to about 3-4 minutes (the arris probes and junction marks). Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/wear/rework/` (per feature `[off | on | debug]` with 3x
+zooms, the old versions against the new) and `wear/parts/sheets/` (one picture per feature from the real composition).
+
+**The build.**
+- `build.py`'s finishing passes are `materials`, then `wear`, in the building, props and site parts. The wear follows
+  every materials pass, because that pass rebuilds the node trees the wear sits in.
+- The pass first strips any previous wear, so it is idempotent: the splices, the `TM_WEAR*` groups, the attributes, the
+  flags and the per-object mesh copies all go.
+- `layers=wear` re-applies the wear alone (building about 100 s, props and site about 2 s each). `wear=0` strips it,
+  and the part is exactly as before the module.
+- `target=wear` builds the overlay part. `compose.py` links it when it exists.
+
+```
+# re-apply the wear to the parts (after a feature changed), the overlay part, then the composition
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_building.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=building layers=wear
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_props.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=props layers=wear
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_site.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=site layers=wear
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=wear
+blender -b --factory-startup --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/compose.py
+# strip it from a part
+blender -b tests/artifacts/blender/terramar_recessed/rebuild/terramar_site.blend --python src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild/build.py -- target=site layers=wear wear=0
+```
+
+**Verification** (2026-10-14, all nine features, the final parts):
+- **Off is exact.** The exact renders use Cycles on the CPU, one thread, 16 samples, no denoiser, seed 0, half
+  resolution. That is the only bit-reproducible setting: OptiX repeats and multi-thread CPU repeats both differ by up
+  to half a level. The reference is `pre_wear_cpu1`, rendered before any part had wear.
+  - `wear=off`: max |diff| 0, 0 pixels differ, on `b8_calibrated`, `wear_base_front` and `wear_base_corner`.
+  - `wear=on strengths=all:0`: 0 / 0 px.
+  - **Strength 0 is absence.** A scratch copy was rendered with `runoff_streaks`, `cavity_soot` and `glass_film` at 0
+    and the six others on. It was then worn again without those three (`TM_WEAR_SKIP`) and rendered with every
+    default. 0 px differ on `b8_calibrated`, `wear_cavity_soffit` and `wear_runoff_balconies`.
+  - **`build.py -- layers=wear wear=0`** on the building, props and site: node trees, node groups, mesh attributes and
+    object properties are identical to the parts before the module. The stripped composition renders 0 px against
+    `pre_wear_cpu1` (the overlay strength at 0). Worn again, the parts are identical to the worn ones, attribute values
+    hashed.
+- **On.** Against off (OptiX, 96 samples, denoised), the mean |diff| per pose is 0.6-4.1 levels (`b8_calibrated` 1.05),
+  max 23-65. The largest change is the canopy slats' chalk, 65 levels at the brightest slat edge. Every image was
+  looked at: the change stays subtle and in the places the features name, with no blotch, no repeated mark and no
+  bright glass band.
+- **Interiors.** Seen from `detail_restaurant_inside`, `detail_residential_inside` and `detail_dining_inside`, the room
+  surfaces are unchanged, e.g. the reveal's room side: max 1 level, noise; it was 6 before the indoor gate. What
+  changes is what shows through the filmed glass.
+- **The isolation sets** (`iso_<feature>/`, that feature alone, on and debug): `joint_dirt`, `metal_chalk`,
+  `runoff_streaks`. `iso_joint_dirt/joint_recalibration_compare.png` shows the recalibrated open-wall course joint next
+  to the agent's calibration.
+- **Checks:**
+  - the audit: 710 objects (680 plus the 30 decals), 0 z-fights, 0 penetrations; the site: 42 objects, 0 / 0;
+  - hidden parts visible from b8: 0 px;
+  - a fresh `target=all save=0` runs clean and reproduces the saved parts' features, worn materials, signal counts,
+    every feature's attribute summary and the 30 streaks (23,991 faces). The exception is `indoor`, which varies by
+    about 20 of its 114,155 corners between fresh sessions (rays grazing triangle edges).
+- **Cost.**
+  - Render time (OptiX, 96 samples, denoised, off and on interleaved after a warm-up): `b8_calibrated` 13.2 -> 14.2 s
+    (+7.4 %), `wear_cavity_soffit` 33.4 -> 35.2 s (+5.4 %). `cavity_soot`'s occlusion alone was measured at +3-5 %
+    by its agent.
+  - The wear pass: building about 100 s (the `indoor` test about 40 s of it), props and site about 2 s each.
+  - Files: `terramar_building.blend` 1.90 -> 2.13 MB, `terramar_props.blend` 139.10 -> 139.30 MB, `terramar_site.blend`
+    80.39 -> 80.75 MB. `terramar_wear.blend` is 0.58 MB, plus the atlas `runoff_streaks_atlas.png` (2048 x 1024,
+    113 KB).
+
+Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/wear/`:
+- `final/`:
+  - `renders/{off,on,debug}/`: 30 poses (`b8_calibrated`, `joint_detail_pilaster` and the 28 `wear_*` poses);
+  - `sheets/all_<pose>.png`: `[b8 crop | off | on | debug]` with an enlarged detail row. `all_full_b8_calibrated.png`
+    is the whole `CAM_B8` frame;
+  - `overview.png`: the grid, b8 then 12 close-ups;
+  - `review/`: `[off | on | |diff| x 6]` per pose, and `review_stats.txt`;
+  - `iso_joint_dirt/`, `iso_metal_chalk/`, `iso_runoff_streaks/`;
+  - `interior/`: off / on from three interior poses, with diffs;
+  - `checks/`: `site.audit.json`, the sightline sheet;
+  - `timing/timing.json`;
+  - `dev/`: the `sky` (`sky_v1`) and `indoor` (`indoor_v2`) debug ramps;
+  - `v1_before_indoor_gate/`: the on / debug set before the indoor gate;
+- `exact/`: `final_off_cpu1`, `final_on_all0_cpu1`, `final_wear0_cpu1`, `integ_s0_cpu1`, `integ_skip_cpu1` against
+  `pre_wear_cpu1`;
+- the feature agents' own development sheets in `wear/<feature>/`.
+
+New poses (group `wear`, 1920 x 1080), from the feature agents:
+- teak and fabric: `wear_roof_lounge`, `wear_roof_dining`, `wear_roof_loungers`, `wear_umbrella_top`,
+  `wear_awning_top`, `wear_valance_hem`, `wear_awning_fascia`;
+- glass and frames: `wear_glass_storefront`, `wear_glass_sliders`, `wear_frames_rails`, `wear_frames_annex`,
+  `wear_frames_balcony`;
+- dust and joints: `wear_dust_balcony_corner`, `wear_dust_balcony_chamfer`, `wear_dust_podium_top`,
+  `wear_dust_roof_corner`, `wear_joints_sidewalk` (the pilaster joints use `joint_detail_pilaster`);
+- runoff: `wear_runoff_balconies`, `wear_runoff_podium_edge`, `wear_runoff_front_podium`, `wear_runoff_upper_corner`,
+  `wear_runoff_lantern`, `wear_runoff_sill_corner`;
+- cavity: `wear_cavity_soffit`, `wear_cavity_pilaster`, `wear_cavity_terrace`.
+
+**The feature contract** (`wear/registry.py`; one module in `wear/features/`, one entry in `registry.MODULES`):
+
+```python
+NAME = "splash_zone"            # lowercase identifier; also the strength property tm_wear_<NAME>
+ORDER = 100                     # chain order: 0-99 tone and fabric, 100-199 deposits, 200-299 streaks, 300-399 glass
+CLASSES = ("stone", "paving")   # classes.NAMES it acts on: their materials get the layer and the sockets it writes
+SIGNALS = ("ground",)           # framework signals it reads (signals.SIGNALS), written on its classes' meshes
+DEBUG_RGB = (r, g, b)           # its false colour in the debug view (keep it distinct from the others)
+def shader(b, ins) -> dict      # b: nodes.Builder; ins: the state sockets, Class, Strength. Return the worn state for
+                                # the sockets it changes ("Color", "Roughness", "Metallic", "Normal", "Alpha",
+                                # "Transmission", "Specular") and "Mask" (0..1, where it acts). Scale the AMPLITUDE by
+                                # Strength (a strength over 1 must not saturate a clamped factor); no noise textures
+# optional
+LABEL = "..."; DEFAULT_STRENGTH = 1.0
+ATTRIBUTES = {"splash": 0.6}    # its own tm_wear_<name> attributes (unique across features) and their debug full scale
+def attributes(ctx) -> dict     # write them (ctx: wear/context.py WearContext); runs in every exterior part
+def overlays(ctx) -> dict       # build objects into TM_WEAR_<NAME> (ctx: wear/overlays.py OverlayContext)
+```
+
+Builder lookups:
+- `b.signal(name)` reads a mesh attribute;
+- `b.object("exposed" | "seed")` reads an object flag;
+- `b.scene(name)` reads a scene control `tm_wear_<name>`;
+- `b.geometry(...)`, `b.vertical()`, `b.upward()`, `b.nz()` give the shading point and its orientation;
+- `b.ao(distance, samples)` the render-time occlusion, `b.coords("Object")` the object-space position;
+- `b.is_class(...)` tests the material's class.
+
+`WearContext` gives `meshes(classes)`, `world(ob)`, `walking_level`, `ray_scene`, `exposure`, `covered`, `own_mesh`,
+`set_attribute` and `seed`. Absent attributes read 0, so gate a feature on its own attribute being present. Shared
+meshes (furniture) get per-object copies only when a feature writes per-object data on them; otherwise prefer the
+object seed.
+
+**Trying a feature in a private scratch copy** (`build.py` refuses any file but the real parts, so the real files stay
+untouched):
+
+```
+R=src/graphics/content3d/buildings/authoring/terramar_recessed/rebuild
+S=tests/artifacts/blender/terramar_recessed/rebuild/scratch_<name>
+# 1. copy every part and the composition (image and library paths remapped to the copy)
+blender -b --factory-startup --python $R/wear/scratch.py -- name=<name>
+# 2. the wear pass in the copies (and the overlay part, if the feature has overlays); a feature not yet in
+#    registry.MODULES joins with TM_WEAR_EXTRA=<name>, a registered one is left out with TM_WEAR_SKIP=<name>
+blender -b $S/terramar_building.blend --python $R/layer_wear.py -- save=1          # and props, site
+blender -b $S/terramar_wear.blend --python $R/layer_wear.py -- save=1
+# 3. renders: off / on / debug (+ a signal), into your own folder
+blender -b $S/terramar_composition.blend --python $R/wear.py --python $R/../render_poses.py -- wear=on poses=wear_base_front,wear_base_corner out=tests/artifacts/screens/buildings/terramar_recessed/rebuild/wear/<name>/on
+# 4. sheets [b8 crop | off | on | debug], and the exact difference of off against a render made before the feature
+python -I $R/wear/sheets.py sheet --feature <name> --poses wear_base_front --off off --on on --debug debug --root tests/artifacts/screens/buildings/terramar_recessed/rebuild/wear/<name>
+python -I $R/wear/sheets.py diff --a pre --b off --poses wear_base_front --root <dir>
+```
+
+Then integrate:
+1. Register it in `registry.MODULES`.
+2. `build.py layers=wear` on each exterior part, plus `target=wear` if the feature has overlays, then `compose.py`.
+3. Run the audit, `check_layers` / `compose_checks`, a fresh `target=all save=0`, the exactness renders and the evidence
+   sheets.
 
 ## The Terra & Mar PBR kit sets (AI 640)
 
