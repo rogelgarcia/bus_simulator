@@ -22,6 +22,9 @@ def structure(o):
         for path in paths[:growth['structuralPaths']]:
             if path['parent']>=0 and np.linalg.norm(path['points'][0]-paths[path['parent']]['points'][path['parentNode']])>1e-9:raise RuntimeError('Fork graph disconnect')
         if growth.get('architecture')=='distributed-plane':plane_branchlets(p,paths,lobes,rng)
+        if growth.get('architecture')=='open-oak':
+            from oak_branchlets import oak_branchlets
+            _,growth['branchletSpacing']=oak_branchlets(p,paths,lobes,rng)
         clay_only=o['structure-surface']=='clay'
         mat,meta=material(o,species,'bark');wood,twigs=build_wood(model,paths,{**p,'woodVoxel':.04,'clayPreview':clay_only},mat,meta,rng)
         file=folder/'wood.blend';bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(file),compress=True)
@@ -30,8 +33,10 @@ def structure(o):
         fork=np.array(growth['firstFork']);points=np.vstack([path['points'] for path in paths]);low=points.min(axis=0);high=points.max(axis=0);span=float(max(high-low)*1.24)
         views=[('wood_full',(low+high)*.5,[7,-32,3],span),('wood_fork',fork+[0,0,.5],[1,-10,.9],max(4.5,p['growth']['basalRadius']*8)),('wood_bark',fork+[0,0,.5],[1,-10,.9],max(4.5,p['growth']['basalRadius']*8))]
         if clay_only:views=views[:2]+[('wood_roots',[0,0,.9],[3,-8,2.0],p['growth']['basalRadius']*10)]
-        if growth.get('architecture')=='distributed-plane':
+        if growth.get('architecture') in ['distributed-plane','open-oak']:
             pose=branchlet_pose(paths);views.append(('wood_branchlets',pose['target'],pose['offset'],pose['span']))
+        if growth.get('architecture')=='open-oak':views.append(('wood_above',(low+high)*.5,[8,-10,32],span))
+        if o['views']=='trunk':views=[view for view in views if view[0] in ['wood_fork','wood_bark']]
         renders=[]
         for name,target,offset,size in views:
             if name=='wood_bark':scene.view_layers[0].material_override=None

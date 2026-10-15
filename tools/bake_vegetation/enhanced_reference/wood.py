@@ -8,10 +8,11 @@ from common import activate,array
 from junctions import shoulders,uv_offsets,flow_surfaces,relax_forks
 from bark_flow import blend_junction_uv
 from root_growth import radial_flare
+from fork_shoulders import shoulder_fields,shoulder_growth
 
 
 def continuous_growth(p):
-    return p.get('growth',{}).get('architecture') in ['distributed-plane','conical-linden']
+    return p.get('growth',{}).get('architecture') in ['distributed-plane','conical-linden','open-oak']
 
 
 def check_bounds(obj,paths,stage):
@@ -51,9 +52,9 @@ def check_bole_width(obj,paths,voxel,full_bole=False):
     obj['boleMinimumRadiusRatios']=ratios;print('[Enhanced] Bole width retained '+str(ratios),flush=True)
 
 
-def mesh_paths(name,paths,material,tile,rng,major=False):
-    vertices=[];faces=[];uv=[]
-    for path in paths:
+def mesh_paths(name,paths,material,tile,rng,major=False,fields=None):
+    vertices=[];faces=[];uv=[];charts=[]
+    for chart_id,path in enumerate(paths):
         points=path['points'];radii=path['radii'];sides=32 if major else (10 if max(radii)>.01 else 6);offset=len(vertices)
         arc=np.r_[0,np.cumsum(np.linalg.norm(np.diff(points,axis=0),axis=1))]+path.get('uvOffset',0);overall=unit(points[-1]-points[0]);reference=np.array([0.,0,1]) if abs(overall[2])<.9 else np.array([1.,0,0]);previous=None
         repeat=max(.025,math.tau*max(radii)/tile);phase=path['phase'];flared=path['basal'];phases=rng.uniform(-math.pi,math.pi,3)
@@ -64,13 +65,17 @@ def mesh_paths(name,paths,material,tile,rng,major=False):
                 if 'rootFlares' in path:
                     growth+=radial_flare(path,side*math.cos(a)+across*math.sin(a),pt[2])
                 elif flared:growth+=(.24+.48*(.5+.5*math.cos(a*5+phases[2])))*math.exp(-max(0,pt[2])*3/max(radii))
-                vertices.append(pt+(side*math.cos(a)+across*math.sin(a))*radius*growth)
+                radial=side*math.cos(a)+across*math.sin(a)
+                if fields:growth+=shoulder_growth(pt,radial,fields.get(id(path),[]))
+                vertices.append(pt+radial*radius*growth)
         for j in range(len(points)-1):
             for k in range(sides):
                 a=offset+j*sides+k;b=offset+j*sides+(k+1)%sides
                 faces.append((a,b,b+sides,a+sides));uv.extend([(phase+k/sides*repeat,arc[j]/tile),(phase+(k+1)/sides*repeat,arc[j]/tile),(phase+(k+1)/sides*repeat,arc[j+1]/tile),(phase+k/sides*repeat,arc[j+1]/tile)])
         faces.extend([tuple(offset+k for k in reversed(range(sides))),tuple(offset+(len(points)-1)*sides+k for k in range(sides))]);uv.extend([(.5,.5)]*(sides*2))
+        charts.extend([chart_id]*((len(points)-1)*sides+2))
     mesh=bpy.data.meshes.new(name);mesh.from_pydata(vertices,[],faces);mesh.materials.append(material);mesh.uv_layers.new(name='UVMap').data.foreach_set('uv',np.asarray(uv,np.float32).ravel());mesh.polygons.foreach_set('use_smooth',np.ones(len(faces),bool));mesh.update()
+    if major:mesh.attributes.new('source_chart','INT','FACE').data.foreach_set('value',np.asarray(charts,np.int32))
     obj=bpy.data.objects.new(name,mesh);bpy.context.scene.collection.objects.link(obj);return obj
 
 
@@ -79,7 +84,12 @@ def build_wood(model,paths,p,material,meta,rng):
     surfaces=flow_surfaces(paths);major=[r for r in surfaces if ('growthRole' in r or r.get('root',False))] if 'growth' in p else [r for r in surfaces if max(r['radii'])>(.018 if p['habit']=='shrub' else .065)]
     if continuous_growth(p):major=[r for r in major if max(r['radii'])>=.060 or r.get('rootCrown',False)]
     small=[r for r in surfaces if not any(r is m for m in major)]
-    tile=p['barkTileMetres'];source=mesh_paths(model+' source major wood',major+shoulders(paths),material,tile,rng,True)
+    fields={id(path):field for path,field in zip(surfaces,shoulder_fields(paths))} if p.get('forkShoulders',False) else None
+    tile=p['barkTileMetres'];source=mesh_paths(model+' source major wood',major+shoulders(paths),material,tile,rng,True,fields)
+    if fields:
+        import json
+        from fork_charts import chart_neighbours
+        source['forkChartNeighbours']=json.dumps(chart_neighbours(surfaces,major))
     check_bounds(source,paths,'source')
     print('[Enhanced] Meshing shared fork volumes '+model,flush=True)
     obj=source.copy();obj.data=source.data.copy();obj.name=model+' / enhanced wood';bpy.context.scene.collection.objects.link(obj);activate(obj)
@@ -91,7 +101,7 @@ def build_wood(model,paths,p,material,meta,rng):
     if 'growth' in p and not continuous_growth(p):relax_forks(obj,paths,p.get('woodVoxel',.022))
     check_bounds(obj,paths,'fork relaxation')
     if not p.get('clayPreview',False):bake_bark(obj,source,paths,p,model,material,meta)
-    if continuous_growth(p):check_bole_width(obj,paths,p.get('woodVoxel',.022),p['growth']['architecture']=='conical-linden')
+    if continuous_growth(p):check_bole_width(obj,paths,p.get('woodVoxel',.022),p['growth']['architecture'] in ['conical-linden','open-oak'])
     obj.data.polygons.foreach_set('use_smooth',np.ones(len(obj.data.polygons),bool));bpy.data.objects.remove(source,do_unlink=True)
     young=material.copy();young.name=model+' / younger branch bark';nodes,links=young.node_tree.nodes,young.node_tree.links;bsdf=nodes.get('Principled BSDF');original=bsdf.inputs['Base Color'].links[0].from_socket
     mix=nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY';mix.inputs[0].default_value=.60;mix.inputs[2].default_value=(.42,.31,.17,1);links.new(original,mix.inputs[1]);links.new(mix.outputs[0],bsdf.inputs['Base Color'])

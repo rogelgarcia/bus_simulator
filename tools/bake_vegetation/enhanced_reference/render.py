@@ -15,6 +15,7 @@ from render_cache import reuse
 from canopy_review import add_poses,mask_mode,coverage
 from presentation_poses import add_presentation_poses
 from spatial_poses import add_spatial_poses,isolate_blade
+from volume_poses import add_volume_poses
 
 
 def load(file,names):
@@ -27,7 +28,7 @@ def load(file,names):
 
 def setup(o):
     scene=configure(o);scene.cycles.use_denoising=True;scene.cycles.max_bounces=5;scene.cycles.diffuse_bounces=3;scene.cycles.transmission_bounces=3
-    scene.cycles.transparent_max_bounces=64;scene.render.threads=4
+    scene.cycles.transparent_max_bounces=64;scene.render.threads=o.get('threads',4)
     scene.render.resolution_x=scene.render.resolution_y=o['width'];scene.render.resolution_percentage=100
     scene.render.image_settings.file_format='PNG';scene.render.image_settings.color_mode='RGBA';scene.render.film_transparent=False
     scene.view_settings.view_transform='AgX';scene.view_settings.look='AgX - Medium High Contrast';scene.view_settings.exposure=.65
@@ -53,6 +54,7 @@ def render(o):
             if hashlib.sha256((Path(o['output'])/record['file']).read_bytes()).hexdigest()!=record['sha256']:raise RuntimeError('Previous render changed: '+record['file'])
         records=[r for r in previous if o['views']!='all' and r['view']!=o['views'] and not (o['views']=='canopy' and (r['view'].startswith(('road_','coverage_')) or r['view'] in ['shoot','shoot_edge'])) and not (o['views']=='poses' and r['view'].startswith('pose_')) and not (o['views']=='blade' and r['view']=='blade_edge')]
         posture=meta['revision']=='enhanced-plane-posture-v10'
+        volume=meta['revision'] in ['enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8'];volume_full=None
         crown=meta['revision']=='enhanced-plane-balanced-crown-v16'
         spatial=meta['revision'] in ['enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
         dome=meta['revision'] in ['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
@@ -76,6 +78,8 @@ def render(o):
             poses={'full':{'target':target.tolist(),'offset':full_offset,'span':span},
                 'trunk':{'target':[0,0,max(.65,clear*.95)],'offset':[1.5,-8,1.0],'span':max(1.2,clear*1.5)},
                 'leaves':{'target':hero.tolist(),'offset':[.6,-3,.30],'span':1.55 if species!='arrowwood_viburnum' else 1.05}}
+            if volume and state=='enhanced':volume_full=poses['full'].copy()
+            if volume and state=='previous':poses['full']=volume_full.copy()
             if (posture or spaced) and prior and state!='current':
                 proof=Path(o['previous']);proof=proof if proof.is_absolute() else Path(o['root'])/proof
                 poses['full']=next(r['camera'] for r in json.loads(proof.read_text())['renders'] if r['id']==model and r['state']=='enhanced' and r['view']=='full')
@@ -103,6 +107,7 @@ def render(o):
                 for obj in study:obj.hide_render=True
                 if dome:add_poses(poses,{**meta,'sprayStudyPose':detail})
             if variant!='mature_01':poses={'full':poses['full'],**({'bare':poses['full'].copy()} if posture else {})}
+            if volume and state!='current':add_volume_poses(poses,variant=='mature_01')
             if meta['revision'] in ['enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'] and state=='enhanced':add_presentation_poses(poses,meta,variant=='mature_01')
             blade=None
             if spatial and state!='current':

@@ -12,6 +12,7 @@ import {hashFile,writeJson} from '../../baking/Files.mjs';
 
 import {validatePresentation,presentationContent} from './presentation_review.mjs';
 import {validateSpatial,spatialContent} from './spatial_review.mjs';
+import {validateVolume,volumeContent} from './volume_review.mjs';
 
 const json=async f=>JSON.parse(await readFile(f,'utf8'));
 
@@ -53,7 +54,7 @@ export async function validate(o){
 
         const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
 
-        if(proof.renders.length!==expected+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
+        if(proof.renders.length!==expected+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
 
         for(const image of proof.renders){
 
@@ -121,7 +122,7 @@ function panel(species,state,view,p){
 
 function group(species,view,p){return `<h2 class="viewlabel">${views[view]}</h2><div class="grid">${Object.keys(names).map(state=>panel(species,state,view,p)).join('')}</div>`;}
 
-function variantPanel(row){return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${row.crownLobes} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
+function variantPanel(row){const groups=row.crowding?.branchletSpacing?.acceptedSprays??row.crownLobes;return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${groups} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
 
 const page=(title,content,sheet=false)=>`<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title><link rel="stylesheet" href="review.css"></head><body><main class="${sheet?'sheet':''}">${content}</main></body></html>`;
 
@@ -182,6 +183,11 @@ export async function gallery(o){
         for(const v of Object.keys(views)){const file=`${s}_${v}.html`;await writeFile(path.join(o.output,file),page(title,`<h1>${title} — ${views[v]}</h1>${group(s,v,p)}`,true));sheets.push({file,png:`${s}_${v}.png`});}
 
         const presentation=presentationContent(summary,s,title);
+        const volume=volumeContent(summary,s,title);
+        if(volume){
+            const file=s+'_volume.html';await writeFile(path.join(o.output,file),page(title+' — crown depth',volume,true));sheets.push({file,png:s+'_volume.png'});
+            index+=`<section id="${s}_volume"><p><a href="${file}">Front, side, rear and elevated crown views</a></p>${volume}</section>`;
+        }
         const spatial=spatialContent(summary,s);
         if(spatial){
             const file=s+'_spatial.html';await writeFile(path.join(o.output,file),page(title+' — spatial growth',spatial,true));sheets.push({file,png:s+'_spatial.png'});
@@ -196,6 +202,12 @@ export async function gallery(o){
         }
 
         let changes='';
+
+        if(summary.models.some(r=>r.id===s+'/mature_01'&&r.revision==='enhanced-oak-fork-shoulders-v8')){
+            const content=`<h1>${title} — fork shoulders</h1><p>Parent/child size and opening angle shape each connection. Bark follows the limbs and blends across the union. Saved-file checks confirm unchanged growth, fine branches and leaves.</p><div class="grid">${panel(s,'previous','trunk',p)}${panel(s,'enhanced','trunk',p)}${panel(s,'enhanced','wood_fork',p)}${panel(s,'photographic','trunk',p)}</div>`;
+            const file=s+'_forks.html';await writeFile(path.join(o.output,file),page(title+' — fork shoulders',content,true));sheets.push({file,png:s+'_forks.png'});
+            index+=`<section id="${s}_forks"><p><a href="${file}">Fork comparison</a></p>${content}</section>`;
+        }
 
         if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))){
 

@@ -987,3 +987,232 @@ Final render receipt (665.1 s):
 Gallery/audit receipt (88.7 s):
 `tests/artifacts/screens/ai556_bake_framework/run-1792000951473-27096-7c709be8/summary.json`.
 The preserved baseline and previous enhanced model hashes remain unchanged.
+
+## Northern red oak open crown (v4)
+
+The `open-oak` profile replaces overlapping crown clouds with three ascending
+axes, twelve staggered scaffold families and five orders of unequal outward
+successors. The basal radius is 0.62 m and first division is 17.5% of target
+height. Branches inherit their parent tangent and supporting radius; reuse the
+continuous root crown and bark projection rather than adding side tubes.
+The crown emerges from branch extension without a clipped spherical boundary.
+Measure breadth over 36 azimuths, requiring minimum/maximum breadth >= 0.70 and
+minimum breadth/tree height >= 0.85. Pure tests cover eighteen seed/size cases.
+
+Leaf-bearing sprays grow along the outer three structural branch orders, not
+only at the tips. Short, visibly forked branchlets carry alternate, arc-length-spaced leaf nodes.
+Coherent outward/upward spray normals retain bounded organic leaf rotations.
+Ten placement candidates are checked against oriented blade volumes; crowded
+nodes may be omitted. Counts follow available space, not the previous leaf count.
+The oak's narrower blade uses relative exclusion half-axes 0.44/0.49/0.12 and
+a minimum proxy clearance of 0.80 to allow modest natural overlap. Spray faces
+combine outward radial and upward directions rather than being constrained
+perpendicular to each twig; this keeps foliage readable from road height.
+Curved opaque blade geometry retains source front/back PBR and gains short
+volumetric petioles. The separation proxy does not guarantee zero intersections.
+
+Build and render all three forms through `vegetation/enhanced-reference` into a
+new ignored collection. Reopen saved meshes and repeat bole-width and crown
+breadth checks before the standard previous/current/enhanced/study gallery gate.
+Existing tree collections and installed runtime LODs remain preserved.
+
+Growth references: [NC State Extension](https://plants.ces.ncsu.edu/plants/quercus-rubra/)
+describes a broad spreading crown; [Oregon State University](https://landscapeplants.oregonstate.edu/plants/quercus-rubra)
+describes ascending major branches and alternate lobed leaves. These support the
+species habit; the numerical growth rules are artistic approximations informed
+by the user-supplied illustrative and photorealistic studies, not biology simulation.
+
+Validated collection:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261014_oak_open_v4b_review/`.
+All three reopened models pass the crown and continuous-bole checks. Crown
+minimum/maximum width ratios are 0.864 / 0.936 / 0.892; measured bole radii remain
+above 96% of their intended values. The forms carry 40,757 / 40,535 / 40,781
+geometry leaves. These remain detailed reference models, not runtime LODs.
+Thirteen 1440 px / 16-sample CPU Cycles frames and seven comparison sheets show
+the full trees, trunk forks, foliage and unchanged supplied study images.
+All 35 focused vegetation tests pass, including eighteen oak seed/size cases.
+The gallery verifies all saved geometry, fifteen installed material sets and
+preservation of the original and previous enhanced model hashes.
+
+Final render receipt (220.3 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792014234794-22132-94b1cda1/summary.json`.
+Gallery/audit receipt (30.0 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792014478590-18280-ca0a6237/summary.json`.
+The earlier sparse review and structure probes remain preserved separately.
+
+## Northern red oak spatial ramification (v5)
+
+Major limbs must bear branches in depth as well as across the silhouette. The
+v4 outer forks already rotated in space, but retained a fixed guide and left
+long proximal sections without foliage-bearing successors. Each major scaffold
+now grows three shorter offshoot families at staggered intermediate stations.
+Their azimuth advances around the actual limb axis with seeded variation. The
+nine lateral scaffold bearings interleave around the trunk, with angular gaps
+below 70 degrees in the seed regression, avoiding three narrow leader sectors;
+successive forks update their growth guide toward the local parent direction.
+No camera direction, spherical boundary or specimen-specific correction enters
+the rule. The same continuous fork meshing, gradual taper and organic leaf
+placement remain in use. Leaf count follows the resulting available space.
+
+Regression tests require intermediate offshoots between 20–85% of every major
+limb and a largest empty azimuth sector below 170 degrees around its axis. Test
+six seeds at all three mature sizes, alongside existing crown, tangent, taper,
+pipe conservation and spacing checks. The preserved v4 collection is the
+comparison source. A new isolated collection adds side, rear and elevated views
+for all forms, matched old/new primary views and a bare elevated structure pair.
+The review validates those camera pairs and saved model hashes before delivery.
+
+## Northern red oak spaced terminal sprays (v6)
+
+Retain the v5 scaffold distribution in all three dimensions, but do not place
+complete foliage fans on both a parent support and its descendants. Only terminal
+structural supports may start a fine spray, with one four-level spray per support
+instead of two complete fans at every outer structural level.
+Each shoot tests six locally rotated directions against previously occupied
+sprays. Reject its subtree if all directions enter the leaf-scale spacing margin
+(0.85 times the species leaf length). Competition order is seeded and shuffled;
+neither model name nor camera orientation drives it. Organic leaf placement and
+blade shapes remain independent, with no required fixed leaf count. Each spray
+also has a seeded bounded face azimuth around its outward/upward direction, so
+an entire side of the crown does not align its blades edge-on together. Leaves
+within each spray retain coherent normals and bounded individual variation.
+Candidate alternate leaf internodes use 0.24–0.34 times the species blade length;
+the existing blade exclusion test still rejects crowded nodes. Coverage comes
+from leaf-bearing length on these spaced shoots, not additional stacked fans.
+
+The spacing measure samples shoot centrelines beyond their proximal attachment;
+it does not guarantee exact mesh nonintersection or prevent overlap within a
+single natural spray. Record accepted supports, rejected subtrees, shoot count
+and measured minimum clearance in each model's `crowding.branchletSpacing`.
+The `structure` phase must include these actual fine shoots in its clay views,
+including a branchlet detail and elevated view, before the full foliage review.
+The regression first reproduced the ancestor/descendant fan duplication, then
+checks terminal-only unique launches, connected origins and the spacing margin.
+All prior candidates and original references remain preserved.
+
+The v6c review collection is staged at
+`tests/artifacts/screens/vegetation_enhanced_reference/20261014_oak_spaced_v6c_review/`.
+Its three forms retain all 981 scaffold/root paths from the v5b candidates
+exactly, including sampled centres and radii; recorded branch-anchor error is
+zero. Fine shoot segments fall from 25,200 per form to 6,624 / 6,688 / 6,488
+(73.7% / 73.5% / 74.3% fewer), distributed among 456 / 458 / 451 accepted sprays.
+Leaf counts are 23,568 / 23,895 / 23,059, with the existing oriented-blade spacing
+threshold retained. Crown minimum/maximum azimuth width ratios are
+0.918 / 0.895 / 0.932. These are reference models, not new runtime LOD assets.
+
+Build receipt (308.8 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792031733274-24292-c0b1bb1a/summary.json`.
+The complete 37-test vegetation suite passed after twig and face-orientation
+changes; all four oak tests passed again after the leaf-internode adjustment.
+Sparse v6 and v6b trials remain preserved in their separate review directories.
+The complete 27-frame, 1440 px, 16-sample CPU Cycles render passed source
+stability validation; its receipt is
+`tests/artifacts/screens/ai556_bake_framework/run-1792032086188-2944-c3147cc6/summary.json`.
+Saved-mesh audits, comparison-camera gates, original/previous hashes and installed
+AI-material checks passed before gallery delivery. Gallery receipt (35.3 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792033362078-28332-a9018d64/summary.json`.
+
+## Northern red oak ascending growth and sparse-region fill (v7)
+
+Prevent persistent downward structural offshoots by smoothly biasing their
+elevation above 0.20 radians while preserving horizontal bearing, unequal fork
+lengths and inherited tangents. Fine shoots use a gentler 0.06-radian bias.
+This is a local growth rule, not a post-build deformation or camera correction.
+Retain the nine lateral bearings around the bole and three intermediate buds
+per scaffold. The all-seed azimuth test allows an empty local sector below
+210 degrees after uplift, replacing v5's 170-degree limit; it still rejects
+collapsed branching while permitting lower offshoots to turn toward the sky.
+
+Only terminal structural supports carry full terminal sprays. After the primary
+sprays compete for space, try one shorter lateral spray at a separate interior
+node of each support and each long secondary successor (orders 4–7, over 3.2 leaf
+lengths). Exclude the bole and major scaffolds. Accept it only with sampled outer-half launch clearance at least
+2.1 times the 0.85-leaf-length spacing margin. Its descendants and all leaves
+retain the existing crowding checks. Record primary/supplemental counts and
+minimum launch clearance; do not require a fixed leaf count. This is a local
+occupancy proxy rather than exact intersection or physiological simulation.
+
+The regression reproduces downward wood before the fix and checks ascending
+centrelines, connected unique attachment nodes, sparse-region launches and
+retained 3D crown breadth. Build new isolated references and compare them with
+the preserved v6c collection through the existing mesh and 27-frame review gates.
+
+The revised three-form collection is staged at
+`tests/artifacts/screens/vegetation_enhanced_reference/20261014_oak_uplift_v7b_review/`.
+Leaves total 28,352 / 28,261 / 27,855; fine shoot segments total
+7,779 / 7,711 / 7,625. Supplemental sprays total 194 / 183 / 170, including
+135 / 137 / 123 on exposed intermediate secondary branches. All three retain
+the 0.80 leaf-volume spacing threshold, 0.187 m inter-spray sampled margin and
+0.3927 m outer-half clearance required to launch a supplemental spray.
+Their minimum structural elevation is 11.71–11.73 degrees and the saved
+foliage's narrowest/widest horizontal breadth ratios are 0.911 / 0.910 / 0.933.
+
+Build receipt (448.0 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792036105277-25108-1bd317a3/summary.json`.
+All 38 vegetation tests passed after the elevation change; the targeted spacing
+regression passed again after the final selective secondary-shoot extension.
+The v7 bare probe and first leafy trial remain preserved separately. No runtime
+tree assets or installed materials are changed by this reference-only revision.
+
+The 27-frame review at 1440 px and 16 CPU Cycles samples passed input-stability
+validation (1098.6 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792036599891-22712-146e35ef/summary.json`.
+Saved meshes, matched comparison cameras, image/source hashes and installed
+AI-material sets passed gallery validation (31.7 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792037740039-20120-02fae6cb/summary.json`.
+The review includes all three forms from four directions, primary full-tree,
+trunk and leaf details, bare structure and the unchanged supplied examples.
+
+## Northern red oak fork shoulders (v8)
+
+Model the branch collar as a local positive change in the shared wood surface.
+Use parent radius, child/parent radius ratio and the opening between their axes
+to size an asymmetric shoulder descending along the parent and continuing under
+the child. The field rotates with the growth graph, fades over a few parent
+radii, and excludes axial continuations and fine twigs. Bound added radial growth
+to 22%; never cut into the parent to create a crease. Fuse and smooth through the
+existing wood pipeline rather than attaching a separate visible connector.
+
+For this directional oak bark, retain branch-aligned UV/PBR shading at unions;
+the previous fixed box projection turned lengthwise ridges across lateral limbs.
+Blend adjacent parent/child surface charts only within three voxel widths
+(minimum 4.5 cm) of their equidistant boundary. Use complementary smooth weights
+so a change in the nearest chart does not introduce a new hard texture seam.
+Keep each chart's coordinates separate; do not average unrelated UV coordinates.
+Retain the existing junction mask for geometric displacement suppression. The
+installed AI-generated maps and other species' material rules remain unchanged.
+This is an artistic geometric approximation of collars/shoulders, not a wood
+mechanics simulation. Botanical guidance: [UF/IFAS branch collar and bark ridge](https://blogs.ifas.ufl.edu/charlotteco/2022/10/27/callus-after-the-storm-time-to-seal/).
+
+Preserve v7 growth, foliage and previous candidates. First inspect matched clay
+and bark fork views with `structure` and `views=trunk`; then regenerate isolated
+references and pass the existing saved-mesh and complete gallery gates. Pure
+tests require local support, no radial shrinkage, rotation covariance and no
+spurious knuckles on axial continuations or tiny shoots.
+
+The v8 collection is staged at
+`tests/artifacts/screens/vegetation_enhanced_reference/20261015_oak_shoulders_v8_final/`.
+All three architecture JSON files match v7b byte-for-byte. An independent saved
+Blender audit also confirms identical leaf instance data (including tint), all
+eight leaf prototypes, and fine-wood positions/topology/UVs for each specimen.
+Leaves remain 28,352 / 28,261 / 27,855. Major wood has
+1,473,420 / 1,490,588 / 1,457,376 triangles; these are reference surfaces, not LODs.
+The branch-chart blend is confined to a 6.6 cm surface-distance margin, with
+180,540 / 182,567 / 180,765 affected faces. Finite chart coordinates, bounded
+weights, crown dimensions, mesh bounds and fourteen bole sections pass.
+
+The complete 42-test vegetation suite passes. Structure probes remain in
+`20261015_oak_shoulders_v8_probe/` and `20261015_oak_shoulders_v8b_probe/`.
+Build receipt (398.1 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792039085832-28564-004070e8/summary.json`.
+Saved-model/preservation audit receipt (21.8 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792039589733-6976-1d3f8418/summary.json`.
+
+The complete 27-frame review at 1440 px and 16 CPU Cycles samples passed input
+stability and render identity checks (645.2 s, resumed using verified frames):
+`tests/artifacts/screens/ai556_bake_framework/run-1792039880257-10956-26c94c81/summary.json`.
+Gallery and repeated saved-model/preservation checks passed (34.1 s):
+`tests/artifacts/screens/ai556_bake_framework/run-1792040608791-23292-fca0c0ee/summary.json`.
+The `northern_red_oak_forks.html` sheet places previous, revised, neutral clay
+and supplied photographic-study views in one row. The main page retains the
+full-tree, leaf-detail and volume comparisons for all three forms.

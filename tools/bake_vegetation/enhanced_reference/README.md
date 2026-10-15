@@ -324,3 +324,88 @@ the entire central leader, so missing segments cannot pass only a bounds check.
 the preserved architecture, retains all leaf placements and prototype digests,
 and carries forward only verified original/previous comparison frames. Revised
 model frames are always rendered again. Use a separate output directory.
+
+## Northern red oak open crown (v4)
+
+The ordinary `build` phase selects `open-oak` for northern red oak. It grows
+twelve staggered, ascending scaffold families with five additional fork orders,
+inherited tangents, continuous roots, and a 0.62 m basal radius. Finite branched
+sprays replace dense overlapping shoot clouds. Alternate leaf nodes are spaced
+by twig length, with oriented-volume crowding rejection and bounded organic
+rotation around a coherent outward/upward spray face. Curved leaves use short
+3D petioles and the existing catalog PBR. No fixed leaf count is required.
+
+Use the preserved v3 `summary.json` as `previous` and a fresh ignored output for
+`build`, `render`, and `gallery`. All three mature forms are required by the
+existing gallery. Saved-mesh audits additionally repeat the clear-bole radius
+and all-azimuth crown-breadth checks. Pure regressions are in
+`tests/python/test_vegetation_oak.py`. This does not publish runtime assets.
+
+`threads=1..4` limits the CPU render and numerical worker budget (default 4).
+Use a reduced value for isolated work alongside other jobs; still check available
+memory and active render processes before launching Blender.
+
+## Northern red oak spatial forks (v5)
+
+The oak scaffold adds shorter intermediate offshoots around each main limb,
+using staggered attachment stations and rotating local azimuths. The nine lateral
+scaffolds also interleave their bearings around the whole bole. Terminal fork
+guides follow their recent parent direction rather than a fixed scaffold cone.
+Use the preserved v4 collection as `previous` and a new ignored output. `build`,
+`render` (`views=all`) and `gallery` create and validate all three mature forms.
+The complete review has 27 render records: the previous comparison set plus
+side/rear/elevated views and a matched primary bare-structure pair from above.
+The gallery adds `northern_red_oak_volume.html` and its captured sheet. The rule
+is independent of camera, variant name and handedness. Old references remain
+unchanged; no runtime assets are published by these phases.
+
+## Northern red oak spaced sprays (v6)
+
+`oak_branchlets.py` replaces repeated parent/descendant fans with one terminal
+spray per structural support. Four fine levels retain foliage-bearing length;
+six local direction candidates and leaf-scale spacing reject crowded subtrees.
+Fine-shoot proof is saved under `crowding.branchletSpacing`. Spray face azimuths
+vary coherently between groups to avoid whole crown sectors becoming edge-on.
+The `structure` phase includes the actual fine shoots, a detail and elevated
+clay view. The v5 volume review and saved geometry gates also apply to v6.
+Use new ignored directories for each experiment and preserve rejected previews.
+
+## Northern red oak ascending shoots and local fill (v7)
+
+Structural successors use a smooth upward elevation bias while preserving their
+horizontal bearing and inherited fork tangent. Fine shoots use a gentler bias.
+Terminal supports retain their primary sprays; a shorter three-level lateral
+spray can grow from a distinct interior node of a terminal support or a long
+secondary branch only if its outer-half clearance is
+at least 2.1 times the ordinary inter-spray margin. Its proximal section and all descendants retain the
+ordinary spacing and leaf-exclusion tests. Secondary candidates are successor
+orders 4–7 longer than 3.2 leaf lengths, excluding the trunk and major scaffolds.
+This fills available neighbourhoods
+without reinstating fans on every ancestor or targeting a fixed leaf count.
+Records include supplemental counts and launch-clearance measurements.
+
+Use the preserved v6c summary as `previous`, then the existing `structure`,
+`build`, `render` and `gallery` phases in new ignored directories. The 27-frame
+volume review and saved-mesh audits apply to v7. No runtime assets are published.
+
+## Northern red oak fork shoulders (v8)
+
+The oak profile enables `forkShoulders`. Parent/child radii and the local opening
+angle drive descending shoulders and an asymmetric collar under each substantial
+branch. The added radius is bounded and fades locally; no separate connector is
+added. Source growth curves and leaf placement rules remain those of v7.
+
+Oak fork bark now uses two branch-aligned source charts, blended only near their
+shared boundary by surface distance. Each normal map uses its own UV tangent
+frame before normal blending. The previous fixed box projection is retained for
+other species. Existing PBR catalog files are unchanged. Saved-mesh validation
+checks the alternate UVs, finite bounded weights and the recorded blended-face
+count in addition to the established crown and unpinched-bole checks.
+The independent inspection also compares the predecessor's growth graph, leaf
+instance attributes (including tint), all leaf prototypes and fine-wood geometry.
+
+Use `structure` with `views=trunk` for a small matched clay/bark diagnostic.
+Then use `build`, `render` and `gallery` with the preserved v7b summary as
+`previous`, in a new ignored output directory. The complete 27-frame comparison
+and original-reference preservation gates still apply.
+The gallery includes a dedicated `northern_red_oak_forks.html` comparison row.

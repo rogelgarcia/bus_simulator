@@ -76,12 +76,13 @@
     "botanical": "Quercus rubra",
     "study": "Northern Red Oak.jpg",
     "height": 19.0,
-    "radius": 8.2,
-    "trunkRadius": 0.68,
+    "radius": 8.8,
+    "trunkRadius": 0.62,
     "growth": {
-      "firstFork": 0.235,
-      "basalRadius": 0.82,
-      "pipeExponent": 2.55
+      "architecture": "open-oak",
+      "firstFork": 0.175,
+      "basalRadius": 0.62,
+      "pipeExponent": 2.15
     },
     "clear": 0.2,
     "habit": "rounded",
@@ -104,13 +105,15 @@
     "shoots": 75,
     "stations": 11,
     "leafLength": 0.22,
+    "leafInternodeRatio": [0.24, 0.34],
     "opposite": false,
     "leafRoll": 0.78,
     "droop": 0.12,
     "barkStrength": 0.85,
     "leafGreen": 0.93,
     "seed": 70331,
-    "barkTileMetres": 1.6
+    "barkTileMetres": 1.6,
+    "forkShoulders": true
   },
   "american_elm": {
     "name": "American elm",

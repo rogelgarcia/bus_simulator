@@ -11,14 +11,15 @@ def forward_heading(direction,guide):
     return direction
 
 
-def successor(paths,parent,end,rng,order,role='successor',guide=None):
-    previous=paths[parent];start=previous['points'][-1].copy();delta=end-start;length=np.linalg.norm(delta)
-    incoming=unit(previous['points'][-1]-previous['points'][-3]);outgoing=unit(delta)
+def successor(paths,parent,end,rng,order,role='successor',guide=None,parent_node=None):
+    previous=paths[parent];node=len(previous['points'])-1 if parent_node is None else parent_node
+    start=previous['points'][node].copy();delta=end-start;length=np.linalg.norm(delta)
+    incoming=unit(previous['points'][node]-previous['points'][max(0,node-2)]);outgoing=unit(delta)
     controls=np.array([start,start+incoming*length*.19,end-outgoing*length*.27,end])
     t=np.linspace(0,1,max(12,round(length/.10)));u=t[:,None]
     points=(1-u)**3*controls[0]+3*(1-u)**2*u*controls[1]+3*(1-u)*u*u*controls[2]+u**3*controls[3]
     side=unit(np.cross(outgoing,[0,0,1]));points+=side*rng.uniform(-.025,.025)*length*(np.sin(math.pi*t)**2)[:,None]
-    path={'points':points,'radii':np.ones(len(points))*.01,'parent':parent,'parentNode':len(previous['points'])-1,
+    path={'points':points,'radii':np.ones(len(points))*.01,'parent':parent,'parentNode':node,
           'phase':previous['phase'],'basal':False,'growthRole':role,'order':order,
           'demand':np.full(len(points),.00002),'junctionMode':'inherited-tangent'}
     if guide is not None:path['extensionGuide']=guide.tolist()

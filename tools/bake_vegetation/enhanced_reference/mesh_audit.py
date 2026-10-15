@@ -23,6 +23,22 @@ def audit_objects(model,meta):
             from releaf import wood_digest
             matches=wood_digest(obj.data)==meta['preservedTrunkMeshDigest']
             roles[-1]['preservedSourceMeshMatches']=matches;roles[-1]['passed']&=matches
+    if meta['revision'] in ['enhanced-oak-open-crown-v4','enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8']:
+        from oak_growth import crown_profile
+        foliage=bpy.data.objects[model+' / enhanced leaves']
+        proof=crown_profile(array(foliage.data.attributes['blade_center'].data,'vector',3))
+        matches=all(abs(proof[k]-meta['crownProfile'][k])<1e-5 for k in proof)
+        roles.append({'role':'open oak crown',**proof,'passed':matches and proof['widthAspect']>=.70 and proof['widthToHeight']>=.85 and len(foliage.data.vertices)==meta['leafCount']})
+        co=array(bpy.data.objects[model+' / enhanced wood'].data.vertices,'co',3);ratios=[]
+        for section in meta['boleSections']:
+            ring=co[abs(co[:,2]-section['height'])<section['slab']]
+            ratios.append(float(np.quantile(np.linalg.norm(ring[:,:2]-section['center'],axis=1),.05)/section['radius']) if len(ring)>12 else 0.)
+        roles.append({'role':'continuous oak bole','minimumRadiusRatio':min(ratios),'passed':min(ratios)>=.88})
+        if meta['revision']=='enhanced-oak-fork-shoulders-v8':
+            mesh=bpy.data.objects[model+' / enhanced wood'].data;weights=array(mesh.attributes['fork_chart_blend'].data,'value',1)
+            uv=array(mesh.uv_layers['ForkAlternate'].data,'uv',2)
+            roles.append({'role':'local fork bark charts','blendedFaces':int(np.count_nonzero(weights)),
+                          'passed':bool(np.isfinite(uv).all() and weights.min()>=0 and weights.max()<=.501 and np.count_nonzero(weights)==meta['forkSurface']['blendedFaces'])})
     if meta['revision']=='enhanced-linden-conical-v4':
         from linden_growth import crown_profile
         from wood_continuity import inspect_leader
@@ -73,6 +89,11 @@ def inspect(o):
     for model in o['models']:
         folder=Path(o['candidate'])/model;meta=json.loads((folder/'model.json').read_text());file=folder/'enhanced.blend'
         if hashlib.sha256(file.read_bytes()).hexdigest()!=meta['sha256']:raise RuntimeError('Candidate identity differs')
-        bpy.ops.wm.open_mainfile(filepath=str(file));rows.append(audit_objects(model,meta));print('[Enhanced audit] '+json.dumps(rows[-1]),flush=True)
+        bpy.ops.wm.open_mainfile(filepath=str(file));rows.append(audit_objects(model,meta))
+        if meta['revision']=='enhanced-oak-fork-shoulders-v8':
+            from oak_surface_audit import audit_preservation
+            proof=audit_preservation(model,meta,folder,next(row for row in o['previousSources'] if row['id']==model))
+            rows[-1]['roles'].append(proof);rows[-1]['passed']&=proof['passed']
+        print('[Enhanced audit] '+json.dumps(rows[-1]),flush=True)
     write_json(Path(o['output'])/'mesh-audit.json',{'models':rows,'passed':all(r['passed'] for r in rows)})
     if not all(r['passed'] for r in rows):raise RuntimeError('Saved mesh audit failed: '+', '.join(r['id'] for r in rows if not r['passed']))

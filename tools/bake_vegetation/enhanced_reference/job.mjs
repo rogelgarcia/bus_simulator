@@ -12,10 +12,10 @@ const within=(base,file)=>{const r=path.relative(base,file);return r&&r!=='..'&&
 export const enhancedReferenceJob={
     id:'vegetation/enhanced-reference',description:'New botanical references from supplied studies and AI PBR, preserving the current collection',
     blender:true,always:true,configurationPaths:['executable','browserExecutable'],codePaths:[TOOL],
-    defaults:{phase:'materials',source:'',models:'all',views:'all','structure-surface':'pbr','wood-study':'','foliage-study':'','foliage-layout':'branchlet',width:1440,samples:24,previous:'',candidate:'',
+    defaults:{phase:'materials',source:'',models:'all',views:'all','structure-surface':'pbr','wood-study':'','foliage-study':'','foliage-layout':'branchlet',width:1440,samples:24,threads:4,previous:'',candidate:'',
         baseline:'tests/artifacts/screens/vegetation_natural_foliage/coverage_20261011/summary.json',
         output:'tests/artifacts/screens/vegetation_enhanced_reference/review'},
-    options:{phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,baseline:String,output:String,previous:String,candidate:String},
+    options:{phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,threads:Number,baseline:String,output:String,previous:String,candidate:String},
     async inputs(ctx){
         if(!ctx.options.source)throw Error('Supply the reference image/PBR source directory');
         const index=path.resolve(ctx.root,ctx.options.baseline),manifest=await json(index);
@@ -36,6 +36,7 @@ export const enhancedReferenceJob={
         if(!within(path.join(ctx.root,'tests/artifacts/screens/vegetation_enhanced_reference'),o.output)||within(o.output,o.source)||within(o.source,o.output)||within(o.output,o.baseline))throw Error('Use an isolated enhanced-reference output');
         if(ctx.publish&&o.phase!=='materials')throw Error('Only new PBR materials may publish; reference models remain staged');
         if(!Number.isInteger(o.width)||o.width<640||o.width>3840)throw Error('Invalid render width');
+        if(!Number.isInteger(o.threads)||o.threads<1||o.threads>4)throw Error('Use 1–4 CPU threads for isolated reference work');
         o.profiles=await json(path.join(ctx.root,TOOL,'profiles.json'));
         const manifest=await json(o.baseline),ids=Object.keys(o.profiles).flatMap(s=>[1,2,3].map(n=>`${s}/mature_0${n}`));
         if(manifest.models.length!==15||ids.some(id=>!manifest.models.some(r=>r.id===id)))throw Error('Incomplete baseline');
@@ -55,13 +56,13 @@ export const enhancedReferenceJob={
         await writeJson(path.join(o.output,'baseline-preservation.json'),{index:o.baseline,models:o.sources.map(r=>({id:r.id,file:r.file,sha256:r.sha256}))});
         if(o.phase==='materials')await stageMaterials(o);
         if(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render'].includes(o.phase)){
-            const previous=ctx.env;ctx.env={...ctx.env,OMP_NUM_THREADS:'4',OPENBLAS_NUM_THREADS:'1',TBB_NUM_THREADS:'4'};
+            const previous=ctx.env;ctx.env={...ctx.env,OMP_NUM_THREADS:String(o.threads),OPENBLAS_NUM_THREADS:'1',TBB_NUM_THREADS:String(o.threads)};
             const tasks=['build','foliage','posture','shape','crown'].includes(o.phase)?o.models.map(model=>({...o,models:[model]})):[o];
             try{for(const [index,task] of tasks.entries()){const file=path.join(ctx.stage,`enhanced-options-${index}.json`);await writeJson(file,task);await runHeadlessBake(ctx,TOOL+'/run.py',[file]);}}finally{ctx.env=previous;}
         }else{
             const audit=path.join(ctx.stage,'mesh-audit');await mkdir(audit,{recursive:true});const file=path.join(ctx.stage,'mesh-audit-options.json');
             await writeJson(file,{...o,phase:'inspect',candidate:o.output,output:audit});
-            const previous=ctx.env;ctx.env={...ctx.env,OMP_NUM_THREADS:'4',OPENBLAS_NUM_THREADS:'1',TBB_NUM_THREADS:'4'};
+            const previous=ctx.env;ctx.env={...ctx.env,OMP_NUM_THREADS:String(o.threads),OPENBLAS_NUM_THREADS:'1',TBB_NUM_THREADS:String(o.threads)};
             try{await runHeadlessBake(ctx,TOOL+'/run.py',[file]);}finally{ctx.env=previous;}
             o.geometryAudit=await json(path.join(audit,'mesh-audit.json'));
             const {validate,gallery}=await import('./review.mjs');await validate(o);if(o.phase==='gallery')await gallery(o);
