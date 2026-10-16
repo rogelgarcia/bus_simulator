@@ -1,0 +1,23 @@
+{
+  "format": "landscape-appearance-layers-request",
+  "schemaVersion": 1,
+  "landscapeId": "coastal-city-v3",
+  "extraTiers": [1024],
+  "materials": [
+    { "classId": "sandstone", "kind": "substrate", "materialId": "pbr.landscape_sandstone_v1" },
+    { "classId": "caprock", "kind": "substrate", "materialId": "pbr.landscape_caprock_v1" },
+    { "classId": "scree", "kind": "substrate", "materialId": "pbr.landscape_scree_v1" },
+    { "classId": "mud", "kind": "substrate", "materialId": "pbr.landscape_mud_v1" },
+    { "classId": "dune-sand", "kind": "substrate", "materialId": "pbr.landscape_dune_sand_v1" },
+    { "classId": "cobble", "kind": "substrate", "materialId": "pbr.landscape_cobble_v1" },
+    { "classId": "shell-grit", "kind": "substrate", "materialId": "pbr.landscape_shell_grit_v1" },
+    { "classId": "turf", "kind": "cover", "materialId": "pbr.landscape_turf_v1" },
+    { "classId": "dry-grass", "kind": "cover", "materialId": "pbr.landscape_dry_grass_v1" },
+    { "classId": "moss", "kind": "cover", "materialId": "pbr.landscape_moss_v1" },
+    { "classId": "broadleaf-litter", "kind": "cover", "materialId": "pbr.landscape_broadleaf_litter_v1" },
+    { "classId": "needle-litter", "kind": "cover", "materialId": "pbr.landscape_needle_litter_v1" },
+    { "classId": "lichen", "kind": "cover", "materialId": "pbr.landscape_lichen_rock_v1" },
+    { "classId": "algae", "kind": "cover", "materialId": "pbr.landscape_algae_rock_v1" }
+  ],
+  "micro": []
+}

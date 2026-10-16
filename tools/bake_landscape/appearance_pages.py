@@ -254,43 +254,83 @@ def multiscale_request(request):
     return multiscale, extra
 
 
+def prepare_material(material, output, dimensions, sizes):
+    channels = {}
+    for channel in ('baseColor', 'normal'):
+        source = read_rgb(material['mapFiles'][channel], dimensions)
+        channels[channel] = prepare_channel(source, channel, output, preparation=material.get('preparation'), sizes=sizes)
+        del source
+    if 'orm' in material['mapFiles']:
+        source = read_rgb(material['mapFiles']['orm'], dimensions)
+    else:
+        roughness = read_rgb(material['mapFiles']['roughness'], dimensions)[:, :, 0]
+        source = np.zeros((*roughness.shape, 3), dtype=np.uint8)
+        source[:, :, 0] = read_rgb(material['mapFiles']['ao'], dimensions)[:, :, 0] if 'ao' in material['mapFiles'] else 255
+        source[:, :, 1] = roughness
+        if 'metalness' in material['mapFiles']:
+            source[:, :, 2] = read_rgb(material['mapFiles']['metalness'], dimensions)[:, :, 0]
+        del roughness
+    lo, hi = np.percentile(source[:, :, 1], material['percentiles']) / 255
+    height, height_report = prepare_height(material['mapFiles']['displacement'], dimensions) if 'displacement' in material['mapFiles'] else (None, None)
+    channels['orm'] = prepare_channel(source, 'orm', output, height=height, sizes=sizes)
+    del source
+    del height
+    return channels, {'min': float(lo), 'max': float(hi)}, height_report
+
+
+def material_tiers(channels, sizes, offset=0):
+    return [{'id': str(size), 'resolution': size, 'channels': {channel: pages[offset + i] for channel, pages in channels.items()}} for i, size in enumerate(sizes)]
+
+
+def layers_request(request):
+    layers = request.get('layers')
+    if layers is None:
+        return None
+    if tuple(layers.get('extraSizes') or ()) != EXTRA_SIZES:
+        raise ValueError(f'Layers preparation supports exactly the extra tiers {list(EXTRA_SIZES)}')
+    keys = [material.get('key') for material in layers.get('materials') or []]
+    if not keys or any(not isinstance(key, str) or not key for key in keys) or len(set(keys)) != len(keys):
+        raise ValueError('Layers preparation needs materials with unique string keys')
+    return layers
+
+
+def prepare_layers(layers, output):
+    dimensions, materials, material_preparation = [], [], []
+    for material in layers['materials']:
+        channels, roughness_range, height_report = prepare_material(material, output, dimensions, SIZES + EXTRA_SIZES)
+        entry = {'key': material['key'], 'materialId': material['materialId'], 'roughnessInputRange': roughness_range, 'tiers': material_tiers(channels, SIZES + EXTRA_SIZES)}
+        if height_report is not None:
+            entry['height'] = {'encoding': 'orm-alpha-unorm8', 'interpretation': 'relative-relief', 'neutral': .5}
+        materials.append(entry)
+        material_preparation.append({'key': material['key'], 'materialId': material['materialId'], 'baseColor': (material.get('preparation') or {}).get('baseColor'), 'height': height_report})
+        print(f"Prepared layer {material['key']}: 32/128/512/1024 RGB-normal-ORM pages", flush=True)
+    micro_dimensions, micro = [], []
+    for entry in layers.get('micro') or []:
+        micro.append(prepare_micro(entry, output, micro_dimensions))
+    return {'extraSizes': list(EXTRA_SIZES), 'microSizes': list(MICRO_SIZES), 'materials': materials, 'materialPreparation': material_preparation, 'micro': micro,
+            'sourceDimensions': dimensions, 'microSourceDimensions': micro_dimensions,
+            'converter': {'python': platform.python_version(), 'pillow': PIL.__version__, 'numpy': np.__version__,
+                          'filter': 'linear-light-box/normalized-vector-box/linear-orm-height-box',
+                          'micro': 'periodic-3x-box-highpass(log-luminance,tangent-slope,height)/normalized-vector-box/linear-box'}}
+
+
 def main(request):
     output = Path(request['outputDirectory'])
     multiscale, extra = multiscale_request(request)
+    layers = layers_request(request)
     if multiscale:
         tracemalloc.start()
     dimensions, materials, material_preparation, extended = [], [], [], []
     for material in request['materials']:
-        channels = {}
-        for channel in ('baseColor', 'normal'):
-            source = read_rgb(material['mapFiles'][channel], dimensions)
-            channels[channel] = prepare_channel(source, channel, output, preparation=material.get('preparation'), sizes=SIZES + extra)
-            del source
-        if 'orm' in material['mapFiles']:
-            source = read_rgb(material['mapFiles']['orm'], dimensions)
-        else:
-            roughness = read_rgb(material['mapFiles']['roughness'], dimensions)[:, :, 0]
-            source = np.zeros((*roughness.shape, 3), dtype=np.uint8)
-            source[:, :, 0] = read_rgb(material['mapFiles']['ao'], dimensions)[:, :, 0] if 'ao' in material['mapFiles'] else 255
-            source[:, :, 1] = roughness
-            if 'metalness' in material['mapFiles']:
-                source[:, :, 2] = read_rgb(material['mapFiles']['metalness'], dimensions)[:, :, 0]
-            del roughness
-        lo, hi = np.percentile(source[:, :, 1], material['percentiles']) / 255
-        height, height_report = prepare_height(material['mapFiles']['displacement'], dimensions) if 'displacement' in material['mapFiles'] else (None, None)
-        channels['orm'] = prepare_channel(source, 'orm', output, height=height, sizes=SIZES + extra)
-        del source
-        tiers = [{'id': str(size), 'resolution': size, 'channels': {channel: pages[i] for channel, pages in channels.items()}} for i, size in enumerate(SIZES)]
-        entry = {'soilId': material['soilId'], 'roughnessInputRange': {'min': float(lo), 'max': float(hi)}, 'tiers': tiers}
-        if height is not None:
+        channels, roughness_range, height_report = prepare_material(material, output, dimensions, SIZES + extra)
+        entry = {'soilId': material['soilId'], 'roughnessInputRange': roughness_range, 'tiers': material_tiers(channels, SIZES)}
+        if height_report is not None:
             entry['height'] = {'encoding': 'orm-alpha-unorm8', 'interpretation': 'relative-relief', 'neutral': .5}
         materials.append(entry)
         material_preparation.append({'soilId': material['soilId'], 'materialId': material['materialId'],
                                      'baseColor': (material.get('preparation') or {}).get('baseColor'), 'height': height_report})
         if multiscale:
-            extended.append({'soilId': material['soilId'], 'tiers': [{'id': str(size), 'resolution': size,
-                             'channels': {channel: pages[len(SIZES) + i] for channel, pages in channels.items()}} for i, size in enumerate(extra)]})
-        del height
+            extended.append({'soilId': material['soilId'], 'tiers': material_tiers(channels, extra, len(SIZES))})
         print(f"Prepared {material['soilId']}: 32/128/512 RGB-normal-ORM pages", flush=True)
     report = {'materials': materials, 'sourceDimensions': dimensions, 'materialPreparation': material_preparation, 'maximumSourcePixels': MAX_PIXELS, 'workingByteLimit': WORKING_BYTES,
               'converter': {'python': platform.python_version(), 'pillow': PIL.__version__, 'numpy': np.__version__, 'filter': 'linear-light-box/normalized-vector-box/linear-orm-height-box'}}
@@ -307,6 +347,8 @@ def main(request):
                                               'filter': 'linear-light-box/normalized-vector-box/linear-orm-height-box',
                                               'micro': 'periodic-3x-box-highpass(log-luminance,tangent-slope,height)/normalized-vector-box/linear-box'},
                                 'measurements': {'baseTracedPeakBytes': base_peak, 'microTracedPeakBytes': micro_peak, 'method': 'Python tracemalloc peak of converter allocations, not process RSS'}}
+    if layers:
+        report['layers'] = prepare_layers(layers, output)
     (output / 'conversion.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 

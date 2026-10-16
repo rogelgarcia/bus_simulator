@@ -62,7 +62,7 @@ test('Cache install: the destination follows the bundle landscape id unless a di
     await assert.rejects(installLandscapeCacheBundle(verifiedOther, target), /holds landscape synthetic-hill; the bundle is synthetic-hill-v3\. Install it into its own directory \(assets\/public\/landscape\/synthetic-hill-v3\)/);
     assert.deepEqual(await readFile(path.join(target, 'manifest.json')), Buffer.from(hill.manifest), 'the refused install left the other landscape untouched');
     // the AI 596 geology and AI 599 ecosystem sidecars are current pointers like the appearance and field sidecars: authenticated by schema and switched before the terrain manifest
-    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
+    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'appearance/layers.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
     const page = new Uint8Array([1, 2, 3, 4]), geology = new TextEncoder().encode(JSON.stringify({ format: 'landscape-geology', pages: [{ url: `pages/${sha256(page)}.u8`, sha256: sha256(page), byteLength: page.length }] }));
     const withGeology = await writeBundle('geology', { extra: { 'geology/manifest.json': geology, [`geology/manifest.${sha256(geology)}.json`]: geology, [`geology/pages/${sha256(page)}.u8`]: page } });
     const verified = await verifyLandscapeCacheBundle(withGeology.directory);

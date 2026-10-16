@@ -105,6 +105,42 @@ test('Material calibration: effective shaded albedo lies inside each physical re
     }
 });
 
+// AI 598 D2: the layers companion materials of coastal v3 are calibrated the same way from their published 1024 pages, with their own response terms
+const layersDirectory = path.resolve('assets/public/landscape/coastal-city-v3/appearance');
+const layersSkip = landscapeCacheSkip(['appearance/layers.json'], 'assets/public/landscape/coastal-city-v3');
+test('Material calibration: every layers companion material has a row measured from its published 1024 normal page and an effective albedo inside its range', { skip: layersSkip }, async () => {
+    const { LANDSCAPE_SURFACE_MATERIALS } = await import('../../../src/graphics/engine3d/landscape/LandscapeSurfaceMaterials.js');
+    const layers = JSON.parse(await readFile(path.join(layersDirectory, 'layers.json'), 'utf8')), layerPage = async channel => new Uint8Array(await readFile(path.join(layersDirectory, channel.url)));
+    const n = [0, 1, 0], l = [Math.sin(Math.PI / 4), Math.cos(Math.PI / 4), 0], v = [0, 1, 0];
+    let gained = 0;
+    for (const definition of layers.materials) {
+        const entry = LANDSCAPE_MATERIAL_CALIBRATION.materials[definition.materialId], tier = definition.tiers.find(value => value.resolution === 1024), adjustments = definition.calibration.adjustments;
+        assert.ok(entry, `${definition.materialId} is calibrated`);
+        const normal = await layerPage(tier.channels.normal);
+        assert.equal(createHash('sha256').update(normal).digest('hex'), entry.measuredFrom.normalSha256, `${definition.materialId} was measured from the published page`);
+        meanSlope(normal).forEach((value, axis) => assert.ok(Math.abs(value - entry.meanNormalSlope[axis]) < 2e-5, `${definition.materialId} slope ${axis}: ${value} vs ${entry.meanNormalSlope[axis]}`));
+        // vector averaging flattens the lean of rough pages at coarse tiers (mud 0.037 -> 0.026 at 32 px), so the one subtracted slope leaves at most 0.0125 (0.7 degrees) there
+        for (const coarse of definition.tiers) if (coarse.resolution < 1024) meanSlope(await layerPage(coarse.channels.normal)).forEach((value, axis) => assert.ok(Math.abs(value - entry.meanNormalSlope[axis]) < .0125, `${definition.materialId} ${coarse.resolution} tier slope ${axis}: ${value} vs ${entry.meanNormalSlope[axis]}`));
+        const [base, orm] = await Promise.all([layerPage(tier.channels.baseColor), layerPage(tier.channels.orm)]), count = base.length / 4, sum = [0, 0, 0];
+        let roughness = 0;
+        const range = definition.roughnessInputRange, remap = adjustments.roughness;
+        for (let i = 0; i < count; i++) {
+            for (let k = 0; k < 3; k++) sum[k] += srgb(base[i * 4 + k] / 255);
+            roughness += remap.min + (remap.max - remap.min) * Math.min(1, Math.max(0, (orm[i * 4 + 1] / 255 - range.min) / (range.max - range.min))) ** remap.gamma;
+        }
+        const raw = sum.map(value => value / count), y = raw.reduce((a, value, k) => a + value * LUMA[k], 0);
+        const shared = raw.map(value => (y + (value - y) * adjustments.albedo.saturation) * adjustments.albedo.brightness);
+        const response = LANDSCAPE_SURFACE_MATERIALS[definition.materialId].response, terms = [response.diffuseRoughness, response.specularShadowing, response.opposition];
+        const effective = gain => landscapeReflectedRadiance({ albedo: shared.map(value => value * gain), normal: n, view: v, roughness: roughness / count, metalness: 0, occlusion: 1, response: terms },
+            { sunDirection: l, sunIrradiance: [1, 1, 1], skyIrradiance: [0, 0, 0], skyRadiance: [0, 0, 0] }).reduce((a, value, k) => a + value * LUMA[k], 0) * Math.PI / l[1];
+        const [low, high] = entry.reference.range, after = effective(entry.albedoGain), before = effective(1);
+        assert.ok(after >= low && after <= high, `${definition.classId} ${definition.materialId}: effective albedo ${after.toFixed(3)} within ${low}-${high}`);
+        if (entry.albedoGain === 1) assert.ok(before >= low && before <= high, `${definition.materialId} keeps its shared albedo inside the range`);
+        else { gained++; assert.ok(before < low || before > high, `${definition.materialId} was outside ${low}-${high} (${before.toFixed(3)}) before its landscape gain`); assert.ok(Math.abs(after - (low + high) / 2) < .2 * (high - low), `${definition.materialId} lands near the middle of its range (${after.toFixed(3)})`); }
+    }
+    assert.equal(layers.materials.length, 14); assert.equal(gained, 8, 'eight class materials needed a landscape gain');
+});
+
 test('Material calibration: lookups are explicit for uncalibrated materials and switchable for A/B evidence', () => {
     assert.deepEqual(landscapeMaterialCalibration('pbr.not_landscape'), { status: 'uncalibrated', albedoGain: 1, meanNormalSlope: [0, 0], applied: { albedo: false, normalLean: false } });
     const grass = landscapeMaterialCalibration('pbr.landscape_grass_uniform_v1');

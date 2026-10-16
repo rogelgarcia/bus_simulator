@@ -7,12 +7,12 @@ import { hashFile } from '../baking/Files.mjs';
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from '../landscape_authoring/AuthoringFiles.mjs';
 import { LANDSCAPE_MANIFEST_BYTE_LIMIT, landscapeCacheDirectory, validateLandscapeManifest } from '../../src/app/landscape/index.js';
 
-/** Current pointers switch after every immutable file, sidecars first (the AI 596 geology sidecar and the D5 far-field surround included) and the terrain manifest last. */
-export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
+/** Current pointers switch after every immutable file, sidecars first (the AI 596 geology sidecar, the D5 far-field surround and the AI 598 layers companion included) and the terrain manifest last. */
+export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'appearance/layers.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
 /** The far-field surround sidecar (AI 596 D5): its own saved landscape under `surround/`, bound to the terrain manifest it continues through `provenance.preparation.surround`. */
 export const LANDSCAPE_CACHE_SURROUND_POINTER = 'surround/manifest.json';
 const BINDING_ALIAS = /^appearance\/binding\.[a-f0-9]{64}\.json$/;
-const CONTENT_ADDRESSED = /^(?:(?:manifest|multiscale)\.([a-f0-9]{64})\.json|([a-f0-9]{64})\.[a-z0-9]+)$/;
+const CONTENT_ADDRESSED = /^(?:(?:manifest|multiscale|layers)\.([a-f0-9]{64})\.json|([a-f0-9]{64})\.[a-z0-9]+)$/;
 const TRANSIENT = /(?:^|\/)(?:authoring\.lock(?:\.recovering)?|authoring-interrupted-[^/]+\.json|[^/]+\.partial)$/;
 
 /** @param {string} root @param {string} [prefix] @returns {Promise<string[]>} sorted relative POSIX paths of regular files */

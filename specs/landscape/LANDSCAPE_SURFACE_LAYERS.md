@@ -137,6 +137,40 @@ the pixel gate, `costs.json`, the suite receipts).
   reaches the model through `catenaMoisture`, which gates the topographic wetness and mud rules so graded flats stay dry).
 - The one-hot ramps of the categorical inputs are about one native sample (0.98 m) wide and straight; D3 displaces them with the
   field-modulated breakup and resolves them through the relief competition.
-- Materials are not drawn yet: D2 publishes the class materials as the `appearance/layers.json` companion, D3 composites them.
+- Materials are not drawn yet: D2 published the class materials as the `appearance/layers.json` companion (§7); D3 composites them.
+  `wrack` has no CC0 source in either library and renders as dark wet litter until AI 603 places wrack geometry; the algae rock's green
+  biofilm tint is a class parameter the compositor applies (the source is an even dark coastal rock).
 - The analytic strata (the dipping datum of the synthesis recipe) are D4's; D1 reads the 0.98 m lithology labels only.
 - `disturbance` is 0 until D5 publishes the worn-ground pages (the model's input and the override pin are ready).
+
+## 7. Material library and the layers companion (D2, 2026-10-16)
+
+Every class the recipe names and no existing material serves has a homogeneous CC0 material under `assets/public/pbr/landscape_<class>_v1/`
+(the material ids of §2; `dirt` stays the existing plain forest soil and the three sand states stay `pbr.aerial_beach_01`): sandstone (Poly
+Haven worn_rock_natural_01), caprock (rock_08), scree (ambientCG Gravel040), mud (dry_mud_field_001), dune sand (Ground093A), cobble
+(dry_river_pebbles), shell grit (Shells001), turf (Grass001: inside the grass range without a gain, lean 0.8°), dry grass (withered_grass),
+moss (Moss002), broadleaf litter (dry_decay_leaves), needle litter (forrest_ground_03), lichen rock (Rock040) and algae rock (seaside_rock).
+Each was audited before installation against the base-tile rule with the metrics and decisions recorded in `LANDSCAPE_BASE_MATERIALS.md`
+("D2 source audit") and keeps its unchanged source maps, per-file SHA-256 provenance, an authored matte correction config and, where the
+source carried broad tonal drift, the `periodic-log-microdetail-v1` preparation. Each has a landscape calibration row
+(`LANDSCAPE_MATERIAL_CALIBRATION`: the effective albedo at the 45°/0° geometry, a gain into the physical range of its ground type, the page
+mean normal slope) and a renderer data row in `src/graphics/engine3d/landscape/LandscapeSurfaceMaterials.js` (`LANDSCAPE_SURFACE_MATERIALS`,
+nineteen ids: response, macro variation, clump relief, stochastic sampling, terrain role, micro pairing, each with its rationale) that D3 reads.
+
+The companion `appearance/layers.json` (`landscape-appearance-layers` schema 1, at most 512 KiB, revision `layers-<24 hex>`; contract
+`src/app/landscape/LandscapeAppearanceLayers.js`, loaders `LandscapeAppearanceLayersPayload.js`: `loadLandscapeAppearanceLayers(url, {appearance,
+recipe})` null on 404 and `LandscapeAppearanceLayersBindingError` for another landscape, appearance revision, binding key or recipe material
+table; `loadLandscapeAppearanceLayersPage` for the pages) lists per material `{classId, kind, materialId, tileMeters, calibration,
+roughnessInputRange, height, tiers}` with the four tiers 32/128/512/1024 of base colour, normals and ORM with relief alpha in the schema-1 page
+format, and binds the recipe's class → material table through `recipe.materialsKey` (the SHA-256 of that table), so tuning the rules never
+invalidates it while a rebinding does. It is prepared and published by the `layers` request of the `landscape/appearance` leaf
+(`tools/bake_landscape/appearance/layers-v1-coastal-city-v3.json`; `tools/bake_landscape/appearance/README.md`, "Layers companion"): pages,
+the immutable `layers.<sha256>.json`, then the schema-1 sidecar, `multiscale.json`, `layers.json` and the terrain last; publishing another
+appearance revision without the layers input is refused while a current companion exists. Published on coastal v3 as
+`layers-37bceaa727eec12488968055` (14 materials, 168 unique pages, 223,125,504 bytes, sidecar 149,019 bytes), extending
+`appearance-befbfb0bb88d214ab3e00501`: the publication re-issued the appearance and multiscale revisions with byte-identical pages because
+the schema-1 provenance hashes the whole catalog index closure, which the new entries extend (the former snapshots stay retained). The
+cache bundle verifier knows the pointer. The opt-in audit suite `tests/headless/e2e/landscape_material_layers_audit.pwtest.js`
+(`LANDSCAPE_MATERIAL_AUDIT=1`) renders every companion material at the 512 and 1024 tiers at one tile and 4 × 4 through the production
+shader; `tests/node/unit/landscape_appearance_layers.test.js` authenticates the published companion page by page. Residency: one material's
+twelve pages are 15,937,536 bytes on disk and its 1024 tier 12 MiB of GPU memory before mips; D3's material arrays decide what is resident.

@@ -99,12 +99,12 @@ rocks comes from AI 602 and AI 603.
 
 ### D2. Material library expansion
 
-- [ ] **New materials.** Add homogeneous CC0 materials for each new class: forest litter (broadleaf
+- [x] **New materials.** Add homogeneous CC0 materials for each new class: forest litter (broadleaf
   and needle), moss, dry grass, turf sward, gravel and scree, pebble and cobble beach, dirt and mud,
   sandstone strata, caprock, lichen rock, wet algae rock, shell grit.
-- [ ] **Quality.** Each one meets the base-tile rule and has a calibrated physical scale, relief in ORM
+- [x] **Quality.** Each one meets the base-tile rule and has a calibrated physical scale, relief in ORM
   alpha, multiscale tiers and audit sheets at one-tile and repeated scale.
-- [ ] **Gate.** Audit sheets show no conspicuous patches or tile-scale tonal drift. Provenance is
+- [x] **Gate.** Audit sheets show no conspicuous patches or tile-scale tonal drift. Provenance is
   complete.
 
 ### D3. Small-area mixing and ecotones
@@ -225,6 +225,76 @@ upload per native page 1,089,936 → 1,907,388 bytes (root page with the appeara
 **Limitations.** The one-hot ramps of the categorical inputs are one native sample wide and straight until D3's breakup; the diagnostics
 variant's cold link time; the low lighting tier evaluates neutral views (no fields); planning cover keeps the natural inference soil (the
 catena's planning exclusion reaches the model through `catenaMoisture`); materials are not drawn until D3.
+
+### D2. Material library expansion — delivered 2026-10-16
+
+**Summary.** Fourteen homogeneous CC0 materials, one per class without an existing material, sourced from Poly Haven and ambientCG (34 sets
+downloaded under `downloads/landscape/ai598_d2/` with a `source.json` each; about 150 previews per class screened first), audited before
+installation against the base-tile rule with stationarity metrics (luminance and slope block coefficients of variation over 8 × 8 blocks,
+the directional profile ratio, the broad-tone share, the capture lean) and shaded contact sheets at one tile and 4 × 4, installed under
+`assets/public/pbr/landscape_<class>_v1/` with unchanged source maps, provenance (per-file SHA-256, URLs, license), an authored matte
+correction config and, for six sets, the `periodic-log-microdetail-v1` preparation (radius 16), and appended to the shared catalog index.
+They are published on coastal v3 as the additive companion `appearance/layers.json` (`landscape-appearance-layers` schema 1, revision
+`layers-37bceaa727eec12488968055`: 14 materials × 32/128/512/1024 tiers × base colour, normals, ORM with relief alpha = 168 unique pages,
+223,125,504 bytes, sidecar 149,019 bytes) by the `layers` request of the `landscape/appearance` leaf; the companion binds the appearance
+revision, its binding key and the recipe's class → material table (`recipe.materialsKey`, so rule tuning never invalidates it). Each material
+has a landscape calibration row (`LANDSCAPE_MATERIAL_CALIBRATION`: effective albedo measured at the 45°/0° geometry, a gain into the physical
+range of its ground type, the page mean normal slope) and a renderer data row (`LANDSCAPE_SURFACE_MATERIALS`, 19 ids: response, macro, clump,
+sampling, terrain role, micro pairing) for D3. `turf` binds the new `pbr.landscape_turf_v1` (ambientCG Grass001: inside the grass range without
+a gain, lean 0.8° against the installed lawn's 2.2°). `wrack` has no CC0 source in either library (D3 renders it as dark wet litter until AI 603
+places wrack geometry); `algae` is an even dark coastal rock whose green biofilm tint is a D3 class parameter.
+
+**Decision recorded.** Publishing re-issued the v3 appearance revision `appearance-b9c951722dd0824f9f25d8a9 → appearance-befbfb0bb88d214ab3e00501`
+and the multiscale companion `multiscale-95a344a7… → multiscale-d4f81ff3eb2129330fab380f` with byte-identical pages (54 and 26 page hashes
+compared equal; `tests/artifacts/screens/landscape/ai598/d2/appearance-layers-validation.json`): the schema-1 provenance hashes the whole
+`_catalog_index.js` import closure, which another session's entries had already changed on disk and which D2 extends. The former snapshots
+stay retained beside the new ones; no test or source pins the old revisions (the AI 596 handoff's table is history).
+
+**Spec and sources.** `specs/landscape/LANDSCAPE_SURFACE_LAYERS.md` §7, `LANDSCAPE_APPEARANCE.md` (the layers companion), `LANDSCAPE_BASE_MATERIALS.md`
+(the D2 source audit), `tools/bake_landscape/appearance/README.md`; `src/app/landscape/LandscapeAppearanceLayers.js`, `LandscapeAppearanceLayersPayload.js`,
+`src/graphics/engine3d/landscape/LandscapeSurfaceMaterials.js`, `LandscapeMaterialCalibration.js` (+14 rows), `tools/bake_landscape/AppearanceLayers.mjs`,
+`AppearanceJob.mjs`, `AppearancePreparation.mjs`, `appearance_pages.py` (a `layers` material list keyed by class), `CacheBundle.mjs` (the
+`appearance/layers.json` pointer), `tools/bake_landscape/appearance/layers-v1-coastal-city-v3.json`, the 14 material folders' configs and the
+catalog index lines.
+
+**Validation.** `node --test tests/node/unit/landscape_*.test.js` 686 / 687 before the commit (the cold-checkout test clones HEAD, whose cache
+bundle predates the `layers` pointer; it passes once this commit lands), `landscape_appearance_layers` 5 / 5, `landscape_material_calibration` 5 / 5
+(the companion's coarse tiers within 0.0125 of the 1024 mean slope), `pbr_config_storage` 2 / 2, `landscape_multiscale_assets` 4 / 4;
+`verifyLandscapeCacheBundle` on the published v3 passes (5,270 files). Audit suite `LANDSCAPE_MATERIAL_AUDIT=1 … landscape_material_layers_audit.pwtest.js`
+1 / 1: 56 renders (512 and 1024 tiers, one tile and 4 × 4) with no GL error, sheets and `report.json` under
+`tests/artifacts/screens/landscape/ai598/d2/audit/` (`contact-sheet.png`, `contact-sheet-1x.png`); every material reads as one homogeneous
+surface at both scales. Source audit with every candidate's metrics and decision: `d2/sources/AUDIT.md`, `candidates.json`, 34 contact sheets.
+
+**Per-material table** (metrics on the 1K maps: luminance block CoV [after conditioning], slope block CoV, directional ratio; Y = effective albedo
+before → after the gain, with the physical range):
+
+| Class | Material | Source | Tile m | lumCoV | slopeCoV | dir | Y, gain (range) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| sandstone | `pbr.landscape_sandstone_v1` | Poly Haven worn_rock_natural_01 | 2 stated | 0.020 | 0.144 | 1.47 (slope only) | 0.296 ×1 (0.20–0.35) |
+| caprock | `pbr.landscape_caprock_v1` | Poly Haven rock_08 | 1.5 stated | 0.073 [0.012] | 0.092 | 1.28 | 0.230 ×1 (0.15–0.28) |
+| scree | `pbr.landscape_scree_v1` | ambientCG Gravel040 | 2 authored | 0.030 | 0.029 | 1.09 | 0.134 → 0.217 ×1.67 (0.15–0.30) |
+| mud | `pbr.landscape_mud_v1` | Poly Haven dry_mud_field_001 | 3 stated | 0.043 | 0.089 | 1.41 | 0.113 → 0.076 ×0.62 (0.04–0.10) |
+| dune-sand | `pbr.landscape_dune_sand_v1` | ambientCG Ground093A | 2 authored | 0.016 | 0.078 | 1.24 | 0.492 → 0.325 ×0.66 (0.25–0.40) |
+| cobble | `pbr.landscape_cobble_v1` | Poly Haven dry_river_pebbles | 2 stated | 0.216 [0.033] | 0.108 | 1.47 → 1.10 cond. | 0.181 ×1 (0.12–0.25) |
+| shell-grit | `pbr.landscape_shell_grit_v1` | ambientCG Shells001 | 1.5 authored | 0.027 | 0.052 | 1.20 | 0.247 → 0.372 ×1.52 (0.30–0.45) |
+| turf | `pbr.landscape_turf_v1` | ambientCG Grass001 | 1.4 stated | 0.026 | 0.011 | 1.05 | 0.097 ×1 (0.08–0.15) |
+| dry-grass | `pbr.landscape_dry_grass_v1` | Poly Haven withered_grass | 2 stated | 0.056 | 0.073 | 1.20 | 0.315 → 0.240 ×0.76 (0.18–0.30) |
+| moss | `pbr.landscape_moss_v1` | ambientCG Moss002 | 1.5 authored | 0.132 [0.011] | 0.015 | 1.24 | 0.117 ×1 (0.06–0.12) |
+| broadleaf-litter | `pbr.landscape_broadleaf_litter_v1` | Poly Haven dry_decay_leaves | 2 stated | 0.069 | 0.127 | 1.41 (slope) | 0.098 → 0.144 ×1.53 (0.10–0.20) |
+| needle-litter | `pbr.landscape_needle_litter_v1` | Poly Haven forrest_ground_03 | 2 stated | 0.054 [0.015] | 0.090 | 1.33 | 0.241 → 0.107 ×0.42 (0.06–0.14) |
+| lichen | `pbr.landscape_lichen_rock_v1` | ambientCG Rock040 | 2 authored | 0.053 [0.011] | 0.089 | 1.21 | 0.443 → 0.230 ×0.51 (0.15–0.30) |
+| algae | `pbr.landscape_algae_rock_v1` | Poly Haven seaside_rock | 2 stated | 0.067 [0.006] | 0.049 | 1.18 | 0.078 ×1 (0.03–0.08) |
+
+Rejected with their metrics (`AUDIT.md`): sandstone_cracks (man-made, 6.7° lean, Y 0.41), tiger_rock (CoV 0.172, dir 1.57), Rock029 (slope CoV
+0.46), gravel_stones (Y 0.079), brown_mud (dir 1.91), ganges_river_pebbles (CoV 0.19), Gravel016/041 (gravel-sized), Ground056 (razor shells in
+rows, dir 1.74), grass_ground (Y 0.12), Moss003 (dir 1.50), Moss004 (broad tone 0.15), forest_leaves_03 (Y 0.05), Ground077 (orange, cones),
+lichen_rock (CoV 0.226, dir 2.52), Rock036 (dir 1.68), and about 90 more at the preview stage.
+
+**Measurements.** Leaf run 16.6 s (both companions and the schema-1 pages re-prepared); the companion adds 212.8 MiB of pages on disk; one
+material's 1024 tier is 12 MiB of GPU memory before mips (15,937,536 bytes across its twelve pages); no runtime cost yet (nothing is drawn).
+
+**Limitations.** `wrack` has no material; `algae` needs its tint parameter in D3; the appearance revision re-issue above; the cold-checkout
+test needs this commit; the materials are not drawn until D3.
 
 ## On completion
 
