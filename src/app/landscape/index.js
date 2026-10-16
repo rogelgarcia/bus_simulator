@@ -49,3 +49,4 @@ export { LANDSCAPE_SYNTHESIS_RECIPE_FORMAT, LANDSCAPE_SYNTHESIS_SCHEMA_VERSION, 
     LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
     canonicalLandscapeSynthesisJson, landscapeSynthesisRecipeIdentity, landscapeSynthesisOperatorSeed, landscapeSynthesisEffectiveSeed } from './LandscapeSynthesisRecipe.js';
 export * from './ecosystem/index.js';
+export * from './surface/index.js';

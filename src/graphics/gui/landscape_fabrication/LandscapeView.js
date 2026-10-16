@@ -14,7 +14,9 @@ import { createLandscapeWaterReference } from '../../engine3d/landscape/Landscap
 import { LandscapePlanningOverlay } from '../../engine3d/landscape/LandscapePlanningOverlay.js';
 import { landscapePlanningHeight } from '../../engine3d/landscape/LandscapePlanningGeometry.js';
 import { chooseLandscapeCoverageSlots } from '../../engine3d/landscape/LandscapeAppearanceUniforms.js';
-import { LANDSCAPE_SURFACE_LEVEL_COLORS, LANDSCAPE_SURFACE_SOIL_COLORS } from '../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { LANDSCAPE_SURFACE_COVER_COLORS, LANDSCAPE_SURFACE_LEVEL_COLORS, LANDSCAPE_SURFACE_SOIL_COLORS, LANDSCAPE_SURFACE_SUBSTRATE_COLORS } from '../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { LANDSCAPE_SURFACE_MODEL_RUNTIME, landscapeSurfaceModelMode } from '../../engine3d/landscape/LandscapeSurfaceModel.js';
+import { LANDSCAPE_SURFACE_COVERS, LANDSCAPE_SURFACE_RECIPE, LANDSCAPE_SURFACE_SUBSTRATES, loadLandscapeSurfaceOverrides } from '../../../app/landscape/index.js';
 import { LandscapeSurfaceDetailCache, landscapeSurfaceDetailCacheCapacity } from '../../engine3d/landscape/LandscapeSurfaceDetailCache.js';
 import { landscapeCoverageMaskLayout } from '../../engine3d/landscape/LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
@@ -61,6 +63,9 @@ export const LANDSCAPE_NATURAL_INFERENCE_MODES = LANDSCAPE_NATURAL_INFERENCE.mod
 
 /** Runtime surface cache (AI577 D6 core, landscape-surface-cache-v1): off (the uncached program) or on. */
 export const LANDSCAPE_SURFACE_CACHE_MODES = LANDSCAPE_SURFACE_CACHE_RUNTIME.modes;
+
+/** AI 598 D1 surface model (landscape-surface-model-v1) switch: on streams the geology and evaluates the model, off keeps every surface output neutral. */
+export const LANDSCAPE_SURFACE_MODEL_MODES = LANDSCAPE_SURFACE_MODEL_RUNTIME.modes;
 
 /** Surface cache mode of a view that does not choose one (AI577 D7 decision: on; landscapeSurfaceCache=on|off overrides it). */
 export { LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE };
@@ -109,13 +114,20 @@ export class LandscapeView {
      *   ocean (AI 597) 'animated' draws the spectral sea instead of the flat reference plane, 'flat' keeps the AI577 plane as the inspection surface; seaState and
      *   oceanQuality select the presets (LANDSCAPE_OCEAN_SEA_STATES, LANDSCAPE_OCEAN_QUALITIES); oceanTime fixes the simulation clock at that time (captures), null runs it;
      *   ecosystem (AI 599 D3/D4) 'auto' streams the ecosystem sidecar published beside the landscape (or the one its manifest attachment names) into the instanced
-     *   renderer, 'off' never creates it, a sidecar manifest URL streams that sidecar (landscapeEcosystemOption); ecosystemDiagnostic selects its inspection view (LANDSCAPE_ECOSYSTEM.diagnostics)
+     *   renderer, 'off' never creates it, a sidecar manifest URL streams that sidecar (landscapeEcosystemOption); ecosystemDiagnostic selects its inspection view (LANDSCAPE_ECOSYSTEM.diagnostics);
+     *   surfaceModel (AI 598 D1) 'on' streams the geology sidecar into the field array and evaluates the surface model (its inspection views and surfaceSample), 'off' keeps
+     *   every surface output neutral and streams no geology (the A/B of the model); surfaceOverrides is the URL of a landscape-surface-overrides document bound on every load
      */
     constructor(canvas, { source = DEFAULT_SOURCE, budgets = {}, surfaceDetail = '25cm', materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto',
         lightingTier = LANDSCAPE_LIGHTING.defaultTier, cityBinding = null, naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, terrainFields = 'auto', terrainAppearance = 'on',
         surfaceCache = LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, surfaceCacheSlots = null, surfaceCacheWindow = null, surfaceCacheAnisotropy = LANDSCAPE_SURFACE_CACHE.maxAnisotropy,
         surfaceCacheNear = 'on', surround = LANDSCAPE_SURROUND.defaultMode, ocean = LANDSCAPE_OCEAN.defaultSurface, seaState = LANDSCAPE_OCEAN.defaultSeaState, oceanQuality = LANDSCAPE_OCEAN.defaultQuality, oceanTime = null,
-        ecosystem = LANDSCAPE_ECOSYSTEM.defaultMode, ecosystemDiagnostic = 'none' } = {}) {
+        ecosystem = LANDSCAPE_ECOSYSTEM.defaultMode, ecosystemDiagnostic = 'none', surfaceModel = LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode, surfaceOverrides = null } = {}) {
+        // AI 598 D1: the surface model switch and the overrides document URL, kept across loads; the document itself is loaded and validated by every load
+        this.surfaceModelMode = landscapeSurfaceModelMode(surfaceModel);
+        if (surfaceOverrides !== null && (typeof surfaceOverrides !== 'string' || !surfaceOverrides.length)) throw new Error('[Landscape] surfaceOverrides must be a document URL or null');
+        this.surfaceOverridesUrl = surfaceOverrides;
+        this.surfaceOverrides = null;
         // AI 599 D3: the ecosystem streamer (sidecar, worker, residency) owning D4's renderer and asset sets; its controls are kept across loads
         this.ecosystemOption = landscapeEcosystemOption(ecosystem);
         landscapeEcosystemDiagnostic(ecosystemDiagnostic);
@@ -298,9 +310,12 @@ export class LandscapeView {
             this.stream = stream;
             this.loadingStream = null;
             this.loadTiming.coarseReadyAtMs = performance.now();
+            // AI 598 D1: an explicitly requested overrides document must bind (a 404 is an error, never a silent neutral layer)
+            this.surfaceOverrides = await this.loadSurfaceOverrides();
+            if (this.disposed || sequence !== this.loadSequence) return;
             const appearance = new LandscapeAppearanceStreamer({ loaded, budget: this.budget, renderer: this.renderer, coverageSlots: this.coverageSlots,
                 surfaceDetail: { levels: this.surfaceDetailLevels }, detailCache: this.ensureDetailCache(loaded), materialSampling: this.materialSampling, multiscale: this.multiscale,
-                terrainFields: this.terrainFields, naturalInference: this.naturalInference });
+                terrainFields: this.terrainFields, naturalInference: this.naturalInference, surfaceModel: { mode: this.surfaceModelMode, overrides: this.surfaceOverrides } });
             this.appearance = this.loadingAppearance = appearance;
             stream.setAppearance(appearance);
             if (this.surfaceCache === 'on') this.attachSurfaceCache(loaded, stream, appearance);
@@ -947,6 +962,53 @@ export class LandscapeView {
         return this.load();
     }
 
+    /** AI 598 D1: the validated overrides document of the configured URL, or null without one. */
+    async loadSurfaceOverrides() {
+        if (!this.surfaceOverridesUrl) return null;
+        const url = new URL(this.surfaceOverridesUrl, location.href).href, overrides = await loadLandscapeSurfaceOverrides(url, { recipe: LANDSCAPE_SURFACE_RECIPE, signal: this.loadAbort.signal });
+        if (!overrides) throw new Error(`[Landscape] surface overrides not found at ${url}`);
+        return overrides;
+    }
+
+    /**
+     * AI 598 D1: reloads with the surface model on or off and/or another overrides document URL (null unbinds it); omitted keys keep their state. Resolves
+     * with the surface snapshot once the load has settled its appearance. @param {{mode?:'on'|'off',overrides?:string|null}} [options]
+     */
+    async setSurfaceModel({ mode, overrides } = {}) {
+        if (mode !== undefined) this.surfaceModelMode = landscapeSurfaceModelMode(mode);
+        if (overrides !== undefined) {
+            if (overrides !== null && (typeof overrides !== 'string' || !overrides.length)) throw new Error('[Landscape] surface overrides must be a document URL or null');
+            this.surfaceOverridesUrl = overrides;
+        }
+        await this.load();
+        if (this.lastError) throw new Error(this.lastError);
+        return this.surfaceSnapshot();
+    }
+
+    /**
+     * AI 598 D1: JavaScript mirror of the surface model (landscape-surface-model-v1) at a world position; height and slope default to the rendered terrain
+     * there, like terrainAppearanceSample. @param {number} x @param {number} z @param {{height?:number,slopeDegrees?:number,dx?:number[],dy?:number[]}} [options]
+     */
+    surfaceSample(x, z, { height, slopeDegrees, dx, dy } = {}) {
+        if (!this.appearance || !this.loaded) throw new Error('[Landscape] Load the landscape appearance before sampling the surface model');
+        const terrain = sampleLandscapeChunk(this.loaded.manifest, this.stream?.renderedChunkAt(x, z) ?? this.loaded.chunk, x, z);
+        if (terrain.status !== 'ready' && (height === undefined || slopeDegrees === undefined)) return null;
+        return this.appearance.surfaceSample(x, z, { height: height ?? terrain.height, slopeDegrees: slopeDegrees ?? terrain.slopeDegrees, enabled: this.lighting.response.terrainAppearance, dx, dy });
+    }
+
+    /** AI 598 D1: the surface model's binding (mode, recipe identity, geology status, overrides) with the view's option state. */
+    surfaceSnapshot() {
+        const bound = this.appearance?.surfaceSnapshot();
+        return { mode: this.surfaceModelMode, overridesUrl: this.surfaceOverridesUrl, ...(bound ?? { model: LANDSCAPE_SURFACE_MODEL_RUNTIME.id, status: 'pending', recipe: { id: LANDSCAPE_SURFACE_RECIPE.id, identity: null },
+            geology: { mode: this.surfaceModelMode, status: this.surfaceModelMode === 'off' ? 'disabled' : 'pending', reason: this.surfaceModelMode === 'off' ? 'surface-model-off' : 'appearance-not-loaded', revision: null }, overrides: null,
+            layersPerPage: LANDSCAPE_SURFACE_MODEL_RUNTIME.layers.fields, diagnostics: [...LANDSCAPE_SURFACE_MODEL_RUNTIME.diagnostics] }) };
+    }
+
+    surfaceLine() {
+        const state = this.surfaceSnapshot(), geology = state.geology;
+        return `Surface model ${state.mode}${state.reason ? ` (${state.reason})` : ''} · recipe ${state.recipe.id}${state.recipe.identity ? ` ${state.recipe.identity.slice(-8)}` : ''} · geology ${geology.status}${geology.revision ? ` ${geology.revision.slice(-8)}` : ''}${geology.pagesLoaded ? ` · ${geology.pagesLoaded} pages` : ''} · ${state.layersPerPage} layers per page · overrides ${state.overrides ? `${state.overrides.id} (${state.overrides.regions} regions, layer ${state.overrides.layerState?.status ?? 'pending'})` : 'none'}`;
+    }
+
     /**
      * JavaScript mirror of the terrain-driven appearance inputs at a world position (landscape-terrain-appearance-v1); height and slope default to the
      * rendered terrain there. @param {number} x @param {number} z @param {{height?:number,slopeDegrees?:number,footprint?:number}} [options]
@@ -1095,8 +1157,14 @@ export class LandscapeView {
             'surface-coverage': () => `Surface coverage: unlit false colors of normalized weights after hierarchy availability, before height competition. ${this.loaded.manifest.soil.catalog.map(soil => `${soil.id} ${LANDSCAPE_SURFACE_SOIL_COLORS[soil.id].name}`).join(' · ')}.`,
             'terrain-appearance': () => 'Terrain-driven appearance inputs: gray neutral · blue moist hollows · orange dry ridges and steep slopes (catena from the landscape-scale terrain fields) · cyan sea-wetted ground · red revealed rock · darkened where planning cover excludes the terrain terms.',
             dressing: () => 'Natural dressing inputs of the displayed soil: green grass · ochre shrubs · dark green trees · blue-gray rock scatter · pink beach debris · dark slate planning cover reserved for city content. Placement is not part of the viewer.',
-            ...Object.fromEntries(['grass', 'shrub', 'tree', 'rock', 'debris'].map(output => [`dressing-${output}`, () => `Dressing input ${output}: gray value 0 (black) to 1 (white) of landscape-dressing-inputs v1, planning cover reserved.`])) };
-        const accuracy = planning.diagnostic.startsWith('surface-') ? 'Resident appearance coverage pages, independent of geometry LOD; generated levels are visual detail, not measured data.'
+            ...Object.fromEntries(['grass', 'shrub', 'tree', 'rock', 'debris'].map(output => [`dressing-${output}`, () => `Dressing input ${output}: gray value 0 (black) to 1 (white) of landscape-dressing-inputs v1, planning cover reserved.`])),
+            'surface-substrate': () => `Surface substrate classes (AI 598 surface model, mixed by weight): ${LANDSCAPE_SURFACE_SUBSTRATES.map(entry => `${entry.id} ${LANDSCAPE_SURFACE_SUBSTRATE_COLORS[entry.id].name}`).join(' · ')}. Planning cover tinted slate.`,
+            'surface-cover': () => `Surface cover classes (AI 598 surface model, mixed by weight): ${LANDSCAPE_SURFACE_COVERS.map(entry => `${entry.id} ${LANDSCAPE_SURFACE_COVER_COLORS[entry.id].name}`).join(' · ')}. Planning cover tinted slate.`,
+            'surface-fraction': () => 'Surface cover fraction: gray value 0 (bare substrate) to 1 (fully covered) of the AI 598 surface model before interleaving.',
+            'surface-wetness': () => 'Surface wetness: gray value 0 (dry) to 1 (saturated) of the AI 598 surface model (shore reach, sea level, wet hollows, deposition).',
+            'surface-disturbance': () => 'Surface disturbance: gray value 0 to 1 of the AI 598 surface model (0 until the worn-ground pages of D5 publish).' };
+        const accuracy = LANDSCAPE_SURFACE_MODEL_RUNTIME.diagnostics.includes(planning.diagnostic) ? `Evaluated per fragment from the resident terrain-field, geology and appearance data (unmeasured offline analyses); surface model ${this.surfaceModelMode}, geology ${this.surfaceSnapshot().geology.status}.`
+            : planning.diagnostic.startsWith('surface-') ? 'Resident appearance coverage pages, independent of geometry LOD; generated levels are visual detail, not measured data.'
             : planning.diagnostic === 'terrain-appearance' || planning.diagnostic.startsWith('dressing') ? 'Derived from the resident terrain-field and mask pages; terrain fields are unmeasured offline analyses.'
             : `Approximate displayed terrain LOD; use Inspect area for native samples. Guides use ${planning.accuracy.overviewSpacingMeters.toFixed(3)} m overview spacing.`;
         this.panel.text('diagnostic-legend', `${legend[planning.diagnostic]()}\n${accuracy}`);
@@ -1488,7 +1556,7 @@ export class LandscapeView {
             sourceBytes: this.stream?.snapshot().sourceBytes ?? 0, memory: this.stream?.snapshot() ?? null,
             streaming: this.stream?.snapshot() ?? null, budget: this.budget.snapshot(),
             appearance: this.appearance?.snapshot() ?? null, water: this.water?.snapshot() ?? { visible: false, seaLevel: null }, lighting: { ...this.lighting.snapshot(), backdrop: this.backdrop.snapshot() },
-            surround: this.surroundSnapshot(), ocean: this.oceanSnapshot(), ecosystem: this.ecosystemSnapshot(),
+            surround: this.surroundSnapshot(), ocean: this.oceanSnapshot(), ecosystem: this.ecosystemSnapshot(), surface: this.surfaceSnapshot(),
             surfaceDetail: { mode: this.surfaceDetail, levels: this.surfaceDetailLevels, cache: this.detailCache?.snapshot() ?? null },
             materialSampling: this.materialSampling, multiscale: this.multiscale, naturalInference: this.naturalInference, terrainFields: this.terrainFields,
             terrainAppearance: this.lighting.response.terrainAppearance ? 'on' : 'off', surfaceCache: this.surfaceCache,
@@ -1590,6 +1658,7 @@ export class LandscapeView {
                 if (appearance) this.panel.text('appearance', `Appearance: ${appearance.residentMaskIds.length}/${appearance.maskCapacity} mask pages · ${appearance.materials.map(value => `${value.soilId}:${value.resolution}${value.micro?.shown ? '+micro' : ''}`).join(' / ')} px · multiscale ${appearance.multiscale.status} · ${appearance.pending} pending · CPU ${mib(appearance.cpuBytes)} / GPU est. ${mib(appearance.gpuBytes)} MiB · ${appearance.degradationReason ?? (appearance.settled ? 'ready' : 'streaming')}`);
                 if (appearance) this.panel.text('surface-detail', this.surfaceDetailLine(appearance.detail));
                 this.panel.text('ecosystem', this.ecosystemLine());
+                this.panel.text('surface', this.surfaceLine());
                 if (this.selection) {
                     const x = this.selection.position.x, z = this.selection.position.z;
                     const chunk = this.stream.renderedChunkAt(x, z);

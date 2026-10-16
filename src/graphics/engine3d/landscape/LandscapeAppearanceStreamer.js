@@ -16,7 +16,9 @@
 // mask request) in native and generated pages alike, with its explicit per-native overview fallback reported as `presentation`. The terrain-driven
 // natural appearance (LandscapeTerrainAppearance) reads the resident root field and mask pages; this adapter mirrors it in JavaScript
 // (terrainAppearanceSample), evaluates the landscape-dressing-inputs v1 of the displayed soil (dressingSample) and lends the exposed-rock soil the
-// density of visible pages whose fields expose rock, so revealed rock streams at the tier its pages need.
+// density of visible pages whose fields expose rock, so revealed rock streams at the tier its pages need. AI 598 D1: with the surface model on
+// (the default) the geology sidecar streams into the field array beside the field pages and an overrides document rasterizes into the root-grid
+// override layer; surfaceSample mirrors the surface model (substrate, cover, fraction, wetness) exactly as the inspection views evaluate it.
 import { createLandscapeAppearancePlanner, loadLandscapeAppearanceManifest, loadLandscapeAppearanceMultiscale, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailRecipeHash } from '../../../app/landscape/index.js';
 import { LandscapeAppearanceBudget } from './LandscapeAppearanceBudget.js';
 import { LANDSCAPE_APPEARANCE_DEMAND, planLandscapeAppearanceDemand } from './LandscapeAppearanceDemand.js';
@@ -43,8 +45,9 @@ import { createLandscapeSurfaceWarp } from './LandscapeSurfaceNoise.js';
 import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailCapacity, landscapeSurfaceDetailDisabledSnapshot, landscapeSurfaceDetailWorkerBytes } from './LandscapeSurfaceDetailPages.js';
 import { LANDSCAPE_TERRAIN_APPEARANCE, decodeLandscapeAppearanceLayer, landscapeAppearanceLayerUnits, landscapePlanningCover, landscapePlanningCoverMask, landscapeRockFactor,
     landscapeSoilCatenaShare, landscapeSoilTerrainRole, landscapeTerrainAppearanceInputs, landscapeTerrainFreshness } from './LandscapeTerrainAppearance.js';
-import { sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
+import { LANDSCAPE_SURFACE_MODEL, LANDSCAPE_SURFACE_RECIPE, landscapeSurfaceOverridesIdentity, landscapeSurfaceRecipeIdentity, sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
 import { LANDSCAPE_SURFACE_CACHE_OFF } from './LandscapeSurfaceCache.js';
+import { LANDSCAPE_SURFACE_MODEL_RUNTIME, createLandscapeSurfaceSampler, landscapeSurfaceModelMode } from './LandscapeSurfaceModel.js';
 
 export class LandscapeAppearanceStreamer {
     /**
@@ -52,11 +55,22 @@ export class LandscapeAppearanceStreamer {
      *   surfaceDetail?:{levels:number},detailCache?:any,materialSampling?:string,multiscale?:'auto'|'off',terrainFields?:'auto'|'off',naturalInference?:'terrain'|'overview'}} options
      *   detailCache is the view-owned LandscapeSurfaceDetailCache (or null); materialSampling is the compile-time mode of the view's terrain programs;
      *   multiscale 'off' keeps the schema-1 tiers without requesting the companion sidecar; terrainFields 'off' never streams terrain-field pages (the
-     *   natural inference of planning-only cover keeps its own policy); naturalInference is the view's natural display policy, shared with the geometry stream
+     *   natural inference of planning-only cover keeps its own policy); naturalInference is the view's natural display policy, shared with the geometry stream;
+     *   surfaceModel (AI 598 D1) is {mode: 'on' | 'off', overrides: validated landscape-surface-overrides document or null}: on streams the geology sidecar into the
+     *   field array and rasterizes the overrides into the override layer, off streams no geology and keeps every surface output neutral
      */
     constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto', terrainFields = 'auto',
-        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode }) {
+        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, surfaceModel = { mode: LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode, overrides: null } }) {
         Object.assign(this, { loaded, renderer });
+        this.surfaceModel = { mode: landscapeSurfaceModelMode(surfaceModel?.mode ?? LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode), overrides: surfaceModel?.overrides ?? null, recipe: LANDSCAPE_SURFACE_RECIPE, reason: null };
+        // the recipe's soils are the catalog order the shader evaluates; another catalog keeps the model off explicitly
+        const soils = loaded.manifest.soil.catalog.map(soil => soil.id);
+        if (this.surfaceModel.mode === 'on' && soils.join(',') !== LANDSCAPE_SURFACE_MODEL.soils.join(',')) {
+            this.surfaceModel = { ...this.surfaceModel, mode: 'off', reason: `surface-model-soil-catalog: the landscape soils ${soils.join(', ')} are not the model's ${LANDSCAPE_SURFACE_MODEL.soils.join(', ')}` };
+            console.warn(`[LandscapeSurface] Surface model off: ${this.surfaceModel.reason}`);
+        }
+        this.geologyUrl = new URL('./geology/manifest.json', loaded.manifestUrl).href;
+        this.surfaceSampler = null;
         if (!['auto', 'off'].includes(multiscale)) throw new Error(`[Landscape] multiscale must be auto or off; received ${multiscale}`);
         this.multiscaleMode = multiscale;
         this.layers = { macro: true, micro: true, projection: true, normalFiltering: true };
@@ -124,7 +138,7 @@ export class LandscapeAppearanceStreamer {
             const companion = await this.loadMultiscale();
             if (this.disposed) return;
             this.pool = new LandscapeWorkerPool({ size: 1, workerUrl: new URL('./LandscapeAppearanceWorker.js', import.meta.url), context: { type: 'initialize', manifest: this.loaded.manifest, manifestUrl: this.loaded.manifestUrl,
-                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, fieldsUrl: this.fieldsUrl, root,
+                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, fieldsUrl: this.fieldsUrl, geologyUrl: this.geologyUrl, root,
                 naturalPages: this.naturalWorkerPages } });
             this.masks = new LandscapeMaskPages({ loaded: this.loaded, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix, capacity, detail, warp: this.warp,
                 natural: this.natural });
@@ -134,8 +148,11 @@ export class LandscapeAppearanceStreamer {
             this.materials = new LandscapeMaterialPages({ appearance: this.appearance, multiscale: this.multiscale, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix });
             await this.materials.initialize();
             if (!this.disposed) {
+                // AI 598 D1: the recipe and override identities are content hashes (Web Crypto) computed once per load
+                this.surfaceIdentity = { recipe: await landscapeSurfaceRecipeIdentity(this.surfaceModel.recipe), overrides: this.surfaceModel.overrides ? await landscapeSurfaceOverridesIdentity(this.surfaceModel.overrides) : null };
                 this.fields = new LandscapeTerrainFieldPages({ loaded: this.loaded, shared: this.budget.shared, masks: this.masks, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms,
                     prefix: this.prefix, url: this.fieldsUrl, mode: this.terrainFieldsMode, createTexture: createLandscapeTerrainFieldTexture,
+                    geology: this.surfaceModel.mode, geologyUrl: this.geologyUrl, overrides: this.surfaceModel.mode === 'on' ? this.surfaceModel.overrides : null, hardnessPattern: this.surfaceModel.recipe.strata.hardnessPattern,
                     ...(this.natural.url === this.fieldsUrl ? { loadSidecar: () => this.natural.sidecar() } : {}) });
                 await this.fields.initialize();
             }
@@ -335,7 +352,9 @@ export class LandscapeAppearanceStreamer {
             macro: [...u.uMacroOctaves.value, ...u.uMacroSalts.value, ...u.uMacroSettings.value, ...u.uSoilMacro.value],
             layers: [...u.uSurfaceLayers.value, ...u.uMicroSampling.value, this.layers.micro ? 1 : 0],
             warp: [u.uSurfaceWarpEnabled.value, ...u.uLandscapeWarpWaves.value, ...u.uLandscapeWarpOffsets.value, ...u.uLandscapeWarpSalts.value],
-            fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value] };
+            fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value],
+            // AI 598 D1 (cache contract): the model, its recipe identity, the bound geology revision and the override document identity
+            surface: [LANDSCAPE_SURFACE_MODEL.id, this.surfaceModel.mode, this.surfaceIdentity?.recipe ?? 'none', this.fields?.geology.revision ?? 'none', this.surfaceIdentity?.overrides ?? 'none'] };
         const rock = this.appearance.materials.findIndex(definition => landscapeSoilTerrainRole(definition.soilId) < 0);
         return { levelSpacings, slots, soils, rock, global, fieldsFading: rootField > 0 && rootField < 1, uniforms: u };
     }
@@ -386,6 +405,30 @@ export class LandscapeAppearanceStreamer {
         const inferred = sampleLandscapeDressingInputs({ soilWeights, planningShare: 0, fields });
         return { ...outputs, planningShare, coverId: categorical.coverId, soilId: categorical.soilId, displaySoilId: categorical.displaySoilId, soilWeights, availability: sample.availability,
             fields, inferredGround: planningShare ? Object.fromEntries(Object.entries(inferred).filter(([key]) => key !== 'recipe' && key !== 'fieldsAvailable')) : null };
+    }
+
+    /**
+     * AI 598 D1: exact JavaScript mirror of landscapeSurfaceModel (chunks/landscape/surface_model.glsl) at a world position over the resident mask, field,
+     * geology and appearance data: the dominant substrate and cover with every class weight, the cover fraction, wetness, disturbance and availability, the
+     * input vector, the geology walk and the override applied. With the model off every output is neutral (the soil defaults), like the shader.
+     * @param {number} x @param {number} z @param {{height:number,slopeDegrees:number,enabled?:boolean,dx?:number[],dy?:number[]}} options the rendered terrain height (m) and
+     *   geometric slope (degrees) at the position and the terrain-appearance switch
+     */
+    surfaceSample(x, z, { height, slopeDegrees, enabled = true, dx = [0, 0], dy = [0, 0] }) {
+        if (!this.initialized || !this.masks || !this.fields) return null;
+        this.surfaceSampler ??= createLandscapeSurfaceSampler({ masks: this.masks, fields: this.fields, recipe: this.surfaceModel.recipe, planningCoverMask: this.planningCoverMask,
+            seaLevel: this.loaded.manifest.coordinates.seaLevel, terrainAppearance: (sampleX, sampleZ, options) => this.terrainAppearanceSample(sampleX, sampleZ, options), modelOn: this.surfaceModel.mode === 'on' });
+        const sample = this.surfaceSampler.sample(x, z, { height, slopeDegrees, enabled, dx, dy });
+        return sample ? { ...sample, mode: this.surfaceModel.mode, recipeIdentity: this.surfaceIdentity?.recipe ?? null, overridesIdentity: this.surfaceIdentity?.overrides ?? null } : null;
+    }
+
+    /** AI 598 D1: the surface model's binding: mode, recipe, geology status and the override document. */
+    surfaceSnapshot() {
+        const fields = this.fields?.snapshot(), overrides = this.surfaceModel.overrides;
+        return { model: LANDSCAPE_SURFACE_MODEL.id, runtime: LANDSCAPE_SURFACE_MODEL_RUNTIME.id, mode: this.surfaceModel.mode, reason: this.surfaceModel.reason, recipe: { id: this.surfaceModel.recipe.id, identity: this.surfaceIdentity?.recipe ?? null },
+            geology: fields?.geology ?? { mode: this.surfaceModel.mode, status: this.surfaceModel.mode === 'off' ? 'disabled' : 'pending', reason: this.surfaceModel.mode === 'off' ? 'surface-model-off' : 'appearance-not-initialized', url: this.geologyUrl, revision: null },
+            overrides: overrides ? { id: overrides.id, identity: this.surfaceIdentity?.overrides ?? null, regions: overrides.regions.length, layer: fields?.overrideLayer ?? null, layerState: fields?.overrideLayerState ?? null } : null,
+            layersPerPage: fields?.layersPerPage ?? LANDSCAPE_SURFACE_MODEL_RUNTIME.layers.fields, diagnostics: [...LANDSCAPE_SURFACE_MODEL_RUNTIME.diagnostics], chunk: LANDSCAPE_SURFACE_MODEL_RUNTIME.chunk };
     }
 
     /** Generator-internal inspection through a detail worker. @param {number} x @param {number} z */
@@ -503,12 +546,14 @@ export class LandscapeAppearanceStreamer {
             terrainAppearance: { recipe: LANDSCAPE_TERRAIN_APPEARANCE.id, planningCover: Array.from(this.planningCoverMask), layer: this.fields?.appearanceLayer ?? null,
                 roles: Object.fromEntries((this.appearance?.materials ?? []).map(definition => [definition.soilId, landscapeSoilTerrainRole(definition.soilId)])),
                 switch: 'lighting.response.terrainAppearance (uLandscapeResponse.w)', model: LANDSCAPE_TERRAIN_APPEARANCE },
-            terrainFields: fields ?? { status: this.terrainFieldsMode === 'off' ? 'disabled' : 'pending', reason: this.terrainFieldsMode === 'off' ? 'terrain-fields-off' : 'appearance-not-initialized', mode: this.terrainFieldsMode, url: this.fieldsUrl } };
+            terrainFields: fields ?? { status: this.terrainFieldsMode === 'off' ? 'disabled' : 'pending', reason: this.terrainFieldsMode === 'off' ? 'terrain-fields-off' : 'appearance-not-initialized', mode: this.terrainFieldsMode, url: this.fieldsUrl },
+            surface: this.surfaceSnapshot(), geology: this.surfaceSnapshot().geology };
     }
 
     releaseResources() {
         this.uniforms.uAppearanceReady.value = 0;
         this.surfaceCache = null;
+        this.surfaceSampler = null;
         this.fields?.dispose();
         this.fields = null;
         this.materials?.dispose();

@@ -12,9 +12,11 @@ import { landscapeSurfaceCacheDefines } from '../../../engine3d/landscape/Landsc
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceWarpDefines } from '../../../engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_DEFINE, landscapeMaterialSamplingMode } from '../../../engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_LIGHTING, landscapeLightingDefines } from '../../../engine3d/landscape/LandscapeLightingModel.js';
-import { landscapeSurfaceLevelColorDefine } from '../../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
+import { landscapeSurfaceClassColorDefines, landscapeSurfaceLevelColorDefine } from '../../../engine3d/landscape/LandscapeTerrainDiagnostics.js';
 import { landscapeDressingDefines, landscapeTerrainAppearanceDefines } from '../../../engine3d/landscape/LandscapeTerrainAppearance.js';
 import { LANDSCAPE_TERRAIN_PROGRAM_VARIANT, landscapeProgramVariantDefines } from '../../../engine3d/landscape/LandscapeTerrainProgramVariant.js';
+import { landscapeSurfaceModelDefines } from '../../../engine3d/landscape/LandscapeSurfaceModel.js';
+import { LANDSCAPE_SURFACE_RECIPE } from '../../../../app/landscape/index.js';
 
 const [terrain, lines, water, backdrop, surfaceCacheUnpack] = await Promise.all([
     loadShaderSourceSet({ vertexPath: 'materials/landscape/terrain.vert.glsl', fragmentPath: 'materials/landscape/terrain.frag.glsl' }),
@@ -35,6 +37,8 @@ const levelColorDefine = Object.freeze({ LANDSCAPE_SURFACE_LEVEL_COLOR_LIST: lan
 const terrainAppearanceDefines = Object.freeze({ ...landscapeTerrainAppearanceDefines(), ...landscapeDressingDefines() });
 // AI577 D6 runtime surface cache constants (landscape-surface-cache-v1), used by the cached frame and the generation programs
 const surfaceCacheDefines = landscapeSurfaceCacheDefines();
+// AI 598 D1 surface model tables and review palettes: compile-time constants consumed by the diagnostics variant alone (surface_model.glsl)
+const surfaceModelDefines = Object.freeze({ ...landscapeSurfaceModelDefines(LANDSCAPE_SURFACE_RECIPE), ...landscapeSurfaceClassColorDefines() });
 
 /** @returns {Readonly<{fixedVectors:number,slotVectors:number}>} conservative terrain fragment uniform vectors */
 export function landscapeTerrainUniformVectors() { return terrainUniformVectors; }
@@ -79,6 +83,7 @@ export function createLandscapeShaderPayload(kind, { coverageSlots, materialSamp
         sourceSet: terrain, defines: {
             [LANDSCAPE_COVERAGE_SLOT_DEFINE]: assertLandscapeCoverageSlots(coverageSlots), ...warpDefines,
             [LANDSCAPE_MATERIAL_SAMPLING_DEFINE]: `(${landscapeMaterialSamplingMode(materialSampling)})`, ...landscapeLightingDefines(lightingTier), ...levelColorDefine, ...terrainAppearanceDefines,
+            ...(variant.diagnostics ? surfaceModelDefines : {}),
             ...(cached ? surfaceCacheDefines : {}), ...variantDefines, ...(surfaceCacheGeneration ? { LANDSCAPE_SURFACE_CACHE_GENERATION: true } : {}),
             ...(surfaceCacheNear ? { LANDSCAPE_SURFACE_CACHE_NEAR: true } : {}) } });
 }

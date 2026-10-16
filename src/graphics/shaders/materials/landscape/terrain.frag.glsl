@@ -795,6 +795,10 @@ Coverage hierarchyCoverage(vec2 world, vec2 dx, vec2 dy, vec2 warped, vec2 warpe
 }
 
 #ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS
+// AI 598 D1: the surface model (substrate, cover, fraction and wetness from the geology layers of the field array) is evaluated by its inspection views
+// alone; the default, cache and near programs never include it
+#include <shaderlib:landscape/surface_model>
+
 vec3 surfaceLevelColor(vec2 world, vec2 warped) {
     int nativeStart = maskAt(warped, false);
     int current = maskAt(world, true);
@@ -1007,7 +1011,9 @@ vec3 diagnosticDisplay(vec3 color) {
 // shaded slate. terrain-appearance (6): gray neutral, blue moist and orange dry catena moisture times its weight, cyan coastal wetting, red rock
 // exposure. Natural dressing inputs (landscape-dressing-inputs v1 of the display soil weights, the planning cover and the fine terrain fields of
 // the fragment; tier low has neutral fields): composite (7) and single outputs as gray values, grass (8), shrubs (9), trees (10), rock scatter (11)
-// and beach debris (12). uSurfaceSoilColors[soil].x holds each soil's dressing host class while a dressing diagnostic is selected.
+// and beach debris (12). uSurfaceSoilColors[soil].x holds each soil's dressing host class while a dressing diagnostic is selected. AI 598 D1 surface model
+// (landscape-surface-model-v1, the display soils refined by the geology and the fields): substrate classes (13) and cover classes (14) mixed from the
+// review palettes by their weights, then the cover fraction (15), the wetness (16) and the disturbance as gray values; planning cover tinted slate.
 vec3 terrainInputDiagnostic(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec3 normal, vec3 positionDx, vec3 positionDy) {
     vec3 color;
     int slot = maskAt(world, false);
@@ -1025,6 +1031,20 @@ vec3 terrainInputDiagnostic(Coverage coverage, vec2 world, vec2 dx, vec2 dy, vec
         color = mix(vec3(0.5), moisture > 0.0 ? vec3(0.13, 0.33, 0.78) : vec3(0.86, 0.55, 0.16), min(1.0, abs(moisture)));
         color = mix(color, vec3(0.2, 0.85, 0.9), wetting.x);
         color = mix(mix(color, vec3(0.85, 0.12, 0.1), min(1.0, 2.0 * terrain.exposure)), vec3(0.2, 0.2, 0.26), 0.35 * planning);
+    } else if (uDiagnostic >= 13) {
+#if LANDSCAPE_LIGHTING_TIER > 0
+        LandscapeTerrainFields fields = landscapeTerrainFieldsAt(world, dx, dy);
+#else
+        LandscapeTerrainFields fields = landscapeTerrainFieldsNone();
+#endif
+        LandscapeTerrainAppearance terrain = landscapeTerrainAppearance(vLandscapeWorld, normal, max(length(positionDx), length(positionDy)));
+        float total = max(coverageTotal(coverage), 1.0e-6);
+        LandscapeSurfaceModel model = landscapeSurfaceModel(coverage.low / total, coverage.high / total, planning, fields, world, dx, dy, degrees(acos(clamp(normal.y, -1.0, 1.0))),
+            vLandscapeWorld.y - uLandscapeSun.w, terrain, 0.0);
+        if (uDiagnostic == 13) color = landscapeSurfaceSubstrateColor(model);
+        else if (uDiagnostic == 14) color = landscapeSurfaceCoverColor(model);
+        else color = vec3(uDiagnostic == 15 ? model.coverFraction : uDiagnostic == 16 ? model.wetness : model.disturbance);
+        color = mix(color, vec3(0.2, 0.2, 0.26), 0.35 * planning);
     } else {
         vec4 classes = vec4(0.0);
         for (int soil = 0; soil < 6; soil++) classes += coverageWeight(coverage, soil) * vec4(equal(ivec4(int(uSurfaceSoilColors[soil].x + 0.5)), ivec4(1, 2, 3, 4)));

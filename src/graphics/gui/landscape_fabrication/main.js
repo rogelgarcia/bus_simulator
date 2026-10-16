@@ -1,6 +1,7 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
 import { LandscapeView, LANDSCAPE_MULTISCALE_MODES, LANDSCAPE_NATURAL_INFERENCE_MODES, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, LANDSCAPE_SURFACE_CACHE_MODES, LANDSCAPE_SURFACE_DETAIL_MODES,
-    LANDSCAPE_TERRAIN_APPEARANCE_MODES, LANDSCAPE_TERRAIN_FIELD_MODES, landscapeSurfaceCacheShippedBudgets } from './LandscapeView.js';
+    LANDSCAPE_SURFACE_MODEL_MODES, LANDSCAPE_TERRAIN_APPEARANCE_MODES, LANDSCAPE_TERRAIN_FIELD_MODES, landscapeSurfaceCacheShippedBudgets } from './LandscapeView.js';
+import { LANDSCAPE_SURFACE_MODEL_RUNTIME } from '../../engine3d/landscape/LandscapeSurfaceModel.js';
 import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
@@ -64,9 +65,14 @@ if (oceanTime !== null && !(Number.isFinite(oceanTime) && oceanTime >= 0)) throw
 // landscapes without one), off never creates it; landscapeEcosystemDiagnostic=none|lod|layer|rank|fade selects its inspection view
 const ecosystem = landscapeEcosystemOption(parameters.get('landscapeEcosystem') ?? LANDSCAPE_ECOSYSTEM.defaultMode);
 const ecosystemDiagnostic = mode('landscapeEcosystemDiagnostic', LANDSCAPE_ECOSYSTEM.diagnostics, 'none');
+// landscapeSurfaceModel=on|off (AI 598 D1): on (the default) streams the geology sidecar into the terrain-field array and evaluates the surface model (its
+// inspection views and surfaceSample), off streams no geology and keeps every surface output neutral; landscapeSurfaceOverrides=<url> binds a
+// landscape-surface-overrides document (its root-grid layer joins the field array)
+const surfaceModel = mode('landscapeSurfaceModel', LANDSCAPE_SURFACE_MODEL_MODES, LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode);
+const surfaceOverrides = parameters.get('landscapeSurfaceOverrides') || null;
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
     surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode, ocean, seaState, oceanQuality, oceanTime,
-    ecosystem: ecosystem.mode === 'url' ? ecosystem.url : ecosystem.mode, ecosystemDiagnostic });
+    ecosystem: ecosystem.mode === 'url' ? ecosystem.url : ecosystem.mode, ecosystemDiagnostic, surfaceModel, surfaceOverrides });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
@@ -109,6 +115,10 @@ window.__landscapeTestHooks = Object.freeze({
     terrainAppearanceSample: (x, z, options) => view.terrainAppearanceSample(x, z, options),
     dressingSample: (x, z, options) => view.dressingSample(x, z, options),
     setTerrainAppearance: enabled => view.setTerrainAppearance(enabled),
+    // AI 598 D1: the surface model mirror (substrate, cover, fraction, wetness at a world position, exactly as the inspection views evaluate it) and the
+    // switch {mode: 'on' | 'off', overrides: document URL | null} (reloads; resolves with snapshot().surface)
+    surfaceSample: (x, z, options) => view.surfaceSample(x, z, options),
+    setSurfaceModel: options => view.setSurfaceModel(options),
     // AI577 D6 runtime surface cache: switch ('off' | 'on', resolves once applied) and the CPU mirror of the cached frame's page lookup
     setSurfaceCache: mode => view.setSurfaceCache(mode),
     setSurfaceCacheNear: (mode, band) => view.setSurfaceCacheNear(mode, band),

@@ -22,6 +22,8 @@ const expandedShader = shader.replace('#include <shaderlib:landscape/surface_war
     .replace(/#include <shaderlib:landscape\/(terrain_fields|lighting_visibility|lighting|atmosphere|water_optics|terrain_appearance|dressing_inputs)>/g, (_, name) => lightingChunks[name]);
 const warpSizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
 const count = (pattern) => (shader.match(pattern) ?? []).length;
+// the first AI 598 surface model view: those views are evaluated by one branch of terrainInputDiagnostic
+const surfaceViews = LANDSCAPE_DIAGNOSTICS.indexOf('surface-substrate');
 
 /**
  * Resolves only the AI577 D6 diagnostics conditionals (#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS ... #endif) of a shader source; every other preprocessor
@@ -118,7 +120,8 @@ test('Terrain diagnostics: the default program carries no inspection code and LA
     assert.match(main, /vec3 color = vec3\(0\.0\);\s+\{\s+\/\/ the vertex-color fallback/, 'the default program enters the shaded path directly');
     assert.match(main, /\{\s+terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/, 'and lights every fragment');
     assert.match(main, /#include <colorspace_fragment>\s+\}\s*$/, 'and writes the tone-mapped output');
-    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(inspected, new RegExp(`uDiagnostic == ${index}\\b`), `${name} is a branch of the diagnostics program`);
+    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index && index < surfaceViews) assert.match(inspected, new RegExp(`uDiagnostic == ${index}\\b`), `${name} is a branch of the diagnostics program`);
+    assert.match(inspected, /else if \(uDiagnostic >= 13\) \{/, 'the AI 598 surface model views are a branch of the diagnostics program');
     assert.ok(inspected.replace(/\s+/g, ' ').includes('if (uAppearanceReady < 0.5 || uDiagnostic < 5) { terrainVisibility(world, dx, dy, normal);'), 'unlit diagnostics skip the lighting');
     assert.equal(count(/#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS/g), 8,
         'the level tints, the two diagnostic helper groups and five points of main (unlit views, unlit coverage and inputs, level tint, lighting condition, unlit output)');
@@ -126,8 +129,10 @@ test('Terrain diagnostics: the default program carries no inspection code and LA
 
 test('Terrain diagnostics: shader branches, palettes and soil review colors match the selector catalog', () => {
     assert.deepEqual(LANDSCAPE_DIAGNOSTICS, ['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage', 'terrain-appearance',
-        'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris']);
-    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
+        'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris', 'surface-substrate', 'surface-cover', 'surface-fraction', 'surface-wetness', 'surface-disturbance']);
+    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index && index < surfaceViews) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
+    // AI 598 D1: the surface model views share one branch (uDiagnostic >= 13) whose last view is the else of the gray values, so no slot-count-like literal appears
+    assert.match(shader, /if \(uDiagnostic == 13\) color = landscapeSurfaceSubstrateColor\(model\);\s+else if \(uDiagnostic == 14\) color = landscapeSurfaceCoverColor\(model\);\s+else color = vec3\(uDiagnostic == 15 \? model\.coverFraction : uDiagnostic == 16 \? model\.wetness : model\.disturbance\);/);
     assert.match(shader, /if \(uDiagnostic == 5\) color = surfaceCoverageColor\(coverage\);/, 'surface coverage shows unlit weights');
     assert.match(shader, /else if \(uDiagnostic >= 6\) color = terrainInputDiagnostic\(coverage, world, dx, dy, normal, positionDx, positionDy\);/, 'the AI577 D5 inspection views are unlit');
     // AI 597 D7: under the frame pipeline the raw colour carries alpha 0, the final pass's pass-through sentinel (the near pass keeps its weight)

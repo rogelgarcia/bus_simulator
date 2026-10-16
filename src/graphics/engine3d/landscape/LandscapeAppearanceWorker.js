@@ -2,13 +2,18 @@
 // Material requests list their pages in surface order (base color, normals, ORM, then the paired micro layer when present); each page
 // resolves against the sidecar that declared it, the schema-1 appearance sidecar or the companion multiscale sidecar. Terrain-field pages
 // (AI577 D5) are fetched and authenticated here as well, so hashing never runs on the render thread, and the landscape-scale appearance layer
-// (landscape-appearance-layer-v1) is derived here from the root field page, heights and land cover the request carries.
+// (landscape-appearance-layer-v1) is derived here from the root field page, heights and land cover the request carries. AI 598 D1: the geology
+// field and categorical pages of a native are fetched, authenticated and packed into the three geology layers here, and the surface override layer
+// is rasterized here from the overrides document with the root page.
 import { loadLandscapeAppearancePage } from '../../../app/landscape/LandscapeAppearancePayload.js';
 import { loadLandscapeAppearanceMultiscalePage } from '../../../app/landscape/LandscapeAppearanceMultiscalePayload.js';
 import { loadLandscapeTerrainFieldPage } from '../../../app/landscape/LandscapeTerrainFieldsPayload.js';
+import { loadLandscapeGeologyPage } from '../../../app/landscape/LandscapeGeologyPayload.js';
+import { rasterizeLandscapeSurfaceOverrideLayer } from '../../../app/landscape/surface/SurfaceOverrides.js';
 import { createLandscapeNaturalPresentation } from './LandscapeNaturalPresentation.js';
 import { createLandscapeCoverageMask } from './LandscapeCoverageMask.js';
 import { buildLandscapeAppearanceLayer } from './LandscapeTerrainAppearance.js';
+import { packLandscapeSurfaceGeologyPage } from './LandscapeSurfaceModel.js';
 
 let context = null;
 let presentation = null;
@@ -58,6 +63,14 @@ self.onmessage = async ({ data }) => {
         } else if (data.type === 'appearance-layer') {
             const { bytes, statistics } = buildLandscapeAppearanceLayer(data.input);
             self.postMessage({ id, bytes, statistics }, [bytes.buffer]);
+        } else if (data.type === 'geology') {
+            if (!context.geologyUrl) throw new Error('Geology pages are not available to the appearance worker');
+            const [fields, labels] = await Promise.all([loadLandscapeGeologyPage(data.page.fields, { manifestUrl: context.geologyUrl }), loadLandscapeGeologyPage(data.page.categorical, { manifestUrl: context.geologyUrl })]);
+            const bytes = packLandscapeSurfaceGeologyPage(fields, labels, data.layout);
+            self.postMessage({ id, bytes }, [bytes.buffer]);
+        } else if (data.type === 'surface-override-layer') {
+            const bytes = rasterizeLandscapeSurfaceOverrideLayer(data.input.overrides, data.input.rootGrid);
+            self.postMessage({ id, bytes }, [bytes.buffer]);
         } else throw new Error(`Unknown appearance work ${data.type}`);
     } catch (error) { self.postMessage({ id, error: error.message }); }
 };

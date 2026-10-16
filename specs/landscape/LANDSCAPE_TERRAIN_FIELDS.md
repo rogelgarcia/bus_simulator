@@ -212,6 +212,18 @@ layer, bytes, statistics, latencyMs and derivedIn; `.appearanceLayerState` is
 `pending|deriving|derived|resident|failed|budget-denied`. See LANDSCAPE_APPEARANCE_RUNTIME.md,
 Terrain-driven natural appearance.
 
+**Geology layers and the surface model** (AI 598 D1): while the surface model is on (`landscapeSurfaceModel=on`, the
+default) the same owner loads `geology/manifest.json` beside the fields and the array holds seven layers per native slot:
+0–3 the field page, 4–5 the two geology field layers verbatim and 6 one packed categorical layer whose RGBA bytes are the
+depositType, lithology, drainage and coastalZone labels in the halo'd page layout (halo ring edge-clamped; read with
+`texelFetch` at the aligned samples, never filtered). The geology rides in the field page's record (one `geology` worker job,
+one fade, eviction with the mask record; a stale or missing geology page leaves the slot's neutral geology block).
+`uTerrainFieldsState.w` is 7 with the geology and `.z` adds bit 2 (geology bound), bit 3 (the root-grid surface override layer,
+placed before the appearance layer while an overrides document is bound) and bit 4 (model on). On coastal v3 the array grows
+from 18,801,396 to 32,698,080 bytes GPU (33,515,532 CPU) under the fields ceiling and a native page's upload from 1,089,936
+to 1,907,388 bytes. Statuses `active`, `active-partial`, `absent`, `invalid`, `binding-mismatch`, `stale`, `budget-denied`,
+`disabled` are reported under `snapshot().appearance.geology`. Contract and samplers: [LANDSCAPE_SURFACE_LAYERS.md](LANDSCAPE_SURFACE_LAYERS.md).
+
 ## Dressing inputs
 
 `landscape-dressing-inputs` v1 (`sampleLandscapeDressingInputs({soilWeights, planningShare, fields})`)

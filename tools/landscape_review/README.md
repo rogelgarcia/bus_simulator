@@ -138,6 +138,23 @@ pose that does not settle is still captured, flagged `settled:false` with its la
 process exits 1. The viewer is deterministic once settled, so re-capturing a pose on the same
 landscape repeats the image; the receipt's `revision` and `groundHeight` tie a capture to its terrain.
 
+## Inspection views and the surface model switch (AI 598 D1)
+
+`--diagnostic <name>` selects a terrain inspection view after each pose settled (the viewer's
+diagnostic catalog, `LANDSCAPE_DIAGNOSTICS`: `elevation`, `slope`, `water`, `surface-level`,
+`surface-coverage`, `terrain-appearance`, `dressing*`, and the surface model views `surface-substrate`,
+`surface-cover`, `surface-fraction`, `surface-wetness`, `surface-disturbance`); the tool waits until the
+diagnostics program variant is linked and the streams settled again before the tail, and the receipt records
+`viewer.diagnostic`, `timing.diagnosticMs` and `snapshotSummary.diagnostic`. `--surface-model on|off` (default
+on) is the viewer's `landscapeSurfaceModel` switch: off streams no geology and keeps every surface output neutral,
+the A/B of the model; the receipt records it under `viewer.surfaceModel` and the model's binding (recipe identity,
+geology status and revision, layers per page, overrides) under `snapshotSummary.surface`, with the field array
+bytes under `snapshotSummary.terrainFieldBytes`.
+
+```text
+node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city-v3 --select NW-03,NW-05,NW-07,NW-13 --diagnostic surface-substrate --output tests/artifacts/screens/landscape/ai598/d1/diagnostics/substrate --label substrate
+```
+
 ## Composite
 
 ```text

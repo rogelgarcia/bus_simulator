@@ -81,20 +81,20 @@ rocks comes from AI 602 and AI 603.
 
 ### D1. Surface layer model
 
-- [ ] **Model.** Define a versioned model and recipe for the surface:
+- [x] **Model.** Define a versioned model and recipe for the surface:
   - **Substrate classes:** bedrock lithologies (layered coastal sandstone, harder caprock for
     escarpments), scree and gravel, colluvial dirt, alluvial silt and mud, dry, wet and compacted beach
     sand, dune sand, pebble and cobble beach, shell grit.
   - **Cover classes:** turf and grass sward, dry grass, moss, broadleaf litter, needle litter, lichen,
     intertidal algae, wrack.
   - **Per-pixel state:** cover fraction, wetness and disturbance.
-- [ ] **Derivation.** Derive the layers from the AI 596 channels (lithology, regolith depth, deposits,
+- [x] **Derivation.** Derive the layers from the AI 596 channels (lithology, regolith depth, deposits,
   coastal zone, face mask) and the terrain fields (wetness, flow, sky view, shoreline distance,
   convexity). Planning-only cover keeps its natural inference.
-- [ ] **Samplers, diagnostics and overrides.** Provide exact renderer-independent samplers with GLSL
+- [x] **Samplers, diagnostics and overrides.** Provide exact renderer-independent samplers with GLSL
   mirrors and diagnostic views for each layer. Add data-only override hooks for later fine tuning.
   Semantic soil identity and queries do not change.
-- [ ] **Gate.** Diagnostic maps at NW-03, NW-05, NW-07 and NW-13 match the intended catena. CPU and GPU
+- [x] **Gate.** Diagnostic maps at NW-03, NW-05, NW-07 and NW-13 match the intended catena. CPU and GPU
   results agree within declared tolerances.
 
 ### D2. Material library expansion
@@ -178,6 +178,53 @@ rocks comes from AI 602 and AI 603.
 
 Record each deliverable here when it passes: a summary, spec and source locations, validation results,
 measurements, limitations and artifact paths.
+
+### D1. Surface layer model — delivered 2026-10-15
+
+**Summary.** `landscape-surface-model-v1` (`src/app/landscape/surface/`, canonical spec `specs/landscape/LANDSCAPE_SURFACE_LAYERS.md`): eleven
+substrate classes (sandstone, caprock, scree, dirt, mud, sand, wet-sand, compacted-sand, dune-sand, cobble, shell-grit) and nine cover classes
+(none, turf, dry-grass, moss, broadleaf-litter, needle-litter, lichen, algae, wrack) with a per-pixel cover fraction, wetness and disturbance,
+derived per pixel from the six display soil weights, the terrain fields, every AI 596 geology channel (the categorical labels as one-hot
+fractions of the four nearest aligned samples, the lithology unwrapped to the stratum hardness), the fragment's slope and height, the
+landscape-scale appearance layer (catena moisture, coastal reach) and the disturbance (0 until D5). The derivation is a data recipe
+(`landscape-surface-recipe` schema 1, default `coastal-surface-v1`, identity `surface-recipe-75bb6c2b23a7066a08c0550a`): per soil, rules of base × product of smoothstep terms
+feed class weights that normalize per soil, the cover fraction and the wetness; every input has a documented neutral, so unbound sources leave
+the soil defaults. The geology sidecar streams into the terrain-field array as three layers per native slot (two field layers, one packed
+categorical layer read with `texelFetch`; seven layers per page, flag bits for geology, overrides and the model), so the model adds no sampler
+and no uniform: its tables are compile-time defines of the GLSL mirror `chunks/landscape/surface_model.glsl`, compiled into the diagnostics
+variant only until D3 composites materials. Data-only overrides (`landscape-surface-overrides` schema 1: regions with class pins, a cover-fraction
+scale and a wetness offset) apply after the procedural pass and reach the GPU through one root-grid override layer rasterized in the appearance
+worker. Five inspection views (`surface-substrate`, `surface-cover`, `surface-fraction`, `surface-wetness`, `surface-disturbance`), the
+`surfaceSample(x, z)` mirror hook, `setSurfaceModel({mode, overrides})`, `snapshot().surface`, the viewer options `landscapeSurfaceModel=on|off`
+(the A/B of the model) and `landscapeSurfaceOverrides=<url>`, and the capture tool's `--diagnostic` and `--surface-model` options.
+
+**Spec and sources.** `specs/landscape/LANDSCAPE_SURFACE_LAYERS.md` (new, canonical), `LANDSCAPE_TERRAIN_FIELDS.md` (the geology layers of the
+array), the roadmap status; `src/app/landscape/surface/{SurfaceModel,SurfaceRecipe,SurfaceInputs,SurfaceDerivation,SurfaceOverrides,index}.js`,
+`src/graphics/engine3d/landscape/LandscapeSurfaceModel.js`, `LandscapeTerrainFieldPages.js`, `LandscapeAppearanceWorker.js`,
+`LandscapeAppearanceStreamer.js`, `LandscapeTerrainDiagnostics.js`, `LandscapeShaderLoader.js`, `terrain.frag.glsl`,
+`chunks/landscape/surface_model.glsl`, `LandscapeView.js`, `main.js`, `LandscapePanel.js`, `tools/landscape_review/capture.mjs`.
+
+**Validation.** `tests/node/unit/landscape_surface_model.test.js` (11 tests: validation and rejections, identity order independence, the
+catena cases, the one-hot and hardness helpers, neutral output, overrides and the override layer, the GLSL table mirror); the landscape unit set
+681 / 681 green. `tests/headless/e2e/landscape_surface_model.pwtest.js` on coastal v3, 2 / 2 with the surface cache on and off, and 2 / 2 again
+with the cache on after the recipe tuning (`tests/artifacts/screens/landscape/ai598/d1/browser/`): geology `active`, 17 × 7 layers, the array 32,698,080 bytes GPU under the 94 MiB fields
+ceiling, peak upload 2,179,872 bytes per frame, GPU readbacks of the five views within 0.6 sRGB bytes of the JavaScript mirror at the berm,
+foredune, talus, bluff-toe, forest-interior and escarpment points, override pins byte-exact, the off switch neutral, coastal v2 `absent` with no
+console error; `landscape_terrain_fields` 3 / 3 and `landscape_terrain_appearance` 4 / 4 on v2 unchanged. Pixel gate (`d1/pixel-gate.json`): the
+default program is unchanged against the before set at NW-01, 03, 05, 07 and 13 (mean ≤ 0.031 sRGB bytes, worst 32-pixel block ≤ 2.23). Gate
+sheets `d1/sheets/NW-03.png`, `NW-05.png`, `NW-07.png`, `NW-13.png` (`[shaded | substrate | cover | fraction | wetness]`, `legend.png`) show the
+intended catena: sand, compacted sand and a narrow wrack line on the beach with dune sand and sparse dry grass on the foredune, cobble at the bluff
+toe, sandstone and caprock bands following the strata dip on the bluff and escarpment faces with scree on the talus benches and lichen on the
+stable faces, dirt under closed broadleaf litter in the forest interior, turf over dirt on the grass districts, mud and moss in wet hollows, and
+dry graded flats and plateaus.
+
+**Measurements** (`d1/costs.json`, RTX 3060 shared at 6–26 %): field array 18,801,396 → 32,698,080 bytes GPU (33,515,532 CPU) at 17 native slots;
+upload per native page 1,089,936 → 1,907,388 bytes (root page with the appearance layer 2,179,872); the diagnostics program variant links in
+25–35 s cold (every inspection view in one variant; the default program's compile is untouched); the default program's frame is unchanged.
+
+**Limitations.** The one-hot ramps of the categorical inputs are one native sample wide and straight until D3's breakup; the diagnostics
+variant's cold link time; the low lighting tier evaluates neutral views (no fields); planning cover keeps the natural inference soil (the
+catena's planning exclusion reaches the model through `catenaMoisture`); materials are not drawn until D3.
 
 ## On completion
 
