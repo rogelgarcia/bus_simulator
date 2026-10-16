@@ -190,6 +190,12 @@ python tools/landscape_review/ecosystem_statistics.py --receipt <ecosystem-bake.
 
 Pillow and NumPy only; fixed colours and layout, so the same receipt gives the same PNG.
 
+`ecosystem_scaling.py` composes the runs of `tests/headless/e2e/landscape_ecosystem_scaling.pwtest.js`
+(`LANDSCAPE_ECOSYSTEM_SCALE_LABEL`, `LANDSCAPE_ECOSYSTEM_SCALE_MODE=auto|off`) into one same-condition table and a plot of the
+scaling curves (`python tools/landscape_review/ecosystem_scaling.py --output scaling.md --plot scaling.png off=<run> x1=<run> x2=<run> x4=<run>`),
+and `ecosystem_invalidation.mjs` measures, on an in-memory copy of a saved landscape's manifest, which published ecosystem tiles an edit of one
+native chunk stales and that reverting it restores every tile (`node tools/landscape_review/ecosystem_invalidation.mjs --landscape <dir> [--chunk l4/c4/r9] [--output receipt.json]`).
+
 `--ocean-debug <0-14>` replaces the shading by one of the ocean surface's verification views after the settle (see
 `ocean_surface.frag.glsl`; 7 the per-cascade depth fades, 8 the AI 597 D2 shore wave: red its depth weight, green its
 crest sharpening, blue its bore strength; 9 the D3 foam: red its density, green its coverage, blue the shoreline supply the sand

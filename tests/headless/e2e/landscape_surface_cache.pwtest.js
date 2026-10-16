@@ -366,8 +366,8 @@ test('Landscape D7 surface cache capacity: the slots and window follow the drawi
         await page.evaluate(view => window.__landscapeTestHooks.setCamera(view), gamePov);
         const display = landscapeSurfaceCacheBudgets(landscapeSurfaceCacheCapacity({ width: 3840, height: 2160 }));
         const first = await settle(page);
-        // the 3840x2160 display profile: 950 MiB before AI 596 D5, 1046 since the D5 raise by the surround's 96 MiB share, 1110 since the AI 597 D1 ocean share, 1126 since the D4 swash sheet raised it
-        expect(display.gpuBytes / MiB).toBe(1126);
+        // the 3840x2160 display profile: 950 MiB before AI 596 D5, 1046 since the D5 raise by the surround's 96 MiB share, 1110 since the AI 597 D1 ocean share, 1126 since the D4 swash sheet raise, 1222 since the AI 599 D3 ecosystem share (the 1920x1080 reference plus the capacity's own bytes)
+        expect(display.gpuBytes / MiB).toBe(1222);
         expect(first.budget.limits).toEqual(display);
         expect(first.surfaceCacheCapacity).toMatchObject({ ...first.canvas, targetSlots: 3072, windowPages: 64, display: { width: 3840, height: 2160 }, rebuilds: 0 });
         expect(first.appearance.surfaceCache.atlas.slots).toBe(3072);

@@ -51,7 +51,7 @@ featureless forest soil, the high city approach and the world edge) and
 | Water | A flat 4 × 4 km quad with good single-pass optics (Fresnel, sky reflection, water column, glint). No time-dependent surface exists anywhere in the repository. |
 | Lighting | Calibrated game daylight, HDR sky, aerial perspective, horizon-based terrain shadows. No shadow maps, no screen-space AO, no clouds or cloud shadows, no mist. |
 | World edge | Terrain and water end at the 4 km boundary; a haze backdrop paints below the horizon. |
-| Placement infrastructure | Dressing inputs (`LandscapeDressingInputs.js`: grass, shrub, tree, rock and debris suitability) are a contract only. No Poisson/blue-noise sampler, instancing manager, content-layer streaming or GPU culling exists. Manifest `attachments` must be empty today. |
+| Placement infrastructure | Dressing inputs (`LandscapeDressingInputs.js`: grass, shrub, tree, rock and debris suitability) were a contract only until AI 599 (2026-10-15) delivered the ecosystem engine ([LANDSCAPE_ECOSYSTEM.md](LANDSCAPE_ECOSYSTEM.md)): blue-noise lattice generation per world-anchored cell, the `landscape-ecosystem` sidecar, content-layer streaming through the shared ledger and an instanced renderer with LOD cross-fades and shader impostors; manifest `attachments` are supported under `content-layers-v1`. |
 | Platform | three.js r183, WebGL2 only (ANGLE/D3D11 on the reference machine): no compute shaders; cold program compiles are expensive (see `LANDSCAPE_AI577_SURFACES.md`). |
 
 ## 2. Reference set
@@ -103,7 +103,7 @@ therefore structural: add the missing layers rather than refine the textures fur
 | L7 Light and atmosphere | Sun shadows for terrain and instances, ambient occlusion, clouds and cloud shadows, mist, lighting presets | Presentation | AI 600 |
 | L8 Far field | Land and sea beyond the 4 km extent to the horizon | Presentation only, never authoritative | AI 596 (land) — delivered 2026-10-10 as the render-only surround `coastal-city-v3/surround/` (32 × 32 km at 15.625 m, bound to the v3 revision; [LANDSCAPE_STREAMING.md](LANDSCAPE_STREAMING.md) "Far-field surround"); AI 597 (sea, over the surround's bounds and seabed) |
 
-L3–L6 share one placement and rendering framework (AI 599). Substrate decides what can grow and what
+L3–L6 share one placement and rendering framework (AI 599, delivered 2026-10-15: [LANDSCAPE_ECOSYSTEM.md](LANDSCAPE_ECOSYSTEM.md)). Substrate decides what can grow and what
 lies loose; cover and clutter decide what is seen at 2 m; rocks and trees decide what is seen at 10–500 m.
 
 ## 5. Generator engines
@@ -187,7 +187,7 @@ Reference comparisons ship as single `[reference | before | after]` composite im
 | G1 Soft relief, no sharp landforms, high city and beach-to-centre rise not legible, beach not a profile, planar seabed, coarse native spacing, world edge on land | AI 596 `TOOLS` procedural terrain synthesis and coastal relief — **delivered** by D1–D5 (2026-10-09/10): coastal terrain v3 at 0.9765625 m with the 80 m high city, eroded hills and drainage, the bluff sector, berm beaches and foredunes, Dean bathymetry with bar and reef, 44 of 44 targets and constraints, the geology sidecar and the far-field surround; D6 acceptance delivered 2026-10-11 (regressions, flyover, performance, handoff) |
 | G2 Flat water without waves, foam, breaking or swash; sea ends at the boundary | AI 597 `MATERIAL` animated ocean, shore waves and foam — closed 2026-10-14 |
 | G3 One material per soil class; no substrate/cover layering, small-area mixing, strata, litter, moss, scree or worn paths | AI 598 `MATERIAL` layered substrate and ground-cover surfaces |
-| G4 No placement, streaming or instanced rendering framework for natural content | AI 599 `TOOLS` procedural ecosystem scatter engine |
+| G4 No placement, streaming or instanced rendering framework for natural content | AI 599 `TOOLS` procedural ecosystem scatter engine — DONE 2026-10-15 |
 | G5 No shadow maps, AO, clouds, cloud shadows or mist in the landscape | AI 600 `ATMOSPHERE` natural scene shadows, AO, clouds and mist |
 | G6 Forest soil is bare; the LOD tree catalog is unused | AI 601 `MESHES` procedural forests from the LOD tree catalog |
 | G7 No cliffs, bluffs, outcrops, boulders, talus or shore platform | AI 602 `MESHES` rocks, cliffs and coastal bluffs |
@@ -236,7 +236,7 @@ What AI 597–604 consume from AI 596 (the contract, with encodings, samplers an
 | AI 596 | D1–D5 delivered 2026-10-09/10 (variant B decided 2026-10-09; `coastal-city-v3` published and pinned, geology sidecar, far-field surround; [LANDSCAPE_TERRAIN_SYNTHESIS.md](LANDSCAPE_TERRAIN_SYNTHESIS.md)); D6 integrated acceptance delivered 2026-10-11 (regressions, flyover and performance tables under `tests/artifacts/screens/landscape/ai596/d6/`; prompt closed as DONE); consumer handoff [LANDSCAPE_AI596_HANDOFF.md](LANDSCAPE_AI596_HANDOFF.md) |
 | AI 597 | DONE 2026-10-14 (D7 integrated acceptance: the quality presets with the explicit low-cost path and the sea-state presets, every landscape suite in both surface-cache modes, same-condition tables at the water poses, the spec, the handoff). D1 spectral ocean surface, D2 depth-aware shore waves, D3 foam lifecycle and D4 swash and wet beach delivered 2026-10-12, D5 water colour, refraction and light 2026-10-14 (the linear frame pipeline, the refracted seabed through the water column of three water types, caustics, crest scattering, a heightfield terrain reflection), D6 inland water closed 2026-10-14 with no inland water published by AI 596 ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md): band-limited JONSWAP/TMA cascades, camera-snapped clipmap to the far plane over the surround, deterministic clock, the flat plane kept as the inspection surface; the swell marched over the bathymetry with the finite-depth phase speed, shoaled by energy flux, broken at γ h on sand with the bars and reefs shadowing, surging on rock, damped by the geology's shore exposure; a foam state over the extent with breaker bands, whitecaps, the shoreline line and the sand deposit, pre-rolled to any fixed time); D4–D7 pending |
 | AI 598 | pending |
-| AI 599 | pending |
+| AI 599 | DONE 2026-10-15: D1 recipe model (biomes as ordered layer sets, traced rules over terrain, field, geology and planning inputs, overrides, the instance record, `content-layers-v1`), D2 deterministic generation on blue-noise lattices with the `landscape-ecosystem` sidecar and the `landscape/ecosystem` leaf, D3 content-layer streaming through the ecosystem share with worker generation and invalidation, D4 the instanced renderer (per-tile LOD bands, dithered cross-fades, shader impostors, wind, contact and shadow hooks, diagnostics, picking), D5 the boulder and shrub proof layers on coastal v3 with the 1×/2×/4× scaling tables and the budget recommendation for AI 601–603, D6 the regressions in both surface-cache modes and the canonical [LANDSCAPE_ECOSYSTEM.md](LANDSCAPE_ECOSYSTEM.md) |
 | AI 600 | pending |
 | AI 601 | pending |
 | AI 602 | pending |

@@ -1,7 +1,8 @@
 # Landscape ecosystem engine (AI 599)
 
-Status: D1 (ecosystem recipe model), D2 (deterministic hierarchical generation), D3 (content-layer streaming), D4 (instanced renderer) and
-D5 (proof layers at scale) delivered 2026-10-15 on `codex/landscape`; D6 (integrated acceptance) follows and is recorded here when it passes. This page is the canonical contract of the natural-content placement and rendering framework the roadmap's layers L3–L6 share
+Status: D1–D6 delivered 2026-10-15 on `codex/landscape`: the prompt `AI_DONE_codex_landscape_599_TOOLS_procedural_ecosystem_scatter_engine_DONE.md`
+is DONE (recipe model, deterministic hierarchical generation, content-layer streaming, instanced renderer, the boulder and shrub proof layers at
+scale, integrated acceptance). This page is the canonical contract of the natural-content placement and rendering framework the roadmap's layers L3–L6 share
 (`LANDSCAPE_NATURAL_WORLD_ROADMAP.md` §4–§6): how biomes and layers are declared, how features are generated deterministically per
 world-anchored cell, how the generated tiles are published and streamed through the landscape residency contracts, and how they are drawn as
 culled, LOD-selected instanced batches. AI 601 (forests), AI 602 (rocks and cliffs) and AI 603 (ground vegetation and clutter) deliver their
@@ -359,4 +360,28 @@ worker fills about 60 tiles per second (dense near-field layers generate on coar
 
 ## 8. Integrated acceptance (D6)
 
-Pending D6.
+**Regressions.** Every landscape browser suite runs in its own Playwright invocation in both surface-cache modes (`LANDSCAPE_TEST_SURFACE_CACHE=on|off`):
+the base-address suites against `node tools/landscape_server/run.mjs` on 8002 (coastal v2, where the ecosystem sidecar is `absent` and holds no
+share), then the self-serving `landscape_ocean`, `landscape_surround`, `landscape_resolution`, `landscape_ecosystem` and `landscape_ecosystem_render`
+(coastal v3) with the server stopped; `landscape_ecosystem_scaling` is a measurement suite, not a regression. Record 2026-10-15
+(`tests/artifacts/screens/landscape/ai599/d6/regressions/`): 27 suites per mode green (the material audit skipped by design, the surface transition
+suite opt-in) after two pins of the engine's own defaults moved — the acceptance suite lists the optional `ecosystem/manifest.json` 404 probe
+beside the surround's and the geology's (`EXPECTED_404_PROBES`), and the surface-cache suite's 3840 × 2160 cache profile is 1,222 MiB (1,126 before
+the share). Unit: 670 landscape tests, 50 of them the engine's. The terrain program's intermittent Direct3D X4008 info log (a constant division in
+a dead branch, logged by three.js on some boots) predates AI 599; the ecosystem suites tolerate that exact signature.
+
+**Invalidation** (`tools/landscape_review/ecosystem_invalidation.mjs`, `d6/invalidation.json`): on the published v3 sidecar an edit of one native
+chunk (`l4/c4/r9`, simulated on an in-memory manifest) stales 3 of 143 boulder tiles (86 instances) and 7 of 619 shrub tiles (164 instances) in
+7.6 ms — exactly the tiles whose dependency reach touches the chunk — and the revert restores every tile. The browser path (`active-partial`:
+stale tiles never loaded, the rest streaming) is covered by the streaming unit tests and the D3 suite's binding checks.
+
+**Same-condition performance.** The D5 scaling tables (§7, `d5/scaling.md`) are the engine's record: the ecosystem off and at 1×, 2× and 4×
+at the review poses and on a travel, every run vsync-bound at 17.5 ms with the GPU pass 8.2–9.1 ms in every run, CPU frame work 2.3–3.0 ms, the
+share 46–47 / 27 MiB; the terrain's own cold and warm loads (`landscape_performance.pwtest.js` on v2) are unchanged by AI 599.
+
+**Handoff to AI 600–603.** New content lives in a recipe (a layer belongs to exactly one biome; a new asset kind extends `ECOSYSTEM_ASSET_KINDS`
+and `EcosystemAssetSets.js`), bakes through `landscape/ecosystem` (re-published after every terrain revision) and streams through the viewer's
+default; AI 600 drives `setShadows` and the per-LOD `castShadow` flags, `setWind` and `setContact`; AI 601 must draw per variant and plan a
+vegetation texture share (§7); AI 602 publishes scanned rocks as a new asset kind; AI 603 generates its near-field layers at runtime on 16–32 m
+cells within 60–100 m. Known limits: the merged-variant draw cost, the worker's fill rate of about 60 tiles per second, the runtime density scale as
+a separate switch (`setEcosystem({density})`), placeholder assets, and the anisotropy statistic's informational role on linear habitats.

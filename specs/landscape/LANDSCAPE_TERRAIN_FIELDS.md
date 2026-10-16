@@ -219,7 +219,9 @@ defines grassDensity, shrubSuitability, treeSuitability, rockScatter and beachDe
 display-soil coverage and smooth field terms. Sand, rock, seabed and unknown host no grass, shrubs or
 trees; trees need forest soil; debris needs sand within 0-25 m of the waterline; planning-only cover
 suppresses every output; missing fields use documented neutral values and report `fieldsAvailable:false`.
-Placement remains out of scope.
+Placement is the ecosystem engine's (AI 599, [LANDSCAPE_ECOSYSTEM.md](LANDSCAPE_ECOSYSTEM.md)): its rules read the five outputs as the
+`dressing.<output>` inputs, evaluated by `createEcosystemInputSampler` from the display soil, the planning share and the fields exactly as here, so
+their documented meaning is unchanged inside the new model.
 
 The viewer hook `dressingSample(x, z, {dx, dy})` evaluates v1 for the displayed soil (resident coverage,
 nearest native planning cover, fine fields) and adds `inferredGround` on planning cover; the diagnostics

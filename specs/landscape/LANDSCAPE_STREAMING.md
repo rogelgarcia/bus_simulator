@@ -5,8 +5,8 @@ model. Elevation and semantic source data remain authoritative on disk. A render
 partition is a temporary view of that data, never a saved terrain edit.
 
 Status: AI 596 D5 shipped the render-only far-field surround and the raised
-profiles (688/432 MiB with the surface cache off, 688/624 MiB with it on at
-1920 × 1080; "Resource admission and ownership" and "Far-field surround" below).
+profiles (752/528 MiB with the surface cache off and 752/720 MiB with it on at
+1920 × 1080 since AI 599 D3 added the ecosystem's 64/96 MiB share, 688/432 and 688/624 after AI 597 D4; "Resource admission and ownership" and "Far-field surround" below).
 Coastal terrain v3 (341 nodes, 0.9765625 m) is the pinned production landscape;
 the 85-node v2 remains the default directory of the viewer, server and suites.
 The measured tables of this page are kept as recorded, each with its conditions;
@@ -93,8 +93,9 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 
 | Resource or work limit | Default |
 | --- | ---: |
-| Controlled terrain CPU buffers and reservations | 640 MiB since AI 596 D5 (512 MiB in AI577 D4 – AI 596 D4, 128 MiB before AI577 D2, 384 MiB in D2–D3) |
-| Estimated terrain GPU buffers and reservations | 432 MiB since AI 597 D4 (416 MiB in AI 597 D1 – D3, 352 MiB in AI 596 D5 – AI 597 D1, 256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Controlled terrain CPU buffers and reservations | 752 MiB since AI 599 D3 (688 MiB in AI 597 D2 – D4, 672 in AI 597 D1, 640 MiB in AI 596 D5, 512 MiB in AI577 D4 – AI 596 D4, 128 MiB before AI577 D2, 384 MiB in D2–D3) |
+| Estimated terrain GPU buffers and reservations | 528 MiB since AI 599 D3 (432 MiB in AI 597 D4, 416 MiB in AI 597 D1 – D3, 352 MiB in AI 596 D5 – AI 597 D1, 256 MiB in AI577 D4 – AI 596 D4, 64 MiB before AI577 D2, 192 MiB in D2–D3) |
+| Ecosystem share inside the totals (AI 599 D3, `LANDSCAPE_ECOSYSTEM.budgets`, kind `landscape-ecosystem`) | 64 MiB CPU / 96 MiB GPU, held as one standing reservation while the ecosystem streams (asset sets, resident tiles, sidecar indexes, the worker's caches); the raise above is exactly this share |
 | Frame pipeline (AI 597 D5, outside the ledger) | 20 bytes per drawing-buffer pixel (41.5 MB at 1920 × 1080, 166 MB at 3840 × 2160): the linear RGBA16F frame target, its depth renderbuffer and the RGBA16F scene copy the sea reads; display-sized like the canvas, not a stream or a reservation |
 | Render-only surround share inside the totals (AI 596 D5, `LANDSCAPE_SURROUND.budgets`, kind `landscape-surround`) | 128 MiB CPU / 96 MiB GPU: the raise above is exactly this share, so the authoritative streams keep their 512/256 MiB |
 | Concurrent geometry fetch/decode/mesh workers | 2 |
@@ -103,10 +104,10 @@ camera resources, worker jobs and non-camera consumers. Its default profile is:
 | Tile uploads per animation frame | 1 |
 | Upload bytes per animation frame | 8 MiB |
 | Terrain-field array and decodes (AI577 D5) | own ceiling of 1/8 of each total (64 MiB CPU / 32 MiB GPU shipped), inside the shared limit |
-| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 688 MiB CPU / 624 MiB GPU up to 1920×1080 since AI 597 D4 (688 / 608 in AI 597 D2 and D3, 672 / 608 in AI 597 D1; 640 / 544, 684 and 1046 in AI 596 D5 – AI 597 D1), 764 at 2560×1440, 1126 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (352 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raise |
+| With the runtime surface cache on (AI577 D6/D7, the default since D7, `landscapeSurfaceCacheBudgets`) | 752 MiB CPU / 720 MiB GPU up to 1920×1080 since AI 599 D3 (688 / 624 in AI 597 D4, 688 / 608 in AI 597 D2 and D3, 672 / 608 in AI 597 D1; 640 / 544, 684 and 1046 in AI 596 D5 – AI 597 D1), 860 at 2560×1440, 1222 at 3840×2160 (the display's capacity; 512/448, 588 and 950 before AI 596 D5); the cache takes at most the GPU limit less the streams' reserve (528 MiB, the uncached GPU limit), so its 192 MiB ceiling and the streams' room are unchanged by the raises |
 | Geometric screen error goal | 1.5 pixels (the render-only surround streams at 3 pixels) |
 
-URL budgets may not exceed the profile of the selected mode (surface cache off: 688/432 MiB; on: the display's cache profile, 688/624 MiB up to 1920×1080).
+URL budgets may not exceed the profile of the selected mode (surface cache off: 752/528 MiB; on: the display's cache profile, 752/720 MiB up to 1920×1080).
 
 The upload byte cap includes the optional owned wireframe buffers; one inspection
 tile must fit the same admission path as an ordinary shaded tile. A mode toggle
@@ -278,6 +279,17 @@ profile from v3's −30 m shelf floor inside the extent to a −60 m floor outsi
 most 4.5 m at the boundary, blended over 30 m); the water reference's extent is the surround's bounds; and the sidecar's
 `surround` block tells the ocean which landscape revision it continues (a stale block means the ocean's
 far field is stale too).
+
+## Content layers (AI 599 D3)
+
+The content-layer residency these contracts reserved is implemented for the ecosystem layers (`LANDSCAPE_ECOSYSTEM.md` §5,
+`src/graphics/engine3d/landscape/ecosystem/LandscapeEcosystemStreamer.js`): a layer descriptor is the sidecar's layer entry (stable id, revision and
+content keys, bounds, its own world-anchored cell index, LOD and fade semantics, declared dependencies on the terrain revision, the native hashes, the
+field and geology revisions and the override entries); desired cells come from each layer's view disc and the camera frustum, nearest first; tiles are
+fetched and verified or generated in the ecosystem worker (at most four in flight, cancellation when a tile stops being wanted), one attaches per frame
+inside the shared 8 MiB upload cap, and every byte is a reservation in the ecosystem share made before the job starts, with the longest rank prefix
+that fits admitted under pressure and reported as degradation. Roads, buildings and props publish their layers the same way; nothing is ever placed
+on the surround.
 
 ## Verification
 

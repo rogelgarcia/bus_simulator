@@ -1,4 +1,4 @@
-# Procedural ecosystem scatter engine (AI 599)
+# Procedural ecosystem scatter engine (AI 599) — DONE 2026-10-15
 
 # Problem
 
@@ -150,11 +150,11 @@ final ecosystems.
 
 ### D6. Integrated acceptance
 
-- [ ] **Regressions.** Run all landscape suites in both surface-cache modes, plus the new engine's Node
+- [x] **Regressions.** Run all landscape suites in both surface-cache modes, plus the new engine's Node
   and browser tests.
-- [ ] **Measurements.** Record cold and warm loads, edit and revert invalidation, and same-condition
+- [x] **Measurements.** Record cold and warm loads, edit and revert invalidation, and same-condition
   performance tables.
-- [ ] **Specs.** Add a canonical `specs/landscape/LANDSCAPE_ECOSYSTEM.md` covering recipes, generation,
+- [x] **Specs.** Add a canonical `specs/landscape/LANDSCAPE_ECOSYSTEM.md` covering recipes, generation,
   streaming and rendering contracts. Update the model, streaming, terrain-fields (dressing) and handoff
   specs, and the roadmap status.
 
@@ -373,6 +373,47 @@ unit tests pass with the new options.
 receipt measures per cover class; the runtime layers were not scaled (their scale is a runtime switch, `setEcosystem({density})`, not measured here);
 GPU timing was taken with Blender holding 20–35 % of the GPU; wind, shadows and the AI 600 lighting are out of scope.
 
+### D6. Integrated acceptance — delivered 2026-10-15
+
+**Regressions.** Every landscape browser suite ran in its own Playwright invocation in both surface-cache modes (`LANDSCAPE_TEST_SURFACE_CACHE=on|off`;
+the base-address suites against `node tools/landscape_server/run.mjs` on 8002, then the self-serving `landscape_ocean`, `landscape_surround`,
+`landscape_resolution`, `landscape_ecosystem` and `landscape_ecosystem_render` with the server stopped; `tests/artifacts/screens/landscape/ai599/d6/regressions/summary.txt`,
+one log per suite and mode): 27 suites per mode, 51 of 54 runs green on the first chain, the three failures being pins of the ecosystem's own defaults —
+the acceptance suite gated the browser's 404 for the optional `ecosystem/manifest.json` probe on coastal v2 (added to `EXPECTED_404_PROBES` beside the
+surround and geology sidecars; the cache-off pass then passed 4 / 4 and the cache-on re-run 4 / 4), and the surface-cache suite pinned the
+3840 × 2160 cache profile at 1,126 MiB, which the ecosystem share moved to 1,222 (re-runs: cache on 6 / 6, cache off 6 / 6). Final record:
+every suite green in both modes (the material audit suite skipped by design, the surface transition suite opt-in). Unit: `node --test tests/node/unit/landscape_*.test.js`
+670 / 670 (`d6/unit-landscape.log`), of which the engine's own tests are 50 (`landscape_ecosystem_{recipe,blue_noise,generation,sidecar,model,streaming}.test.js`).
+The intermittent Direct3D X4008 info log of the terrain program (a constant division in a dead branch, logged by three.js on some boots, tolerated by
+the D3/D4 suites by its exact signature) predates AI 599 and is recorded, not fixed.
+
+**Measurements.** Cold and warm loads: `landscape_performance.pwtest.js` passed in both modes on coastal v2 (the viewer's default directory, where the
+ecosystem is `absent` and holds no share: the suite's cold and warm rows are unchanged by AI 599; `d6/regressions/<mode>/landscape_performance.log`);
+on coastal v3 the ecosystem binds, loads its assets and links its programs in 835 ms after the terrain is ready (D3), the viewer settles with it in
+4–16 s per pose on the review captures (D5 receipts). Edit and revert invalidation (`tools/landscape_review/ecosystem_invalidation.mjs`,
+`d6/invalidation.json`): on the published v3 sidecar an edit of native chunk `l4/c4/r9` stales 1 native, 3 of 143 boulder tiles (86 instances) and
+7 of 619 shrub tiles (164 instances) in 7.6 ms, and the revert restores every tile (0 stale, 0.1 ms); the browser path (`active-partial`, stale tiles
+never loaded) is covered by the streaming unit tests and the D3 suite's binding checks. Same-condition tables: the D5 scaling tables
+(`d5/scaling.md`: off, 1×, 2×, 4× at NW-03/04/06/07/10 and the travel, 1920 × 1080, cache on, RTX 3060 through ANGLE/D3D11) are the engine's
+same-condition performance record: every run vsync-bound at 17.5 ms, the GPU pass 8.2–9.1 ms with and without the ecosystem, CPU frame work
+2.3–3.0 ms, the share 46–47 / 27 MiB, uploads 88 KB per frame at most; the D3 residency receipts (`d3/ecosystem-streaming-suite.json`) record the
+share at NW-03/04/06, the dolly and the teleport.
+
+**Specs.** `specs/landscape/LANDSCAPE_ECOSYSTEM.md` (canonical: contract, recipe, generation, sidecar, streaming, rendering, proof layers, acceptance);
+`LANDSCAPE_MODEL.md` (the `content-layers-v1` capability and attachments), `LANDSCAPE_STREAMING.md` (the grown profiles, the ecosystem share row, the
+"Content layers" section), `LANDSCAPE_TERRAIN_FIELDS.md` (the dressing inputs as rule inputs), `LANDSCAPE_PLANNING_REPORTS.md` (the content-layer
+residency implemented), `LANDSCAPE_HANDOFF.md` (the AI 599 row and the budget table), `LANDSCAPE_NATURAL_WORLD_ROADMAP.md` (status, G4, the placement
+row); `tools/baking/README.md`, `tools/bake_landscape/README.md`, `tools/bake_landscape/ecosystem/README.md`, `tools/landscape_review/README.md`,
+`PROJECT_TOOLS.md`.
+
+**Handoff to AI 600–603.** The engine's contracts the content prompts consume: a recipe per prompt or shared (layers belong to exactly one biome;
+new asset kinds extend `ECOSYSTEM_ASSET_KINDS` and `EcosystemAssetSets.js`), the bake leaf (`landscape/ecosystem`, re-published after every terrain
+revision), the viewer's `landscapeEcosystem` option and hooks, the renderer hooks (`setWind`, `setContact`, `setShadows` and the per-LOD `castShadow`
+flags for AI 600; the diagnostics and picking for review), the D5 budget recommendation (64 / 96 MiB for records and clutter; a vegetation texture
+share and per-variant draws for AI 601; scanned rocks as a new asset kind for AI 602; runtime near-field layers on 16–32 m cells for AI 603) and the
+known limitations: the merged-variant draw cost, the worker's fill rate of about 60 tiles per second, the runtime density scale as a separate switch,
+placeholder assets, and the anisotropy statistic's informational role on linear habitats.
+
 ### D4. Instanced renderer — delivered 2026-10-15
 
 **Summary.** `createLandscapeEcosystemRenderer` (`src/graphics/engine3d/landscape/ecosystem/`) draws one `THREE.Mesh` per (tile, LOD band) over an
@@ -412,6 +453,15 @@ dominate). Evidence `tests/artifacts/screens/landscape/ai599/d4/`.
 **Limitations.** Wind was verified only as a clock advance, shadows only as flags (no shadow maps exist before AI 600), species other than viburnum and
 orthographic cameras untested; the development recipe and the vegetation assets are served to the suite through a route (D3 extends the server); the
 terrain program logs an intermittent Direct3D X4008 warning on some boots (pre-existing).
+
+## Completion summary
+
+- D1 (f7281e49): recipe model — biomes as ordered layer sets, traced rules over 96 terrain, field, geology, soil, cover, planning and dressing inputs, overrides with a documented order, the 60-byte instance record and structural ids, the `content-layers-v1` manifest capability. 9 unit tests.
+- D2 (6d8e1e02): deterministic generation on world-anchored blue-noise lattices (committed 64 × 64 rank table), exclusions, competition, parent/child, overrides, the `landscape-ecosystem` sidecar with per-tile content keys and staleness, the `landscape/ecosystem` leaf with determinism, seam, spacing and statistics gates. 28 unit tests; published on v3.
+- D4 (f84a97f2): instanced renderer — per-tile LOD bands with dithered cross-fades, shader impostors of the distant catalog, placeholder rocks, lighting through the landscape chunks, wind, contact and shadow hooks, diagnostics, picking. Render suite on v3.
+- D3 (c816384b): content-layer streaming through the shared ledger — sidecar binding, worker-side fetch and generation (Node = browser bytes), rank-prefix degradation, invalidation, the viewer streaming by default, the profiles grown by the 64 / 96 MiB share, the server serving the catalog. Streaming suite on v3; unit 670.
+- D5 (d5335f0c): boulders and shrubs tuned toward the declared targets (boulders 3,192 per km² of rock against 3,000); scaling at 1×, 2× and 4× with the ecosystem off as baseline: vsync-bound at every pose, the GPU pass inside the baseline's noise, the bottlenecks and the budget recommendation for AI 601–603; review captures and composites; the statistics and scaling tools.
+- D6: every landscape suite green in both surface-cache modes (54 runs after moving two pins of the engine's own defaults), the edit/revert invalidation receipt, the specs and tool registry updated, this record.
 
 ## On completion
 

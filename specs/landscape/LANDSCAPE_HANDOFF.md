@@ -79,6 +79,7 @@ See [authoring CLI](../../tools/landscape_authoring/README.md), [edit semantics]
 | D5 | Named polygons, snapshot/halo smoothing, grading, unbounded-footprint sequential edits with bounded working buffers, exact seams and impact receipts. [Streamed editing](LANDSCAPE_STREAMED_EDITING.md). |
 | D6 | Optional pinned city bindings through actual JS builder normalization/export/reload, reservation adapters, planning references/bookmarks, native footprint/corridor reports and revision/content invalidation. [City binding](LANDSCAPE_CITY_BINDING.md), [planning](LANDSCAPE_PLANNING.md), [reports](LANDSCAPE_PLANNING_REPORTS.md). |
 | D7 | Integrated edit/revisit/preparation/revert correctness, retained-source audit, repeatable performance/pressure profiles and consolidated handoff. [Performance](LANDSCAPE_PERFORMANCE.md). |
+| AI 599 | Procedural ecosystem scatter engine: versioned biome and layer recipes with traced rules, deterministic blue-noise generation per world-anchored cell, the `landscape-ecosystem` sidecar and bake leaf, content-layer streaming through the shared ledger with worker-side generation, and the instanced renderer with LOD cross-fades, shader impostors, wind, contact and shadow hooks, diagnostics and picking; the boulder and shrub proof layers on coastal v3. [Ecosystem](LANDSCAPE_ECOSYSTEM.md). |
 
 `src/app/landscape/index.js` is the renderer-independent public API. It exposes validated manifests/loaders, coordinate conversion, height/normal/slope/soil/cover sampling, explicit asynchronous region acquisition, selection context, streamed editing, dependency identity, reports, planning reference normalization and city binding transforms. Non-editor tests load the same saved manifest and sample native terrain without importing a screen, Three.js or DOM code. The reusable worker/graphics adapter is under `src/graphics/engine3d/landscape/`; the screen merely composes it with controls and panels.
 
@@ -95,8 +96,8 @@ Hierarchy preparation authenticates **current saved native chunks**, preserving 
 
 | Resource/operation | Declared default or ceiling |
 | --- | --- |
-| Combined terrain controlled CPU buffers/reservations | 640 MiB since AI 596 D5, including the render-only surround's 128 MiB share (512 MiB in AI577 D4 – AI 596 D4, 128 MiB until AI577 D2, 384 MiB in D2–D3) |
-| Combined estimated terrain GPU buffers/reservations | 352 MiB since AI 596 D5, including the surround's 96 MiB share (256 MiB in AI577 D4 – AI 596 D4, 64 MiB until AI577 D2, 192 MiB in D2–D3); 544 MiB with the surface cache on at 1920×1080 (684 at 2560×1440, 1046 at 3840×2160) |
+| Combined terrain controlled CPU buffers/reservations | 752 MiB since AI 599 D3, including the render-only surround's 128 MiB share, the ocean's 48 MiB and the ecosystem's 64 MiB (640 MiB in AI 596 D5, 512 MiB in AI577 D4 – AI 596 D4, 128 MiB until AI577 D2, 384 MiB in D2–D3) |
+| Combined estimated terrain GPU buffers/reservations | 528 MiB since AI 599 D3, including the surround's 96 MiB share, the ocean's 80 MiB and the ecosystem's 96 MiB (352 MiB in AI 596 D5, 256 MiB in AI577 D4 – AI 596 D4, 64 MiB until AI577 D2, 192 MiB in D2–D3); 720 MiB with the surface cache on at 1920×1080 (860 at 2560×1440, 1222 at 3840×2160) |
 | Background jobs | Two geometry workers plus one appearance worker |
 | Per-frame upload allowance | One geometry tile and 8 MiB shared upload bytes |
 | Geometry quality goal | 1.5 pixels, subject to source/detail availability and hard budgets |

@@ -135,6 +135,12 @@ revision or manifest hash than the installed `manifest.json`.
 
 ## Preparation leaves
 
+AI 599 adds the [ecosystem scatter](ecosystem/README.md) leaves: `node tools/bake.mjs --target landscape/ecosystem --publish`
+generates the offline layers of the development recipe over coastal terrain v3 (scoped `directory`, `recipe`, `overrides`, `density`,
+`layers`, `receipt`) and publishes the additive `ecosystem/manifest.json` sidecar the viewer streams by default; it depends on
+`landscape/ecosystem/blue-noise`, which regenerates the committed lattice table and refuses a difference. Re-publish the sidecar after
+every new terrain revision (its tiles bind the native hashes and go stale otherwise).
+
 AI 596 adds the [terrain synthesis](terrain_synthesis/README.md) leaves under the
 explicit `landscape/synthesis` parent: `node tools/bake.mjs --target landscape/synthesis/relief-study`
 diagnoses the current coastal terrain, synthesizes the D1 relief variants from their committed recipes,
