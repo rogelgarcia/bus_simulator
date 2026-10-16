@@ -1,4 +1,4 @@
-# CPU studio comparisons keep model identity, species framing and source-image distinctions explicit.
+# Studio comparisons keep model identity, species framing and render engine distinctions explicit.
 import hashlib
 import json
 import math
@@ -11,7 +11,7 @@ from common import configure,array,foliage_data,write_json
 from mesh_audit import audit_objects
 from branchlets import branchlet_pose
 from foliage_study import isolate
-from render_cache import reuse
+from render_cache import reuse,engine_id
 from canopy_review import add_poses,mask_mode,coverage
 from presentation_poses import add_presentation_poses
 from spatial_poses import add_spatial_poses,isolate_blade
@@ -29,6 +29,9 @@ def load(file,names):
 def setup(o):
     scene=configure(o);scene.cycles.use_denoising=True;scene.cycles.max_bounces=5;scene.cycles.diffuse_bounces=3;scene.cycles.transmission_bounces=3
     scene.cycles.transparent_max_bounces=64;scene.render.threads=o.get('threads',4)
+    scene.render.engine=engine_id(o)
+    if scene.render.engine=='BLENDER_EEVEE':
+        scene.eevee.taa_render_samples=o['samples'];scene.eevee.use_raytracing=False
     scene.render.resolution_x=scene.render.resolution_y=o['width'];scene.render.resolution_percentage=100
     scene.render.image_settings.file_format='PNG';scene.render.image_settings.color_mode='RGBA';scene.render.film_transparent=False
     scene.view_settings.view_transform='AgX';scene.view_settings.look='AgX - Medium High Contrast';scene.view_settings.exposure=.65
@@ -54,7 +57,7 @@ def render(o):
             if hashlib.sha256((Path(o['output'])/record['file']).read_bytes()).hexdigest()!=record['sha256']:raise RuntimeError('Previous render changed: '+record['file'])
         records=[r for r in previous if o['views']!='all' and r['view']!=o['views'] and not (o['views']=='canopy' and (r['view'].startswith(('road_','coverage_')) or r['view'] in ['shoot','shoot_edge'])) and not (o['views']=='poses' and r['view'].startswith('pose_')) and not (o['views']=='blade' and r['view']=='blade_edge')]
         posture=meta['revision']=='enhanced-plane-posture-v10'
-        volume=meta['revision'] in ['enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8'];volume_full=None
+        volume=meta['revision'] in ['enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'];volume_full=None
         crown=meta['revision']=='enhanced-plane-balanced-crown-v16'
         spatial=meta['revision'] in ['enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
         dome=meta['revision'] in ['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
@@ -96,6 +99,10 @@ def render(o):
                 if meta['revision'] in ['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']:
                     poses['wood_branchlets']=branchlet_pose(json.loads((directory/'architecture.json').read_text())['paths'])
             study=[]
+            if meta['revision'] in ['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'] and state=='enhanced' and variant=='mature_01':
+                study,detail=isolate(directory,objects,outer=True)
+                poses['shoot']=detail;poses['leaves']=detail.copy()
+                for obj in study:obj.hide_render=True
             if (meta['revision']=='enhanced-plane-foliage-v9' and state=='enhanced' or spaced and state in ['enhanced','previous']) and variant=='mature_01':
                 study,detail=isolate(Path(prior['file']).parent if state=='previous' else directory,objects)
                 if spaced and prior:
@@ -124,7 +131,7 @@ def render(o):
             for view,pose in poses.items():
                 revision='presentation-leaf-softbox-v1' if view.startswith('pose_branch_') else 'shared-forks-street-view-v4' if view=='trunk' else 'shared-forks-street-view-v3' if view in ['wood_fork','wood_full'] and prior else 'outer-leaf-softbox-v2' if view=='leaves' else 'studio-v1'
                 if view in ['blade','blade_edge']:revision='isolated-blade-neutral-tint-v2'
-                cached=next((r for r in previous if r['state']==state and r['view']==view and r['width']==o['width'] and r['samples']==o['samples'] and r['camera']==pose and r.get('lightingRevision','studio-v1')==revision),None)
+                cached=next((r for r in previous if r['state']==state and r['view']==view and r['width']==o['width'] and r['samples']==o['samples'] and r['camera']==pose and r.get('lightingRevision','studio-v1')==revision and r.get('engine','CYCLES')==engine_id(o)),None)
                 if cached is None:cached=reuse(prior,model,state,view,pose,revision,identity,o)
                 if cached:
                     records.append(cached);print('[Enhanced] Reused verified '+model+'/'+state+'/'+view,flush=True);continue
@@ -137,6 +144,7 @@ def render(o):
                 for obj in study:obj.hide_render=not isolated or blade_detail
                 if blade:blade.hide_render=not blade_detail
                 mask_mode(scene,mask,o['samples'])
+                if scene.render.engine=='BLENDER_EEVEE':scene.eevee.taa_render_samples=1 if mask else o['samples']
                 leaf_detail=view in ['leaves','shoot','shoot_edge','pose_branch_in','pose_branch_out'] or blade_detail
                 softbox.hide_render=not leaf_detail and view not in ['trunk','wood_fork'];light.energy=220 if leaf_detail else 500 if view=='trunk' else 1800;light.size=3 if leaf_detail else 4.5
                 softbox.location=camera.location+Vector((1,0,1));softbox.rotation_euler=(Vector(pose['target'])-softbox.location).to_track_quat('-Z','Y').to_euler()
@@ -147,8 +155,8 @@ def render(o):
                     write_json(backup.with_suffix('.json'),{'preservedSha256':old_hash,'previousRender':next((r for r in previous if r['state']==state and r['view']==view),None)})
                 scene.render.filepath=str(image);bpy.ops.render.render(write_still=True)
                 records.append({'state':state,'view':view,'file':str(image.relative_to(o['output'])).replace('\\','/'),'sha256':hashlib.sha256(image.read_bytes()).hexdigest(),'sourceSha256':identity,'camera':pose,'width':o['width'],'samples':o['samples'],'lightingRevision':revision,
-                    'canopyHeightQuantiles':np.quantile(centers[:,2],[.01,.5,.99]).tolist(),'treeHeight':h})
+                    'engine':scene.render.engine,'canopyHeightQuantiles':np.quantile(centers[:,2],[.01,.5,.99]).tolist(),'treeHeight':h})
                 if mask:records[-1].update(foliageCoverage=coverage(image),renderSamples=1)
-                write_json(directory/'renders.json',{'id':model,'engine':'CYCLES','device':'CPU','renders':records})
+                write_json(directory/'renders.json',{'id':model,'engine':engine_id(o),'device':'GPU' if o.get('engine')=='eevee' else 'CPU','renders':records})
                 print('[Enhanced] Rendered '+model+'/'+state+'/'+view,flush=True)
-        write_json(directory/'renders.json',{'id':model,'engine':'CYCLES','device':'CPU','renders':records})
+        write_json(directory/'renders.json',{'id':model,'engine':engine_id(o),'device':'GPU' if o.get('engine')=='eevee' else 'CPU','renders':records})

@@ -22,10 +22,11 @@ def build(o):
         leaves,shoots,crowding=grow(p,paths,lobes,rng)
         print(f'[Enhanced] {model}: {len(paths)} connected paths, {len(leaves)} leaves',flush=True)
         oak=p.get('growth',{}).get('architecture')=='open-oak'
-        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak);foliage=instances(model,leaves,forms)
+        elm=p.get('growth',{}).get('architecture')=='arching-elm'
+        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak or elm);foliage=instances(model,leaves,forms)
         wood,twigs=build_wood(model,paths,p,bark,barkmeta,rng)
         origins=np.asarray([l['origin'] for l in leaves]);centers=origins+np.asarray([l['matrix'][:,1] for l in leaves])*.52
-        if oak:centers=np.asarray([l['bladeCenter'] for l in leaves])
+        if oak or elm:centers=np.asarray([l['bladeCenter'] for l in leaves])
         if not np.isfinite(centers).all() or len(leaves)<3000:raise RuntimeError('Invalid canopy')
         parent_errors=[]
         for path in paths:
@@ -39,6 +40,7 @@ def build(o):
         revision='enhanced-plane-branchlets-v8' if p.get('growth',{}).get('architecture')=='distributed-plane' else 'enhanced-shared-forks-v3' if 'growth' in p else 'enhanced-botanical-v1'
         if p.get('growth',{}).get('architecture')=='conical-linden':revision='enhanced-linden-conical-v4'
         if oak:revision='enhanced-oak-fork-shoulders-v8'
+        if elm:revision='enhanced-elm-clustered-v5'
         stats={'id':model,'revision':revision,'baselineSha256':next(r['sha256'] for r in o['sources'] if r['id']==model),'previousSha256':next((r['sha256'] for r in o['previousSources'] if r['id']==model),None),'codeIdentity':o['codeIdentity'],
             'leafCount':len(leaves),'branchPaths':len(paths),'crownLobes':len(lobes),'woodTriangles':triangles(wood.data),'branchletTriangles':triangles(twigs.data),
             'leafTemplateTriangles':template_counts,'instancedLeafTriangles':expanded,'alphaCards':0,'bounds':bounds,'dimensions':dimensions,'crowding':crowding,
@@ -47,10 +49,10 @@ def build(o):
         for obj in [foliage,wood,twigs]:obj['species']=species;obj['variant']=variant;obj['referenceRevision']=revision
         if 'boleMinimumRadiusRatios' in wood:stats['boleMinimumRadiusRatios']=list(wood['boleMinimumRadiusRatios'])
         if 'boleSections' in wood:stats['boleSections']=json.loads(wood['boleSections'])
-        if oak:
+        if oak or elm:
             from oak_growth import crown_profile
             stats['crownProfile']=crown_profile(np.asarray([leaf['bladeCenter'] for leaf in leaves]))
-            if stats['crownProfile']['widthAspect']<.70 or stats['crownProfile']['widthToHeight']<.85:raise RuntimeError('Oak crown is too narrow')
+            if stats['crownProfile']['widthAspect']<.70 or stats['crownProfile']['widthToHeight']<(.65 if elm else .85):raise RuntimeError('Crown is too narrow')
         if revision=='enhanced-linden-conical-v4':
             from linden_growth import crown_profile
             from wood_continuity import leader_sections,inspect_leader

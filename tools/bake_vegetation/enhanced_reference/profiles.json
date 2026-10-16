@@ -1,7 +1,7 @@
 {
   "london_plane": {
     "name": "London plane",
-    "botanical": "Platanus × acerifolia",
+    "botanical": "Platanus \u00d7 acerifolia",
     "study": "London Plane.jpg",
     "height": 18.0,
     "radius": 7.5,
@@ -49,7 +49,7 @@
     "trunkRadius": 0.46,
     "growth": {
       "architecture": "conical-linden",
-      "firstFork": 0.20,
+      "firstFork": 0.2,
       "basalRadius": 0.43,
       "pipeExponent": 2.35
     },
@@ -68,7 +68,7 @@
     "leafGreen": 0.92,
     "seed": 70217,
     "foliageFanSpread": 1.65,
-    "foliageShootSpread": 0.60,
+    "foliageShootSpread": 0.6,
     "barkTileMetres": 1.3
   },
   "northern_red_oak": {
@@ -105,7 +105,10 @@
     "shoots": 75,
     "stations": 11,
     "leafLength": 0.22,
-    "leafInternodeRatio": [0.24, 0.34],
+    "leafInternodeRatio": [
+      0.24,
+      0.34
+    ],
     "opposite": false,
     "leafRoll": 0.78,
     "droop": 0.12,
@@ -122,7 +125,7 @@
     "height": 22.0,
     "radius": 8.3,
     "trunkRadius": 0.6,
-    "clear": 0.26,
+    "clear": 0.2,
     "habit": "vase",
     "leaderHeight": [
       0.76,
@@ -142,14 +145,58 @@
     "lobes": 12,
     "shoots": 108,
     "stations": 12,
-    "leafLength": 0.14,
+    "leafLength": 0.17,
     "opposite": false,
     "leafRoll": 0.85,
     "droop": 0.58,
     "barkStrength": 0.8,
     "leafGreen": 0.97,
     "seed": 70439,
-    "barkTileMetres": 1.3
+    "barkTileMetres": 1.3,
+    "growth": {
+      "architecture": "arching-elm",
+      "firstFork": 0.2,
+      "basalRadius": 0.6,
+      "pipeExponent": 2.15,
+      "majorAxes": 5,
+      "crownRadius": 1.38,
+      "crownDepth": 0.32,
+      "crownCenter": 0.58,
+      "crownBuds": 4300,
+      "clusterTiers": [
+        {"reach": 0.98, "height": 0.49, "azimuth": -0.22, "radii": [0.36, 0.31, 0.115], "weight": 0.36},
+        {"reach": 0.82, "height": 0.64, "azimuth": 0.26, "radii": [0.43, 0.34, 0.135], "weight": 0.36},
+        {"reach": 0.40, "height": 0.78, "azimuth": -0.12, "radii": [0.39, 0.33, 0.120], "weight": 0.28}
+      ],
+      "scaffoldElbowHeight": [0.36, 0.42]
+    },
+    "forkShoulders": true,
+    "leafInternodeRatio": [
+      0.22,
+      0.32
+    ],
+    "bladeShape": {
+      "petiole": [
+        0.08,
+        0.14
+      ]
+    },
+    "shootGrowth": {
+      "baseElevation": -0.40,
+      "terminalElevation": -0.60,
+      "lateralElevation": -0.30,
+      "minimumTipRadius": 0.0018,
+      "lengthScale": 1.05,
+      "outerDroop": 0.16,
+      "maximumElevation": 0.35,
+      "stopAtMinimumRadius": true,
+      "layout": "open-staggered-fan"
+    },
+    "leafExclusionHalfAxes": [
+      0.34,
+      0.49,
+      0.12
+    ]
   },
   "arrowwood_viburnum": {
     "name": "Arrowwood viburnum",

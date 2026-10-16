@@ -5,6 +5,10 @@ import shutil
 from pathlib import Path
 
 
+def engine_id(options):
+    return {'cycles':'CYCLES','eevee':'BLENDER_EEVEE'}[options.get('engine','cycles')]
+
+
 def reuse(prior,model,state,view,pose,revision,identity,o):
     if not prior or (state=='enhanced' and identity!=prior['sha256']):return None
     folder=Path(prior['file']).parent;proof=Path(o['previous'])
@@ -12,7 +16,7 @@ def reuse(prior,model,state,view,pose,revision,identity,o):
     source_state='current' if state=='current' else 'enhanced'
     row=next((r for r in json.loads(proof.read_text())['renders'] if r['id']==model and r['state']==source_state and r['view']==view
               and r['sourceSha256']==identity and r['width']==o['width'] and r['samples']==o['samples'] and r['camera']==pose
-              and r.get('lightingRevision','studio-v1')==revision),None)
+              and r.get('lightingRevision','studio-v1')==revision and r.get('engine','CYCLES')==engine_id(o)),None)
     if not row:return None
     source=folder/Path(row['file']).name
     if hashlib.sha256(source.read_bytes()).hexdigest()!=row['sha256']:raise RuntimeError('Cached comparison image changed')

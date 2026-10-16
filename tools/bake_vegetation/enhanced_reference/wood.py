@@ -12,7 +12,7 @@ from fork_shoulders import shoulder_fields,shoulder_growth
 
 
 def continuous_growth(p):
-    return p.get('growth',{}).get('architecture') in ['distributed-plane','conical-linden','open-oak']
+    return p.get('growth',{}).get('architecture') in ['distributed-plane','conical-linden','open-oak','arching-elm']
 
 
 def check_bounds(obj,paths,stage):
@@ -101,7 +101,7 @@ def build_wood(model,paths,p,material,meta,rng):
     if 'growth' in p and not continuous_growth(p):relax_forks(obj,paths,p.get('woodVoxel',.022))
     check_bounds(obj,paths,'fork relaxation')
     if not p.get('clayPreview',False):bake_bark(obj,source,paths,p,model,material,meta)
-    if continuous_growth(p):check_bole_width(obj,paths,p.get('woodVoxel',.022),p['growth']['architecture'] in ['conical-linden','open-oak'])
+    if continuous_growth(p):check_bole_width(obj,paths,p.get('woodVoxel',.022),p['growth']['architecture'] in ['conical-linden','open-oak','arching-elm'])
     obj.data.polygons.foreach_set('use_smooth',np.ones(len(obj.data.polygons),bool));bpy.data.objects.remove(source,do_unlink=True)
     young=material.copy();young.name=model+' / younger branch bark';nodes,links=young.node_tree.nodes,young.node_tree.links;bsdf=nodes.get('Principled BSDF');original=bsdf.inputs['Base Color'].links[0].from_socket
     mix=nodes.new('ShaderNodeMixRGB');mix.blend_type='MULTIPLY';mix.inputs[0].default_value=.60;mix.inputs[2].default_value=(.42,.31,.17,1);links.new(original,mix.inputs[1]);links.new(mix.outputs[0],bsdf.inputs['Base Color'])

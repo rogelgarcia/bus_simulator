@@ -24,10 +24,11 @@ enhanced specimens, and `overview.png`, the four-way full-tree comparison.
 
 `models` is `all` or comma-separated `species/mature_0N`. Primary comparisons use
 mature_01; all other forms receive full-tree previews. `width` and `samples`
-control CPU Cycles rendering. GPU use remains disabled for this pass.
+control rendering. Choose `engine=eevee` for geometry reviews or the default
+`engine=cycles` for CPU Cycles comparisons.
 `views=full|trunk|leaves` can render a selected view. Existing views are reused
 only when their model, image hash, camera, resolution, samples and lighting
-revision match. Partial render receipts retain authenticated untouched views;
+revision and render engine match. Partial render receipts retain authenticated untouched views;
 replaced frames and their earlier receipts are preserved under `render_history`.
 The complete gallery still requires all forty views. Leaf details use an outer
 shoot camera and a softbox shared by both model versions for readable tissue.
@@ -409,3 +410,82 @@ Then use `build`, `render` and `gallery` with the preserved v7b summary as
 `previous`, in a new ignored output directory. The complete 27-frame comparison
 and original-reference preservation gates still apply.
 The gallery includes a dedicated `northern_red_oak_forks.html` comparison row.
+
+## American elm arching growth (v2)
+
+The elm uses five staggered rising axes with progressively outward arching
+segments. Rotated lateral buds and unequal successors distribute smaller
+branches through crown depth; they inherit the supporting tangent and receive
+pipe-demand radii. Integrated root flutes, fork shoulders and locally blended
+lengthwise bark charts reuse the accepted wood pipeline. No spherical clipping
+volume or camera-specific branch direction is used.
+
+`shoot_growth.py` and `spray_foliage.py` share the oak spacing strategy while
+keeping species settings. Elm shoot length and narrower blade exclusion widths are profile parameters.
+Elm fine tips may gently droop; structural limbs
+remain ascending. One spray per terminal support, optional lateral infill in
+empty neighbourhoods, finite twig thickness and leaf exclusion prevent repeated
+fans at one node. Alternate leaves retain a coherent local orientation, slight
+blade curvature, bounded roll and short three-dimensional petioles.
+
+Use the original enhanced collection as `previous`, select all three elm forms,
+and use a fresh ignored `output` with `build`, `render`, then `gallery`. The
+28-frame review includes front/side/rear/elevated views, old/new comparisons,
+clay forks and an actual isolated branchlet matching the in-tree close-up.
+Existing saved-model, material-provenance and source-hash gates still apply.
+No reference model or runtime asset is replaced. Pure regressions in
+`tests/python/test_vegetation_elm.py` check twelve seed/form combinations,
+connected tangent growth, circumferential distribution and finite spaced shoots.
+
+## American elm spreading arches (v3)
+
+Elm axis lengths, successive elevation angles and the staggered upper-axis lift
+are now species profile parameters. Limbs rise near the bole, then progressively
+level outward. Terminal ramification inherits the last arch heading instead of
+resetting upward. The same rules apply to every seed and view; they do not squash
+the finished tree. Use the preserved v2c collection as `previous`, with a fresh
+ignored output for all three forms. The existing 28-view render and saved-mesh
+validation gates apply. Twelve seed/form cases check the outward terminal axes,
+broad support crown, shared fork positions and inherited tangents.
+
+The gallery verifies all ten supplied photorealistic studies against each
+species' scientific name, specimen ID, relative filename and metadata SHA-256.
+Duplicate image identities are rejected. Photographic panels show the species
+and filename, and a dedicated examples sheet includes both verified specimens
+alongside the illustrative study. Source images are copied unchanged; the
+original collections and runtime assets remain intact.
+
+## American elm rounded crown (v4)
+
+`elm_growth.py` grows toward stratified buds throughout an irregular ellipsoidal
+volume. Five staggered bases carry recursively partitioned 3D neighbourhoods,
+including upper-centre and lower-side foliage. This is an artistic spatial
+growth model inspired by attraction-point methods, not a physiological
+simulation. No completed geometry is clipped to a sphere or flattened.
+
+The elm profile controls crown radius, depth, centre and bud count. Fine shoots
+use shorter lengths, bounded upper elevation and progressive tip droop; oak
+retains its existing heading policy. Connected tangent forks, pipe-demand
+radii, continuous roots, bark charts and leaf exclusion remain in use.
+
+Use the preserved v3b summary as `previous`, and supply `crown-study` with the
+user's photograph. The gallery copies it unchanged, records its hash and adds a
+previous/new/photo comparison. Build a fresh candidate, inspect the full view,
+then complete all three forms and the 28-view review. The twelve seed/form
+checks require a rounded top, broad lower crown and occupied upper centre.
+
+## American elm branch-owned clusters (v5)
+
+`clusterTiers` describes the lower, middle and upper foliage regions carried by
+each main axis. Region targets guide outward forks without filling a single
+continuous global volume. `elm_shoots.py` generates open fans with staggered
+laterals and at most six paths. Clearance includes same-fan neighbours, excluding
+only the immediate parent. A shared fan normal guides curved alternate leaves.
+Use the preserved v4c summary as `previous` and a fresh output; the same 28-view
+review and saved-mesh validation gates apply. The isolated close-up now includes
+the whole fan, so its internal spacing can be reviewed.
+
+Geometry reviews can select `--set vegetation/enhanced-reference:engine=eevee`.
+The default remains CPU Cycles. Eevee uses the configured render samples with
+ray tracing disabled. Render receipts identify the engine per frame, comparison
+caches require the same engine, and gallery validation rejects mixed engines.

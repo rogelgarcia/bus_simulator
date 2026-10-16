@@ -42,6 +42,13 @@ def legacy_branchlets(p,paths,lobes,rng):
 
 
 def grow(p,paths,lobes,rng):
+    if p.get('growth',{}).get('architecture')=='arching-elm':
+        from spray_foliage import place_leaves
+        from shoot_growth import spaced_branchlets
+        shoots,spacing=spaced_branchlets(p,paths,lobes,rng)
+        leaves,crowding=place_leaves(p,paths,shoots,rng)
+        crowding['branchletSpacing']=spacing
+        return leaves,shoots,crowding
     if p.get('growth',{}).get('architecture')=='open-oak':
         from oak_foliage import place_leaves
         from oak_branchlets import oak_branchlets
@@ -114,9 +121,9 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
         z+=np.interp(np.clip(xy[:,1],0,1),np.linspace(0,1,7),rng.normal(0,.0035,7))
         if detailed_petioles:
             shape=form_parameters(form,spread_petioles,flat_blades)
-            if species=='northern_red_oak':
-                from oak_foliage import leaf_shape
-                shape=leaf_shape(form)
+            if species in ['northern_red_oak','american_elm']:
+                from spray_foliage import leaf_shape
+                shape=leaf_shape(form,o['profiles'][species].get('bladeShape'))
             xy=(uv-[base[0],bladebase])/(tip-bladebase);xy[:,0]*=shape['width']
             z=shape['curl']*xy[:,1]**2+shape['twist']*xy[:,0]*xy[:,1]+shape['fold']*abs(xy[:,0])
             if sculpted_blades:z=blade_height(xy,form)

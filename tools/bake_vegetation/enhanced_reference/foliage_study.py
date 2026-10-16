@@ -2,17 +2,21 @@
 import json
 import bpy
 import numpy as np
+from mathutils import Euler,Vector
 from common import array
 from junctions import flow_surfaces
 
 
-def isolate(directory,objects):
+def isolate(directory,objects,outer=False):
     graph=json.loads((directory/'architecture.json').read_text());paths=graph['paths']
     for r in paths:r['points']=np.asarray(r['points']);r['radii']=np.asarray(r['radii'])
     root=graph.get('studyRoot')
     if root is None:
-        candidates=[i for i,r in enumerate(paths) if r.get('shootDepth')==1]
-        if candidates:root=max(candidates,key=lambda i:paths[i]['points'][-1,2])
+        fan=any(r.get('shootRole')=='open-staggered-fan' for r in paths)
+        candidates=[i for i,r in enumerate(paths) if r.get('shootDepth')==(0 if fan else 1)]
+        if candidates:
+            height=max(float(r['points'][-1,2]) for r in paths)
+            root=max(candidates,key=lambda i:paths[i]['points'][-1]@np.array([.12,-1.,0.])-abs(paths[i]['points'][-1,2]-height*.66)*1.4) if outer else max(candidates,key=lambda i:paths[i]['points'][-1,2])
         else:
             candidates=sorted({r['parent'] for r in graph['shoots']})
             height=max(float(r['points'][-1,2]) for r in paths)
@@ -50,4 +54,12 @@ def isolate(directory,objects):
         points=array(mesh.vertices,'co',3);margin=float(np.max(array(mesh.attributes['leaf_scale'].data,'vector',3)))
     low=np.minimum(points.min(axis=0)-margin,verts[used].min(axis=0));high=np.maximum(points.max(axis=0)+margin,verts[used].max(axis=0))
     pose={'target':((low+high)*.5).tolist(),'offset':[1.,-8.,2.4],'span':float(max(high-low)*1.23)}
+    if outer:
+        rotations=array(mesh.attributes['leaf_rotation'].data,'vector',3)
+        normal=np.mean([np.array(Euler(tuple(r)).to_matrix())[:,2] for r in rotations],axis=0);normal/=np.linalg.norm(normal)
+        basis=np.array((-Vector(normal)).to_track_quat('-Z','Y').to_matrix())
+        projected=np.concatenate([points,verts[used]])@basis
+        low=projected.min(axis=0);high=projected.max(axis=0)
+        margin=float(np.max(array(mesh.attributes['leaf_scale'].data,'vector',3)))*.65
+        pose={'target':(basis@((low+high)*.5)).tolist(),'offset':(normal*8).tolist(),'span':float(max((high-low)[:2])+margin*2)*1.12}
     return [foliage,twig],pose

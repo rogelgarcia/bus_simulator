@@ -12,17 +12,17 @@ const within=(base,file)=>{const r=path.relative(base,file);return r&&r!=='..'&&
 export const enhancedReferenceJob={
     id:'vegetation/enhanced-reference',description:'New botanical references from supplied studies and AI PBR, preserving the current collection',
     blender:true,always:true,configurationPaths:['executable','browserExecutable'],codePaths:[TOOL],
-    defaults:{phase:'materials',source:'',models:'all',views:'all','structure-surface':'pbr','wood-study':'','foliage-study':'','foliage-layout':'branchlet',width:1440,samples:24,threads:4,previous:'',candidate:'',
+    defaults:{phase:'materials',engine:'cycles',source:'',models:'all',views:'all','structure-surface':'pbr','wood-study':'','foliage-study':'','crown-study':'','foliage-layout':'branchlet',width:1440,samples:24,threads:4,previous:'',candidate:'',
         baseline:'tests/artifacts/screens/vegetation_natural_foliage/coverage_20261011/summary.json',
         output:'tests/artifacts/screens/vegetation_enhanced_reference/review'},
-    options:{phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,threads:Number,baseline:String,output:String,previous:String,candidate:String},
+    options:{engine:bakeOption.choice(['cycles','eevee']),phase:bakeOption.choice(['materials','structure','build','refine','foliage','posture','shape','crown','inspect','leaf-wireframe','render','gallery','validate']),source:String,models:String,views:bakeOption.choice(['all','full','trunk','leaves','shoot','canopy','poses','blade']),'structure-surface':bakeOption.choice(['pbr','clay']),'wood-study':String,'foliage-study':String,'crown-study':String,'foliage-layout':bakeOption.choice(['branchlet','spatial','dome','organic','open']),width:Number,samples:bakeOption.samples,threads:Number,baseline:String,output:String,previous:String,candidate:String},
     async inputs(ctx){
         if(!ctx.options.source)throw Error('Supply the reference image/PBR source directory');
         const index=path.resolve(ctx.root,ctx.options.baseline),manifest=await json(index);
         const prior=ctx.options.previous?path.resolve(ctx.root,ctx.options.previous):null,previous=prior?await json(prior):null;
         if(['refine','foliage','posture','shape','crown','inspect','leaf-wireframe'].includes(ctx.options.phase)&&!ctx.options.candidate)throw Error('Candidate phase requires a preserved candidate directory');
         const candidates=['refine','foliage','posture','shape','crown','inspect','leaf-wireframe'].includes(ctx.options.phase)?await listFiles(path.resolve(ctx.root,ctx.options.candidate)):[];
-        return [...(ctx.options['foliage-study']?[path.resolve(ctx.root,ctx.options['foliage-study'])]:[]),...(ctx.options['wood-study']?[path.resolve(ctx.root,ctx.options['wood-study'])]:[]),...candidates.filter(f=>/\.(blend|json)$/.test(f)),...(prior?[prior,...previous.models.map(r=>path.resolve(path.dirname(prior),r.file))]:[]),index,...manifest.models.map(r=>path.resolve(path.dirname(index),r.file)),
+        return [...(ctx.options['crown-study']?[path.resolve(ctx.root,ctx.options['crown-study'])]:[]),...(ctx.options['foliage-study']?[path.resolve(ctx.root,ctx.options['foliage-study'])]:[]),...(ctx.options['wood-study']?[path.resolve(ctx.root,ctx.options['wood-study'])]:[]),...candidates.filter(f=>/\.(blend|json)$/.test(f)),...(prior?[prior,...previous.models.map(r=>path.resolve(path.dirname(prior),r.file))]:[]),index,...manifest.models.map(r=>path.resolve(path.dirname(index),r.file)),
             ...(await listFiles(path.resolve(ctx.root,ctx.options.source))).filter(f=>!f.endsWith('.zip')),
             ...(await listFiles(path.join(ctx.root,TOOL))).filter(f=>!f.includes('__pycache__')),
             path.join(ctx.root,'tools/bake_vegetation/lod0/common.py'),path.join(ctx.root,'tools/bake_vegetation/hybrid_lod0/source.py')];
@@ -31,6 +31,7 @@ export const enhancedReferenceJob={
         const o={...ctx.options,root:ctx.root,device:'CPU',browserExecutable:ctx.config.browserExecutable};
         for(const k of ['source','baseline','output'])o[k]=path.resolve(ctx.root,o[k]);
         if(o['foliage-study'])o['foliage-study']=path.resolve(ctx.root,o['foliage-study']);
+        if(o['crown-study'])o['crown-study']=path.resolve(ctx.root,o['crown-study']);
         if(o.phase==='foliage'&&!o['foliage-study'])throw Error('Foliage phase requires the supplied branchlet study');
         if(o['wood-study'])o['wood-study']=path.resolve(ctx.root,o['wood-study']);
         if(!within(path.join(ctx.root,'tests/artifacts/screens/vegetation_enhanced_reference'),o.output)||within(o.output,o.source)||within(o.source,o.output)||within(o.output,o.baseline))throw Error('Use an isolated enhanced-reference output');

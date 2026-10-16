@@ -11,12 +11,12 @@ def forward_heading(direction,guide):
     return direction
 
 
-def successor(paths,parent,end,rng,order,role='successor',guide=None,parent_node=None):
+def successor(paths,parent,end,rng,order,role='successor',guide=None,parent_node=None,minimum_steps=12):
     previous=paths[parent];node=len(previous['points'])-1 if parent_node is None else parent_node
     start=previous['points'][node].copy();delta=end-start;length=np.linalg.norm(delta)
     incoming=unit(previous['points'][node]-previous['points'][max(0,node-2)]);outgoing=unit(delta)
     controls=np.array([start,start+incoming*length*.19,end-outgoing*length*.27,end])
-    t=np.linspace(0,1,max(12,round(length/.10)));u=t[:,None]
+    t=np.linspace(0,1,max(minimum_steps,round(length/.10)));u=t[:,None]
     points=(1-u)**3*controls[0]+3*(1-u)**2*u*controls[1]+3*(1-u)*u*u*controls[2]+u**3*controls[3]
     side=unit(np.cross(outgoing,[0,0,1]));points+=side*rng.uniform(-.025,.025)*length*(np.sin(math.pi*t)**2)[:,None]
     path={'points':points,'radii':np.ones(len(points))*.01,'parent':parent,'parentNode':node,

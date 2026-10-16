@@ -23,18 +23,18 @@ def audit_objects(model,meta):
             from releaf import wood_digest
             matches=wood_digest(obj.data)==meta['preservedTrunkMeshDigest']
             roles[-1]['preservedSourceMeshMatches']=matches;roles[-1]['passed']&=matches
-    if meta['revision'] in ['enhanced-oak-open-crown-v4','enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8']:
+    if meta['revision'] in ['enhanced-oak-open-crown-v4','enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5']:
         from oak_growth import crown_profile
         foliage=bpy.data.objects[model+' / enhanced leaves']
         proof=crown_profile(array(foliage.data.attributes['blade_center'].data,'vector',3))
         matches=all(abs(proof[k]-meta['crownProfile'][k])<1e-5 for k in proof)
-        roles.append({'role':'open oak crown',**proof,'passed':matches and proof['widthAspect']>=.70 and proof['widthToHeight']>=.85 and len(foliage.data.vertices)==meta['leafCount']})
+        roles.append({'role':'spatial crown',**proof,'passed':matches and proof['widthAspect']>=.70 and proof['widthToHeight']>=(.65 if meta['revision'] in ['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'] else .85) and len(foliage.data.vertices)==meta['leafCount']})
         co=array(bpy.data.objects[model+' / enhanced wood'].data.vertices,'co',3);ratios=[]
         for section in meta['boleSections']:
             ring=co[abs(co[:,2]-section['height'])<section['slab']]
             ratios.append(float(np.quantile(np.linalg.norm(ring[:,:2]-section['center'],axis=1),.05)/section['radius']) if len(ring)>12 else 0.)
-        roles.append({'role':'continuous oak bole','minimumRadiusRatio':min(ratios),'passed':min(ratios)>=.88})
-        if meta['revision']=='enhanced-oak-fork-shoulders-v8':
+        roles.append({'role':'continuous bole','minimumRadiusRatio':min(ratios),'passed':min(ratios)>=.88})
+        if meta.get('forkSurface'):
             mesh=bpy.data.objects[model+' / enhanced wood'].data;weights=array(mesh.attributes['fork_chart_blend'].data,'value',1)
             uv=array(mesh.uv_layers['ForkAlternate'].data,'uv',2)
             roles.append({'role':'local fork bark charts','blendedFaces':int(np.count_nonzero(weights)),
