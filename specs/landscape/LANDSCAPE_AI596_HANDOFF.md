@@ -288,10 +288,12 @@ runtime `src/graphics/engine3d/landscape/LandscapeSurround.js`, `LandscapeSurrou
   directory>`, `LANDSCAPE_RESOLUTION_ROUTE=natural-world`, `LANDSCAPE_RESOLUTION_SURROUND=on|off|<url>`,
   `LANDSCAPE_RESOLUTION_ARTIFACTS=<dir>` (serves the landscape itself; startup, residency, uploads, GPU/CPU ms, picking and
   query exactness per stop; `LANDSCAPE_PERFORMANCE.md`, "Fixture resolution harness").
-- Flyover: `tests/artifacts/screens/landscape/flyover/scripts/` (`common.mjs`, `render.mjs`: the 70 s keyframed route at
-  30 fps rendered frame by frame on a virtual clock, 1920 × 1080, AGL/tiles/pending log); the D5 copies under
-  `tests/artifacts/screens/landscape/ai596/d5/flyover/scripts/` point at v3 with the surround and carry the world-edge
-  detector. All of these are gitignored artifacts; copy and adapt them.
+- Flyover: `tools/landscape_flyover/` (tracked; see its README) renders a feature-showcase video from a versioned route
+  (`routes/coastal-v3-features-v1.json`: offshore view, reef and bar, west bluff, beach, swim beach, terraced districts,
+  eroded hills, high city, surround), validated per frame against the native and surround ground before flying, with a
+  HUD (height above ground or water, altitude, minimap, feature captions); `--mode plan|stills|render`. The earlier
+  70 s keyframed route scripts remain as gitignored artifacts under `tests/artifacts/screens/landscape/flyover/scripts/`
+  and the D5/D6 copies (world-edge detector) under `tests/artifacts/screens/landscape/ai596/d5|d6/flyover/scripts/`.
 
 ## 11. Leaves, recipes, regeneration and the edit replay order
 

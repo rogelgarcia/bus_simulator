@@ -1,0 +1,47 @@
+{
+  "format": "landscape-flyover-route",
+  "schemaVersion": 1,
+  "id": "coastal-v3-features-v1",
+  "landscapeId": "coastal-city-v3",
+  "description": "Feature showcase of coastal terrain v3 (AI 596) with its far-field surround: offshore establishing view, reef and bar, west bluff, beach and swim beach, terraced districts, the 80 m high city, the eroded hills, and a climb-out over the surround. Keys were placed from the D4 maps (hillshade, coastal zones, cover, drainage, elevation), the plan's districts.json and beach_points.json, and native ground transects of revision synthesis-7045f619de9de74a367bc3a8.",
+  "conventions": [
+    "World X east, Y up, Z north, meters; sea level is the landscape manifest coordinates.seaLevel.",
+    "A key is {position, target, speed, feature}: the camera passes through position looking at target; speed (m/s) is the pace at that key.",
+    "feature names the caption shown from that key until the next key with another feature; null shows none.",
+    "Heading 0 deg = north (+Z), 90 deg = east (+X), clockwise; clearance is measured above max(ground, sea level)."
+  ],
+  "camera": { "fovDegrees": 50, "minClearanceMeters": 10, "maxTurnDegreesPerSecond": 14, "captionFadeSeconds": 0.8 },
+  "features": [
+    { "id": "coastal-terrain", "title": "Coastal terrain v3", "caption": "4 × 4 km synthesized at 0.98 m (4 097² samples): an eroded coastal plain, a terraced city and a high plateau, with the sea at 0 m.", "mapHint": "whole extent: d4/v3/hillshade.png, elevation.png" },
+    { "id": "reef-and-bar", "title": "Reef and nearshore bar", "caption": "Reef rock 150–450 m off the bluff, tops 2–4 m below the surface; a sand bar at −2.2 m runs 110 m off the whole coast over a Dean-profile seabed.", "mapHint": "d4/v3/coastal-zones.png reef patches x 540–830 m, z 1300–3950 m; profiles-bathymetry.png" },
+    { "id": "west-bluff", "title": "West bluff and platform", "caption": "An 11.6 m bluff face at 68° along 2.8 km of coast, its toe on a 30 m wave-cut platform at +0.6 m behind the beach berm.", "mapHint": "d4/v3/coastal-zones.png bluff crown/face/toe ~115 m inland of the waterline, z 1100–4000 m" },
+    { "id": "beach", "title": "Beach, berm and foredunes", "caption": "A 1:20 swash slope, a 1.8 m berm crest 31 m behind the waterline and 3.3 m foredunes where the plan leaves room.", "mapHint": "d4/v3/coastal-zones.png swash/berm/backshore/foredune on the south beach, z 0–1100 m" },
+    { "id": "beach-arrival", "title": "Swim beach and arrival plaza", "caption": "A sheltered swim zone on clean sand; the level arrival plaza (2.6 m) and the bus-stop reservation sit flush with the beach.", "mapHint": "beach_points.json arrival (1090, 490) and bus stop (1260, 520); district 7 Beach arrival" },
+    { "id": "terraced-districts", "title": "Terraced districts", "caption": "Each district pad holds its design band (old town 7 m, hillside homes 12 m, low city 18 m, airport 20 m, industrial 26 m), edged by 30° embankments.", "mapHint": "districts.json boundaries; d4/v3/cover.png urban ground, roads and runway" },
+    { "id": "eroded-hills", "title": "Eroded hills and drainage", "caption": "Fluvial and thermal erosion cut 65 drainage lines (3 m deep over 50 m or more) into the hills and filled alluvial floors and 1 080 flat basins.", "mapHint": "d4/v3/drainage.png gullies and flat/pond basins east and south-east of the low city" },
+    { "id": "high-city", "title": "High city plateau", "caption": "The high city stands on an 80 m plateau ringed by 26.6 m escarpment faces at 59° over 33° talus; two graded ascents climb its flanks.", "mapHint": "d4/v3/elevation.png octagon centred (3480, 3100); roads.json High-city north/south ascent" },
+    { "id": "far-field", "title": "Far-field surround", "caption": "Beyond the 4 km extent a render-only 32 × 32 km surround carries the land, the coast and its headlands to the horizon, with the 240–430 m ranges inland: no world edge.", "mapHint": "d5/surround/hillshade.png: coast and spur headlands to z ±16 km, ranges x 6–11 km east (seen from the hills segment)" }
+  ],
+  "keys": [
+    { "position": [-900, 380, 4600], "target": [1700, 10, 2500], "speed": 35, "feature": "coastal-terrain" },
+    { "position": [-150, 230, 4000], "target": [1500, 0, 2700], "speed": 80, "feature": "coastal-terrain" },
+    { "position": [450, 90, 3600], "target": [800, -3, 3150], "speed": 60, "feature": "reef-and-bar" },
+    { "position": [780, 45, 3200], "target": [1250, 5, 2700], "speed": 50, "feature": "west-bluff" },
+    { "position": [1060, 24, 2750], "target": [1340, 9, 2420], "speed": 46, "feature": "west-bluff" },
+    { "position": [1080, 23, 2150], "target": [1320, 8, 1800], "speed": 46, "feature": "west-bluff" },
+    { "position": [970, 22, 1500], "target": [1150, 4, 1050], "speed": 44, "feature": "beach" },
+    { "position": [840, 20, 950], "target": [1000, 2, 550], "speed": 38, "feature": "beach" },
+    { "position": [820, 26, 520], "target": [1150, 3, 520], "speed": 30, "feature": "beach-arrival" },
+    { "position": [1150, 70, 380], "target": [1900, 10, 750], "speed": 45, "feature": "terraced-districts" },
+    { "position": [1700, 110, 600], "target": [2100, 15, 1500], "speed": 70, "feature": "terraced-districts" },
+    { "position": [2200, 130, 1250], "target": [2700, 20, 2100], "speed": 75, "feature": "terraced-districts" },
+    { "position": [2900, 95, 1300], "target": [3800, 25, 1550], "speed": 60, "feature": "eroded-hills" },
+    { "position": [3500, 95, 1500], "target": [4400, 40, 2000], "speed": 55, "feature": "eroded-hills" },
+    { "position": [3850, 115, 2050], "target": [3750, 65, 2750], "speed": 50, "feature": "high-city" },
+    { "position": [3960, 150, 2550], "target": [3600, 70, 2950], "speed": 48, "feature": "high-city" },
+    { "position": [3950, 140, 3550], "target": [3500, 60, 3250], "speed": 45, "feature": "high-city" },
+    { "position": [3920, 420, 3800], "target": [2600, 0, 2600], "speed": 50, "feature": "far-field" },
+    { "position": [3900, 900, 3950], "target": [1700, 0, 1800], "speed": 30, "feature": "far-field" },
+    { "position": [3895, 960, 3965], "target": [1600, 0, 1700], "speed": 4, "feature": "far-field" }
+  ]
+}
