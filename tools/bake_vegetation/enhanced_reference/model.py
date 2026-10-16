@@ -23,10 +23,11 @@ def build(o):
         print(f'[Enhanced] {model}: {len(paths)} connected paths, {len(leaves)} leaves',flush=True)
         oak=p.get('growth',{}).get('architecture')=='open-oak'
         elm=p.get('growth',{}).get('architecture')=='arching-elm'
-        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak or elm);foliage=instances(model,leaves,forms)
+        paired='pairedFoliage' in p
+        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak or elm or paired);foliage=instances(model,leaves,forms)
         wood,twigs=build_wood(model,paths,p,bark,barkmeta,rng)
         origins=np.asarray([l['origin'] for l in leaves]);centers=origins+np.asarray([l['matrix'][:,1] for l in leaves])*.52
-        if oak or elm:centers=np.asarray([l['bladeCenter'] for l in leaves])
+        if oak or elm or paired:centers=np.asarray([l['bladeCenter'] for l in leaves])
         if not np.isfinite(centers).all() or len(leaves)<3000:raise RuntimeError('Invalid canopy')
         parent_errors=[]
         for path in paths:
@@ -41,6 +42,7 @@ def build(o):
         if p.get('growth',{}).get('architecture')=='conical-linden':revision='enhanced-linden-conical-v4'
         if oak:revision='enhanced-oak-fork-shoulders-v8'
         if elm:revision='enhanced-elm-clustered-v5'
+        if paired:revision='enhanced-arrowwood-spaced-pairs-v2'
         stats={'id':model,'revision':revision,'baselineSha256':next(r['sha256'] for r in o['sources'] if r['id']==model),'previousSha256':next((r['sha256'] for r in o['previousSources'] if r['id']==model),None),'codeIdentity':o['codeIdentity'],
             'leafCount':len(leaves),'branchPaths':len(paths),'crownLobes':len(lobes),'woodTriangles':triangles(wood.data),'branchletTriangles':triangles(twigs.data),
             'leafTemplateTriangles':template_counts,'instancedLeafTriangles':expanded,'alphaCards':0,'bounds':bounds,'dimensions':dimensions,'crowding':crowding,
@@ -62,6 +64,7 @@ def build(o):
             if not stats['leaderContinuity']['passed']:raise RuntimeError('Missing wood along the central leader: '+str(stats['leaderContinuity']))
         if 'barkProjectionMethod' in wood:stats['barkProjection']={'method':wood['barkProjectionMethod'],'maximumDistance':wood['barkProjectionMaximumDistance']}
         if 'forkBlendedFaces' in wood:stats['forkSurface']={'shoulders':True,'blendedFaces':wood['forkBlendedFaces'],'chartBlendWidth':wood['forkBlendWidth']}
+        if p.get('shrubRootCollars'):stats['rootCollars']={'count':sum(bool(r.get('rootCollar')) for r in paths),'barkReliefScale':p['barkReliefScale']}
         bpy.ops.file.pack_all();bpy.ops.wm.save_as_mainfile(filepath=str(file),compress=True)
         stats['sha256']=hashlib.sha256(file.read_bytes()).hexdigest();stats['file']=str(file.relative_to(output)).replace('\\','/')
         write_json(directory/'model.json',stats);write_json(directory/'architecture.json',{'paths':[{**r,'points':r['points'].tolist(),'radii':r['radii'].tolist()} for r in paths], 'shoots':shoots})

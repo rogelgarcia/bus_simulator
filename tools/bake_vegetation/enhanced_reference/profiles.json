@@ -219,6 +219,13 @@
     "barkStrength": 0.5,
     "leafGreen": 0.96,
     "seed": 70543,
-    "barkTileMetres": 0.6
+    "barkTileMetres": 0.6,
+    "shrubRootCollars": true,
+    "barkReliefScale": 0.75,
+    "pairedFoliage": {
+      "internodeRatio": [0.65, 0.85],
+      "minimumClearance": 0.82
+    },
+    "bladeShape": {"petiole": [0.16, 0.23]}
   }
 }

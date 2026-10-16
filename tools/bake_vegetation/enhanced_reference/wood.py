@@ -33,6 +33,9 @@ def roots(paths,p,rng):
             angle=i*2.399963+rng.uniform(-.35,.35);out=np.array([math.cos(angle),math.sin(angle),0.])
             start=origin+[0,0,radius*.8];end=origin+out*radius*rng.uniform(2.5,4.4);end[2]=-.06 if not shrub else -.025
             root=curve(start,end,radius*rng.uniform(.24,.45),rng,parent,bend=[0,0,-radius*.25],steps=9,tip=.002);root['root']=True;paths.append(root)
+    if p.get('shrubRootCollars'):
+        from shrub_roots import refine_roots
+        refine_roots(paths)
 
 
 def check_bole_width(obj,paths,voxel,full_bole=False):
@@ -81,7 +84,7 @@ def mesh_paths(name,paths,material,tile,rng,major=False,fields=None):
 
 def build_wood(model,paths,p,material,meta,rng):
     uv_offsets(paths)
-    surfaces=flow_surfaces(paths);major=[r for r in surfaces if ('growthRole' in r or r.get('root',False))] if 'growth' in p else [r for r in surfaces if max(r['radii'])>(.018 if p['habit']=='shrub' else .065)]
+    surfaces=flow_surfaces(paths);major=[r for r in surfaces if ('growthRole' in r or r.get('root',False))] if 'growth' in p else [r for r in surfaces if max(r['radii'])>(.018 if p['habit']=='shrub' else .065) or r.get('rootCollar')]
     if continuous_growth(p):major=[r for r in major if max(r['radii'])>=.060 or r.get('rootCrown',False)]
     small=[r for r in surfaces if not any(r is m for m in major)]
     fields={id(path):field for path,field in zip(surfaces,shoulder_fields(paths))} if p.get('forkShoulders',False) else None
@@ -111,9 +114,9 @@ def build_wood(model,paths,p,material,meta,rng):
 
 def bake_bark(obj,source,paths,p,model,material,meta):
     obj.data.uv_layers.new(name='UVMap')
-    if continuous_growth(p):
+    if continuous_growth(p) or p.get('shrubRootCollars'):
         from bark_projection import transfer
-        transfer(obj,source,p.get('woodVoxel',.022))
+        transfer(obj,source,p.get('woodVoxel',.006 if p['habit']=='shrub' else .022))
     else:
         transfer=obj.modifiers.new('Lengthwise source bark charts','DATA_TRANSFER');transfer.object=source;transfer.use_loop_data=True;transfer.data_types_loops={'UV'};transfer.loop_mapping='POLYINTERP_NEAREST';bpy.ops.object.modifier_apply(modifier=transfer.name)
     check_bounds(obj,paths,'UV transfer')
@@ -121,6 +124,7 @@ def bake_bark(obj,source,paths,p,model,material,meta):
     if np.ptp(array(obj.data.uv_layers.active.data,'uv',2),axis=0).min()<.1:raise RuntimeError('Wood UV transfer failed')
     texture=bpy.data.textures.new(model+' bark relief',type='IMAGE');texture.image=next(n.image for n in material.node_tree.nodes if n.type=='TEX_IMAGE' and n.image.filepath.endswith('height_16bit.png'))
     displacement=obj.modifiers.new('Source PBR crevice relief','DISPLACE');displacement.texture=texture;displacement.texture_coords='UV';displacement.uv_layer=obj.data.uv_layers.active.name;displacement.strength=min(meta['displacement']['scale_m'],.008);displacement.mid_level=.5
+    displacement.strength*=p.get('barkReliefScale',1.)
     if relief_group:displacement.vertex_group=relief_group
     bpy.ops.object.modifier_apply(modifier=displacement.name)
     check_bounds(obj,paths,'bark relief')

@@ -1461,3 +1461,21 @@ Bake receipts under `tests/artifacts/screens/ai556_bake_framework/`:
 - Other Eevee views: `run-1792113263352-25768-c2602457/summary.json`.
 - Saved geometry audit and gallery: `run-1792113379475-30484-51e39783/summary.json`.
 - Caption-corrected gallery: `run-1792113536974-28492-9105822e/summary.json`.
+# Arrowwood paired-leaf and root refinement
+
+The focused `enhanced-arrowwood-spaced-pairs-v2` reference keeps the multi-stem
+shrub scaffold. Short curved roots start inside the basal stems, sweep into the
+ground, and fuse with modest directional stem flares. Bark relief is reduced by
+25% on this small shrub; installed source maps remain unchanged.
+
+Leaf-pair node counts follow physical shoot length. Opposite pairs use longer,
+slightly irregular internodes and coherent gently rotated blade planes. A shared
+oriented blade-volume proxy chooses free orientations and rejects crowded pairs
+together. Leaf count is an outcome, not a target. Separate curved blades and
+petioles retain the installed front/back materials. This is a spacing proxy, not
+an exact mesh-intersection guarantee.
+
+Review all three mature forms in Eevee. The primary specimen includes matched
+root-base cameras, isolated before/after branchlets, and identical in-tree and
+isolated cameras for each branchlet. Preserve prior references and require the
+normal saved-mesh, hash, source-study and render validation gates.

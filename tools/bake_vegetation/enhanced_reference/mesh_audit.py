@@ -23,6 +23,13 @@ def audit_objects(model,meta):
             from releaf import wood_digest
             matches=wood_digest(obj.data)==meta['preservedTrunkMeshDigest']
             roles[-1]['preservedSourceMeshMatches']=matches;roles[-1]['passed']&=matches
+    if meta['revision']=='enhanced-arrowwood-spaced-pairs-v2':
+        mesh=bpy.data.objects[model+' / enhanced leaves'].data
+        origins=array(mesh.vertices,'co',3);centers=array(mesh.attributes['blade_center'].data,'vector',3)
+        shoots=array(mesh.attributes['shoot_id'].data,'value',dtype=np.int32);nodes=array(mesh.attributes['node_id'].data,'value',dtype=np.int32)
+        keys=np.column_stack([shoots,nodes]);_,counts=np.unique(keys,axis=0,return_counts=True)
+        paired=len(origins)%2==0 and np.array_equal(keys[::2],keys[1::2]) and np.allclose(origins[::2],origins[1::2],atol=1e-7)
+        roles.append({'role':'opposite leaf pairs','pairs':len(counts),'passed':bool(paired and np.all(counts==2) and len(origins)==meta['leafCount'] and np.isfinite(centers).all())})
     if meta['revision'] in ['enhanced-oak-open-crown-v4','enhanced-oak-volumetric-forks-v5','enhanced-oak-spaced-shoots-v6','enhanced-oak-ascending-fill-v7','enhanced-oak-fork-shoulders-v8','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5']:
         from oak_growth import crown_profile
         foliage=bpy.data.objects[model+' / enhanced leaves']

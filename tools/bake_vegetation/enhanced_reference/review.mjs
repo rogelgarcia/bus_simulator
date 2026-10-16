@@ -14,6 +14,7 @@ import {validatePresentation,presentationContent} from './presentation_review.mj
 import {validateSpatial,spatialContent} from './spatial_review.mjs';
 import {validateVolume,volumeContent} from './volume_review.mjs';
 import {photographicStudies} from './source_studies.mjs';
+import {validateShrub,shrubContent} from './shrub_review.mjs';
 
 const json=async f=>JSON.parse(await readFile(f,'utf8'));
 
@@ -55,7 +56,7 @@ export async function validate(o){
 
         const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
 
-        if(proof.renders.length!==expected+(['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'].includes(row.revision)&&id.endsWith('mature_01')?1:0)+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
+        if(proof.renders.length!==expected+validateShrub(row,proof.renders,!!prior)+(['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'].includes(row.revision)&&id.endsWith('mature_01')?1:0)+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
 
         for(const image of proof.renders){
 
@@ -211,6 +212,11 @@ export async function gallery(o){
         for(const v of Object.keys(views)){const file=`${s}_${v}.html`;await writeFile(path.join(o.output,file),page(title,`<h1>${title} — ${views[v]}</h1>${group(s,v,p)}`,true));sheets.push({file,png:`${s}_${v}.png`});}
 
         const presentation=presentationContent(summary,s,title);
+        const shrub=shrubContent(summary,s,title);
+        if(shrub){
+            const file=s+'_spacing.html';await writeFile(path.join(o.output,file),page(title+' - leaf spacing and roots',shrub,true));sheets.push({file,png:s+'_spacing.png'});
+            index+=`<section id="${s}_spacing">${shrub}</section>`;
+        }
         const volume=volumeContent(summary,s,title);
         if(volume){
             const file=s+'_volume.html';await writeFile(path.join(o.output,file),page(title+' — crown depth',volume,true));sheets.push({file,png:s+'_volume.png'});

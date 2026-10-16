@@ -26,8 +26,10 @@ def isolate(directory,objects,outer=False):
     for i,path in enumerate(paths):
         if path['parent'] in selected:selected.add(i)
     surfaces=flow_surfaces(paths);keep=[];cursor=0
+    shrub=json.loads((directory/'model.json').read_text())['dimensions']['habit']=='shrub'
     for i,r in enumerate(surfaces):
         major=('growthRole' in r or r.get('root',False)) and (max(r['radii'])>=.060 or r.get('rootCrown',False))
+        if shrub:major=max(r['radii'])>.018 or r.get('rootCollar',False)
         if major:continue
         sides=10 if max(r['radii'])>.01 else 6;count=sides*(len(r['points'])-1)+2
         if i in selected:keep.extend(range(cursor,cursor+count))

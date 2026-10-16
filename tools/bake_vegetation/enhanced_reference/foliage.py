@@ -42,6 +42,11 @@ def legacy_branchlets(p,paths,lobes,rng):
 
 
 def grow(p,paths,lobes,rng):
+    if 'pairedFoliage' in p:
+        from shrub_foliage import place_leaves
+        shoots=list(legacy_branchlets(p,paths,lobes,rng))
+        leaves,crowding=place_leaves(p,paths,shoots,rng)
+        return leaves,shoots,crowding
     if p.get('growth',{}).get('architecture')=='arching-elm':
         from spray_foliage import place_leaves
         from shoot_growth import spaced_branchlets
@@ -121,7 +126,7 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
         z+=np.interp(np.clip(xy[:,1],0,1),np.linspace(0,1,7),rng.normal(0,.0035,7))
         if detailed_petioles:
             shape=form_parameters(form,spread_petioles,flat_blades)
-            if species in ['northern_red_oak','american_elm']:
+            if species in ['northern_red_oak','american_elm','arrowwood_viburnum']:
                 from spray_foliage import leaf_shape
                 shape=leaf_shape(form,o['profiles'][species].get('bladeShape'))
             xy=(uv-[base[0],bladebase])/(tip-bladebase);xy[:,0]*=shape['width']

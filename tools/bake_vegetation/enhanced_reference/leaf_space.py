@@ -16,8 +16,8 @@ def clearance(centers,frames,sizes,other_centers,other_frames,other_sizes,half_a
 
 
 class LeafSpace:
-    def __init__(self,half_axes=HALF_AXES):
-        self.grid=defaultdict(list);self.centers=[];self.frames=[];self.sizes=[];self.cell=.40
+    def __init__(self,half_axes=HALF_AXES,cell=.40):
+        self.grid=defaultdict(list);self.centers=[];self.frames=[];self.sizes=[];self.cell=cell
         self.half_axes=np.asarray(half_axes)
 
     def neighbors(self,anchor):

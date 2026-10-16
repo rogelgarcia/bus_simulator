@@ -489,3 +489,14 @@ Geometry reviews can select `--set vegetation/enhanced-reference:engine=eevee`.
 The default remains CPU Cycles. Eevee uses the configured render samples with
 ray tracing disabled. Render receipts identify the engine per frame, comparison
 caches require the same engine, and gallery validation rejects mixed engines.
+# Arrowwood leaf spacing
+
+The paired-leaf shrub revision uses the existing `build`, `render`, and `gallery`
+phases with `engine=eevee`, a fresh ignored output and the preserved enhanced
+`previous` summary. It adds subtle fused root collars and arc-length opposite
+leaf pairs with shared oriented-volume rejection. Counts are allowed to decrease.
+All three mature forms are required. With a previous collection, the primary
+specimen has 15 frames, including root and isolated shoot pairs; the other forms
+have one each. `tests/python/test_vegetation_shrub.py` checks cross-shoot clearance,
+opposite pairs and connected small roots. Source images and installed maps remain
+unchanged.

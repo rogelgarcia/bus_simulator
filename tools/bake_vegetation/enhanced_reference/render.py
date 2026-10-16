@@ -62,6 +62,7 @@ def render(o):
         spatial=meta['revision'] in ['enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
         dome=meta['revision'] in ['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
         spaced=meta['revision'] in ['enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']
+        shrub_pairs=meta['revision']=='enhanced-arrowwood-spaced-pairs-v2'
         for state in (['enhanced','previous','current'] if prior else ['enhanced','current']) if variant=='mature_01' else ['enhanced','previous'] if (posture or spatial) and prior else ['enhanced']:
             if o['views']=='poses' and state!='enhanced':continue
             if o['views']=='blade' and (not spatial or variant!='mature_01' or state=='current'):continue
@@ -99,6 +100,11 @@ def render(o):
                 if meta['revision'] in ['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16']:
                     poses['wood_branchlets']=branchlet_pose(json.loads((directory/'architecture.json').read_text())['paths'])
             study=[]
+            if shrub_pairs and state!='current' and variant=='mature_01':
+                poses['roots']={'target':[0,0,.20],'offset':[1.,-5.,1.0],'span':1.15}
+                study,detail=isolate(Path(prior['file']).parent if state=='previous' else directory,objects,outer=True)
+                poses['shoot']=detail;poses['leaves']=detail.copy()
+                for obj in study:obj.hide_render=True
             if meta['revision'] in ['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'] and state=='enhanced' and variant=='mature_01':
                 study,detail=isolate(directory,objects,outer=True)
                 poses['shoot']=detail;poses['leaves']=detail.copy()
@@ -146,7 +152,7 @@ def render(o):
                 mask_mode(scene,mask,o['samples'])
                 if scene.render.engine=='BLENDER_EEVEE':scene.eevee.taa_render_samples=1 if mask else o['samples']
                 leaf_detail=view in ['leaves','shoot','shoot_edge','pose_branch_in','pose_branch_out'] or blade_detail
-                softbox.hide_render=not leaf_detail and view not in ['trunk','wood_fork'];light.energy=220 if leaf_detail else 500 if view=='trunk' else 1800;light.size=3 if leaf_detail else 4.5
+                softbox.hide_render=not leaf_detail and view not in ['trunk','wood_fork','roots'];light.energy=220 if leaf_detail or view=='roots' else 500 if view=='trunk' else 1800;light.size=3 if leaf_detail else 4.5
                 softbox.location=camera.location+Vector((1,0,1));softbox.rotation_euler=(Vector(pose['target'])-softbox.location).to_track_quat('-Z','Y').to_euler()
                 image=directory/f'{state}_{view}.png'
                 if image.exists():
