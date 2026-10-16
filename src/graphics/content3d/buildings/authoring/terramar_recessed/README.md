@@ -2259,6 +2259,12 @@ splice in.
      feature's nodes, its occlusion included).
    - The kit limestone's Principled sits inside `TM_RB_limestone`. A material using it gets a worn copy of that group per
      class (`TM_WEAR~TM_RB_limestone~stone`, `~paving`) with the layer spliced in inside.
+   - EEVEE reads at most 16 mesh attributes per material and a worn material reads about 40, so it failed to compile
+     there and Material Preview showed it pink. The worn output is therefore Cycles-only, and an EEVEE-only output
+     (`TM_WEAR_eevee_output`) gets the clean surface. That is a copy of the shader path (Principled BSDFs, Mix/Add
+     shaders, the groups holding them, those pointing at their unworn originals), fed by the sockets the layer's
+     inputs had. Material Preview shows the building unworn, Cycles renders the wear, and `remove()` restores the
+     single output.
 2. **Signals.** The pass writes FLOAT attributes `tm_wear_<signal>` on the exterior meshes: extra data, the geometry is
    untouched. It writes them only on the meshes carrying a class some feature acts on; `signals=all` writes them on
    every exterior mesh, for the debug view.

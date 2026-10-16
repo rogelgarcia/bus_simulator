@@ -436,9 +436,76 @@ def insert(mat, cls, routes):
             _splice(copy, copy.nodes[bsdf.name], cls, routes, layer)
         gnode.node_tree = copy
         record[gnode.name] = orig.name
+    _eevee_output(nt, out, record)
     mat["tm_wear_class"] = classes.NAMES[cls]
     mat["tm_wear_groups"] = json.dumps(record)
+    mat["tm_wear_eevee"] = out.name
     return True, "+".join(routes)
+
+
+# EEVEE reads at most 16 mesh attributes per material and the features read about 40, so a worn material fails to
+# compile there (pink in Material Preview). The worn output turns Cycles-only and an EEVEE-only output gets the
+# material's clean surface: a copy of the shader path (Principled BSDFs, Mix / Add shaders, the groups holding them)
+# fed by the sockets the layer's inputs had, the groups pointing at their unworn originals. EEVEE compiles only what
+# its output reaches, so Material Preview shows the building unworn and Cycles renders the wear.
+EEVEE = NODE + "_eevee"        # every node of the clean EEVEE surface: TM_WEAR_eevee* (remove() drops TM_WEAR*)
+
+
+def _unworn_source(link):
+    """The socket a link stands for without the wear: through the layer node, the socket feeding its matching input.
+    Returns (socket or None, the socket whose default applies when None)."""
+    fn = link.from_node
+    if fn.type == 'GROUP' and fn.node_tree is not None and fn.node_tree.name == LAYER:
+        gi = fn.inputs[link.from_socket.name]
+        src = gi.links[0].from_socket if gi.is_linked else None
+        if src is not None and src.node.name.startswith(NODE):      # the splice's own stand-in (its normal node)
+            src = None
+        return src, gi
+    return link.from_socket, None
+
+
+def _clean_shader(nt, sock, record, made):
+    """The output socket giving `sock`'s shader unworn: copies of the worn path's nodes, other nodes shared."""
+    link = sock.links[0]
+    n = link.from_node
+    if n.type not in ('BSDF_PRINCIPLED', 'MIX_SHADER', 'ADD_SHADER') and not (n.type == 'GROUP' and n.name in record):
+        return link.from_socket
+    if n.name not in made:
+        dup = nt.nodes.new(n.bl_idname)
+        dup.name = dup.label = f"{EEVEE}_{n.name}"
+        dup.location = (n.location.x, n.location.y - 900)
+        if n.type == 'BSDF_PRINCIPLED':
+            dup.distribution, dup.subsurface_method = n.distribution, n.subsurface_method
+        elif n.type == 'GROUP':
+            dup.node_tree = bpy.data.node_groups[record[n.name]]
+        made[n.name] = dup
+        for i, s in enumerate(n.inputs):
+            d = dup.inputs[i]
+            if s.is_linked:
+                if s.type == 'SHADER':
+                    nt.links.new(_clean_shader(nt, s, record, made), d)
+                    continue
+                src, gi = _unworn_source(s.links[0])
+                if src is not None:
+                    nt.links.new(src, d)
+                    continue
+                s = gi
+            if hasattr(s, "default_value") and hasattr(d, "default_value"):
+                dv = s.default_value
+                d.default_value = tuple(dv) if hasattr(dv, "__len__") else dv
+    return made[n.name].outputs[list(n.outputs).index(link.from_socket)]
+
+
+def _eevee_output(nt, out, record):
+    clean = nt.nodes.new('ShaderNodeOutputMaterial')
+    clean.name = clean.label = EEVEE + "_output"
+    clean.location = (out.location.x, out.location.y - 900)
+    clean.target = 'EEVEE'
+    nt.links.new(_clean_shader(nt, out.inputs['Surface'], record, {}), clean.inputs['Surface'])
+    for nm in ('Volume', 'Displacement'):
+        if out.inputs[nm].is_linked:
+            nt.links.new(out.inputs[nm].links[0].from_socket, clean.inputs[nm])
+    out.target = 'CYCLES'
 
 
 def _unsplice(tree):
@@ -462,6 +529,9 @@ def remove(mat):
     if nt is None or not is_worn(mat):
         return False
     _unsplice(nt)
+    worn_out = nt.nodes.get(mat.get("tm_wear_eevee", ""))
+    if worn_out is not None:
+        worn_out.target = 'ALL'
     record = json.loads(mat.get("tm_wear_groups", "{}"))
     for n in nt.nodes:
         if n.type == 'GROUP' and n.node_tree is not None and n.node_tree.name.startswith(COPY):
@@ -476,7 +546,7 @@ def remove(mat):
                 # the copy without its splice is the original, node for node
                 _unsplice(copy)
                 copy.name = orig
-    for k in ("tm_wear_class", "tm_wear_groups"):
+    for k in ("tm_wear_class", "tm_wear_groups", "tm_wear_eevee"):
         if k in mat:
             del mat[k]
     return True
