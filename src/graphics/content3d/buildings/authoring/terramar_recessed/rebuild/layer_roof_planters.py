@@ -2,7 +2,8 @@
 #
 # Run through build.py (layers=roof_planters; needs the roof layer, and the vegetation decoded by
 # decode_vegetation_glb.mjs). Builds RB_PROPS/RB_ROOF_PLANTERS under its part root:
-#   rb_roof_planter_boxes  every box as one object, soil (TM_RB_soil) 40 mm below the rim: the perimeter ring's low
+#   rb_roof_planter_boxes  every box as one object, soil (TM_RB_soil) 40 mm below the rim (a mound since user fix 23,
+#                          soil.mound_pockets: lowest at the rims, higher in the middle): the perimeter ring's low
 #                          limestone troughs (TM_RB_paving, dressed by the materials pass; straight modules and one mitred
 #                          L module per sharp corner, user fix 8b), each a body with thin rim walls and end caps, and
 #                          the islands' dark-metal boxes (TM_RB_planter_metal, a body and a rim with a hole)
@@ -16,6 +17,7 @@
 #                          (procedural cycads and spiky rosettes from proc_plants.py, linden olives with a companion form,
 #                          viburnum standards), the islands', the pots' and the centre box's plants. No palms on the roof
 #                          since 2026-10-15 (the user: "no palm tree at the roof top"): linden olives and standards instead
+# The pots' soil is a mound too (soil.mound_pots); every plant, stem and flower stands on the mound (soil.lift).
 # Instances are fitted to their target height and crown radius (fit_scales); a prototype with rb_fit_aniso keeps its
 # xy / z scale ratio within it, and the summary lists those scales.
 # Every plant's foliage must stay inside the guard shoe's inner line (plan "keep_inside"): the layer counts every point
@@ -40,8 +42,9 @@ import layer_balcony_plants as BP  # noqa: E402  (game prototypes, leaf tone, fo
 import layer_podium_planters as PP  # noqa: E402  (the planter metal, inset)
 import proc_plants  # noqa: E402
 import props_layout as PL  # noqa: E402
+import soil as S  # noqa: E402  (user fix 23: the soil's mound, plants re-seated on it)
 
-for mod in (L, BP, PP, proc_plants, PL):
+for mod in (L, BP, PP, proc_plants, PL, S):
     importlib.reload(mod)
 
 COLLECTION = "RB_ROOF_PLANTERS"
@@ -78,6 +81,19 @@ def ring_module(bx, m):
     return items
 
 
+def ring_soil(bx):
+    """The trough's visible soil (user fix 23): between the rim walls' inner faces and the end caps' (the path trimmed
+    by RIM at both ends), as (outline, body top z, rim height) for soil.mound_pockets."""
+    path = [tuple(q) for q in bx["path"]]
+    v_in, v_out = bx["v"]
+    for i, j in ((0, 1), (-1, -2)):
+        p, q = path[i], path[j]
+        d = math.dist(p, q)
+        path[i] = (p[0] + (q[0] - p[0]) / d * RIM, p[1] + (q[1] - p[1]) / d * RIM)
+    loop = PL._offset_left(path, -(v_out - RIM)) + list(reversed(PL._offset_left(path, -(v_in + RIM))))
+    return loop, bx["z"] + bx["height"] - SOIL_DROP, SOIL_DROP
+
+
 def island(bx, m):
     """A box: the body up to the soil and a rim with a hole. A box with a chamfer (the limestone centre box, 2026-10-15,
     like the street's tree pits) has its vertical corners cut, the rim's soil side following them."""
@@ -88,10 +104,17 @@ def island(bx, m):
             ([(z1 - SOIL_DROP, z1)], [(outer, m), (inner, m)], [([outer, inner], m, m)])]
 
 
+def island_soil(bx):
+    """The box's visible soil inside its rim (user fix 23), as (outline, body top z, rim height)."""
+    outer = L.ccw(L.chamfer(L.ccw([tuple(q) for q in bx["loop"]]), bx.get("chamfer", 0.0)))
+    return PP.inset(outer, RIM), bx["z"] + bx["height"] - SOIL_DROP, SOIL_DROP
+
+
 def stem(bm, st, slot, sides=10):
     """A standard's stem: a slightly tapered, leaning cylinder from its foot on the soil to its top inside the crown,
     with a little flare at the foot; closed at both ends."""
     (fx, fy), (tx, ty), (z0, z1), r = st["foot"], st["top"], st["z"], st["r"]
+    z0 += S.lift((fx, fy), z0, 1.35 * r)                                # user fix 23: the foot on the mound, not into it
     rings = []
     for t, rr in ((0.0, 1.35 * r), (0.04, 1.1 * r), (0.5, 0.95 * r), (1.0, 0.75 * r)):
         cx, cy, z = fx + (tx - fx) * t, fy + (ty - fy) * t, z0 + (z1 - z0) * t
@@ -120,7 +143,8 @@ def flowers(coll, bx, seed):
         k = math.sqrt(rng.uniform(0.0, 1.0)) * 0.8                    # on the crown's dome, just inside its leaves
         ang, rr = rng.uniform(0, 2 * math.pi), p["radius"] * k
         h = p["height"] * (0.5 + 0.42 * (1.0 - k * k)) * rng.uniform(0.92, 1.0)
-        c = Vector((p["at"][0] + rr * math.cos(ang), p["at"][1] + rr * math.sin(ang), p["z"] + h))
+        c = Vector((p["at"][0] + rr * math.cos(ang), p["at"][1] + rr * math.sin(ang),
+                    p["z"] + S.lift(p["at"], p["z"]) + h))
         if not PP.inside(inner, c):
             continue
         PP.flower_head(bm, c, rng.uniform(0.014, 0.024), rng.choices(colours, weights=[weights[i] for i in colours])[0], rng)
@@ -209,10 +233,11 @@ def instances(coll, p, protos, name):
         c = p["companion"]
         forms.append((c["model"], c["rot_deg"], c["height"], c["radius"], "b"))
     made = []
-    for model, rot, height, radius, suffix in forms:
+    z = p["z"] if "stem" in p else p["z"] + S.lift(p["at"], p["z"])  # user fix 23: on the mound (a standard's crown
+    for model, rot, height, radius, suffix in forms:                   # rides its stem)
         proto = protos[model]
         s_z, s_xy = fit_scales(proto, height, radius)
-        M =(Matrix.Translation((p["at"][0], p["at"][1], p["z"])) @ Matrix.Rotation(math.radians(rot), 4, "Z")
+        M =(Matrix.Translation((p["at"][0], p["at"][1], z)) @ Matrix.Rotation(math.radians(rot), 4, "Z")
              @ Matrix.Diagonal((s_xy, s_xy, s_z, 1.0)))
         ob = bpy.data.objects.new(name + suffix, None)
         ob.instance_type = "COLLECTION"
@@ -261,22 +286,31 @@ def build(plan):
     BP.prop_materials()
     BP.plain_material(PP.METAL[0], PP.METAL[1], PP.METAL[2])
     BP.plain_material(*STEM)
+    S.begin()
     rp = plan["props"]["roof_planters"]
-    items, centre = [], []
+    items, centre, soils = [], [], {}           # soils: (object, pocket wall material) -> the soil outlines (fix 23)
     for bx in rp["boxes"]:
         if bx["kind"] == "centre":
             centre += island(bx, bx["material"])
+            soils.setdefault(("centre", bx["material"]), []).append(island_soil(bx))
+        elif bx["kind"] == "ring":
+            items += ring_module(bx, rp["config"]["material"])
+            soils.setdefault(("boxes", rp["config"]["material"]), []).append(ring_soil(bx))
         else:
-            items += ring_module(bx, rp["config"]["material"]) if bx["kind"] == "ring" else island(bx, PP.METAL[0])
+            items += island(bx, PP.METAL[0])
+            soils.setdefault(("boxes", PP.METAL[0]), []).append(island_soil(bx))
     made = [L.pieces("rb_roof_planter_boxes", coll, items, tags("planter_box", "roof_planter_boxes"))]
     if centre:
         made.append(L.pieces("rb_roof_centre_box", coll, centre, tags("planter_box", "roof_centre_box", hidden=True)))
+    for (which, wall), regs in soils.items():                         # user fix 23: the soil's mounds
+        S.mound_pockets(made[0] if which == "boxes" else made[-1], regs, wall)
     bm = bmesh.new()                                                  # the pots
     slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
     for p in rp["pots"]:
         BP.pot(bm, slots, p["at"], p["z"], p["radius"], p["height"], p["colour"])
     if rp["pots"]:
         made.append(L.finish("rb_roof_pots", coll, bm, slots, tags("pot", "roof_pots", hidden=True), smooth_deg=40.0))
+        S.mound_pots(made[-1])                                         # user fix 23
     else:
         bm.free()
     stems = [f["stem"] for f in rp["features"] if "stem" in f]
@@ -328,4 +362,4 @@ def build(plan):
             "prototypes": {m: [round(c["rb_height"], 2), round(c["rb_radius"], 2)] for m, c in protos.items()},
             "palm_fit": fits,
             "palm_aniso_max": round(max((abs(f[0] / f[1] - 1.0) for f in fits.values()), default=0.0), 3),
-            "names": [o.name for o in made]}
+            "soil": S.report(), "names": [o.name for o in made]}

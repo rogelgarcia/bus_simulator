@@ -30,8 +30,9 @@ import rb_lib as L  # noqa: E402
 import layer_balcony_plants as BP  # noqa: E402  (pots, prototypes, plain materials)
 import layer_roof_furniture as RF  # noqa: E402  (the detailed furniture's placement and materials, frames)
 import layer_roof_planters as RP  # noqa: E402  (prototypes, instances)
+import soil as S  # noqa: E402  (user fix 23: the pots' soil mound)
 
-for mod in (L, BP, RF, RP):
+for mod in (L, BP, RF, RP, S):
     importlib.reload(mod)
 
 PARENT = "RB_INTERIOR"
@@ -171,13 +172,15 @@ def fill_lights(coll, rl, prefix, tagger):
 
 
 def potted_plants(coll, rl, prefix, tagger):
-    """AI 627's charcoal pots (one object) with the game's viburnum in each."""
+    """AI 627's charcoal pots (one object; their soil a mound since user fix 23) with the game's viburnum in each, on
+    the mound (layer_roof_planters.instances)."""
     bm = bmesh.new()
     slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
     r_pot, h_pot = PLANT["pot"]
     for p in rl["plants"]:
         BP.pot(bm, slots, p["at"], p["z"], r_pot, h_pot, "charcoal")
     made = [L.finish(f"{prefix}_pots", coll, bm, slots, tagger("pot", f"{prefix}_pots"), smooth_deg=40.0)]
+    S.mound_pots(made[0])                                              # user fix 23: the soil's mound (RP re-seats)
     protos = {PLANT["model"]: RP.prototype(PLANT["model"])}
     BP.exclude(BP.PROTOTYPES)
     for i, p in enumerate(rl["plants"]):

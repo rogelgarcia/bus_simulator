@@ -1,7 +1,8 @@
 # render_poses.py -- render the Terra & Mar comparison poses (AI 639).
 #
 #   blender -b <file.blend> -P render_poses.py -- [poses=a,b] [items=615,621] [groups=full,check] [list=1]
-#                                                 [samples=96] [pct=100] [engine=cycles|eevee] [out=<dir>] [tag=<name>]
+#                                                 [samples=96] [pct=100] [engine=cycles|eevee|workbench] [out=<dir>]
+#                                                 [tag=<name>]
 #
 #   ... -- list=1                          print the poses (name, group, items, label) and render nothing
 #   ... -- groups=target,full              the b8 stand and the two full-building poses
@@ -118,6 +119,14 @@ def main(argv):
     if engine == "eevee":
         scene.render.engine = 'BLENDER_EEVEE'
         device = "EEVEE"
+    elif engine == "workbench":                 # the viewport's Solid view (user fix 18: how the user reviews)
+        scene.render.engine = 'BLENDER_WORKBENCH'
+        shading = scene.display.shading
+        shading.light, shading.color_type = 'STUDIO', 'MATERIAL'
+        shading.show_shadows = shading.show_cavity = False
+        scene.display.render_aa = '16'
+        scene.view_settings.view_transform, scene.view_settings.exposure = 'Standard', 0.0   # as the viewport shows it
+        device = "WORKBENCH"
     else:
         scene.render.engine = 'CYCLES'
         device = use_gpu(scene)
@@ -163,7 +172,7 @@ def main(argv):
     merged.update({r["name"]: r for r in rendered})
     order = [p["name"] for p in C.load_json(C.POSES_JSON)["poses"]]
     manifest = {"file": os.path.relpath(bpy.data.filepath, C.ROOT).replace("\\", "/"), "tag": tag,
-                "engine": engine, "device": device, "samples": scene.cycles.samples if engine != "eevee" else None,
+                "engine": engine, "device": device, "samples": scene.cycles.samples if engine == "cycles" else None,
                 "pct": scene.render.resolution_percentage, "updated": datetime.datetime.now().isoformat(timespec="seconds"),
                 "poses": sorted(merged.values(), key=lambda r: order.index(r["name"]) if r["name"] in order else 999)}
     with open(manifest_path, "w", encoding="utf-8") as f:

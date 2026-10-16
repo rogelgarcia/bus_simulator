@@ -1,30 +1,44 @@
 # runoff_streaks -- faint rain-runoff streaks below the places where water leaves an edge (wear feature, 2026-10-14).
 #
 # Rain that collects on a ledge leaves it at a few particular places and runs down the stone below, picking up the dust
-# that settled there and leaving a faint, darker, dirt-laden streak behind. On this building the water leaves:
-#   glass_joint    a balcony slab's fascia (floors 1-5) below a joint between two guard glass panels: the glass sheds
-#                  its rain down the joint onto the 0.15 m ledge outside the guard shoe, which spills it over the fascia
-#   roof_joint     the same below the roof guard's panel joints, down the roof slab's taller fascia
-#   corner         a slab fascia on a rounded corner, where the ledge's water gathers on the turn and leaves at one of the
-#                  guard's corner posts
-# The guard's joints are its connector posts (user fix 8, 2026-10-15: balcony_layout.guard_layout, the same layout the
-# guards are built from; floor 1 the terrace runs of user fix 3, in front of the pilasters; user fix 10: the runs stop
-# at the room-dividing piers, whose end posts are no joints).
-#   shoe_end       the fascia beside a front pilaster or a room-dividing pier, where the guard shoe stops and the balcony
-#                  floor's water gets out past its end
-#   planter_drain  the podium edge (floor 1) below an edge planter box's weep hole: over the podium roof fascia and on
-#                  down the stone below it (a pier, or the lintel band down to an upper recess's head)
-#   sill_corner    a lower corner of an upper podium recess: the recess floor and its planter box drain over the front
-#                  edge where it meets the pier, down the slab edge and the ground lintel to the storefront head
+# that settled there and leaving a faint, darker, dirt-laden streak behind. Water concentrates where an edge ends or
+# turns and where a horizontal edge runs into something vertical; it never starts in the middle of a flat panel or of
+# the curved loggia cover (user fix 22, 2026-10-16: "they should be put in more strategic places, like corners or edge
+# of columns. not in a flat surface"). On this building the water leaves:
+#   slab_end       a balcony slab (floors 2-5) or the floor-1 terrace slab where its guard run stops against a
+#                  room-dividing pier or a front pilaster: the ledge's water and the pier's own runoff leave past the
+#                  shoe's end and run down the fascia (on floor 1 the podium stone) along the pier's side line, in the
+#                  inside corner where the pilaster stands proud of the fascia
+#   slab_corner    an outer corner of a slab edge (floors 1-5 and the roof): the ledge's water gathers on the turn and
+#                  runs down one face a few centimetres off the fold's arris (or where a rounded corner starts)
+#   sill_corner    a lower corner of an upper podium recess: the recess floor and its planter trough drain over the
+#                  front edge where it meets the pier, down the stone below along the jamb line
+#   head_corner    an upper corner of an upper podium recess: the water coming down the lintel band is led along the
+#                  head's arris to its end and runs down the pier face beside the opening, along the jamb's arris
+#   cover_end      an end of the loggia cover (user fix 2): the cover's top drains to its ends at the wall, and the
+#                  water runs down the podium face in the inside corner beside the cover's end, then along the jamb
+#   coping_end     beside a pilaster crown under the roof frame's cap (user fix 9): the roof slab's ledge water runs
+#                  along to the crown's side and leaves over the roof fascia in the inside corner there, clear of the
+#                  cap's overhang
 #   lantern        rust: one or two of the four wall lanterns' fixings bleed a short orange-brown streak
+# The guards' runs and their ends come from the plan (the runs the guards are built from: floor 1 the terrace runs of
+# user fix 3; user fix 10: the runs stop at the piers; user fix 8b: straight legs meeting at one corner post).
 # Most drip points carry nothing, as on a real building: each candidate is kept with its kind's probability (a little
-# higher up the building, where wind-driven rain is heavier), drawn from a seed on its stable id (level, run, joint,
-# box, bay), so rebuilds are exact and a change elsewhere reshuffles nothing.
+# higher up the building, where wind-driven rain is heavier), drawn from a seed on its stable id (level, run, end,
+# corner, bay), so rebuilds are exact and a change elsewhere reshuffles nothing.
+#
+# THE EDGE IT HUGS. Every source names the side its edge is on. From a drip point a few centimetres off the junction
+# the face is scanned sideways (hug()): the first arris (the face falls away), step (something stands proud: a
+# pilaster, the cover's end) or vertical joint within reach is the streak's guide, and the streak runs down a seeded
+# 2.5-5.5 cm off an arris or step, or along the joint. A corner, head, cover or coping source with no such edge in
+# reach carries nothing; a slab end or sill corner without one keeps its plan junction line.
 #
 # ONE STREAK AT A TIME. Every kept source draws its own streak from its seed: how much dirt it carries (most light, a
-# few heavier), its length (0.3-1.6 m; a fascia's lower arris ends it sooner), its width at the drip and how much it
-# widens as it falls, how it fades, where under the drip point it starts, a slight wander (a slow meander of a few
-# millimetres, one smooth curve per streak) and the one to three rivulets inside it. No noise texture anywhere.
+# few heavier), its length (per kind; a fascia's lower arris ends it sooner), its width at the drip and how much it
+# widens as it falls, how it fades, its offset off the edge, a slight wander (a slow meander of a few millimetres, one
+# smooth curve per streak, drifting away from its edge, never onto it) and the one to three rivulets inside it. No noise
+# texture anywhere. A sheltered drip point gets less rain, so its streak is lighter: the amount scales with the sky
+# the drip point sees (exposure(), 48 rays over the hemisphere in front of the face on the building part).
 #
 # THE PATH comes from the built geometry: the building part (terramar_building.blend, the one beside the wear part) is
 # linked read-only and ray-cast. A streak runs down while the face under it stays stone (or a stone joint) and stays
@@ -43,7 +57,8 @@
 # and greys the stone's own texture and leaves the lighting untouched. The material reads the switch: k is 0 with
 # tm_wear off and with the strength at 0 (the decal is then a clear surface); debug paints the mask in DEBUG_RGB. Off
 # is exact (the switch excludes TM_WEAR); at strength 0 the camera rays still cross the clear decals, which shifts the
-# path tracer's sampling sequence in those pixels: the same picture, noise-level differences there.
+# path tracer's sampling sequence in those pixels: the same picture, noise-level differences there. In EEVEE (Material
+# Preview) the decals blend (surface_render_method BLENDED) instead of dithering, which drew them as stippled dots.
 # Why overlays and not the shader: the streaks are a few centimetres wide and the facade vertices are 0.6-1.2 m apart,
 # so a per-vertex signal cannot carry them; one decal per streak keeps each one unique and touches no material.
 #
@@ -56,18 +71,17 @@ import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
-import balcony_layout          # the guards' panels and posts (the rebuild directory is on the path)
-
 from .. import classes, context, nodes
 
 NAME = "runoff_streaks"
-LABEL = ("faint rain-runoff streaks below drip points: slab fascias, the podium edge, recess sill corners, rust under "
-         "lanterns")
+LABEL = ("faint rain-runoff streaks from drip points along edges: slab ends at piers, slab corners, recess corners, "
+         "the cover's and the coping's ends, rust under lanterns")
 ORDER = 220
 CLASSES = ()                   # no shader part: the streaks are overlays
 SIGNALS = ()
 DEBUG_RGB = (0.10, 0.35, 1.00)
-DEFAULT_STRENGTH = 1.0
+DEFAULT_STRENGTH = 2.5         # 2026-10-16: at 1.0 a streak darkened its core by ~15-25 of 255 over a few px and read as
+                               # nothing; 2.5 reads as a faint trail beside its edge, 4 as a hard dark line
 
 SEED = 220
 BUILDING_FILE, BUILDING_ROOT = "terramar_building.blend", "TM_BUILDING"
@@ -78,22 +92,32 @@ PROUD = 0.004                  # off the face; the audit counts same-facing face
 
 # ---------------------------------------------------------------------------------------------------- the sources
 # kind: p = the share of candidates that carry a streak (times the height factor), amount = the dirt it carries
-# (drawn as u ** 1.6 across the range: most light, a few heavier), length (m), w0 = half-width at the drip (m)
+# (drawn as u ** 1.6 across the range: most light, a few heavier), length (m), w0 = half-width at the drip (m),
+# need = the streak needs an edge (arris, step or joint) within reach of its drip point, or it is dropped
 KINDS = {
-    "glass_joint": dict(p=0.045, amount=(0.30, 0.85), length=(0.30, 1.60), w0=(0.018, 0.040)),
-    "roof_joint": dict(p=0.060, amount=(0.30, 0.90), length=(0.30, 1.60), w0=(0.020, 0.045)),
-    "corner": dict(p=0.070, amount=(0.30, 0.90), length=(0.30, 1.60), w0=(0.025, 0.055)),
-    "shoe_end": dict(p=0.200, amount=(0.35, 1.00), length=(0.30, 1.60), w0=(0.020, 0.045)),
-    "planter_drain": dict(p=0.400, amount=(0.35, 0.90), length=(0.60, 1.60), w0=(0.020, 0.045)),
-    "sill_corner": dict(p=0.200, amount=(0.30, 0.85), length=(0.50, 1.20), w0=(0.020, 0.045)),
-    "lantern": dict(count=(1, 2), amount=(0.65, 0.95), length=(0.25, 0.55), w0=(0.012, 0.020)),
+    "slab_end": dict(p=0.170, amount=(0.35, 0.95), length=(0.30, 1.40), w0=(0.014, 0.032), need=False),
+    "slab_corner": dict(p=0.160, amount=(0.30, 0.90), length=(0.30, 1.40), w0=(0.016, 0.034), need=True),
+    "sill_corner": dict(p=0.300, amount=(0.30, 0.85), length=(0.50, 1.20), w0=(0.014, 0.030), need=False),
+    "head_corner": dict(p=0.220, amount=(0.25, 0.75), length=(0.35, 1.10), w0=(0.012, 0.026), need=True),
+    "cover_end": dict(p=0.500, amount=(0.30, 0.80), length=(0.60, 1.50), w0=(0.014, 0.030), need=True),
+    "coping_end": dict(p=0.500, amount=(0.30, 0.85), length=(0.30, 0.70), w0=(0.014, 0.030), need=True,
+                       gap=(0.055, 0.080)),   # clear of the cap's 5 cm overhang
+    "lantern": dict(count=(1, 2), amount=(0.65, 0.95), length=(0.25, 0.55), w0=(0.012, 0.020), need=False),
 }
+TERRACE_P = 1.2                # the floor-1 terrace (a large open floor draining at its ends) carries one this much
+                               # more often at its slab ends
 HEIGHT = (5.0, 27.0, 0.75, 1.25)   # the probability factor: HEIGHT[2] at z HEIGHT[0] rising to HEIGHT[3] at HEIGHT[1]
-END_IN = (0.03, 0.10)          # a shoe end's streak sits this far in from the pilaster
-SILL_IN = (0.03, 0.12)         # a sill corner's streak sits this far in from the pier face
+NOMINAL = 0.06                 # a junction source's drip point sits this far off its junction line, on the face side
+CORNER_BACK = 0.40             # a slab corner's drip point sits this far back from the guard's turn along its face
+HUG_REACH = {"slab_end": 0.12, "slab_corner": 0.60, "sill_corner": 0.12, "head_corner": 0.15, "cover_end": 0.20,
+             "coping_end": 0.15}  # how far toward its edge the face is scanned for it (m)
+HUG_GAP = (0.025, 0.055)       # a streak runs this far off the arris or step it hugs (centre line; a kind's own "gap")
+JOINT_GAP = (0.012, 0.030)     # ... or this far off the vertical joint it follows (beside it, its edge over the joint)
+HUG_DRIFT = 0.006              # its drift away from the edge, at most this much per metre
+SHELTER = (0.55, 0.45)         # amount factor: SHELTER[0] for a drip point seeing no sky, 1.0 from SHELTER[1] sky on
 APART = 0.40                   # two kept streaks at least this far apart along an edge (their decals must not overlap)
-STACK = 0.25                   # the same joint, corner or shoe end on another floor carries one this much less often:
-                               # the guards repeat floor to floor, their streaks must not stack into a pattern
+STACK = 0.25                   # the same slab end or corner on another floor carries one this much less often: the
+                               # slabs repeat floor to floor, their streaks must not stack into a pattern
 
 # ---------------------------------------------------------------------------------------------------- the path
 D = 0.5                        # rays start this far out from the face
@@ -114,7 +138,8 @@ LAT_P = 2.2                    # across a streak: exp(-(x / hw) ** LAT_P), a sof
 RIV_SHARE = 0.35               # the rivulets carry this share of the streak's value
 JOINT_HOLD, JOINT_SPREAD = 0.25, 0.15   # at a bed joint: this much darker along it, this much wider just below it
 LIP = 0.30                     # this much darker in the last ~1.2 cm above an edge the water drips off
-DIRT = (0.58, 0.56, 0.50)      # at k = 1 the stone keeps 1 - DIRT of its colour: darker and a touch greyer (AgX
+DIRT = (0.50, 0.54, 0.60)      # at k = 1 the stone keeps 1 - DIRT of its colour: darker and a touch warmer, a grey-brown
+                               # water stain (the old (0.58, 0.56, 0.50) kept more blue and read blue-black at strength) (AgX
                                # compresses the pale stone: 8 % darker in linear light reads as only ~4 of 255)
 RUST = (0.28, 0.58, 0.85)      # rust: warm orange-brown
 
@@ -133,28 +158,26 @@ def _height_factor(z):
     return f0 + (f1 - f0) * min(max((z - z0) / (z1 - z0), 0.0), 1.0)
 
 
-def _length(path):
-    return sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+def _unit(a, b):
+    d = (b[0] - a[0], b[1] - a[1])
+    ln = math.hypot(*d)
+    return d[0] / ln, d[1] / ln
 
 
-def _at(path, s):
-    """(point, outward normal) at arc length s along a CCW polyline (outward = its right-hand side)."""
-    acc = 0.0
-    for a, b in zip(path, path[1:]):
-        seg = math.dist(a, b)
-        if seg > 1e-9 and acc + seg >= s:
-            t = (s - acc) / seg
-            dx, dy = (b[0] - a[0]) / seg, (b[1] - a[1]) / seg
-            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t), (dy, -dx)
-        acc += seg
-    a, b = path[-2], path[-1]
-    seg = math.dist(a, b)
-    return tuple(b), ((b[1] - a[1]) / seg, -(b[0] - a[0]) / seg)
+def _out(d):
+    """The outward normal of a counter-clockwise run's direction d (its right-hand side)."""
+    return d[1], -d[0]
 
 
-def _source(kind, sid, p, n, z, **extra):
+def _off(p, d, s):
+    return p[0] + d[0] * s, p[1] + d[1] * s
+
+
+def _source(kind, sid, p, n, z, hug=0, column=None):
+    """A drip point: p (plan) on the face line, n out of the face, z the drip's height, hug the side its edge is on
+    along t = (-n.y, n.x) (+1, -1; 0 none), column the id it shares with the same place on the other floors."""
     return {"kind": kind, "id": sid, "p": (float(p[0]), float(p[1])), "n": (float(n[0]), float(n[1])), "z": float(z),
-            **extra}
+            "hug": int(hug), "column": column}
 
 
 # ---------------------------------------------------------------------------------------------------- candidates
@@ -168,64 +191,79 @@ def _behind_frame(plan, p):
     return rf["x"][0] - ov <= p[0] <= rf["x"][1] + ov and p[1] < rf["cap"]["y"][1] + 0.1
 
 
-def candidates(plan):
-    """Every place water can leave an edge onto the stone, with a stable id."""
-    b, env, pd = plan["balconies"], plan["envelope"], plan["podium"]
+def _runs(plan):
+    """(level, run index, slab top, run path, ends) of every guard run: floors 1-5 and the roof's two halves."""
+    b, env = plan["balconies"], plan["envelope"]
     out = []
-    guards = []
     for floor, (top, _) in enumerate(env["storeys"], start=1):      # user fix 10: the runs' own ends (stop at a pier)
         runs = b["terrace_guard_runs"] if floor == 1 else b["guard_runs"]
         ends = b.get("terrace_guard_run_ends" if floor == 1 else "guard_run_ends", [("open", "open")] * len(runs))
-        guards += [(f"f{floor}", r, top, run, tuple(end)) for r, (run, end) in enumerate(zip(runs, ends))]
-    guards += [("roof", h, plan["roof"]["roof_top"], half, ("post", "joint"))
-               for h, half in enumerate(plan["roof"]["guard_halves"])]
-    outward = lambda post: (post["t"][1], -post["t"][0])       # noqa: E731  (the runs are counter-clockwise)
-    for level, r, top, run, ends in guards:
-        total = _length(run)
-        lay = balcony_layout.guard_layout(run, b, ends)
-        kind = "roof_joint" if level == "roof" else "glass_joint"
-        joints = [q for q in lay["posts"] if q["kind"] == "straight"]
-        for k, q in enumerate(joints, start=1):                 # the posts between the guard's glass panels
-            if level == "roof" and _behind_frame(plan, q["p"]):
-                continue                                        # user fix 9: the roof frame's cap holds that water back
-            out.append(_source(kind, f"{level}:{r}:joint{k}", q["p"], outward(q), top))
-        for k, group in enumerate(balcony_layout.corner_groups(lay)):   # the rounded corners: at one of their posts
-            sid = f"{level}:{r}:corner{k}"
-            q = group[min(int(_seed(sid, "at") * len(group)), len(group) - 1)]
-            out.append(_source("corner", sid, q["p"], outward(q), top))
-        if level != "roof" and math.dist(run[0], run[-1]) > 1e-6:      # the shoe's ends at the pilasters and piers
-            for end in (0, 1):
-                sid = f"{level}:{r}:end{end}"
-                d = _lerp(END_IN, _seed(sid, "in"))
-                p, nr = _at(run, d if end == 0 else total - d)
-                out.append(_source("shoe_end", sid, p, nr, top))
-    for box in plan["props"]["podium_planters"]["boxes"]:       # the podium edge boxes' weep holes
-        if box["kind"] != "edge":
-            continue
-        a, c = box["loop"][0], box["loop"][1]                   # the box's outer side
-        sid = f"box:{box['id']}"
-        p, nr = _at([a, c], math.dist(a, c) * _lerp((0.1, 0.9), _seed(sid, "at")))
-        out.append(_source("planter_drain", sid, p, nr, plan["levels_m"]["podium_top"]))
+        out += [(f"f{floor}", r, top, run, tuple(end)) for r, (run, end) in enumerate(zip(runs, ends))]
+    out += [("roof", h, plan["roof"]["roof_top"], half, ("post", "joint"))
+            for h, half in enumerate(plan["roof"]["guard_halves"])]
+    return out
+
+
+def candidates(plan):
+    """Every place water leaves an edge onto the stone, with a stable id and the side its edge is on."""
+    pd = plan["podium"]
+    out = []
+    for level, r, top, run, ends in _runs(plan):
+        pts = [tuple(p) for i, p in enumerate(run) if i == 0 or math.dist(p, run[i - 1]) > 1e-6]
+        if level != "roof" and math.dist(pts[0], pts[-1]) > 1e-6:     # the slab ends at the piers and pilasters
+            d0, d1 = _unit(pts[0], pts[1]), _unit(pts[-2], pts[-1])
+            out.append(_source("slab_end", f"{level}:{r}:end0", _off(pts[0], d0, NOMINAL), _out(d0), top, -1,
+                               f"{r}:end0"))
+            out.append(_source("slab_end", f"{level}:{r}:end1", _off(pts[-1], d1, -NOMINAL), _out(d1), top, 1,
+                               f"{r}:end1"))
+        for i in range(1, len(pts) - 1):                            # the slab's outer corners (left turns: convex)
+            a, c = _unit(pts[i - 1], pts[i]), _unit(pts[i], pts[i + 1])
+            if math.degrees(math.atan2(a[0] * c[1] - a[1] * c[0], a[0] * c[0] + a[1] * c[1])) < 1.0:
+                continue
+            if level == "roof" and _behind_frame(plan, pts[i]):
+                continue                                            # user fix 9: the roof frame's cap holds it back
+            sid = f"{level}:{r}:corner{i}"
+            na, nc = _out(a), _out(c)
+            ln = math.hypot(na[0] + nc[0], na[1] + nc[1])
+            if _seed(sid, "side") < 0.5:                            # one face of the fold, a little back from it
+                src = _source("slab_corner", sid, _off(pts[i], a, -CORNER_BACK), na, top, 1, f"{r}:c{i}")
+            else:
+                src = _source("slab_corner", sid, _off(pts[i], c, CORNER_BACK), nc, top, -1, f"{r}:c{i}")
+            src["apex"] = (pts[i], ((na[0] + nc[0]) / ln, (na[1] + nc[1]) / ln))   # a rounded corner: its crown
+            out.append(src)
     runs = {r["run"]: r for r in pd["runs"]}
-    for bay in pd["bays"]:                                      # the upper recesses' lower corners
+    head = pd["upper"]["head"]
+    for bay in pd["bays"]:                                          # the upper recesses' corners
         r = runs[bay["run"]]
-        for end in (0, 1):
-            sid = f"bay:{bay['id']}:{end}"
-            d = _lerp(SILL_IN, _seed(sid, "in"))
-            s = bay["s"][0] + d if end == 0 else bay["s"][1] - d
-            p = (r["p"][0] + r["along"][0] * s, r["p"][1] + r["along"][1] * s)
-            out.append(_source("sill_corner", sid, p, r["outward"], pd["storeys"]["upper"][0]))
-    for k, ln in enumerate(pd["lanterns"]):                     # the lanterns' wall fixings
+        at = lambda s, r=r: (r["p"][0] + r["along"][0] * s, r["p"][1] + r["along"][1] * s)  # noqa: E731
+        s0, s1 = bay["s"]
+        out.append(_source("sill_corner", f"bay:{bay['id']}:0", at(s0 + NOMINAL), r["outward"],
+                           pd["storeys"]["upper"][0], -1))
+        out.append(_source("sill_corner", f"bay:{bay['id']}:1", at(s1 - NOMINAL), r["outward"],
+                           pd["storeys"]["upper"][0], 1))
+        out.append(_source("head_corner", f"head:{bay['id']}:0", at(s0 - NOMINAL), r["outward"], head + 0.01, 1))
+        out.append(_source("head_corner", f"head:{bay['id']}:1", at(s1 + NOMINAL), r["outward"], head + 0.01, -1))
+    lc = pd.get("loggia_cover")
+    if lc:                                                          # user fix 2: the cover's ends at the wall
+        for k, sgn in enumerate((-1, 1)):
+            out.append(_source("cover_end", f"cover:{k}", (sgn * (lc["half_width"] + NOMINAL), lc["y_wall"]),
+                               (0.0, -1.0), lc["z"][1], -sgn))
+    rf = plan["structure"]["pilasters"].get("roof_frame")
+    if rf:                                                          # user fix 9: the cap's ends past the crowns
+        for k, sgn in enumerate((-1, 1)):
+            out.append(_source("coping_end", f"coping:{k}", (sgn * (rf["x"][1] + NOMINAL), rf["y"][1]), (0.0, -1.0),
+                               rf["cap"]["z"][0], -sgn))
+    for k, ln in enumerate(pd["lanterns"]):                         # the lanterns' wall fixings
         out.append(_source("lantern", f"lantern:{k}:{ln['kind']}", (ln["x"], ln["y"]), ln["outward"],
                            pd["lantern"]["z"][0]))
     return out
 
 
 def select(cands):
-    """The candidates that carry a streak: each kept with its kind's probability (lanterns: one or two of them). A
-    joint, corner or shoe end repeats on every floor's guard: once one floor's carries a streak, the same place on the
-    floors above carries one only STACK as often. Two streaks never share the stone: a candidate within APART of one
-    already kept on the same edge is passed over (the floor-1 guard's posts can fall beside an edge box's weep hole)."""
+    """The candidates that carry a streak: each kept with its kind's probability (lanterns: one or two of them). A slab
+    end or corner repeats on every floor: once one floor's carries a streak, the same place on the other floors carries
+    one only STACK as often. Two streaks never share the stone: a candidate within APART of one already kept at about
+    the same height is passed over."""
     keep, stacked = [], set()
     for c in cands:
         k = KINDS[c["kind"]]
@@ -233,8 +271,10 @@ def select(cands):
             continue
         if any(math.dist(c["p"], q["p"]) < APART and abs(c["z"] - q["z"]) < 0.3 for q in keep):
             continue
-        column = c["id"].split(":", 1)[1] if c["kind"] in ("glass_joint", "corner", "shoe_end") else None
+        column = c["column"]
         p = k["p"] * _height_factor(c["z"]) * (STACK if column in stacked else 1.0)
+        if c["kind"] == "slab_end" and c["id"].startswith("f1:"):
+            p *= TERRACE_P
         if _seed(c["id"], "keep") < p:
             keep.append(c)
             if column is not None:
@@ -258,7 +298,9 @@ def params(c):
             "spread": _lerp((0.00, 0.90), r("spread")), "off": _lerp((-0.015, 0.015), r("off")),
             "drift": _lerp((-0.02, 0.02), r("drift")), "wander": _lerp((0.001, 0.004), r("wander")),
             "wave": _lerp((0.50, 1.40), r("wave")), "phase": 2 * math.pi * r("phase"),
-            "head": _lerp((0.05, 0.30), r("head")), "rivulets": rivs, "rust": c["kind"] == "lantern"}
+            "head": _lerp((0.05, 0.30), r("head")), "rivulets": rivs, "rust": c["kind"] == "lantern",
+            "gap": _lerp(k.get("gap", HUG_GAP), r("gap")), "jgap": _lerp(JOINT_GAP, r("jgap")),
+            "hdrift": HUG_DRIFT * r("hdrift"), "hug": None, "sky": None}
 
 
 # ---------------------------------------------------------------------------------------------------- the geometry
@@ -373,13 +415,117 @@ def locate(bvh, codes, c):
     return Frame(bvh, codes, (loc.x, loc.y, z), c["n"])
 
 
+HUG_ROWS = (0.03, 0.10, 0.20)  # the sideways scans' descents below the drip (m)
+ROUND_TEST = 0.06              # a corner whose faces stay within FORWARD of its crown this far either side is rounded
+
+
+def _scan_row(fr, y, h, reach, joints):
+    """One sideways scan at descent y toward side h: (x, "edge" | "step" | "joint") of the first edge, or None. An
+    eased arris or a corner joint reads as a groove the face never comes back from: the edge is where it starts."""
+    ref = fr.sample(0.0, y)
+    if ref is None or ref[1] == OTHER:
+        return None
+    d0 = ref[0]
+    run = None
+    for i in range(1, int(reach / FINE) + 1):
+        x = h * i * FINE
+        s = fr.sample(x, y)
+        if s is None or s[1] == OTHER or s[0] > d0 + TOL or s[0] < d0 - FORWARD:
+            kind = "step" if s is not None and s[0] < d0 - FORWARD else "edge"
+            return (run if run is not None else x - h * FINE / 2), kind
+        groove = s[1] == JOINT or s[0] > d0 + GROOVE
+        if groove and run is None:
+            run = x
+        elif not groove and run is not None:
+            if joints:
+                return (run + x - h * FINE) / 2, "joint"
+            run = None
+    return None
+
+
+def round_corner(bvh, codes, c, P):
+    """A slab corner rounded on plan (the balcony slabs' fillets) has no arris: its streak runs down the round's crown,
+    within a few centimetres of it, in a frame square to the bisector. Returns that frame, or None for a sharp fold
+    (the face falls away by more than FORWARD within ROUND_TEST either side of the crown)."""
+    if "apex" not in c:
+        return None
+    fr = locate(bvh, codes, {"p": c["apex"][0], "n": c["apex"][1], "z": c["z"]})
+    if fr is None:
+        return None
+    for y in HUG_ROWS:
+        ref = fr.sample(0.0, y)
+        if ref is None or ref[1] == OTHER:
+            return None
+        for x in (-ROUND_TEST, ROUND_TEST):
+            s = fr.sample(x, y)
+            if s is None or s[1] == OTHER or abs(s[0] - ref[0]) > FORWARD:
+                return None
+    P["off"], P["drift"], P["hug"] = _lerp((-0.03, 0.03), _seed(c["id"], "crown")), 0.0, "round"
+    return fr
+
+
+def hug(fr, P, c):
+    """The edge the streak runs down: the first arris, step or (slab ends, sill corners) vertical joint toward the
+    source's side, found on at least two of the HUG_ROWS scans. Sets P's offset off it and its drift away from it;
+    returns False when the kind needs an edge and none is in reach."""
+    h, kind = c["hug"], c["kind"]
+    if not h:
+        return True
+    found = [f for f in (_scan_row(fr, y, h, HUG_REACH[kind], kind in ("slab_end", "sill_corner"))
+                         for y in HUG_ROWS) if f is not None]
+    best = None
+    for f in found:
+        agree = [g for g in found if abs(g[0] - f[0]) < 0.015]
+        if len(agree) >= 2 and (best is None or h * f[0] < h * best[0]):
+            best = (float(np.median([g[0] for g in agree])), f[1])
+    P["drift"] = -h * P["hdrift"]
+    if best is None:
+        if KINDS[kind]["need"]:
+            return False
+        P["off"], P["hug"] = h * (NOMINAL - P["gap"]), "line"   # the plan's junction line, 2.5-5.5 cm off it
+        return True
+    x, P["hug"] = best
+    P["off"] = x - h * (P["jgap"] if P["hug"] == "joint" else P["gap"])
+    return True
+
+
+def _hemisphere(n=48):
+    """n fixed cosine-weighted directions over the upper hemisphere (a Fibonacci spiral, no randomness)."""
+    out = []
+    for i in range(n):
+        u = (i + 0.5) / n
+        r, phi = math.sqrt(u), i * math.pi * (3.0 - math.sqrt(5.0))
+        out.append(Vector((r * math.cos(phi), r * math.sin(phi), math.sqrt(1.0 - u))))
+    return out
+
+
+SKY_DIRS = _hemisphere()
+
+
+def exposure(fr, P):
+    """The share of SKY_DIRS that leave the building from 5 cm in front of the drip (a direction behind the face counts
+    as blocked): about 0.5 on an open wall, less under a slab or in a recess."""
+    o = fr.B + fr.n * 0.05 + fr.t * P["off"] - Vector((0.0, 0.0, 0.03))
+    hits = sum(1 for d in SKY_DIRS if d.dot(fr.n) > 0.0 and fr.bvh.ray_cast(o, d, 80.0)[0] is None)
+    return hits / len(SKY_DIRS)
+
+
+def face_depth(fr, x):
+    """The face's distance at the drip, x across: the nearest stone sample within 15 mm, so a drip point beside a joint
+    never takes the groove's floor for the face. None when the drip is not over stone."""
+    c = fr.sample(x, 0.0)
+    if c is None or c[1] == OTHER:
+        return None
+    ds = [s[0] for s in (fr.sample(x + dx, 0.0) for dx in (-0.015, 0.015)) if s is not None and s[1] != OTHER]
+    return min([c[0]] + [d for d in ds if d > c[0] - FORWARD])     # a groove's floor, never a step beside it
+
+
 def fine_scans(fr, P, ymax):
     """Along the drip line: where the face ends (an edge or an obstacle) and its bed joints; across, near the top: the
     vertical joints. Returns (y_end, stop, bed joint descents, the vertical joint the streak follows or None)."""
-    ref = fr.sample(P["off"], 0.0)
-    if ref is None or ref[1] == OTHER:
+    d0 = face_depth(fr, P["off"])
+    if d0 is None:
         return 0.0, "none", [], None
-    d0 = ref[0]
     beds, run, y_end, stop = [], None, ymax, "length"
     for i in range(int(ymax / FINE) + 1):
         y = i * FINE
@@ -408,7 +554,7 @@ def fine_scans(fr, P, ymax):
         elif not groove and run is not None:
             verts.append((run + x - FINE) / 2)
             run = None
-    vj = min(verts, key=lambda x: abs(x - P["off"])) if verts else None
+    vj = min(verts, key=lambda x: abs(x - P["off"])) if verts and not P.get("hug") else None   # a hugged edge leads
     return y_end, stop, [b for b in beds if 0.02 < b < y_end - 0.01], vj
 
 
@@ -459,7 +605,7 @@ def trace(fr, P, vj, beds, y_end, X):
     The vertex distance is the nearest face of its 3 x 3 neighbourhood (bridging joint grooves, never inside a step)."""
     ys = list(np.arange(0.0, y_end - 1e-6, DZ)) + [y_end]
     xs = np.linspace(-X, X, max(3, int(math.ceil(2 * X / DX)) + 1))
-    d0 = fr.sample(P["off"], 0.0)[0]
+    d0 = face_depth(fr, P["off"])
     dist = np.full((len(ys), len(xs)), np.nan)
     for i, y in enumerate(ys):
         for j, x in enumerate(xs):
@@ -552,7 +698,7 @@ def material(image):
     nt.links.new(clear.outputs['BSDF'], mix.inputs[1])
     nt.links.new(dbg.outputs['BSDF'], mix.inputs[2])
     nt.links.new(mix.outputs['Shader'], out.inputs['Surface'])
-    mat.surface_render_method = 'DITHERED'
+    mat.surface_render_method = 'BLENDED'         # EEVEE: a smooth streak, not dithered dots (Cycles ignores it)
     mat["tm_wear_overlay"] = NAME
     return mat
 
@@ -615,6 +761,16 @@ def overlays(ctx):
             skipped.append((c["id"], "not over stone"))
             continue
         P = params(c)
+        crown = round_corner(bvh, codes, c, P)
+        if crown is not None:
+            fr = crown
+        elif not hug(fr, P, c):
+            skipped.append((c["id"], "no edge in reach"))
+            continue
+        P["sky"] = exposure(fr, P)                             # lighter where sheltered: less rain reaches it
+        P["amount"] *= SHELTER[0] + (1.0 - SHELTER[0]) * min(1.0, P["sky"] / SHELTER[1])
+        P["shift"] = P["off"]                                  # centre the frame on the streak: a small decal and tile
+        fr, P["off"] = Frame(bvh, codes, fr.B + fr.t * P["off"], (fr.n.x, fr.n.y)), 0.0
         y_end, stop, beds, vj = fine_scans(fr, P, P["length"] * 1.02)
         if y_end < 0.08:
             skipped.append((c["id"], f"face ends after {y_end:.2f} m"))
@@ -645,7 +801,9 @@ def overlays(ctx):
         built.append({"id": c["id"], "kind": c["kind"], "amount": round(P["amount"], 3),
                       "length": round(P["length"], 2),
                       "ran_m": round(y_end, 3), "stop": stop, "width_m": round(2 * P["w0"], 3),
-                      "beds": len(beds), "follows_joint": vj is not None, "faces": len(me.polygons)})
+                      "beds": len(beds), "follows_joint": vj is not None, "hug": P["hug"],
+                      "off_m": round(P["shift"], 3), "sky": round(P["sky"], 2), "faces": len(me.polygons),
+                      "at": [round(v, 2) for v in fr.origin(P["off"], 0.0) - fr.n * D]})
     by_kind = {}
     for c in cands:
         by_kind.setdefault(c["kind"], [0, 0, 0])[0] += 1

@@ -3906,6 +3906,1014 @@
                 1920,
                 1080
             ]
+        },
+        {
+            "name": "fix18_jamb_user",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): the user's Solid view (images/21.webp): the left entrance jamb pier from the front left, its front face, its side face and the courses, the lantern on the front",
+            "items": [],
+            "location": [
+                -3.85,
+                -13.8,
+                2.3
+            ],
+            "target": [
+                -3.15,
+                -12.15,
+                2.35
+            ],
+            "vfov_deg": 47.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18_corner_edge",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): the user's view of the 18 addendum (images/22.webp): the right entrance jamb beside the sign band from the front right, the outside corner between its front and side faces",
+            "items": [],
+            "location": [
+                4.8,
+                -14.65,
+                4.4
+            ],
+            "target": [
+                3.1,
+                -12.0,
+                3.95
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18_corner_arris",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): macro of the right corner pier's outside corner (A/B): the corner joint, the eased arrises and a course joint crossing it",
+            "items": [],
+            "location": [
+                5.55,
+                -12.45,
+                1.8
+            ],
+            "target": [
+                5.0,
+                -11.0,
+                2.0
+            ],
+            "vfov_deg": 14.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18_joint_grazing",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): a course / vertical joint crossing on the left jamb's front face, low sun raking across it, the side face's corner joint beside it",
+            "items": [],
+            "location": [
+                -4.4,
+                -12.5,
+                3.15
+            ],
+            "target": [
+                -3.15,
+                -12.15,
+                3.28
+            ],
+            "vfov_deg": 20.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18_pilaster",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): the right tower pilaster from the front right: its corners, the course joints and the slab fascias it meets",
+            "items": [],
+            "location": [
+                5.6,
+                -14.2,
+                15.0
+            ],
+            "target": [
+                3.05,
+                -11.0,
+                16.7
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18_pit_corner",
+            "group": "detail",
+            "label": "User fix 18 (2026-10-16): 18 addendum 2 (images/24.png): the left front palm's tree-pit planter corner from the street, low: the chamfer's vertical edges, the coping's top and lip, rounded in two segments",
+            "items": [],
+            "location": [
+                -6.0,
+                -17.0,
+                0.85
+            ],
+            "target": [
+                -6.98,
+                -15.83,
+                0.42
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_user_view",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the user's Solid view (images/23.webp): the penthouse's front wall from above the terrace centre, its door and slider, the units and solar on its roof, the centre planter in front",
+            "items": [],
+            "location": [
+                0.8,
+                -12.8,
+                37.5
+            ],
+            "target": [
+                0.8,
+                -1.5,
+                29.0
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_wall_front",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the penthouse's front wall straight on from the terrace at standing height: one block size, the courses from the deck line, the blocks cut at the door, the slider and the ends",
+            "items": [],
+            "location": [
+                0.0,
+                -10.2,
+                30.4
+            ],
+            "target": [
+                0.0,
+                -2.2,
+                29.3
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_wall_right",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the penthouse's right (+x) wall straight on from the terrace: its window, the blocks cut at the ends",
+            "items": [],
+            "location": [
+                12.8,
+                2.15,
+                30.4
+            ],
+            "target": [
+                5.0,
+                2.15,
+                29.3
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_wall_rear",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the penthouse's rear wall straight on from the rear terrace: its two windows",
+            "items": [],
+            "location": [
+                0.0,
+                13.0,
+                30.4
+            ],
+            "target": [
+                0.0,
+                6.5,
+                29.3
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_wall_left",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the penthouse's left (-x) wall from the rear left at standing height, its rear part open and the rest through the glazed annex: its door",
+            "items": [],
+            "location": [
+                -10.2,
+                9.8,
+                30.2
+            ],
+            "target": [
+                -5.0,
+                1.2,
+                29.2
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix19_corner",
+            "group": "detail",
+            "label": "User fix 19 (2026-10-16): the penthouse's front-right corner from the terrace: the courses running on round the corner, the corner joint, the cut end blocks of both walls",
+            "items": [],
+            "location": [
+                9.0,
+                -7.6,
+                30.6
+            ],
+            "target": [
+                5.0,
+                -2.2,
+                29.3
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_user_view",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): the user's Solid view (images/25.webp): the glazed annex on the roof terrace from above on its left (-x), its long glass side with the door, the front side toward the island planter, the penthouse behind",
+            "items": [],
+            "location": [
+                -15.6,
+                -3.2,
+                35.6
+            ],
+            "target": [
+                -6.2,
+                1.0,
+                28.6
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_extended_side",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): the annex's front (-y) side from the terrace at standing height: the 0.5 m extension, its glass, posts and the rain roof's gable glass, the island planter in front",
+            "items": [],
+            "location": [
+                -11.2,
+                -7.6,
+                29.2
+            ],
+            "target": [
+                -6.75,
+                -1.7,
+                29.0
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_door",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): the new sliding glass door in the annex's long (-x) glass side, close: the leaf on its top track, the pull handles, the floor guide and the seals",
+            "items": [],
+            "location": [
+                -12.0,
+                0.0,
+                29.0
+            ],
+            "target": [
+                -8.5,
+                2.0,
+                28.7
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_roof_high",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): the annex's inclined metal rain roof from a high angle: the standing seams falling from the penthouse wall to the gutter over the long glass side, the flashing at the wall, the parapet cap, units and solar",
+            "items": [],
+            "location": [
+                -14.0,
+                -8.5,
+                38.5
+            ],
+            "target": [
+                -6.5,
+                1.3,
+                30.4
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_side_triangle",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): the front gable's glazed triangle between the flat frame and the inclined roof, in thin black frames, from the front left a little above the frame",
+            "items": [],
+            "location": [
+                -10.8,
+                -6.6,
+                31.4
+            ],
+            "target": [
+                -6.75,
+                -1.7,
+                30.5
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix20_interior",
+            "group": "detail",
+            "label": "User fix 20 (2026-10-16): into the annex through the long glass side: the lounge corner moved forward with the extension, the island and stools, the potted plant in the corner, the louvres as the inner ceiling",
+            "items": [],
+            "location": [
+                -10.4,
+                -1.6,
+                29.1
+            ],
+            "target": [
+                -6.6,
+                1.6,
+                28.3
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18d_slab_user",
+            "group": "detail",
+            "label": "User fix 18d (2026-10-16): the user's view (images/32.webp): the floor-1 terrace slab along the right front chamfer from above, room-dividing pier B1 standing on it, the fascia's top arris and its end corner at B/C",
+            "items": [],
+            "location": [
+                7.9,
+                -10.8,
+                13.2
+            ],
+            "target": [
+                10.2,
+                -5.9,
+                10.7
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18d_inner_user",
+            "group": "detail",
+            "label": "User fix 18d (2026-10-16): the user's view of the addendum (images/33.webp): pier B1's side face against the stone casing beside it on floor 3, the inside corner above the guard",
+            "items": [],
+            "location": [
+                10.6,
+                -5.5,
+                18.1
+            ],
+            "target": [
+                8.55,
+                -5.41,
+                17.6
+            ],
+            "vfov_deg": 48.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18d_slab_edge",
+            "group": "detail",
+            "label": "User fix 18d (2026-10-16): close-up of the floor-3 slab fascia's top arris on the front run: the 6 mm chamfer to the slab top, a vertical joint crossing it, the guard shoe behind",
+            "items": [],
+            "location": [
+                0.9,
+                -11.55,
+                17.12
+            ],
+            "target": [
+                0.4,
+                -11.0,
+                16.8
+            ],
+            "vfov_deg": 16.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18d_inner_corner",
+            "group": "detail",
+            "label": "User fix 18d (2026-10-16): close-up of the inside corner joint between pier B1 and its casing on floor 3, a course joint running into it from both faces",
+            "items": [],
+            "location": [
+                9.15,
+                -5.52,
+                17.6
+            ],
+            "target": [
+                8.55,
+                -5.41,
+                17.5
+            ],
+            "vfov_deg": 18.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix18d_terrace_corner",
+            "group": "detail",
+            "label": "User fix 18d (2026-10-16): close-up of the floor-1 terrace slab's B/C corner: the top arris chamfer running round to fix 18's corner joint",
+            "items": [],
+            "location": [
+                14.35,
+                -3.15,
+                10.45
+            ],
+            "target": [
+                13.5,
+                -2.5,
+                10.0
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_user_left",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): the user's view (images/34.webp): the left side from above the street, F (left), G (centre), H (right, the café); the F2-G0-H0 room on floor 1 and up: its G/H corner now glazed, the panel moved beside the F pier",
+            "items": [],
+            "location": [
+                -34.0,
+                4.0,
+                20.0
+            ],
+            "target": [
+                -10.0,
+                -1.0,
+                13.0
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1290
+            ]
+        },
+        {
+            "name": "fix21_user_rear",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): the user's view of the addendum (images/35.webp): the rear E face square-on, the D2-E0-F0 room between the D and F piers, the new panels beside both piers on every floor",
+            "items": [],
+            "location": [
+                0.0,
+                34.0,
+                20.0
+            ],
+            "target": [
+                0.0,
+                10.0,
+                14.0
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1600,
+                1280
+            ]
+        },
+        {
+            "name": "fix21_left_room",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): the left side's corner room (F2-G0-H0) on floors 2-3 from outside: the F2 panel beside the F pier, the glazed G/H corner, H0's panel beside the H pier",
+            "items": [],
+            "location": [
+                -21.0,
+                0.0,
+                17.5
+            ],
+            "target": [
+                -10.0,
+                0.0,
+                16.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_right_room",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): the mirror: the right side's corner room (B1-C0-D0) on floors 2-3: B1's panel beside the B pier, the glazed B/C corner, the D0 panel beside the D pier",
+            "items": [],
+            "location": [
+                21.0,
+                0.0,
+                17.5
+            ],
+            "target": [
+                10.0,
+                0.0,
+                16.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_rear_room",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): the rear corner room (D2-E0-F0) on floors 2-3: the new panels at both ends, beside the D and F piers",
+            "items": [],
+            "location": [
+                0.0,
+                21.0,
+                17.5
+            ],
+            "target": [
+                0.0,
+                10.0,
+                16.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_corner_gh",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): close-up of the G/H corner on floor 2: glass round the corner post where fix 7's panel stood",
+            "items": [],
+            "location": [
+                -16.2,
+                -4.6,
+                16.4
+            ],
+            "target": [
+                -11.9,
+                -1.9,
+                15.1
+            ],
+            "vfov_deg": 32.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_wall_f2",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): close-up of the new F2 panel beside the F pier on floor 2: its course joints and arrises, the inside-corner joint at the pier, the mullion to the next slider",
+            "items": [],
+            "location": [
+                -13.0,
+                7.2,
+                16.4
+            ],
+            "target": [
+                -9.25,
+                4.6,
+                15.0
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_wall_d2",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): close-up of the new D2 panel beside the rear D pier on floor 2 (the addendum)",
+            "items": [],
+            "location": [
+                7.2,
+                13.0,
+                16.4
+            ],
+            "target": [
+                4.6,
+                9.25,
+                15.0
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix21_interior_gh",
+            "group": "detail",
+            "label": "User fix 21 (2026-10-16): into the left corner room on floor 2 through the newly glazed G/H corner, from its balcony: the curtains and the furniture behind the new glass",
+            "items": [],
+            "location": [
+                -14.6,
+                -4.2,
+                15.6
+            ],
+            "target": [
+                -9.0,
+                0.2,
+                14.6
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_user_cover",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): the user's view (images/36.webp): the loggia's cover over the upper podium from above the street, the floor-1 terrace guard over it, the sign band below (no streak on the cover's face)",
+            "items": [],
+            "location": [
+                0.0,
+                -17.6,
+                17.4
+            ],
+            "target": [
+                0.0,
+                -10.6,
+                8.4
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                2000,
+                1100
+            ]
+        },
+        {
+            "name": "fix22_user_example",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): the user's EXAMPLE view (images/37.webp): the H chamfer podium from above the street, the floor-1 terrace slab ends against the central pier H0/H1, the upper recesses' corners, the front terrace at the H/A corner on the right (streaks only at those junctions)",
+            "items": [],
+            "location": [
+                -14.4,
+                -12.9,
+                14.6
+            ],
+            "target": [
+                -9.0,
+                -7.2,
+                7.4
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                2000,
+                1210
+            ]
+        },
+        {
+            "name": "fix22_slab_pier",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): close-up: the floor-1 terrace slab against the central H pier (H0/H1), both ends, the podium stone below (streaks hugging the inside corners)",
+            "items": [],
+            "location": [
+                -12.0,
+                -9.6,
+                10.6
+            ],
+            "target": [
+                -9.25,
+                -6.85,
+                9.2
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_opening_corner",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): close-up: the B1 upper recess's top corner beside the B0/B1 column pier (a streak from the head's end, down the pier face along the jamb's arris)",
+            "items": [],
+            "location": [
+                12.5,
+                -9.4,
+                8.6
+            ],
+            "target": [
+                9.4,
+                -6.3,
+                8.1
+            ],
+            "vfov_deg": 36.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_sill_corner",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): close-up: the B0 upper recess's lower corner at the A/B corner pier (a streak from the recess floor's end, down the stone along the jamb line)",
+            "items": [],
+            "location": [
+                8.6,
+                -13.6,
+                6.0
+            ],
+            "target": [
+                5.5,
+                -10.5,
+                5.1
+            ],
+            "vfov_deg": 36.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_balcony_end",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): close-up: the A/B corner of the floor-4/5 balconies from the front right: a slab's rounded corner and a slab end against the right pilaster (streaks on the crown and in the inside corner)",
+            "items": [],
+            "location": [
+                8.4,
+                -17.6,
+                22.6
+            ],
+            "target": [
+                4.4,
+                -11.0,
+                21.7
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_cover_end",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): close-up: the loggia cover's right end where it eases back into the jamb, the pier face below (a streak from the cover's end, down beside the jamb)",
+            "items": [],
+            "location": [
+                4.6,
+                -15.6,
+                10.2
+            ],
+            "target": [
+                2.9,
+                -11.0,
+                8.9
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix22_overview_front",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): debug overview: the front, A face square-on with both chamfers, podium to roof (every streak there in the debug colour)",
+            "items": [],
+            "location": [
+                0.0,
+                -46.0,
+                15.0
+            ],
+            "target": [
+                0.0,
+                -6.0,
+                14.2
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                2400,
+                2000
+            ]
+        },
+        {
+            "name": "fix22_overview_left",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): debug overview: the left side, H chamfer and G face, podium to roof",
+            "items": [],
+            "location": [
+                -34.0,
+                -24.0,
+                15.0
+            ],
+            "target": [
+                -8.0,
+                -3.0,
+                14.2
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                2400,
+                2000
+            ]
+        },
+        {
+            "name": "fix22_overview_right",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): debug overview: the right side, B chamfer and C face, podium to roof",
+            "items": [],
+            "location": [
+                34.0,
+                -24.0,
+                15.0
+            ],
+            "target": [
+                8.0,
+                -3.0,
+                14.2
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                2400,
+                2000
+            ]
+        },
+        {
+            "name": "fix22_overview_rear",
+            "group": "detail",
+            "label": "User fix 22 (2026-10-16): debug overview: the rear, D, E and F faces, podium to roof",
+            "items": [],
+            "location": [
+                0.0,
+                44.0,
+                15.0
+            ],
+            "target": [
+                0.0,
+                4.0,
+                14.2
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                2400,
+                2000
+            ]
+        },
+        {
+            "name": "fix23_terrace_top",
+            "group": "detail",
+            "label": "User fix 23 (2026-10-16): the user's view (images/38.webp): from above the roof terrace's front right, the centre box, the lounge island, the slider and corner pots and the ring troughs (the soil in every one)",
+            "items": [],
+            "location": [
+                3.6,
+                -12.6,
+                38.0
+            ],
+            "target": [
+                3.0,
+                -5.2,
+                27.3
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                2000,
+                1365
+            ]
+        },
+        {
+            "name": "fix23_round_pot",
+            "group": "detail",
+            "label": "User fix 23 (2026-10-16): close-up: the roof's corner_AB round pot from above its rim, the soil's mound round the standard's stem",
+            "items": [],
+            "location": [
+                4.55,
+                -9.75,
+                29.35
+            ],
+            "target": [
+                4.13,
+                -8.9,
+                27.84
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix23_planter_low",
+            "group": "detail",
+            "label": "User fix 23 (2026-10-16): low angle: the roof's limestone centre box from its front right corner, low over the rim, along its length (the mound lower at the rim, higher in the middle)",
+            "items": [],
+            "location": [
+                2.85,
+                -7.35,
+                28.2
+            ],
+            "target": [
+                0.5,
+                -5.55,
+                27.7
+            ],
+            "vfov_deg": 32.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix23_palm_pit",
+            "group": "detail",
+            "label": "User fix 23 (2026-10-16): the right front palm's tree pit from above its coping (the soil's mound round the trunk and roots)",
+            "items": [],
+            "location": [
+                8.85,
+                -16.85,
+                1.6
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                0.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix23_entrance_pot",
+            "group": "detail",
+            "label": "User fix 23 (2026-10-16): the right entrance pots from above: the portal's glazed pot (fix 12) and the street pot with its cycad",
+            "items": [],
+            "location": [
+                2.6,
+                -14.6,
+                2.55
+            ],
+            "target": [
+                3.25,
+                -12.2,
+                0.82
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
         }
     ]
 }

@@ -2053,7 +2053,6 @@
     "centre_panes": 4,
     "wall_panels": {
       "H0": [
-        "start",
         "end"
       ],
       "H1": [
@@ -2063,7 +2062,18 @@
         "end"
       ],
       "B1": [
-        "start",
+        "start"
+      ],
+      "F2": [
+        "start"
+      ],
+      "D0": [
+        "end"
+      ],
+      "D2": [
+        "start"
+      ],
+      "F0": [
         "end"
       ]
     },
@@ -2417,6 +2427,10 @@
               [
                 2.9415,
                 3.842
+              ],
+              [
+                3.902,
+                4.8025
               ]
             ],
             "doors": [
@@ -2426,10 +2440,6 @@
               [
                 0.0,
                 0.9605
-              ],
-              [
-                3.902,
-                4.8025
               ]
             ]
           }
@@ -2536,17 +2546,18 @@
               [
                 2.0923,
                 3.0785
-              ],
-              [
-                3.1385,
-                4.1247
               ]
             ],
             "doors": [
               1,
               2
             ],
-            "walls": []
+            "walls": [
+              [
+                3.1385,
+                4.1847
+              ]
+            ]
           }
         ]
       },
@@ -2646,10 +2657,6 @@
             "wood": [],
             "panes": [
               [
-                0.06,
-                1.0462
-              ],
-              [
                 1.1062,
                 2.0923
               ],
@@ -2663,10 +2670,15 @@
               ]
             ],
             "doors": [
-              1,
-              2
+              0,
+              1
             ],
-            "walls": []
+            "walls": [
+              [
+                0.0,
+                1.0462
+              ]
+            ]
           }
         ]
       },
@@ -2771,17 +2783,18 @@
               [
                 2.0923,
                 3.0785
-              ],
-              [
-                3.1385,
-                4.1247
               ]
             ],
             "doors": [
               1,
               2
             ],
-            "walls": []
+            "walls": [
+              [
+                3.1385,
+                4.1847
+              ]
+            ]
           }
         ]
       },
@@ -2881,10 +2894,6 @@
             "wood": [],
             "panes": [
               [
-                0.06,
-                1.0462
-              ],
-              [
                 1.1062,
                 2.0923
               ],
@@ -2898,10 +2907,15 @@
               ]
             ],
             "doors": [
-              1,
-              2
+              0,
+              1
             ],
-            "walls": []
+            "walls": [
+              [
+                0.0,
+                1.0462
+              ]
+            ]
           }
         ]
       },
@@ -2996,6 +3010,10 @@
             "wood": [],
             "panes": [
               [
+                0.0,
+                0.9005
+              ],
+              [
                 0.9605,
                 1.861
               ],
@@ -3009,13 +3027,9 @@
               ]
             ],
             "doors": [
-              1
+              2
             ],
             "walls": [
-              [
-                0.0,
-                0.9005
-              ],
               [
                 3.842,
                 4.8025
@@ -11795,9 +11809,10 @@
         -5.0
       ],
       "y": [
-        -1.2,
+        -1.7,
         4.3
       ],
+      "extend_front_share": 0.5,
       "height": 2.75,
       "post": 0.15,
       "beam": 0.25,
@@ -11806,7 +11821,161 @@
         "thickness": 0.03,
         "spacing": 0.3
       },
-      "pane": 1.5
+      "pane": 1.5,
+      "door": {
+        "side": "x0",
+        "bay": 2,
+        "slide": -1,
+        "leaf": {
+          "depth": 0.04,
+          "stile": 0.05,
+          "top_rail": 0.08,
+          "bottom_rail": 0.1,
+          "glass": 0.012,
+          "standoff": 0.012,
+          "overlap": 0.05,
+          "gap": 0.004,
+          "bottom_gap": 0.008
+        },
+        "header": {
+          "height": 0.12,
+          "depth": 0.085,
+          "end_cap": 0.012,
+          "lip": 0.025,
+          "slot": 0.024,
+          "track": [
+            0.012,
+            0.01
+          ]
+        },
+        "hanger": {
+          "length": 0.1,
+          "thickness": 0.008,
+          "in": 0.12
+        },
+        "seals": {
+          "brush_width": 0.02,
+          "clear": 0.001,
+          "inset": 0.005
+        },
+        "bar_pull": {
+          "length": 0.8,
+          "radius": 0.014,
+          "centre_above_floor": 1.05,
+          "standoff_length": 0.045,
+          "standoff_radius": 0.009,
+          "standoff_in": 0.08
+        },
+        "flush_pull": {
+          "width": 0.025,
+          "height": 0.2,
+          "proud": 0.003,
+          "centre_above_floor": 1.0
+        },
+        "guide": {
+          "from_leaf": 0.04,
+          "base": [
+            0.08,
+            0.04,
+            0.005
+          ],
+          "fin": [
+            0.006,
+            0.02
+          ],
+          "fin_in": 0.01
+        },
+        "threshold": 0.01,
+        "inside_path": 0.5,
+        "panes": [
+          [
+            -1.49,
+            -0.14
+          ],
+          [
+            -0.08,
+            1.27
+          ],
+          [
+            1.33,
+            2.68
+          ],
+          [
+            2.74,
+            4.09
+          ]
+        ],
+        "span": [
+          1.33,
+          2.68
+        ],
+        "slide_over": [
+          -0.08,
+          1.27
+        ]
+      },
+      "rain_roof": {
+        "pitch_deg": 7.0,
+        "eaves_rise": 0.12,
+        "rafter": 0.08,
+        "purlins": 2,
+        "purlin": [
+          0.06,
+          0.08
+        ],
+        "ledger": [
+          0.08,
+          0.12
+        ],
+        "sheet": 0.012,
+        "eaves_over": 0.1,
+        "verge_over": 0.06,
+        "seam": {
+          "pitch": 0.5,
+          "width": 0.025,
+          "height": 0.035
+        },
+        "verge": {
+          "width": 0.03,
+          "down": 0.05,
+          "up": 0.03
+        },
+        "flashing": {
+          "up": 0.12,
+          "over": 0.12,
+          "thickness": 0.004
+        },
+        "gutter": {
+          "width": 0.13,
+          "height": 0.1,
+          "wall": 0.006,
+          "below_sheet": 0.012
+        },
+        "downpipe": {
+          "radius": 0.038,
+          "foot": 0.14,
+          "spout": 0.12,
+          "brackets": [
+            0.9,
+            2.0
+          ],
+          "bracket": [
+            0.02,
+            0.012
+          ]
+        },
+        "gable_frame": 0.035,
+        "cap_clear_min": 0.05,
+        "rise_m": 0.4297,
+        "top_at_wall_m": 3.7317,
+        "cap_clear_m": 0.0683
+      },
+      "y_before": [
+        -1.2,
+        4.3
+      ],
+      "free_width_m": 1.0,
+      "extension_m": 0.5
     },
     "solar": {
       "margin": 0.35,
@@ -12095,9 +12264,9 @@
         "hidden": true
       },
       "annex": {
-        "y": -1.2,
-        "height_above_roof_m": 3.05,
-        "hidden_up_to_m": 5.046,
+        "y": -1.76,
+        "height_above_roof_m": 3.732,
+        "hidden_up_to_m": 4.758,
         "hidden": true
       }
     },
@@ -12293,9 +12462,11 @@
       ]
     },
     "joints": {
-      "width": 0.008,
-      "bevel": 0.003,
-      "depth": 0.006,
+      "width": 0.005,
+      "wall": 0.0005,
+      "bevel": 0.006,
+      "bevel_depth": 0.0054,
+      "depth": 0.008,
       "panel_max": 1.2,
       "course_target": 0.67,
       "margin": 0.004,
@@ -12303,6 +12474,38 @@
       "seams": true,
       "seam_min_length": 0.02,
       "carry_hops": 2,
+      "corners": {
+        "min_angle_deg": 25.0,
+        "narrow": 0.035,
+        "arris_max": 0.06,
+        "contact": 0.005,
+        "ease": 0.009,
+        "slit": 0.003,
+        "slit_depth": 0.005
+      },
+      "arrises": {
+        "slots": [
+          "TM_RB_slab_fascia"
+        ],
+        "size": 0.006,
+        "min_angle_deg": 60.0,
+        "contact": 0.008,
+        "partners": [
+          "TM_RB_slab_top",
+          "TM_RB_roof_top",
+          "TM_RB_floor",
+          "TM_RB_ceiling",
+          "TM_RB_soffit"
+        ]
+      },
+      "inside": {
+        "min_angle_deg": 25.0,
+        "min_width": 0.03,
+        "probe": 0.003,
+        "square_tol": 0.02,
+        "gap": 0.005,
+        "vertical": true
+      },
       "seed": 648,
       "rgb": [
         0.2,
@@ -12337,7 +12540,8 @@
           "slot": "TM_RB_paving",
           "courses": false,
           "verticals": true,
-          "base": true
+          "base": true,
+          "corners": false
         }
       },
       "grids": [
@@ -12439,6 +12643,55 @@
             8.9186,
             9.5443,
             10.17
+          ]
+        },
+        {
+          "name": "penthouse",
+          "mode": "module",
+          "block": 1.2,
+          "layout": "centre",
+          "datum": "deck",
+          "cluster": 0.02,
+          "min_panel": 0.1,
+          "inherit": [],
+          "margin": 0.05,
+          "slots": [
+            "TM_RB_penthouse_stone"
+          ],
+          "box": {
+            "x": [
+              -5.08,
+              5.08
+            ],
+            "y": [
+              -2.28,
+              6.58
+            ],
+            "z": [
+              27.24,
+              31.12
+            ]
+          },
+          "course_m": 0.62625,
+          "datum_z": 27.3,
+          "top_z": 31.05,
+          "course_planes": [
+            27.9262,
+            28.5525,
+            29.1788,
+            29.805,
+            30.4312
+          ],
+          "bands": [
+            {
+              "z": [
+                27.3,
+                31.05
+              ],
+              "courses": 6,
+              "course_m": 0.62625,
+              "top_course_m": 0.6188
+            }
           ]
         }
       ],
@@ -12548,11 +12801,12 @@
         },
         {
           "z": [
-            27.25,
+            27.3,
             31.05
           ],
           "courses": 6,
-          "course_m": 0.6333
+          "course_m": 0.62625,
+          "top_course_m": 0.6188
         }
       ],
       "course_planes": [
@@ -12598,12 +12852,11 @@
         25.82,
         26.57,
         27.25,
-        27.8833,
-        28.5167,
-        29.15,
-        29.7833,
-        30.4167,
-        31.05
+        27.9262,
+        28.5525,
+        29.1788,
+        29.805,
+        30.4312
       ]
     },
     "wood": {
@@ -12692,6 +12945,18 @@
         "TM_RB_louvre"
       ],
       "note": "black powder-coated steel"
+    },
+    "roof_metal": {
+      "rgb": [
+        0.045,
+        0.05,
+        0.055
+      ],
+      "roughness": 0.45,
+      "metallic": 0.0,
+      "slots": [
+        "TM_RB_roof_metal"
+      ]
     },
     "glass": {
       "rgb": [
@@ -12785,6 +13050,22 @@
         "TM_RB_hidden"
       ]
     },
+    "soil": {
+      "set": "brown_mud",
+      "repeat_m": 1.0,
+      "tone": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "ao_strength": 0.6,
+      "roughness_gain": 1.0,
+      "normal_strength": 1.0,
+      "blend_scale": 0.8,
+      "slots": [
+        "TM_RB_soil"
+      ]
+    },
     "soffit_veneer": {
       "dark": [
         0.115,
@@ -12824,7 +13105,7 @@
       "pair_vary_in_panel": 0.4,
       "note": "user fix 17: the veneer family (materials.veneer) with a satin, less glossy coat"
     },
-    "comment": "AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone (assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d with a bevel b each side, its floor in the joint material; course planes from the datums' bands, vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show."
+    "comment": "AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone (assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d with side walls and an eased arris b each side (user fix 18), floor and walls in the joint material, also along every outside corner and (user fix 18d) every inside corner; the slab fascias' arrises to the other materials eased (user fix 18d); course planes from the datums' bands, vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show."
   },
   "props": {
     "balcony_plants": {
@@ -29070,7 +29351,7 @@
           ],
           "rods": [
             6.7304,
-            8.8725,
+            8.8745,
             10.8866
           ]
         },
@@ -29136,7 +29417,7 @@
           ],
           "rods": [
             1.1342,
-            2.9673,
+            2.9693,
             4.6724
           ]
         },
@@ -29169,7 +29450,7 @@
           ],
           "rods": [
             6.1124,
-            7.8422,
+            7.8442,
             9.444
           ]
         },
@@ -29202,7 +29483,7 @@
           ],
           "rods": [
             10.884,
-            12.717,
+            12.7191,
             14.4221
           ]
         },
@@ -29268,7 +29549,7 @@
           ],
           "rods": [
             1.1342,
-            2.9673,
+            2.9693,
             4.6724
           ]
         },
@@ -29301,7 +29582,7 @@
           ],
           "rods": [
             6.1124,
-            7.8422,
+            7.8442,
             9.444
           ]
         },
@@ -29334,7 +29615,7 @@
           ],
           "rods": [
             10.884,
-            12.717,
+            12.7191,
             14.4221
           ]
         },
@@ -29400,7 +29681,7 @@
           ],
           "rods": [
             1.1342,
-            3.2763,
+            3.2783,
             5.2904
           ]
         },
@@ -30111,7 +30392,10 @@
           ],
           "z": 0.15,
           "height": 0.4,
-          "chamfer": 0.05
+          "chamfer": 0.05,
+          "round": 0.012,
+          "round_segments": 2,
+          "overhang": 0.015
         },
         {
           "run": "A",
@@ -30136,7 +30420,10 @@
           ],
           "z": 0.15,
           "height": 0.4,
-          "chamfer": 0.05
+          "chamfer": 0.05,
+          "round": 0.012,
+          "round_segments": 2,
+          "overhang": 0.015
         },
         {
           "run": "H",
@@ -30161,7 +30448,10 @@
           ],
           "z": 0.15,
           "height": 0.4,
-          "chamfer": 0.05
+          "chamfer": 0.05,
+          "round": 0.012,
+          "round_segments": 2,
+          "overhang": 0.015
         },
         {
           "run": "B",
@@ -30186,7 +30476,10 @@
           ],
           "z": 0.15,
           "height": 0.4,
-          "chamfer": 0.05
+          "chamfer": 0.05,
+          "round": 0.012,
+          "round_segments": 2,
+          "overhang": 0.015
         }
       ],
       "palms": [
@@ -30562,6 +30855,19 @@
           }
         }
       ]
+    },
+    "soil": {
+      "comment": "user fix 23: every soil surface a gentle mound (soil.py): lowest at the wall (rim_drop under the old flat soil), rising rise_frac of its width to the middle; plants re-seated on it",
+      "rim_drop": 0.005,
+      "rise_frac": 0.035,
+      "rise_min": 0.008,
+      "rise_max": 0.035,
+      "rim_clear": 0.008,
+      "softness": 6.0,
+      "step": 0.05,
+      "min_cells": 8,
+      "seed": 23,
+      "pit_wall_slot": "TM_RB_threshold"
     }
   },
   "interior": {
@@ -38715,6 +39021,7 @@
           "min_bay": 3.0,
           "end_clear": 0.35,
           "core_clear": 0.45,
+          "glass_margin": 0.06,
           "layouts": {
             "lounge": 0.45,
             "dining": 0.3,
@@ -39051,7 +39358,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            1.5846
+            1.7529
           ],
           "anchor": "start",
           "opening": "open",
@@ -39065,8 +39372,8 @@
           "floor": 1,
           "bay": "B1",
           "s": [
-            3.3238,
-            3.8105
+            4.0403,
+            4.6805
           ],
           "anchor": "end",
           "opening": "open",
@@ -39111,7 +39418,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            1.8607
+            1.4003
           ],
           "anchor": "start",
           "opening": "closed",
@@ -39125,8 +39432,8 @@
           "floor": 1,
           "bay": "D0",
           "s": [
-            2.3641,
-            4.09
+            1.7706,
+            3.04
           ],
           "anchor": "end",
           "opening": "closed",
@@ -39170,8 +39477,8 @@
           "floor": 1,
           "bay": "D2",
           "s": [
-            0.09,
-            1.2931
+            1.1362,
+            2.0211
           ],
           "anchor": "start",
           "opening": "half",
@@ -39185,8 +39492,8 @@
           "floor": 1,
           "bay": "D2",
           "s": [
-            2.7061,
-            4.06
+            3.0604,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -39261,7 +39568,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            1.1618
+            0.8863
           ],
           "anchor": "start",
           "opening": "half",
@@ -39275,8 +39582,8 @@
           "floor": 1,
           "bay": "F0",
           "s": [
-            3.1238,
-            4.09
+            2.3294,
+            3.04
           ],
           "anchor": "end",
           "opening": "half",
@@ -39320,8 +39627,8 @@
           "floor": 1,
           "bay": "F2",
           "s": [
-            0.09,
-            1.2637
+            1.1362,
+            1.9995
           ],
           "anchor": "start",
           "opening": "half",
@@ -39335,8 +39642,8 @@
           "floor": 1,
           "bay": "F2",
           "s": [
-            3.183,
-            4.06
+            3.4111,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -39380,8 +39687,8 @@
           "floor": 1,
           "bay": "H0",
           "s": [
-            0.9905,
-            2.2093
+            0.12,
+            1.723
           ],
           "anchor": "start",
           "opening": "closed",
@@ -39395,8 +39702,8 @@
           "floor": 1,
           "bay": "H0",
           "s": [
-            2.6566,
-            3.7505
+            2.3113,
+            3.75
           ],
           "anchor": "end",
           "opening": "closed",
@@ -39531,7 +39838,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            1.858
+            2.1126
           ],
           "anchor": "start",
           "opening": "half",
@@ -39545,8 +39852,8 @@
           "floor": 2,
           "bay": "B1",
           "s": [
-            3.1812,
-            3.8105
+            3.8528,
+            4.6805
           ],
           "anchor": "end",
           "opening": "half",
@@ -39591,7 +39898,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            0.9868
+            0.7575
           ],
           "anchor": "start",
           "opening": "open",
@@ -39605,8 +39912,8 @@
           "floor": 2,
           "bay": "D0",
           "s": [
-            3.4333,
-            4.09
+            2.557,
+            3.04
           ],
           "anchor": "end",
           "opening": "open",
@@ -39650,8 +39957,8 @@
           "floor": 2,
           "bay": "D2",
           "s": [
-            0.09,
-            0.9484
+            1.1362,
+            1.7675
           ],
           "anchor": "start",
           "opening": "open",
@@ -39665,8 +39972,8 @@
           "floor": 2,
           "bay": "D2",
           "s": [
-            3.2974,
-            4.06
+            3.4953,
+            4.0562
           ],
           "anchor": "end",
           "opening": "open",
@@ -39741,7 +40048,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            1.6389
+            1.2371
           ],
           "anchor": "start",
           "opening": "closed",
@@ -39755,8 +40062,8 @@
           "floor": 2,
           "bay": "F0",
           "s": [
-            2.4095,
-            4.09
+            1.804,
+            3.04
           ],
           "anchor": "end",
           "opening": "closed",
@@ -39800,8 +40107,8 @@
           "floor": 2,
           "bay": "F2",
           "s": [
-            0.09,
-            1.5503
+            1.1362,
+            2.2103
           ],
           "anchor": "start",
           "opening": "closed",
@@ -39815,8 +40122,8 @@
           "floor": 2,
           "bay": "F2",
           "s": [
-            2.5309,
-            4.06
+            2.9315,
+            4.0562
           ],
           "anchor": "end",
           "opening": "closed",
@@ -39860,8 +40167,8 @@
           "floor": 2,
           "bay": "H0",
           "s": [
-            0.9905,
-            1.8887
+            0.12,
+            1.3013
           ],
           "anchor": "start",
           "opening": "half",
@@ -39875,8 +40182,8 @@
           "floor": 2,
           "bay": "H0",
           "s": [
-            2.9222,
-            3.7505
+            2.6606,
+            3.75
           ],
           "anchor": "end",
           "opening": "half",
@@ -40011,7 +40318,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            2.2286
+            2.5999
           ],
           "anchor": "start",
           "opening": "closed",
@@ -40025,8 +40332,8 @@
           "floor": 3,
           "bay": "B1",
           "s": [
-            2.7366,
-            3.8105
+            3.2681,
+            4.6805
           ],
           "anchor": "end",
           "opening": "closed",
@@ -40071,7 +40378,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            1.2358
+            0.9407
           ],
           "anchor": "start",
           "opening": "half",
@@ -40085,8 +40392,8 @@
           "floor": 3,
           "bay": "D0",
           "s": [
-            2.6829,
-            4.09
+            2.0051,
+            3.04
           ],
           "anchor": "end",
           "opening": "half",
@@ -40130,8 +40437,8 @@
           "floor": 3,
           "bay": "D2",
           "s": [
-            0.09,
-            1.2258
+            1.1362,
+            1.9716
           ],
           "anchor": "start",
           "opening": "half",
@@ -40145,8 +40452,8 @@
           "floor": 3,
           "bay": "D2",
           "s": [
-            3.1386,
-            4.06
+            3.3785,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -40221,7 +40528,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            0.975
+            0.7489
           ],
           "anchor": "start",
           "opening": "open",
@@ -40235,8 +40542,8 @@
           "floor": 3,
           "bay": "F0",
           "s": [
-            3.2402,
-            4.09
+            2.4149,
+            3.04
           ],
           "anchor": "end",
           "opening": "open",
@@ -40280,8 +40587,8 @@
           "floor": 3,
           "bay": "F2",
           "s": [
-            0.09,
-            1.0395
+            1.1362,
+            1.8346
           ],
           "anchor": "start",
           "opening": "half",
@@ -40295,8 +40602,8 @@
           "floor": 3,
           "bay": "F2",
           "s": [
-            3.0105,
-            4.06
+            3.2842,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -40340,8 +40647,8 @@
           "floor": 3,
           "bay": "H0",
           "s": [
-            0.9905,
-            2.0616
+            0.12,
+            1.5287
           ],
           "anchor": "start",
           "opening": "closed",
@@ -40355,8 +40662,8 @@
           "floor": 3,
           "bay": "H0",
           "s": [
-            2.6706,
-            3.7505
+            2.3297,
+            3.75
           ],
           "anchor": "end",
           "opening": "closed",
@@ -40491,7 +40798,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            1.7583
+            1.9815
           ],
           "anchor": "start",
           "opening": "half",
@@ -40505,8 +40812,8 @@
           "floor": 4,
           "bay": "B1",
           "s": [
-            2.9893,
-            3.8105
+            3.6005,
+            4.6805
           ],
           "anchor": "end",
           "opening": "half",
@@ -40551,7 +40858,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            0.9363
+            0.7204
           ],
           "anchor": "start",
           "opening": "open",
@@ -40565,8 +40872,8 @@
           "floor": 4,
           "bay": "D0",
           "s": [
-            3.2916,
-            4.09
+            2.4527,
+            3.04
           ],
           "anchor": "end",
           "opening": "open",
@@ -40610,8 +40917,8 @@
           "floor": 4,
           "bay": "D2",
           "s": [
-            0.09,
-            1.6424
+            1.1362,
+            2.278
           ],
           "anchor": "start",
           "opening": "closed",
@@ -40625,8 +40932,8 @@
           "floor": 4,
           "bay": "D2",
           "s": [
-            2.6005,
-            4.06
+            2.9827,
+            4.0562
           ],
           "anchor": "end",
           "opening": "closed",
@@ -40701,7 +41008,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            1.5681
+            1.1851
           ],
           "anchor": "start",
           "opening": "closed",
@@ -40715,8 +41022,8 @@
           "floor": 4,
           "bay": "F0",
           "s": [
-            2.5237,
-            4.09
+            1.888,
+            3.04
           ],
           "anchor": "end",
           "opening": "closed",
@@ -40760,8 +41067,8 @@
           "floor": 4,
           "bay": "F2",
           "s": [
-            0.09,
-            0.786
+            1.1362,
+            1.6481
           ],
           "anchor": "start",
           "opening": "open",
@@ -40775,8 +41082,8 @@
           "floor": 4,
           "bay": "F2",
           "s": [
-            3.2623,
-            4.06
+            3.4694,
+            4.0562
           ],
           "anchor": "end",
           "opening": "open",
@@ -40820,8 +41127,8 @@
           "floor": 4,
           "bay": "H0",
           "s": [
-            0.9905,
-            1.6282
+            0.12,
+            0.9587
           ],
           "anchor": "start",
           "opening": "half",
@@ -40835,8 +41142,8 @@
           "floor": 4,
           "bay": "H0",
           "s": [
-            2.7953,
-            3.7505
+            2.4937,
+            3.75
           ],
           "anchor": "end",
           "opening": "half",
@@ -40971,7 +41278,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            1.5495
+            1.7068
           ],
           "anchor": "start",
           "opening": "open",
@@ -40985,8 +41292,8 @@
           "floor": 5,
           "bay": "B1",
           "s": [
-            3.3503,
-            3.8105
+            4.0752,
+            4.6805
           ],
           "anchor": "end",
           "opening": "open",
@@ -41031,7 +41338,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            1.1737
+            0.895
           ],
           "anchor": "start",
           "opening": "half",
@@ -41045,8 +41352,8 @@
           "floor": 5,
           "bay": "D0",
           "s": [
-            3.1888,
-            4.09
+            2.3772,
+            3.04
           ],
           "anchor": "end",
           "opening": "half",
@@ -41090,8 +41397,8 @@
           "floor": 5,
           "bay": "D2",
           "s": [
-            0.09,
-            1.1198
+            1.1362,
+            1.8937
           ],
           "anchor": "start",
           "opening": "half",
@@ -41105,8 +41412,8 @@
           "floor": 5,
           "bay": "D2",
           "s": [
-            3.1552,
-            4.06
+            3.3907,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -41181,7 +41488,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            1.2958
+            0.9848
           ],
           "anchor": "start",
           "opening": "half",
@@ -41195,8 +41502,8 @@
           "floor": 5,
           "bay": "F0",
           "s": [
-            2.7598,
-            4.09
+            2.0616,
+            3.04
           ],
           "anchor": "end",
           "opening": "half",
@@ -41240,8 +41547,8 @@
           "floor": 5,
           "bay": "F2",
           "s": [
-            0.09,
-            1.1976
+            1.1362,
+            1.9509
           ],
           "anchor": "start",
           "opening": "half",
@@ -41255,8 +41562,8 @@
           "floor": 5,
           "bay": "F2",
           "s": [
-            3.151,
-            4.06
+            3.3876,
+            4.0562
           ],
           "anchor": "end",
           "opening": "half",
@@ -41300,8 +41607,8 @@
           "floor": 5,
           "bay": "H0",
           "s": [
-            0.9905,
-            2.0098
+            0.12,
+            1.4606
           ],
           "anchor": "start",
           "opening": "closed",
@@ -41315,8 +41622,8 @@
           "floor": 5,
           "bay": "H0",
           "s": [
-            2.6154,
-            3.7505
+            2.2571,
+            3.75
           ],
           "anchor": "end",
           "opening": "closed",
@@ -41399,7 +41706,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            3.8105
+            4.6805
           ],
           "z": 13.11
         },
@@ -41417,7 +41724,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 13.11
         },
@@ -41434,8 +41741,8 @@
           "floor": 1,
           "bay": "D2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 13.11
         },
@@ -41462,7 +41769,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 13.11
         },
@@ -41479,8 +41786,8 @@
           "floor": 1,
           "bay": "F2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 13.11
         },
@@ -41497,8 +41804,8 @@
           "floor": 1,
           "bay": "H0",
           "s": [
-            0.9905,
-            3.7505
+            0.12,
+            3.75
           ],
           "z": 13.11
         },
@@ -41552,7 +41859,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            3.8105
+            4.6805
           ],
           "z": 16.46
         },
@@ -41570,7 +41877,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 16.46
         },
@@ -41587,8 +41894,8 @@
           "floor": 2,
           "bay": "D2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 16.46
         },
@@ -41615,7 +41922,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 16.46
         },
@@ -41632,8 +41939,8 @@
           "floor": 2,
           "bay": "F2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 16.46
         },
@@ -41650,8 +41957,8 @@
           "floor": 2,
           "bay": "H0",
           "s": [
-            0.9905,
-            3.7505
+            0.12,
+            3.75
           ],
           "z": 16.46
         },
@@ -41705,7 +42012,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            3.8105
+            4.6805
           ],
           "z": 19.81
         },
@@ -41723,7 +42030,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 19.81
         },
@@ -41740,8 +42047,8 @@
           "floor": 3,
           "bay": "D2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 19.81
         },
@@ -41768,7 +42075,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 19.81
         },
@@ -41785,8 +42092,8 @@
           "floor": 3,
           "bay": "F2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 19.81
         },
@@ -41803,8 +42110,8 @@
           "floor": 3,
           "bay": "H0",
           "s": [
-            0.9905,
-            3.7505
+            0.12,
+            3.75
           ],
           "z": 19.81
         },
@@ -41858,7 +42165,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            3.8105
+            4.6805
           ],
           "z": 23.16
         },
@@ -41876,7 +42183,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 23.16
         },
@@ -41893,8 +42200,8 @@
           "floor": 4,
           "bay": "D2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 23.16
         },
@@ -41921,7 +42228,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 23.16
         },
@@ -41938,8 +42245,8 @@
           "floor": 4,
           "bay": "F2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 23.16
         },
@@ -41956,8 +42263,8 @@
           "floor": 4,
           "bay": "H0",
           "s": [
-            0.9905,
-            3.7505
+            0.12,
+            3.75
           ],
           "z": 23.16
         },
@@ -42011,7 +42318,7 @@
           "bay": "B1",
           "s": [
             1.0505,
-            3.8105
+            4.6805
           ],
           "z": 26.57
         },
@@ -42029,7 +42336,7 @@
           "bay": "D0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 26.57
         },
@@ -42046,8 +42353,8 @@
           "floor": 5,
           "bay": "D2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 26.57
         },
@@ -42074,7 +42381,7 @@
           "bay": "F0",
           "s": [
             0.12,
-            4.09
+            3.04
           ],
           "z": 26.57
         },
@@ -42091,8 +42398,8 @@
           "floor": 5,
           "bay": "F2",
           "s": [
-            0.09,
-            4.06
+            1.1362,
+            4.0562
           ],
           "z": 26.57
         },
@@ -42109,8 +42416,8 @@
           "floor": 5,
           "bay": "H0",
           "s": [
-            0.9905,
-            3.7505
+            0.12,
+            3.75
           ],
           "z": 26.57
         },
@@ -42450,36 +42757,54 @@
           "z": 10.17
         },
         {
-          "kind": "sofa",
+          "kind": "armchair",
           "at": [
-            8.1995,
-            2.0729
+            9.7556,
+            1.7189
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            2.2,
-            0.9
+            0.8,
+            0.8
           ],
           "cushion": "ecru",
           "group": "f1_D0",
           "z": 10.17
         },
         {
-          "kind": "coffee_table",
+          "kind": "armchair",
           "at": [
-            8.8359,
-            2.7093
+            8.8364,
+            2.6382
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            1.0,
-            0.55
+            0.8,
+            0.8
+          ],
+          "cushion": "ecru",
+          "group": "f1_D0",
+          "z": 10.17
+        },
+        {
+          "kind": "side_table",
+          "at": [
+            9.2606,
+            2.1432
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.45,
+            0.45
           ],
           "cushion": "greige",
           "group": "f1_D0",
@@ -42488,8 +42813,8 @@
         {
           "kind": "armchair",
           "at": [
-            2.7979,
-            8.6766
+            2.5879,
+            8.8865
           ],
           "face": [
             0.70711,
@@ -42506,8 +42831,8 @@
         {
           "kind": "armchair",
           "at": [
-            1.8786,
-            9.5958
+            1.6687,
+            9.8058
           ],
           "face": [
             0.70711,
@@ -42524,8 +42849,8 @@
         {
           "kind": "side_table",
           "at": [
-            2.3029,
-            9.1008
+            2.0929,
+            9.3108
           ],
           "face": [
             0.70711,
@@ -43026,108 +43351,126 @@
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "sofa",
           "at": [
-            4.9319,
-            -6.5426
+            4.4382,
+            -5.8342
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            2.2,
+            0.9
           ],
           "cushion": "ecru",
           "group": "f2_B0",
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "coffee_table",
           "at": [
-            5.8512,
-            -5.6234
+            5.0746,
+            -6.4706
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
-          ],
-          "cushion": "ecru",
-          "group": "f2_B0",
-          "z": 13.52
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            5.3562,
-            -6.0476
-          ],
-          "face": [
-            0.70711,
-            -0.70711
-          ],
-          "size": [
-            0.45,
-            0.45
+            1.0,
+            0.55
           ],
           "cushion": "greige",
           "group": "f2_B0",
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "dining_table",
           "at": [
-            8.0959,
-            -3.3786
+            9.1209,
+            -2.2829
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            1.4,
+            0.85
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f2_B1",
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "dining_chair",
           "at": [
-            9.0151,
-            -2.4594
+            8.2724,
+            -1.9293
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            0.46,
+            0.5
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f2_B1",
           "z": 13.52
         },
         {
-          "kind": "side_table",
+          "kind": "dining_chair",
           "at": [
-            8.5202,
-            -2.8837
+            9.4745,
+            -3.1314
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f2_B1",
+          "z": 13.52
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            8.7674,
+            -1.4344
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.45,
-            0.45
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f2_B1",
+          "z": 13.52
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            9.9695,
+            -2.6364
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
           ],
           "cushion": "greige",
           "group": "f2_B1",
@@ -43188,54 +43531,36 @@
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "sofa",
           "at": [
-            9.5516,
-            1.9229
+            8.7064,
+            1.5661
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            2.2,
+            0.9
           ],
           "cushion": "ecru",
           "group": "f2_D0",
           "z": 13.52
         },
         {
-          "kind": "armchair",
+          "kind": "coffee_table",
           "at": [
-            8.6324,
-            2.8421
+            9.3427,
+            2.2025
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            0.8,
-            0.8
-          ],
-          "cushion": "ecru",
-          "group": "f2_D0",
-          "z": 13.52
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            9.0567,
-            2.3472
-          ],
-          "face": [
-            0.70711,
-            0.70711
-          ],
-          "size": [
-            0.45,
-            0.45
+            1.0,
+            0.55
           ],
           "cushion": "greige",
           "group": "f2_D0",
@@ -43296,36 +43621,90 @@
           "z": 13.52
         },
         {
-          "kind": "sofa",
+          "kind": "dining_table",
           "at": [
-            -2.0071,
-            8.2654
+            -2.1768,
+            9.227
           ],
           "face": [
             -0.70711,
             0.70711
           ],
           "size": [
-            2.2,
-            0.9
+            1.4,
+            0.85
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f2_F0",
           "z": 13.52
         },
         {
-          "kind": "coffee_table",
+          "kind": "dining_chair",
           "at": [
-            -2.6435,
-            8.9018
+            -1.3282,
+            8.8735
           ],
           "face": [
             -0.70711,
             0.70711
           ],
           "size": [
-            1.0,
-            0.55
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f2_F0",
+          "z": 13.52
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -2.5303,
+            10.0756
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f2_F0",
+          "z": 13.52
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -1.8232,
+            8.3785
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f2_F0",
+          "z": 13.52
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -3.0253,
+            9.5806
+          ],
+          "face": [
+            0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
           ],
           "cushion": "greige",
           "group": "f2_F0",
@@ -43532,8 +43911,8 @@
         {
           "kind": "sofa",
           "at": [
-            -4.6481,
-            -5.6244
+            -4.1968,
+            -6.0756
           ],
           "face": [
             -0.70711,
@@ -43550,8 +43929,8 @@
         {
           "kind": "coffee_table",
           "at": [
-            -5.2845,
-            -6.2608
+            -4.8332,
+            -6.712
           ],
           "face": [
             -0.70711,
@@ -43656,54 +44035,90 @@
           "z": 16.87
         },
         {
-          "kind": "armchair",
+          "kind": "dining_table",
           "at": [
-            5.0611,
-            -6.4134
+            4.7749,
+            -6.629
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            1.4,
+            0.85
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f3_B0",
           "z": 16.87
         },
         {
-          "kind": "armchair",
+          "kind": "dining_chair",
           "at": [
-            5.9804,
-            -5.4942
+            3.9263,
+            -6.2754
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            0.46,
+            0.5
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f3_B0",
           "z": 16.87
         },
         {
-          "kind": "side_table",
+          "kind": "dining_chair",
           "at": [
-            5.4854,
-            -5.9184
+            5.1284,
+            -7.4775
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f3_B0",
+          "z": 16.87
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            4.4213,
+            -5.7804
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.45,
-            0.45
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f3_B0",
+          "z": 16.87
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            5.6234,
+            -6.9825
+          ],
+          "face": [
+            -0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
           ],
           "cushion": "greige",
           "group": "f3_B0",
@@ -43854,129 +44269,57 @@
           "z": 16.87
         },
         {
-          "kind": "sofa",
+          "kind": "armchair",
           "at": [
-            1.9754,
-            8.2969
+            2.5029,
+            8.9715
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            2.2,
-            0.9
+            0.8,
+            0.8
           ],
           "cushion": "ecru",
           "group": "f3_D2",
           "z": 16.87
         },
         {
-          "kind": "coffee_table",
+          "kind": "armchair",
           "at": [
-            2.6118,
-            8.9333
+            1.5837,
+            9.8908
           ],
           "face": [
             0.70711,
             0.70711
           ],
           "size": [
-            1.0,
-            0.55
+            0.8,
+            0.8
           ],
-          "cushion": "greige",
+          "cushion": "ecru",
           "group": "f3_D2",
           "z": 16.87
         },
         {
-          "kind": "dining_table",
+          "kind": "side_table",
           "at": [
-            -0.1948,
-            10.25
+            2.0079,
+            9.3958
           ],
           "face": [
-            0.0,
-            1.0
+            0.70711,
+            0.70711
           ],
           "size": [
-            1.4,
-            0.85
+            0.45,
+            0.45
           ],
           "cushion": "greige",
-          "group": "f3_E0",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            0.1552,
-            9.4
-          ],
-          "face": [
-            0.0,
-            1.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_E0",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            0.1552,
-            11.1
-          ],
-          "face": [
-            -0.0,
-            -1.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_E0",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            -0.5448,
-            9.4
-          ],
-          "face": [
-            0.0,
-            1.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_E0",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            -0.5448,
-            11.1
-          ],
-          "face": [
-            -0.0,
-            -1.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_E0",
+          "group": "f3_D2",
           "z": 16.87
         },
         {
@@ -44070,90 +44413,54 @@
           "z": 16.87
         },
         {
-          "kind": "dining_table",
+          "kind": "armchair",
           "at": [
-            -8.7334,
-            2.6703
+            -8.9666,
+            2.5078
           ],
           "face": [
             -0.70711,
             0.70711
           ],
           "size": [
-            1.4,
-            0.85
+            0.8,
+            0.8
           ],
-          "cushion": "greige",
+          "cushion": "ecru",
           "group": "f3_F2",
           "z": 16.87
         },
         {
-          "kind": "dining_chair",
+          "kind": "armchair",
           "at": [
-            -7.8849,
-            2.3168
+            -9.8859,
+            1.5886
           ],
           "face": [
             -0.70711,
             0.70711
           ],
           "size": [
-            0.46,
-            0.5
+            0.8,
+            0.8
           ],
-          "cushion": "greige",
+          "cushion": "ecru",
           "group": "f3_F2",
           "z": 16.87
         },
         {
-          "kind": "dining_chair",
+          "kind": "side_table",
           "at": [
-            -9.087,
-            3.5188
-          ],
-          "face": [
-            0.70711,
-            -0.70711
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_F2",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            -8.3799,
-            1.8218
+            -9.3909,
+            2.0128
           ],
           "face": [
             -0.70711,
             0.70711
           ],
           "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f3_F2",
-          "z": 16.87
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            -9.5819,
-            3.0239
-          ],
-          "face": [
-            0.70711,
-            -0.70711
-          ],
-          "size": [
-            0.46,
-            0.5
+            0.45,
+            0.45
           ],
           "cushion": "greige",
           "group": "f3_F2",
@@ -44252,8 +44559,8 @@
         {
           "kind": "armchair",
           "at": [
-            -8.899,
-            -2.5755
+            -9.6864,
+            -1.7881
           ],
           "face": [
             -0.70711,
@@ -44270,8 +44577,8 @@
         {
           "kind": "armchair",
           "at": [
-            -7.9798,
-            -3.4948
+            -8.7672,
+            -2.7073
           ],
           "face": [
             -0.70711,
@@ -44288,8 +44595,8 @@
         {
           "kind": "side_table",
           "at": [
-            -8.4041,
-            -2.9998
+            -9.1915,
+            -2.2124
           ],
           "face": [
             -0.70711,
@@ -44484,226 +44791,100 @@
           "z": 20.22
         },
         {
-          "kind": "dining_table",
+          "kind": "armchair",
           "at": [
-            8.3856,
-            -3.0182
+            9.0661,
+            -2.4085
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            1.4,
-            0.85
+            0.8,
+            0.8
           ],
-          "cushion": "greige",
+          "cushion": "ecru",
           "group": "f4_B1",
           "z": 20.22
         },
         {
-          "kind": "dining_chair",
+          "kind": "armchair",
           "at": [
-            7.5371,
-            -2.6647
+            9.9853,
+            -1.4892
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.46,
-            0.5
+            0.8,
+            0.8
           ],
-          "cushion": "greige",
+          "cushion": "ecru",
           "group": "f4_B1",
           "z": 20.22
         },
         {
-          "kind": "dining_chair",
+          "kind": "side_table",
           "at": [
-            8.7391,
-            -3.8668
-          ],
-          "face": [
-            -0.70711,
-            0.70711
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_B1",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            8.032,
-            -2.1697
+            9.4903,
+            -1.9135
           ],
           "face": [
             0.70711,
             -0.70711
           ],
           "size": [
-            0.46,
-            0.5
+            0.45,
+            0.45
           ],
           "cushion": "greige",
           "group": "f4_B1",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            9.2341,
-            -3.3718
-          ],
-          "face": [
-            -0.70711,
-            0.70711
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_B1",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_table",
-          "at": [
-            10.25,
-            -0.6394
-          ],
-          "face": [
-            1.0,
-            -0.0
-          ],
-          "size": [
-            1.4,
-            0.85
-          ],
-          "cushion": "greige",
-          "group": "f4_C0",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            9.4,
-            -0.9894
-          ],
-          "face": [
-            1.0,
-            -0.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_C0",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            11.1,
-            -0.9894
-          ],
-          "face": [
-            -1.0,
-            0.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_C0",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            9.4,
-            -0.2894
-          ],
-          "face": [
-            1.0,
-            -0.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_C0",
-          "z": 20.22
-        },
-        {
-          "kind": "dining_chair",
-          "at": [
-            11.1,
-            -0.2894
-          ],
-          "face": [
-            -1.0,
-            0.0
-          ],
-          "size": [
-            0.46,
-            0.5
-          ],
-          "cushion": "greige",
-          "group": "f4_C0",
           "z": 20.22
         },
         {
           "kind": "sofa",
           "at": [
-            8.2543,
-            2.0182
+            9.45,
+            0.2714
           ],
           "face": [
-            0.70711,
-            0.70711
+            1.0,
+            -0.0
           ],
           "size": [
-            2.2,
+            1.89,
             0.9
           ],
           "cushion": "ecru",
-          "group": "f4_D0",
+          "group": "f4_C0",
           "z": 20.22
         },
         {
           "kind": "coffee_table",
           "at": [
-            8.8907,
-            2.6546
+            10.35,
+            0.2714
           ],
           "face": [
-            0.70711,
-            0.70711
+            1.0,
+            -0.0
           ],
           "size": [
             1.0,
             0.55
           ],
           "cushion": "greige",
-          "group": "f4_D0",
+          "group": "f4_C0",
           "z": 20.22
         },
         {
           "kind": "armchair",
           "at": [
-            2.8905,
-            8.584
+            2.6331,
+            8.8413
           ],
           "face": [
             0.70711,
@@ -44720,8 +44901,8 @@
         {
           "kind": "armchair",
           "at": [
-            1.9712,
-            9.5032
+            1.7139,
+            9.7606
           ],
           "face": [
             0.70711,
@@ -44738,8 +44919,8 @@
         {
           "kind": "side_table",
           "at": [
-            2.3955,
-            9.0082
+            2.1381,
+            9.2656
           ],
           "face": [
             0.70711,
@@ -44844,60 +45025,6 @@
           "z": 20.22
         },
         {
-          "kind": "armchair",
-          "at": [
-            -1.8768,
-            9.5978
-          ],
-          "face": [
-            -0.70711,
-            0.70711
-          ],
-          "size": [
-            0.8,
-            0.8
-          ],
-          "cushion": "ecru",
-          "group": "f4_F0",
-          "z": 20.22
-        },
-        {
-          "kind": "armchair",
-          "at": [
-            -2.796,
-            8.6785
-          ],
-          "face": [
-            -0.70711,
-            0.70711
-          ],
-          "size": [
-            0.8,
-            0.8
-          ],
-          "cushion": "ecru",
-          "group": "f4_F0",
-          "z": 20.22
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            -2.301,
-            9.1028
-          ],
-          "face": [
-            -0.70711,
-            0.70711
-          ],
-          "size": [
-            0.45,
-            0.45
-          ],
-          "cushion": "greige",
-          "group": "f4_F0",
-          "z": 20.22
-        },
-        {
           "kind": "sofa",
           "at": [
             -9.0764,
@@ -44988,36 +45115,90 @@
           "z": 20.22
         },
         {
-          "kind": "sofa",
+          "kind": "dining_table",
           "at": [
-            -5.0078,
-            -5.2647
+            -4.7179,
+            -6.6859
           ],
           "face": [
             -0.70711,
             -0.70711
           ],
           "size": [
-            2.2,
-            0.9
+            1.4,
+            0.85
           ],
-          "cushion": "ecru",
+          "cushion": "greige",
           "group": "f4_H1",
           "z": 20.22
         },
         {
-          "kind": "coffee_table",
+          "kind": "dining_chair",
           "at": [
-            -5.6442,
-            -5.9011
+            -4.3644,
+            -5.8374
           ],
           "face": [
             -0.70711,
             -0.70711
           ],
           "size": [
-            1.0,
-            0.55
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f4_H1",
+          "z": 20.22
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -5.5664,
+            -7.0395
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f4_H1",
+          "z": 20.22
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -3.8694,
+            -6.3324
+          ],
+          "face": [
+            -0.70711,
+            -0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
+          ],
+          "cushion": "greige",
+          "group": "f4_H1",
+          "z": 20.22
+        },
+        {
+          "kind": "dining_chair",
+          "at": [
+            -5.0715,
+            -7.5344
+          ],
+          "face": [
+            0.70711,
+            0.70711
+          ],
+          "size": [
+            0.46,
+            0.5
           ],
           "cushion": "greige",
           "group": "f4_H1",
@@ -45636,54 +45817,36 @@
           "z": 23.57
         },
         {
-          "kind": "armchair",
+          "kind": "sofa",
           "at": [
-            -5.9623,
-            -5.5122
+            -4.3111,
+            -5.9613
           ],
           "face": [
             -0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
+            2.2,
+            0.9
           ],
           "cushion": "ecru",
           "group": "f5_H1",
           "z": 23.57
         },
         {
-          "kind": "armchair",
+          "kind": "coffee_table",
           "at": [
-            -5.0431,
-            -6.4315
+            -4.9475,
+            -6.5977
           ],
           "face": [
             -0.70711,
             -0.70711
           ],
           "size": [
-            0.8,
-            0.8
-          ],
-          "cushion": "ecru",
-          "group": "f5_H1",
-          "z": 23.57
-        },
-        {
-          "kind": "side_table",
-          "at": [
-            -5.4673,
-            -5.9365
-          ],
-          "face": [
-            -0.70711,
-            -0.70711
-          ],
-          "size": [
-            0.45,
-            0.45
+            1.0,
+            0.55
           ],
           "cushion": "greige",
           "group": "f5_H1",
@@ -45731,8 +45894,8 @@
           "floor": 1,
           "bay": "D0",
           "at": [
-            9.0834,
-            0.9769
+            8.8364,
+            1.7189
           ],
           "z": 10.17
         },
@@ -45740,8 +45903,8 @@
           "floor": 1,
           "bay": "D2",
           "at": [
-            1.8786,
-            8.6766
+            1.6687,
+            8.8865
           ],
           "z": 10.17
         },
@@ -45803,8 +45966,8 @@
           "floor": 2,
           "bay": "B0",
           "at": [
-            4.9319,
-            -5.6234
+            3.3422,
+            -6.7181
           ],
           "z": 13.52
         },
@@ -45812,8 +45975,8 @@
           "floor": 2,
           "bay": "B1",
           "at": [
-            8.0959,
-            -2.4594
+            9.5452,
+            -0.9394
           ],
           "z": 13.52
         },
@@ -45830,8 +45993,8 @@
           "floor": 2,
           "bay": "D0",
           "at": [
-            8.6324,
-            1.9229
+            7.6103,
+            2.45
           ],
           "z": 13.52
         },
@@ -45848,8 +46011,8 @@
           "floor": 2,
           "bay": "F0",
           "at": [
-            -0.9111,
-            9.1492
+            -2.601,
+            7.8835
           ],
           "z": 13.52
         },
@@ -45884,8 +46047,8 @@
           "floor": 2,
           "bay": "H1",
           "at": [
-            -3.5521,
-            -6.5082
+            -5.0807,
+            -4.9796
           ],
           "z": 13.52
         },
@@ -45902,8 +46065,8 @@
           "floor": 3,
           "bay": "B0",
           "at": [
-            5.0611,
-            -5.4942
+            3.4313,
+            -7.0532
           ],
           "z": 16.87
         },
@@ -45938,17 +46101,8 @@
           "floor": 3,
           "bay": "D2",
           "at": [
-            0.8794,
-            9.1808
-          ],
-          "z": 16.87
-        },
-        {
-          "floor": 3,
-          "bay": "E0",
-          "at": [
-            1.0552,
-            9.6
+            1.5837,
+            8.9715
           ],
           "z": 16.87
         },
@@ -45965,8 +46119,8 @@
           "floor": 3,
           "bay": "F2",
           "at": [
-            -9.1577,
-            1.3268
+            -8.9666,
+            1.5886
           ],
           "z": 16.87
         },
@@ -45983,8 +46137,8 @@
           "floor": 3,
           "bay": "H0",
           "at": [
-            -7.9798,
-            -2.5755
+            -8.7672,
+            -1.7881
           ],
           "z": 16.87
         },
@@ -46019,8 +46173,8 @@
           "floor": 4,
           "bay": "B1",
           "at": [
-            8.8099,
-            -1.6747
+            9.0661,
+            -1.4892
           ],
           "z": 20.22
         },
@@ -46028,17 +46182,8 @@
           "floor": 4,
           "bay": "C0",
           "at": [
-            9.6,
-            0.6106
-          ],
-          "z": 20.22
-        },
-        {
-          "floor": 4,
-          "bay": "D0",
-          "at": [
-            9.1382,
-            0.9222
+            9.3,
+            -0.9737
           ],
           "z": 20.22
         },
@@ -46046,8 +46191,8 @@
           "floor": 4,
           "bay": "D2",
           "at": [
-            1.9712,
-            8.584
+            1.7139,
+            8.8413
           ],
           "z": 20.22
         },
@@ -46057,15 +46202,6 @@
           "at": [
             0.9632,
             9.6
-          ],
-          "z": 20.22
-        },
-        {
-          "floor": 4,
-          "bay": "F0",
-          "at": [
-            -1.8768,
-            8.6785
           ],
           "z": 20.22
         },
@@ -46091,8 +46227,8 @@
           "floor": 4,
           "bay": "H1",
           "at": [
-            -3.9118,
-            -6.1486
+            -3.3744,
+            -7.1102
           ],
           "z": 20.22
         },
@@ -46181,8 +46317,8 @@
           "floor": 5,
           "bay": "H1",
           "at": [
-            -5.0431,
-            -5.5122
+            -3.2151,
+            -6.8452
           ],
           "z": 23.57
         }
@@ -46292,8 +46428,11 @@
         "f2_E0",
         "f2_F1",
         "f3_D1",
+        "f3_E0",
         "f3_F1",
+        "f4_D0",
         "f4_D1",
+        "f4_F0",
         "f4_F1",
         "f4_G0",
         "f5_D0",
@@ -46330,8 +46469,8 @@
             -6.5
           ],
           "y": [
-            1.8,
-            3.6
+            1.3,
+            3.1
           ],
           "body_inset": [
             0.25,
@@ -46342,6 +46481,7 @@
           "stools_x": -7.62,
           "seat": 0.66
         },
+        "corner_plant": 0.45,
         "pendant": {
           "drop_to": 1.75,
           "shade_r": 0.14,
@@ -46381,7 +46521,7 @@
           -5.0
         ],
         "y": [
-          -1.085,
+          -1.585,
           4.185
         ]
       },
@@ -46410,7 +46550,7 @@
           "kind": "sofa",
           "at": [
             -6.6,
-            -0.58
+            -1.08
           ],
           "face": [
             0.0,
@@ -46427,7 +46567,7 @@
           "kind": "coffee_table",
           "at": [
             -6.6,
-            0.4
+            -0.1
           ],
           "face": [
             0.0,
@@ -46444,7 +46584,7 @@
           "kind": "armchair",
           "at": [
             -7.845,
-            0.35
+            -0.15
           ],
           "face": [
             1.0,
@@ -46480,7 +46620,7 @@
         {
           "at": [
             -5.32,
-            -0.65
+            -1.15
           ],
           "z": 27.3
         }
@@ -46488,8 +46628,8 @@
       "plants": [
         {
           "at": [
-            -8.0,
-            1.35
+            -7.935,
+            3.735
           ],
           "z": 27.3
         },
@@ -46525,36 +46665,36 @@
       "stools": [
         [
           -7.62,
-          2.1
+          1.6
         ],
         [
           -7.62,
-          2.7
+          2.2
         ],
         [
           -7.62,
-          3.3
+          2.8
         ]
       ],
       "pendants": [
         {
           "at": [
             -6.95,
-            2.1
+            1.6
           ],
           "top": 30.21
         },
         {
           "at": [
             -6.95,
-            2.7
+            2.2
           ],
           "top": 30.21
         },
         {
           "at": [
             -6.95,
-            3.3
+            2.8
           ],
           "top": 30.21
         }
@@ -46643,10 +46783,10 @@
         {
           "c": [
             -6.6925,
-            1.55
+            1.3
           ],
           "w": 3.385,
-          "d": 5.27,
+          "d": 5.77,
           "angle": 0.0,
           "top": 30.21
         }

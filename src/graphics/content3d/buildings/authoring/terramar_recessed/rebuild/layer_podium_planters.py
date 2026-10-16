@@ -3,7 +3,8 @@
 # Run through build.py (layers=podium_planters; needs the podium and balconies layers, and the vegetation decoded by
 # decode_vegetation_glb.mjs). Builds RB_PROPS/RB_PODIUM_PLANTERS under its part root:
 #   rb_podium_planter_boxes   every box as one object: a dark-metal trough (TM_RB_planter_metal) with a 30 mm rim and
-#                             its soil (TM_RB_soil) 40 mm below the rim
+#                             its soil (TM_RB_soil) 40 mm below the rim, since user fix 23 a mound (soil.mound_pockets:
+#                             lowest at the rim, higher in the middle; the shrubs and flowers stand on it, soil.lift)
 #   rb_podium_plant_<box>_<n> one collection instance per shrub form (the game's arrowwood viburnum, the prototypes the
 #                             balcony layer imports into RB_PROP_PROTOTYPES), fitted to the plan's height and crown radius
 #   rb_podium_flowers         the boxes' flower heads as one object: small faceted heads scattered over the shrubs' crowns
@@ -26,9 +27,11 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
 import layer_balcony_plants as BP  # noqa: E402  (prototypes, leaf tone, foliage samples, plain materials)
+import soil as S  # noqa: E402  (user fix 23: the soil's mound, plants re-seated on it)
 
 importlib.reload(L)
 importlib.reload(BP)
+importlib.reload(S)
 
 COLLECTION = "RB_PODIUM_PLANTERS"
 LAYER = "podium_planters"
@@ -62,14 +65,17 @@ def inset(loop, d):
 
 
 def boxes_object(coll, boxes):
-    items = []
+    items, soils = [], []
     for bx in boxes:
         outer = [tuple(q) for q in bx["loop"]]
         inner = inset(outer, RIM)
         z0, z1 = bx["z"], bx["z"] + bx["height"]
         items.append((([(z0, z1 - SOIL_DROP)]), [(outer, METAL[0])], [([outer], "TM_RB_soil", METAL[0])]))
         items.append((([(z1 - SOIL_DROP, z1)]), [(outer, METAL[0]), (inner, METAL[0])], [([outer, inner], METAL[0], METAL[0])]))
-    return L.pieces("rb_podium_planter_boxes", coll, items, tags("planter_box", "podium_planter_boxes"))
+        soils.append((inner, z1 - SOIL_DROP, SOIL_DROP))
+    ob = L.pieces("rb_podium_planter_boxes", coll, items, tags("planter_box", "podium_planter_boxes"))
+    S.mound_pockets(ob, soils, METAL[0])                               # user fix 23: the soil's mound in every box
+    return ob
 
 
 def inside(loop, q):
@@ -107,7 +113,7 @@ def flowers_object(coll, boxes, seed):
             p = rng.choice(bx["plants"])
             ang, rr = rng.uniform(0, 2 * math.pi), p["radius"] * math.sqrt(rng.uniform(0.0, 1.0)) * 0.85
             h = p["height"] * rng.uniform(0.55, 1.0)
-            c = Vector((p["at"][0] + rr * math.cos(ang), p["at"][1] + rr * math.sin(ang), p["z"] + h))
+            c = Vector((p["at"][0] + rr * math.cos(ang), p["at"][1] + rr * math.sin(ang), p["z"] + S.lift(p["at"], p["z"]) + h))
             if not inside(inner, c):
                 continue
             k = rng.choices(colours, weights=[weights[i] for i in colours])[0]
@@ -124,6 +130,7 @@ def build(plan):
     L.clear_collection(coll)
     BP.prop_materials()
     BP.plain_material(METAL[0], METAL[1], METAL[2])
+    S.begin()
     pp = plan["props"]["podium_planters"]
     models = sorted({p["model"] for bx in pp["boxes"] for p in bx["plants"]})
     protos = {m: BP.prototype(m) for m in models}
@@ -135,7 +142,8 @@ def build(plan):
         for i, p in enumerate(bx["plants"]):
             proto = protos[p["model"]]
             s_z, s_xy = p["height"] / proto["rb_height"], p["radius"] / proto["rb_radius"]
-            M = (Matrix.Translation((p["at"][0], p["at"][1], p["z"])) @ Matrix.Rotation(math.radians(p["rot_deg"]), 4, "Z")
+            z = p["z"] + S.lift(p["at"], p["z"])                       # user fix 23: on the mound
+            M = (Matrix.Translation((p["at"][0], p["at"][1], z)) @ Matrix.Rotation(math.radians(p["rot_deg"]), 4, "Z")
                  @ Matrix.Diagonal((s_xy, s_xy, s_z, 1.0)))
             ob = bpy.data.objects.new(f"rb_podium_plant_{bx['id']}_{i + 1}", None)
             ob.instance_type = "COLLECTION"
@@ -157,4 +165,4 @@ def build(plan):
     made.append(flowers_object(coll, pp["boxes"], pp["seed"]))
     return {"collection": COLLECTION, "objects": len(made), "boxes": len(pp["boxes"]), "kinds": pp["counts"],
             "plants": n_plants, "flowers": pp["flowers"], "foliage_crossing_guard_or_glazing": len(crossings),
-            "closest_m": round(-worst, 3), "crossings": crossings[:10], "names": [o.name for o in made]}
+            "closest_m": round(-worst, 3), "crossings": crossings[:10], "soil": S.report(), "names": [o.name for o in made]}

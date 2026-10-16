@@ -33,6 +33,8 @@ SLOTS = {
     # steel: window and storefront frames, guard shoes and rails, lantern bodies (all TM_RB_frame), the louvres, the
     # storefront canopies (TM_RB_awning: slatted charcoal metal, not fabric; 2026-10-14)
     "TM_RB_frame": "steel", "TM_RB_louvre": "steel", "TM_RB_awning": "steel",
+    # the annex's standing-seam rain roof, gutter and downpipe (user fix 20)
+    "TM_RB_roof_metal": "steel",
     "TM_RB_glass": "glass_ext",
     # planter: the props' dark planter metal and the pots (the entrance portal's glazed pots: user fix 12)
     "TM_RB_planter_metal": "planter", "TM_RB_pot_charcoal": "planter", "TM_RB_pot_light_grey": "planter",

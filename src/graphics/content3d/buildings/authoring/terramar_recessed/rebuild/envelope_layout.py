@@ -7,6 +7,8 @@
 #     floors 1-4, with four 1.0 m panes between; on floor 5 the panel zones are glazed (six panes).
 #   - (user fix 7, 2026-10-15) the front chamfers are not glazed end to end: a solid stone panel stands on both sides of
 #     each chamfer column and at the chamfer's far end, on every floor (env["wall_panels"]; a variant's "walls").
+#     (user fix 21, 2026-10-16) the panels stand beside the room-dividing piers only, the front's and the rear's, and
+#     the corners are glazed: the far-end panels moved to the rear piers, and the rear corner room gained two.
 # The sides (C, G) and the rear (D, E, F) are seen in neither reference: they repeat the chamfer glazing.
 #   - (user fix 10, 2026-10-15) the chamfer columns are piers out to the guard line (plan.structure.columns): at the
 #     wall line their sides are flat, so a bay ends at the pier's side and its jamb or wall panel meets it face on.

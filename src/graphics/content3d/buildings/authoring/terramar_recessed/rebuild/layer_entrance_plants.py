@@ -8,7 +8,8 @@
 #   rb_entrance_plant_pots   the two pots as one object: tall glazed ceramic cylinders (TM_RB_pot_glazed, a deep
 #                            charcoal glaze under a thin clear coat) tapering a little toward a recessed foot (a shadow
 #                            reveal over the floor), a slight belly and a rounded lip, the inner wall down to the soil
-#                            (TM_RB_soil) 50 mm below the rim; each stands on the entrance floor (contact)
+#                            (TM_RB_soil) 50 mm below the rim, a mound since user fix 23 (soil.mound_pots); each stands
+#                            on the entrance floor (contact)
 #   rb_entrance_plant_<n>    collection instances of proc_plants' bird-of-paradise clumps (plant_broadleaf.py, real
 #                            leaves), fitted to the plan's height and crown radius (layer_roof_planters.fit_scales, within
 #                            the prototype's rb_fit_aniso); each is turned from the plan's rot_deg in 7.5 degree steps
@@ -31,8 +32,9 @@ if HERE not in sys.path:
 import rb_lib as L  # noqa: E402
 import layer_balcony_plants as BP  # noqa: E402  (prototype root, exclusion, foliage samples)
 import layer_roof_planters as RP  # noqa: E402  (proc prototypes, fit_scales)
+import soil as S  # noqa: E402  (user fix 23: the pots' soil mound, the clumps re-seated on it)
 
-for mod in (L, BP, RP):
+for mod in (L, BP, RP, S):
     importlib.reload(mod)
 
 COLLECTION = "RB_ENTRANCE_PLANTS"
@@ -100,11 +102,12 @@ def place(p, proto, pts0):
     """The plant's matrix: the turn nearest rot_deg (and the widest crown, narrowed only if needed) keeping inside
     keep_in. Returns (matrix, turn, crown factor, clearances)."""
     best = None
+    z = p["z"] + S.lift(p["at"], p["z"])                               # user fix 23: on the mound
     for narrow in [1.0 - 0.04 * i for i in range(6)]:
         s_z, s_xy = RP.fit_scales(proto, p["height"], p["radius"] * narrow)
         for step in sorted(range(-TURNS, TURNS + 1), key=abs):
             rot = p["rot_deg"] + TURN_STEP * step
-            M = (Matrix.Translation((p["at"][0], p["at"][1], p["z"])) @ Matrix.Rotation(math.radians(rot), 4, "Z")
+            M = (Matrix.Translation((p["at"][0], p["at"][1], z)) @ Matrix.Rotation(math.radians(rot), 4, "Z")
                  @ Matrix.Diagonal((s_xy, s_xy, s_z, 1.0)))
             c = clearances([M @ q for q in pts0], p["keep_in"])
             worst = min(c.values())
@@ -122,11 +125,13 @@ def build(plan):
     ep = plan["props"]["entrance_plants"]
     glaze_material()
     L.material("TM_RB_soil")
+    S.begin()
     bm = bmesh.new()
     slots = [GLAZE, "TM_RB_soil"]
     for pt in ep["pots"]:
         pot(bm, slots, pt["at"], pt["z"], pt["radius_bottom"], pt["radius_top"], pt["height"])
     made = [L.finish("rb_entrance_plant_pots", coll, bm, slots, tags("pot", "entrance_plant_pots"), smooth_deg=40.0)]
+    S.mound_pots(made[0])                                              # user fix 23
     models = sorted({p["model"] for p in ep["plants"]})
     protos = {m: RP.prototype(m) for m in models}
     BP.exclude(BP.PROTOTYPES)
@@ -148,4 +153,4 @@ def build(plan):
     return {"collection": COLLECTION, "objects": len(made), "pots": len(ep["pots"]), "plants": report,
             "prototype_tris": {m: protos[m].get("rb_tris") for m in models},
             "outside_keep_in": sum(1 for r in report if min(r["clear_m"].values()) < 0.0),
-            "names": [o.name for o in made]}
+            "soil": S.report(), "names": [o.name for o in made]}

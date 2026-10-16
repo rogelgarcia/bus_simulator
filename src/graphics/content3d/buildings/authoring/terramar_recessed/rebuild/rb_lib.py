@@ -60,6 +60,7 @@ MATERIALS = {
     "TM_RB_stainless": (0.60, 0.60, 0.58),        # user fix 16: the entrance doors' hardware (entrance_doors.py)
     "TM_RB_seal": (0.018, 0.018, 0.018),          # user fix 16: rubber and brush seals
     "TM_RB_sensor_lens": (0.01, 0.01, 0.012),     # user fix 16: the sliders' motion sensor lenses
+    "TM_RB_roof_metal": (0.045, 0.050, 0.055),    # user fix 20: the annex's standing-seam rain roof (annex_pavilion.py)
 }
 # Placeholder surface settings until the materials layer (AI 648): (roughness, metallic, transmission)
 SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0),

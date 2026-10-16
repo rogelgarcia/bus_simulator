@@ -78,7 +78,14 @@ ENVELOPE = {"frame_depth": 0.12, "member": 0.06, "head": 0.08, "sill": 0.05, "tr
             # and at the chamfer's far end (the G/H and B/C corners), on every floor; the user marked the same three
             # panes on H's floor 2. The pane at that end of the bay becomes the panel (the chamfer columns' stone),
             # mirrored on B; the panes between keep their slider. bay id -> the ends ("start" / "end") made solid
-            "wall_panels": {"H0": ["start", "end"], "H1": ["start"], "B0": ["end"], "B1": ["start", "end"]},
+            # user fix 21 (2026-10-16): the rule is now "a panel beside every room-dividing pier, glass at the corners".
+            # images/34.webp: "transfer that wall to near the column. all floors and the opposite side as well": the
+            # side rooms F2-G0-H0 and B1-C0-D0 lose the panel at their chamfer corner (H0 start at G/H, B1 end at B/C;
+            # the glazing takes the corner) and gain it at their other end, beside the rear pier (F2 start, D0 end).
+            # images/35.webp ("then add walls where i marked in red"): the rear room D2-E0-F0 gets a panel beside both
+            # piers (D2 start, F0 end; the room is its own mirror). The front rooms keep fix 7's panels by their piers
+            "wall_panels": {"H0": ["end"], "H1": ["start"], "B0": ["end"], "B1": ["start"],
+                            "F2": ["start"], "D0": ["end"], "D2": ["start"], "F0": ["end"]},
             "wall_slot": "TM_RB_column"}
 # Balconies layer (AI 645): b8's frameless glass guards (slim dark top rail ~1.0 m above the floor, dark base shoe
 # behind the slab fascia), stone walking surfaces, warm wood soffits with small downlights
@@ -206,8 +213,50 @@ ROOF = {"paving": 0.05,
                                      {"kind": "lift", "x": [-0.05, 0.95], "h": 2.15},
                                      {"kind": "lift", "x": [1.95, 2.95], "h": 2.15}],
                       "call_panel": {"x": [1.41, 1.49], "z": [0.95, 1.2]}},
-        "annex": {"x": [-8.5, -5.0], "y": [-1.2, 4.3], "height": 2.75, "post": 0.15, "beam": 0.25,
-                  "louvre": {"width": 0.15, "thickness": 0.03, "spacing": 0.30}, "pane": 1.5},
+        # user fix 20 (2026-10-16, images/25.webp: "extend the area a bit (it is not to match the wall. you can use 50% of
+        # the width available with the other house)"): `y` is the annex as AI 638 left it; roof() moves its front (-y)
+        # side out by `extend_front_share` of the free width between it and the penthouse's front wall plane (1.0 m ->
+        # 0.5 m, not aligned with the wall) and writes the result into `y` (`y_before` keeps the old span); the frame,
+        # glass, louvres and the annex's interior follow from the plan
+        "annex": {"x": [-8.5, -5.0], "y": [-1.2, 4.3], "extend_front_share": 0.5, "height": 2.75, "post": 0.15,
+                  "beam": 0.25, "louvre": {"width": 0.15, "thickness": 0.03, "spacing": 0.30}, "pane": 1.5,
+                  # user fix 20 ("create a door there"): a manual sliding glass door in the long (-x) glass side's pane
+                  # `bay` (0 = the -y end; the user's bay, second from the +y end, by the stools), in fix 16's slider
+                  # style: one framed leaf hung `standoff` outside the frame's terrace face, overlapping the mullions by
+                  # `overlap`, sliding toward `slide` (-1: -y) past the fixed pane beside it; a header (the rail) on the
+                  # frame's face under the beam, slotted for the track and the leaf's hangers, stainless end caps; a
+                  # floor guide past the closed leaf's end; brush seals under the leaf and behind its end stiles; a bar
+                  # pull on standoffs on the terrace face and a flush pull on the room face (the room face passes the
+                  # fixed pane); a stainless threshold in the frame's plane where the sill stops
+                  "door": {"side": "x0", "bay": 2, "slide": -1,
+                           "leaf": {"depth": 0.04, "stile": 0.05, "top_rail": 0.08, "bottom_rail": 0.10, "glass": 0.012,
+                                    "standoff": 0.012, "overlap": 0.05, "gap": 0.004, "bottom_gap": 0.008},
+                           "header": {"height": 0.12, "depth": 0.085, "end_cap": 0.012, "lip": 0.025, "slot": 0.024,
+                                      "track": [0.012, 0.01]},
+                           "hanger": {"length": 0.10, "thickness": 0.008, "in": 0.12},
+                           "seals": {"brush_width": 0.02, "clear": 0.001, "inset": 0.005},
+                           "bar_pull": {"length": 0.80, "radius": 0.014, "centre_above_floor": 1.05,
+                                        "standoff_length": 0.045, "standoff_radius": 0.009, "standoff_in": 0.08},
+                           "flush_pull": {"width": 0.025, "height": 0.20, "proud": 0.003, "centre_above_floor": 1.0},
+                           "guide": {"from_leaf": 0.04, "base": [0.08, 0.04, 0.005], "fin": [0.006, 0.02], "fin_in": 0.01},
+                           "threshold": 0.01, "inside_path": 0.5},
+                  # user fix 20 ("the ceiling is open, we need another metal plate inclined to cover from rain ... flat ->
+                  # inclined will form a gap. that can be filled with glass"): a single-pitch standing-seam roof over
+                  # the louvred frame (the louvres stay as the inner ceiling), `pitch_deg` falling from the penthouse
+                  # wall to the far (-x) side; its underside `eaves_rise` over the beam top at the outer face, on a
+                  # sloped eaves bearer, gable rafters over the front and rear beams, `purlins` and a ledger on the
+                  # wall; `eaves_over` / `verge_over` overhangs, seams every `seam.pitch`, verge trims, a flashing up the
+                  # wall over the high edge (under the parapet cap), a box gutter under the low edge with a downpipe at
+                  # the rear end; the gables' gaps glazed in `gable_frame` black frames, split over the walls' mullions
+                  "rain_roof": {"pitch_deg": 7.0, "eaves_rise": 0.12, "rafter": 0.08, "purlins": 2, "purlin": [0.06, 0.08],
+                                "ledger": [0.08, 0.12], "sheet": 0.012, "eaves_over": 0.10, "verge_over": 0.06,
+                                "seam": {"pitch": 0.50, "width": 0.025, "height": 0.035},
+                                "verge": {"width": 0.03, "down": 0.05, "up": 0.03},
+                                "flashing": {"up": 0.12, "over": 0.12, "thickness": 0.004},
+                                "gutter": {"width": 0.13, "height": 0.10, "wall": 0.006, "below_sheet": 0.012},
+                                "downpipe": {"radius": 0.038, "foot": 0.14, "spout": 0.12, "brackets": [0.9, 2.0],
+                                             "bracket": [0.02, 0.012]},
+                                "gable_frame": 0.035, "cap_clear_min": 0.05}},
         "solar": {"margin": 0.35, "panel": 1.0, "gap": 0.45, "tilt_deg": 10.0, "clearance": 0.15, "thickness": 0.04,
                   "module": 1.0, "module_gap": 0.02, "rail": 0.05},
         # 2026-10-15: detailed plant (roof_units.py): two top-discharge condensing units along the front parapet, a
@@ -246,8 +295,51 @@ MATERIALS = {
     # seams (2026-10-14): where two stone pieces meet flush (a lintel on a pier, a band under a slab fascia, a jamb beside
     # a pier) the joint is cut centred on the seam over the stretch they share; carry_hops: how many faces a vertical
     # joint carries on over (the eased arris, then the stone return) past its own face
-    "joints": {"width": 0.008, "bevel": 0.003, "depth": 0.006, "panel_max": 1.2, "course_target": 0.67, "margin": 0.004,
-               "vertical_min_height": 0.2, "seams": True, "seam_min_length": 0.02, "carry_hops": 2,
+    # user fix 18 (2026-10-16: "the edges of the stones are too sharp. they need a small bevel on the edges"): the
+    # groove is a floor `width` wide at `depth`, side walls rising `wall` outwards to `bevel_depth` deep, then each
+    # lip's eased arris, a chamfer `bevel` across and `bevel_depth` deep (6 x 5.4 mm, 42 degrees: a touch off 45, so a
+    # joint lip never lies a hair off the plane of a 45 degree corner bevel stacked over or under it), shaded round;
+    # before, a 3 mm slope from an 8 mm floor 6 mm deep straight to the face left a sharp lip.
+    # corners (fix 18 addendum: "make a cut on the stone at those corner. there should be a junction not a curved
+    # stone"): a joint along every outside corner of the stone turning at least min_angle_deg (a sharp fold, or an
+    # eased or rounded arris whose faces are each narrower than `narrow`, at most `arris_max` across, which closes up
+    # into the sharp corner first; the slabs' fillets stay one curved stone), unless another piece comes within
+    # `contact` of the corner (a flush seam, a buried edge, or a neighbour's arris across a narrow gap such as the sign
+    # band's beside the jambs: already a joint). The blocks meet on a mitre: one bevel symmetric about the corner eases
+    # both block ends (each face's lip `ease` from the corner, the joints' own half-opening) and the joint is a slit
+    # `slit` wide along the bisector, `slit_depth` below the bevel
+    "joints": {"width": 0.005, "wall": 0.0005, "bevel": 0.006, "bevel_depth": 0.0054, "depth": 0.008, "panel_max": 1.2,
+               "course_target": 0.67, "margin": 0.004, "vertical_min_height": 0.2, "seams": True, "seam_min_length": 0.02,
+               "carry_hops": 2,
+               "corners": {"min_angle_deg": 25.0, "narrow": 0.035, "arris_max": 0.06, "contact": 0.005, "ease": 0.009,
+                           "slit": 0.003, "slit_depth": 0.005},
+               # user fix 18d (2026-10-16, a balcony slab edge: "bevel those edges"): the slab fascias' arrises where
+               # the stone meets another material of its own slab (the top / paving, the floor, the ceiling, the
+               # entrance canopy's top and soffit) get fix 18's eased
+               # arris: a 45 degree chamfer `size` back on each face, in the stone's slot, shaded round. Only where
+               # nothing of the part comes within `contact` of the edge (a guard shoe, the roof frame's cap, a pier, a
+               # flush seam keep their edge); turning at least min_angle_deg. Their vertical corners have fix 18's
+               # corner joints already, and the residential and roof fascias' bottom arris (to their stone return
+               # strip, the wood soffit beyond its shadow gap) its mitre.
+               "arrises": {"slots": ["TM_RB_slab_fascia"], "size": 0.006, "min_angle_deg": 60.0, "contact": 0.008,
+                           "partners": ["TM_RB_slab_top", "TM_RB_roof_top", "TM_RB_floor", "TM_RB_ceiling",
+                                        "TM_RB_soffit"]},
+               # user fix 18d addendum ("create an inner joint", a room-dividing pier against the wall behind it):
+               # every inside (concave) corner where two stone faces meet, of one solid or two, turning at least
+               # min_angle_deg, gets a joint of the standard section along the corner: on each face a half groove
+               # from the corner (its floor `width` / 2 wide, the side wall, the eased lip), so the stones of both
+               # faces end against it and the course joints of both run into it. Both faces at least min_width
+               # across; only where nothing else comes within corners.contact of a probe `probe` out along the
+               # corner's bisector. Two solids meeting at a corner: only square ones (within square_tol of 90
+               # degrees), so no groove pushes into the other solid; the face whose edge is on the corner slides
+               # along the other's plane. A face running on past the corner (buried behind the other piece) ramps
+               # its groove out over the lip's length.
+               # A face set off the other by a thin open gap (at most `gap`: the stone casing 3 mm beside a pier) is
+               # a corner too: the gap stays and each face takes its half groove.
+               # `vertical`: the corners running up the facade only (the user's "full height" joints); a horizontal
+               # one (a cap's soffit over its wall) would drag the contact face under it across its own seam joints.
+               "inside": {"min_angle_deg": 25.0, "min_width": 0.03, "probe": 0.003, "square_tol": 0.02, "gap": 0.005,
+                          "vertical": True},
                "seed": 648, "rgb": [0.20, 0.185, 0.165], "roughness": 0.9,
                "rules": {"TM_RB_pilaster": {"courses": True, "verticals": True},
                          "TM_RB_column": {"courses": True, "verticals": False},
@@ -256,8 +348,10 @@ MATERIALS = {
                          "TM_RB_penthouse_stone": {"courses": True, "verticals": True}},
                # objects (2026-10-14): stone pieces whose face set is shared with non-stone uses, jointed by name in any
                # part that holds them; base: a joint at the foot of their sides, where they stand on the paving (the
-               # site's raised limestone tree pits: blocks of at most panel_max, the coping's seam, the foot joint)
-               "objects": {"rb_site_tree_pits": {"slot": "TM_RB_paving", "courses": False, "verticals": True, "base": True}},
+               # site's raised limestone tree pits: blocks of at most panel_max, the coping's seam, the foot joint);
+               # corners False (user fix 18 addendum 2): their outside edges are rounded by their layer instead
+               "objects": {"rb_site_tree_pits": {"slot": "TM_RB_paving", "courses": False, "verticals": True, "base": True,
+                                                 "corners": False}},
                # grids (user fix 11, 2026-10-15: "the stones on the front, on the side of the main doors, must have blocks
                # of equal size and alignment"): a region whose stone reads as one regular grid of blocks across its
                # pieces. Courses: equal within each band between the region's own datums (materials() fills `datums`,
@@ -274,9 +368,19 @@ MATERIALS = {
                # heads' stone bottom, the podium top. One shared course height for the podium is re-derived from
                # course_target (within +-course_window): the height whose rounded course counts keep every band's
                # courses closest to it (podium_courses()); the podium's global course planes are the grid's.
+               # User fix 19 (2026-10-16, the roof's penthouse volume: "make all stones the same size. even if they
+               # don't match the edges. check all 4 walls"): a `module` grid stretches nothing. Every full block is
+               # `block` wide and the podium's course high (penthouse_grid()); the courses rise from the deck line
+               # (`datum`), and each plane's run is centred (`layout` centre: a joint or a block on the run's centre,
+               # whichever leaves the larger end pieces); the blocks are cut at the wall ends, the openings, the cap and
+               # the deck. Stack bond, as the podium and tower. Flush vertical seams inside its box off its lines (the
+               # opening heads and sills beside their jambs, the end walls beside the side walls) are not cut either.
                "grids": [{"name": "podium", "cluster": 0.02, "min_panel": 0.1, "inherit": ["TM_RB_slab_fascia"],
                           "margin": 0.05, "course_window": 0.2,
-                          "slots": ["TM_RB_podium_stone", "TM_RB_pilaster", "TM_RB_column", "TM_RB_slab_fascia"]}]},
+                          "slots": ["TM_RB_podium_stone", "TM_RB_pilaster", "TM_RB_column", "TM_RB_slab_fascia"]},
+                         {"name": "penthouse", "mode": "module", "block": 1.2, "layout": "centre", "datum": "deck",
+                          "cluster": 0.02, "min_panel": 0.1, "inherit": [], "margin": 0.05,
+                          "slots": ["TM_RB_penthouse_stone"]}]},
     "wood": {"rgb": [0.46, 0.25, 0.10], "roughness": 0.5, "slots": ["TM_RB_wood"],
              "note": "warm teak reveals and linings, flat: no wood texture is installed"},
     # veneer (user fix 4c, 2026-10-15: "if you can have a high luxury wood there (but needs to be luxury)"): the
@@ -303,6 +407,9 @@ MATERIALS = {
                        "volume's covered top only"},
     "steel": {"rgb": [0.018, 0.018, 0.020], "roughness": 0.38, "metallic": 0.0, "slots": ["TM_RB_frame", "TM_RB_louvre"],
               "note": "black powder-coated steel"},
+    # user fix 20: the annex's standing-seam rain roof, gutter and downpipe: anthracite coated sheet, a shade lighter
+    # than the black frames so the roof reads as sheet metal over the frame
+    "roof_metal": {"rgb": [0.045, 0.050, 0.055], "roughness": 0.45, "metallic": 0.0, "slots": ["TM_RB_roof_metal"]},
     "glass": {"rgb": [0.94, 0.97, 0.97], "roughness": 0.02, "ior": 1.5, "slots": ["TM_RB_glass"]},
     # user fix 16: the entrance doors' hardware: brushed stainless (pulls, pivots, straps, thresholds, the header's end
     # caps and track), black rubber and brush seals, the motion sensors' dark glossy lenses
@@ -313,6 +420,15 @@ MATERIALS = {
     "partition": {"rgb": [0.66, 0.61, 0.54], "roughness": 0.9, "slots": ["TM_RB_partition", "TM_RB_core"]},   # AI 634
     "interior_floor": {"rgb": [0.42, 0.33, 0.24], "roughness": 0.55, "slots": ["TM_RB_floor"]},
     "concrete": {"rgb": [0.48, 0.47, 0.45], "roughness": 0.85, "slots": ["TM_RB_roof_top", "TM_RB_hidden"]},
+    # user fix 23 (2026-10-16: "replace the dirt on the pots with a proper dirt land PBR; get it from the game, there is a
+    # dark one that is good"): the soil of every pot, planter, trough and tree pit is a game ground set, read in place
+    # from assets/public/pbr/<set> (basecolor, normal_gl, arm = AO / roughness / metal): "brown_mud" (Brown Earth, the
+    # dark grey-brown earth; "forest_ground_06" is the reddish-brown alternative: swap `set` alone). Laid at world scale
+    # (UV = x / y in metres), repeat_m per tile (the source is 1.3 m across), each mound its own map offset (its face
+    # attribute rb_soil_seed), and a second sample of the map turned 90 degrees blended in by a soft mask blend_scale
+    # cycles per metre wide, so no repeat lines up across a long trough
+    "soil": {"set": "brown_mud", "repeat_m": 1.0, "tone": [1.0, 1.0, 1.0], "ao_strength": 0.6, "roughness_gain": 1.0,
+             "normal_strength": 1.0, "blend_scale": 0.8, "slots": ["TM_RB_soil"]},
 }
 # Stone returns and connection joints (2026-10-14; the user on the entrance recess: "the stone has no depth; there should
 # be a small stone on the side so it is 3d and not a wallpaper"). Where the limestone stops at another material on an
@@ -787,6 +903,27 @@ def roof(plan, poly, radii):
             x0 = zone["x"][1] + 0.1                       # leave the units' corner free
         rows.append({"x": [round(x0, 4), round(x1, 4)], "y": [round(y, 4), round(y + depth, 4)]})
         y += depth + sol["gap"]
+    # user fix 20: the annex's front moves out by its share of the free width to the penthouse's front wall plane; the
+    # rain roof's rise and its highest point (the flashing up the wall), kept under the parapet cap
+    an = cfg["annex"]
+    free = an["y"][0] - py[0]
+    ext = an["extend_front_share"] * free
+    an.update(y_before=list(an["y"]), free_width_m=round(free, 4), extension_m=round(ext, 4),
+              y=[round(an["y"][0] - ext, 4), an["y"][1]])
+    # the long (-x) glass side's panes (layer_roof's equal spans between the posts) and the door's pane among them
+    dr, p, fm = an["door"], an["post"], ph["frame"]["member"]
+    lo, hi = an["y"][0] + p, an["y"][1] - p
+    n = max(1, round((hi - lo) / an["pane"]))
+    w = (hi - lo - (n + 1) * fm) / n
+    dr["panes"] = [[round(lo + fm + k * (w + fm), 4), round(lo + fm + k * (w + fm) + w, 4)] for k in range(n)]
+    dr.update(span=dr["panes"][dr["bay"]], slide_over=dr["panes"][dr["bay"] + dr["slide"]])
+    rr = an["rain_roof"]
+    rise = (an["x"][1] - an["x"][0]) * math.tan(math.radians(rr["pitch_deg"]))
+    frame_top = cfg["paving"] + an["height"] + an["beam"]
+    rr.update(rise_m=round(rise, 4), top_at_wall_m=round(frame_top + rr["eaves_rise"] + rise + rr["sheet"] + rr["flashing"]["up"], 4))
+    rr["cap_clear_m"] = round(ph["parapet_top"] - rr["top_at_wall_m"], 4)
+    if rr["cap_clear_m"] < rr["cap_clear_min"]:
+        raise SystemExit(f"annex rain roof: its flashing reaches {rr['cap_clear_m']} m under the parapet cap")
     cam = plan["cameras"]["b8"]
     y_c, z_c = cam["location"][1], cam["location"][2]
     y_edge = P.Y_FRONT
@@ -795,7 +932,7 @@ def roof(plan, poly, radii):
     highest = {"penthouse_front_wall": [py[0], ph["parapet_top"] + ph["cap"]["height"]],
                "solar_front_row": [rows[0]["y"][0], ph["roof_slab"][1] + sol["clearance"] + depth * math.tan(tilt) + sol["thickness"]],
                "units": [min(u["y"][0] for u in cfg["units"]), ph["roof_slab"][1] + max(u["h"] for u in cfg["units"])],
-               "annex": [cfg["annex"]["y"][0], cfg["paving"] + cfg["annex"]["height"] + cfg["annex"]["beam"]]}
+               "annex": [an["y"][0] - rr["verge_over"], rr["top_at_wall_m"]]}
     sightline = {k: {"y": round(v[0], 3), "height_above_roof_m": round(v[1], 3), "hidden_up_to_m": limit(v[0]),
                      "hidden": v[1] < limit(v[0])} for k, v in highest.items()}
     rd = lambda pts: [[round(x, 4), round(y, 4)] for x, y in pts]  # noqa: E731
@@ -859,12 +996,35 @@ def podium_grid(plan, g, course_target):
     return dict(g, box=box, datums=datums, course_m=c, bands=bands, course_planes=planes)
 
 
+def penthouse_grid(plan, g, podium):
+    """User fix 19: the penthouse's module grid. One block for all four walls, inside and out: `block` wide (the kit's
+    1200 mm large format, the podium's panel_max) and the podium's course high (its height over its whole course count,
+    0.626 m: fix 13b). The course planes rise from the deck line (the roof paving's top) every course up to the cap;
+    the plane on the deck itself is not cut (the wall runs on under the paving), and the top course is what is left
+    under the cap. The box holds the penthouse walls and their cap."""
+    rf = plan["roof"]
+    ph, (px, py) = rf["penthouse"], (rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"])
+    h = round((podium["datums"][-1] - podium["datums"][0]) / sum(b["courses"] for b in podium["bands"]), 5)
+    datum = round(rf["roof_top"] + rf["paving"], 4)
+    top = round(rf["roof_top"] + ph["parapet_top"], 4)
+    jt = MATERIALS["joints"]
+    clear = jt["width"] / 2 + jt["wall"] + jt["bevel"] + jt["margin"]          # layer_materials.reach() + margin
+    planes = [round(datum + h * k, 4) for k in range(1, 100) if datum + h * k < top - clear]
+    m, ov = g["margin"], ph["cap"]["overhang"]
+    box = {"x": [round(px[0] - ov - m, 3), round(px[1] + ov + m, 3)], "y": [round(py[0] - ov - m, 3), round(py[1] + ov + m, 3)],
+           "z": [round(rf["roof_top"] - 0.01, 3), round(top + ph["cap"]["height"] + 0.01, 3)]}
+    return dict(g, box=box, course_m=h, datum_z=datum, top_z=top, course_planes=planes,
+                bands=[{"z": [datum, top], "courses": len(planes) + 1, "course_m": h,
+                        "top_course_m": round(top - (planes[-1] if planes else datum), 4)}])
+
+
 def materials(plan):
     """The materials layer: the families and their slots, and the stone's joint layout. Course joints are z-planes:
     the datums (podium storey and band levels, the slab tops, the roof slab, the penthouse parapet) split the height
     into bands, each band divided into equal courses near course_target; up to the podium top the bands and planes are
-    the podium grid's (user fix 13). Vertical joints are laid per flat stone face by layer_materials.py (equal panels
-    of at most panel_max; per plane inside a grid)."""
+    the podium grid's (user fix 13), above the roof top the penthouse grid's (user fix 19: one block size from the deck
+    line). Vertical joints are laid per flat stone face by layer_materials.py (equal panels of at most panel_max; per
+    plane inside a grid; at the module's pitch inside the penthouse grid)."""
     cfg = json.loads(json.dumps(MATERIALS))
     # user fix 17: the balcony soffits' plates wear the entrance's veneer in their own slot (wear class soffit), its
     # clear coat less glossy: seen from the street at grazing angles a 0.75 coat mirrored the bright ground below and
@@ -878,24 +1038,32 @@ def materials(plan):
               lv["podium_top"]] + lv["balcony_slab_tops"] + [lv["roof_slab_bottom"], lv["roof_slab_top"],
                                                              round(rf["roof_top"] + rf["penthouse"]["parapet_top"], 3)]
     jt = cfg["joints"]
-    jt["grids"] = [podium_grid(plan, g, jt["course_target"]) for g in jt["grids"]]
-    podium = jt["grids"][0]                         # user fix 13: up to the podium top the courses are the podium grid's
+    podium = podium_grid(plan, jt["grids"][0], jt["course_target"])  # user fix 13: up to the podium top, its courses
+    pent = penthouse_grid(plan, jt["grids"][1], podium)              # user fix 19: the penthouse's one block size
+    jt["grids"] = [podium, pent]
     top = podium["datums"][-1]
     datums = sorted({round(z, 4) for z in datums if z >= top - 1e-6} | set(podium["datums"]))
     planes, bands = list(podium["course_planes"]), list(podium["bands"])
     for a, b in zip(datums, datums[1:]):
         if b <= top + 1e-6:
             continue
+        if b > pent["datum_z"]:                     # user fix 19: above the roof top the penthouse grid's courses
+            planes.append(a)
+            continue
         n = max(1, round((b - a) / jt["course_target"]))
         bands.append({"z": [a, b], "courses": n, "course_m": round((b - a) / n, 4)})
         planes += [round(a + (b - a) * k / n, 4) for k in range(n + 1)]
+    bands += pent["bands"]
+    planes += pent["course_planes"]
     jt["datums"] = datums
     jt["bands"] = bands
     jt["course_planes"] = sorted(set(planes))
     cfg["soffit"]["rgb"] = plan["balconies"]["soffit_rgb"]
     cfg["comment"] = ("AI 648 materials: families -> TM_RB_* slots (re-dressed by name). Stone = the kit limestone "
                       "(assets/public/pbr/<set>, 4 m repeat) with joints cut as geometry: a groove of width w and depth d "
-                      "with a bevel b each side, its floor in the joint material; course planes from the datums' bands, "
+                      "with side walls and an eased arris b each side (user fix 18), floor and walls in the joint "
+                      "material, also along every outside corner and (user fix 18d) every inside corner; the slab "
+                      "fascias' arrises to the other materials eased (user fix 18d); course planes from the datums' bands, "
                       "vertical joints per flat face. Each panel gets its own UV offset (seeded) so the repeat does not show.")
     return cfg
 
@@ -1041,6 +1209,7 @@ def main():
     plan["props"]["sidewalk_cafe"] = props_layout.sidewalk_cafe(plan)                      # AI 632 (site dressing)
     plan["props"]["street_dressing"] = props_layout.street_dressing(plan)                  # AI 633 (site dressing)
     plan["props"]["entrance_plants"] = props_layout.entrance_plants(plan)                  # user fix 12 (props)
+    plan["props"]["soil"] = props_layout.soil()                                            # user fix 23 (every part)
     plan["interior"] = {"base": props_layout.interior_base(plan)}                          # AI 634
     plan["interior"]["restaurant_l0"] = props_layout.restaurant_l0(plan)                   # AI 635
     plan["interior"]["dining_l1"] = props_layout.dining_l1(plan)                           # AI 636

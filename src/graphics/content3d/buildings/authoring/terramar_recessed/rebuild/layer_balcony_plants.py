@@ -3,7 +3,7 @@
 # Run through build.py (layers=balcony_plants; needs the balconies and envelope layers). Builds RB_PROPS/RB_BALCONY_PLANTS
 # under its part root:
 #   rb_balcony_pots         every pot as one object: a tapered round pot with a rolled rim (TM_RB_pot_white /
-#                           _light_grey / _charcoal) and its soil (TM_RB_soil)
+#                           _light_grey / _charcoal) and its soil (TM_RB_soil; a mound since user fix 23: soil.py)
 #   rb_plant_<floor>_<bay>_<n>  one collection instance per plant: the game's own vegetation (assets/public/vegetation_lod0,
 #                           decoded to PNG maps by decode_vegetation_glb.mjs) scaled to the plan's target height and crown
 #                           radius, turned by the plan's seeded angle; the "spill" plants lean out over the rim; an olive
@@ -27,8 +27,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
+import soil as S  # noqa: E402  (user fix 23: the soil's mound, plants re-seated on it)
 
 importlib.reload(L)
+importlib.reload(S)
 
 COLLECTION = "RB_BALCONY_PLANTS"
 PARENT = "RB_PROPS"
@@ -185,7 +187,8 @@ def foliage_points(coll, step=7):
 
 
 def pot(bm, slots, at, z, r_top, h, colour):
-    """A tapered round pot: body (r_bottom = 0.78 r_top), a rolled rim, the inner wall down to the soil, the soil."""
+    """A tapered round pot: body (r_bottom = 0.78 r_top), a rolled rim, the inner wall down to the soil, the soil (flat
+    here: soil.mound_pots() turns it into its mound once the pots' object is finished)."""
     r_bot, lip, wall, soil = 0.78 * r_top, 0.012, 0.02, 0.05
     profile = [(r_bot, 0.0), (r_top, h - 0.025), (r_top + lip, h - 0.02), (r_top + lip, h), (r_top - wall, h),
                (r_top - wall, h - soil)]
@@ -254,6 +257,7 @@ def build(plan):
     coll = L.ensure_collection(COLLECTION, props)
     L.clear_collection(coll)
     prop_materials()
+    S.begin()
     bp = plan["props"]["balcony_plants"]
     models = {p["model"] for p in bp["pots"]} | {p["companion"]["model"] for p in bp["pots"] if "companion" in p}
     protos = {m: prototype(m) for m in sorted(models)}
@@ -267,6 +271,7 @@ def build(plan):
     for p in bp["pots"]:
         pot(bm, slots, p["at"], p["z"], p["pot"]["radius"], p["pot"]["height"], p["pot"]["colour"])
     made.append(L.finish("rb_balcony_pots", coll, bm, slots, tags("pot", "balcony_pots"), smooth_deg=40.0))
+    S.mound_pots(made[-1])                                             # user fix 23
 
     # plants: collection instances
     clearance = []
@@ -288,7 +293,7 @@ def build(plan):
             "guard_inner_v": round(guard_inner, 3), "foliage_past_guard": len(hits_guard), "foliage_into_frames": len(hits_frame),
             "worst_out": max((c["out_max"] for c in clearance), default=None),
             "worst_in": min((c["in_min"] for c in clearance), default=None),
-            "past_guard": [c["plant"] for c in hits_guard], "names": [o.name for o in made]}
+            "past_guard": [c["plant"] for c in hits_guard], "soil": S.report(), "names": [o.name for o in made]}
 
 
 def plant_instances(coll, p, protos, n, plan, clearance):
@@ -301,6 +306,7 @@ def plant_instances(coll, p, protos, n, plan, clearance):
     N = Vector((bay["outward"][0], bay["outward"][1], 0.0))
     a = Vector((bay["a"][0], bay["a"][1], 0.0))
     soil = p["z"] + p["pot"]["height"] - 0.05
+    soil += S.lift(p["at"], soil)                                      # user fix 23: on the mound
     made = []
     for model, rot_deg, height, radius, suffix in forms:
         proto = protos[model]

@@ -395,9 +395,9 @@ python -I src/graphics/content3d/buildings/authoring/terramar_recessed/compose_p
 ```
 
 Options: `poses=a,b`, `items=615,621`, `groups=target,full,exterior,props,interior,check` (a union; none = all),
-`list=1` (print, render nothing), `samples=` (96), `pct=` (100), `engine=cycles|eevee`, `out=`, `tag=`. Renders go to
-`tests/artifacts/screens/buildings/terramar_recessed/poses/<tag>/` (`baseline`, `edit`, or the file name) with a
-`poses_manifest.json`; sheets to `poses/sheets/` (`<before>_vs_<after>/<pose>.png`, `contact_<tag>.png`). Item
+`list=1` (print, render nothing), `samples=` (96), `pct=` (100), `engine=cycles|eevee|workbench` (workbench: the Solid
+view, user fix 18), `out=`, `tag=`. Renders go to `tests/artifacts/screens/buildings/terramar_recessed/poses/<tag>/`
+(`baseline`, `edit`, or the file name) with a `poses_manifest.json`; sheets to `poses/sheets/` (`<before>_vs_<after>/<pose>.png`, `contact_<tag>.png`). Item
 prompts copy their final sheets into their own evidence folder under `.../terramar_recessed/edit/`.
 
 ## Pieces done
@@ -553,7 +553,7 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `wear/features/ledge_dust.py` | wear feature (110): dust on the up-facing ledges and floors, kept where sheltered, rinsed where open, drifted into the lee (`ledge`, `ledge_rain`, render-time occlusion) |
 | `wear/features/cavity_soot.py` | wear feature (120): soot in the inside corners and junctions (render-time occlusion), less where rain rinses (`soot_shelter`) |
 | `wear/features/joint_dirt.py` | wear feature (130): dirt in the stone joints (horizontal and sheltered runs hold more, `jrun`) and the paving's tile joints (`tile`, `tjoint`) |
-| `wear/features/runoff_streaks.py` | wear feature (220): faint runoff streaks below drip points and rust under a lantern, one ray-traced decal each in the wear part (atlas generated into `tests/artifacts/blender/terramar_recessed/rebuild/wear/runoff_streaks/`) |
+| `wear/features/runoff_streaks.py` | wear feature (220): faint runoff streaks from drip points along edges (slab ends at piers, slab corners, recess corners, the cover's and the coping's ends; fix 22) and rust under a lantern, one ray-traced decal each in the wear part (atlas generated into `tests/artifacts/blender/terramar_recessed/rebuild/wear/runoff_streaks/`) |
 | `wear/features/glass_film.py` | wear feature (300): an even dust and salt film per pane of the exterior glazing, duller and hazier, never lighter (`pane_film`) |
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
@@ -562,10 +562,12 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `layer_podium.py` / `podium_layout.py` / `trace_sign.py` | the podium layer, `RB_PODIUM`, its layout, and the sign tracer (kit masks -> letter outlines) |
 | `entrance_doors.py` | user fix 16: the front centre's glazed walls with their door bays open and glazing beads on every fixed pane (`Wall`), the entrance's glass swing pair with its hardware (`swing_pair`), the loggia's automatic sliders with header, sensors, guides and seals (`sliders`), from `plan["podium"]["entrance_detail"]["doors"]`; used by `layer_podium.py` |
 | `layer_roof.py` | the roof layer, `RB_ROOF` (its layout is `plan["roof"]`, written by `make_plan.py`) |
+| `annex_pavilion.py` | user fix 20: the glazed annex's long glass side with its door pane open (`door_wall`), the manual sliding glass door hung on its terrace face with header, track, hangers, guide, seals and pulls (`sliding_door`), and the 7° standing-seam rain roof over the louvres with its structure, gutter, downpipe and glazed gables (`rain_roof`), from `plan["roof"]["annex"]`; used by `layer_roof.py` |
 | `roof_units.py` | the penthouse roof's mechanical plant into a caller's bmesh (2026-10-15): top-discharge condensing units (rails on pads, feet, finned coil faces behind a wire guard, seamed service panels, fans with pitched blades under domed guards) and a side-discharge condenser, the insulated lines, the covered pipe tray and the roof hood; `plant(bm, plan["roof"], z)`, `materials()` (`TM_RB_unit_*`, `TM_RB_lift_steel`); test renders with `-- out=` |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
 | `check_layers.py` / `compose_checks.py` | Workbench checks: the layer's edges over b8, a top cut-away with the plan outlines, the rear, and the core's visibility from b8 with stand-in walls |
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects (since 2026-10-14 also the seams between flush pieces and the named `joints.objects`, such as the site's tree pits); `build.py` runs it after any geometry layer it rebuilds |
+| `soil.py` | user fix 23: the soil of every pot, planter, trough and tree pit as a gentle mound (`mound_pots` for round pots, `mound_pockets` for planters built from solids, keeping their outside), and `lift()` to re-seat plants on it, from `plan["props"]["soil"]`; used by the balcony, podium, roof, entrance and site planting layers and `layer_restaurant_l0.potted_plants` |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
 | `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks (no palms on the roof since 2026-10-15; `proc_plants.py` still builds the street palms); the large pots, the centre box, the standards' stems and its flowers (2026-10-15); `fit_scales` fits every instance to its target (the detailed palms within 10 % xy / z) |
@@ -782,7 +784,7 @@ materials of a file already cut). Every `TM_RB_*` slot is re-dressed by name fro
 The sign letters keep the kit's own bronze sets (the podium layer's `TM_RB_sign_*`).
 
 The joints are geometry, as the kit asks:
-- **Grooves:** 8 mm wide, 6 mm deep, with a 3 mm bevel each side. The groove floor takes `TM_RB_stone_joint`; the bevels stay stone and catch the light.
+- **Grooves:** 8 mm wide, 6 mm deep, with a 3 mm bevel each side. The groove floor takes `TM_RB_stone_joint`; the bevels stay stone and catch the light. (User fix 18 changed the section and added corner joints: see "Fix 18".)
 - **Courses:** z-planes from 15 datums: the podium's storey and band levels (0.15, 4.0, 4.75, 5.38, 5.79, 9.15, 9.76), the slab tops, the roof slab and the penthouse parapet. Each band is split into equal courses near 0.67 m, so the tower has five per storey (b8's pilasters) and the sign band reads as three courses with the slab edge (as in b8). A course plane cuts only the faces whose height holds the groove with clearance, so a lintel whose soffit sits on a plane is not cut there.
 - **Vertical joints:** per flat face at least 0.2 m tall, equal panels of at most 1.2 m (1200 × 670 large format), carried over the stone soffit or top they meet. They stack-bond with the courses. The curved corners are one piece each.
 - **Which slots get which:** pilasters and the podium get both, the columns courses only, the slab fascias vertical joints only.
@@ -2005,6 +2007,300 @@ clean. New poses: `fix17_user_view`, `fix17_soffit_below`, `fix17_fitting_macro`
 
 The before renders are in `poses/pre_fix17/`.
 
+**Fix 18: eased arrises, corner joints and rounded pit edges (2026-10-16).** The user, in Solid view of the left
+entrance jamb (images/21.webp): "the edges of the stones are too sharp. they need a small bevel on the edges.
+horizontally and vertically"; then on the right jamb's outside corner (images/22.webp): "make a cut on the stone at
+those corner. there should be a junction not a curved stone"; and on a palm's tree pit (images/24.png): "bevel the
+hard edges of the palm bases; just a small rounded edge. 2 loops". The joint cutter had a `bevel`, but it was a 3 mm
+slope from an 8 mm floor 6 mm deep straight up to the face, so every lip was one sharp edge (63 degrees), and nothing
+touched the outside corners: the blocks folded round them as one stone. All in geometry, by the materials pass
+(`layer_materials.py`, plan `materials.joints`):
+- **Joint section** (`profile()`): a 5 mm floor 8 mm deep, side walls rising 0.5 mm outwards to 5.4 mm deep, then on
+  each lip an eased arris 6 mm across by 5.4 mm deep (42 degrees: off 45 so a joint lip never lies a hair off the plane
+  of a 45 degree corner bevel stacked over it). Floor and walls take `TM_RB_stone_joint`; the arrises stay stone. Each
+  face's groove depth now follows the section (`groove()`, `push_vector()`), the deeper groove wins where two cross.
+- **Corner joints** (`find_corners()`, `sharpen()`, `corner_profile()`, plan `joints.corners`): every convex fold of
+  the stone turning at least 25 degrees gets a joint. An eased or rounded arris whose faces are each under 35 mm across
+  (the returns' 4 mm arrises, the columns' 20 mm front rounds; at most 60 mm in all, so the slabs' fillets stay one
+  curved stone) first closes up into the sharp corner. The blocks then meet on a mitre: one bevel symmetric about the
+  corner eases both block ends, its lips 9 mm from the corner on each face (the joints' own half-opening; more where it
+  replaces a wider round, so the stone never grows), and a 3 mm slit runs along the bisector, 5 mm below the bevel.
+  Each face is its own panel, so its map offset no longer runs round the corner. A corner within 5 mm of another
+  piece (`Contacts`: per-polygon BVH trees of the part, built before any cut) is a flush seam, a buried edge or an
+  existing joint across a narrow gap (the sign band beside the jambs) and keeps its edge; a stretch that ends against
+  another piece ramps out before it. A millimetre piece folded over where three corner joints meet at a tip collapses.
+- **Shading** (`arris_normals()`): the arrises' corners take the normals of the faces beside them (stone face at the lip,
+  side wall or slit at the foot) as custom normals, so they read round in Solid, EEVEE and Cycles while the big faces
+  stay flat.
+- **Tree pits** (`layer_site_palms.round_edges()`, plan `street_dressing.pits[].round` / `round_segments`, props
+  `STREET["pit"]`): every exposed convex edge of body and coping (the chamfer's vertical edges, the coping's top,
+  outer and inner edges) is rounded to 12 mm in 2 segments; edges touching the paving, the body under the coping or the
+  next coping stone stay. The faces carry `rb_round`, which the materials pass shades smooth; the pits' rule has
+  `corners: False`. The roof's centre box (fix 5) is built by other code (`layer_roof_planters.island()`) and is
+  unchanged.
+- The awnings' rod-clearance (`props_layout.rods_clear_of_joints`, `anchor_clear_of_courses`) counts the wall: the
+  joint reaches 9 mm (was 7), and 8 tie rods moved 2 mm.
+
+Triangles: the building's stone objects 130,046 -> 288,870; the tree pits 2,504 -> 5,616. Joint stats: 30 objects,
+805 corners, 1233 vertical joints, 3105 panels, 43,536 arris faces, 0 non-manifold / degenerate / non-planar (grid:
+300 faces, 12 inherited, 80 suppressed seams). Rebuilt: the building and the site (`target=building`, `target=site`),
+the props' awnings, the wear pass on building, site and props (`layers=wear`), the wear part, the composition. Checks:
+the audit is 894 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8:
+0 px. A fresh `target=all save=0` runs clean. `render_poses.py` gained `engine=workbench` (the Solid view the user
+reviews in: studio light, material colours). New poses: `fix18_jamb_user`, `fix18_corner_edge`, `fix18_corner_arris`,
+`fix18_joint_grazing`, `fix18_pilaster`, `fix18_pit_corner`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix18/` (`compare.png` = [reference | before | after] in
+Solid and Cycles rows: the user's 21 / 22 / 24 screenshots and b8 crops beside their views, the corner macro, the
+raking-light joints, the pilaster, b8; the screenshots and crops in `references/`; the checks and both audits). The
+before renders are in `poses/pre_fix18/` and `poses/pre_fix18_wb/`; the pit's before was rendered from a site part
+built by the committed code in a scratch copy.
+
+**Fix 18b: the palm pits' rounds (2026-10-16).** The user ("this got deformed", then "damaged in the rendered as
+well") circled two faults on the pit corners.
+- **Shading.** The round's segments turn less than the 30° sharp angle, so the flats beside it were smoothed into it,
+  and the 50 mm corner chamfer shaded as a bent column. Every face touching a round now keeps its own normal
+  (`layer_materials`, beside `flat_ids`).
+- **Notches.** The coping sat flush on the body, so their seam was a joint groove, and the materials pass cut it
+  across the body's rounded corners into notches. The coping now stands 15 mm proud as a drip edge
+  (`pit_pieces(overhang=)`, plan `pits[].overhang`), so no groove crosses the rounds.
+
+The site audit stays at 0 z-fights / 0 penetrations. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/pit_shading/compare.png`.
+
+**Fix 18d: slab edge arrises and inside-corner joints (2026-10-16).** The user, in Material Preview of the floor-1
+terrace slab beside pier B1 (images/32.webp): "bevel those edges" (the fascia's top outer edge and its end corner); then
+at pier B1 against the stone casing beside it (images/33.webp): "create an inner joint". The fascia's arrises to the
+slab's other materials were sharp: fix 18 eased only stone-to-stone folds, and no inside corner had a joint (the casing
+stood 3 mm off the pier, a hairline). Both in geometry, by the materials pass (`layer_materials.py`, plan
+`materials.joints.arrises` / `.inside`):
+- **Arrises** (`bevel_arrises()`): before anything is cut, every convex edge where a `TM_RB_slab_fascia` face meets a
+  partner material of its own solid (the slab top, roof top, floor, ceiling, the entrance canopy's top and soffit)
+  turning at least 60 degrees gets a 45 degree chamfer 6 mm back on both faces, in the fascia's slot, shaded round like
+  fix 18's arrises (custom normals). Only where nothing of the part comes within 8 mm (`Contacts`; the roof frame's cap,
+  the pilaster notches and the flush podium seams keep their edges; an edge partly touched is split there). The guard
+  shoes stand 120 mm (48 mm at the fillets) behind the edge and are untouched. A vertical joint carries on over the
+  chamfer, and where it leaves on the slab top its edge stays in the top's plane (a notch, as before). The fascias'
+  vertical corners keep fix 18's corner joints, and the residential and roof slabs' bottom outer edge (fascia to the
+  stone return strip before the shadow gap and the wood soffit) keeps fix 18's eased mitre; a face beside a chamfer is
+  never taken for a narrow arris face (`find_corners(chamfers=)`). The fix 17 soffit plates and the fix 8b guards are
+  unchanged.
+- **Inside corners** (`inside_corners()`): a vertical edge of a stone face B lying in stone face A's plane (or parallel
+  to it at most 5 mm in front: the casings beside the room-dividing piers), B standing in front of A, the normals
+  turning at least 25 degrees (two solids: square only, so no groove pushes into the other piece), over the stretch
+  where A runs along it and nothing else comes within 5 mm of a probe on the bisector. Each face takes a half groove of
+  the standard section from the corner (the 2.5 mm half floor 8 mm deep, the side wall, the eased lip), so both faces'
+  blocks end against it and their course joints run into it; the face whose edge is on the corner slides along the
+  other's plane, a face running on behind the other piece ramps its groove out over the lip's length, and a chamfered
+  fascia carries the groove over its chamfer's end. Vertical corners only (`inside.vertical`, the user's full-height
+  joints): a horizontal one (a cap's soffit over its wall) dragged the contact face under it across its own seam joints.
+  Found: 94 corners on 157 faces (piers B1 and H1 against their casings on every floor, the pilasters' sides against the
+  slab fascias, the podium piers' inside folds, the entrance jambs, the roof frame and the penthouse). Outside corners
+  are as fix 18 built them.
+- `find_corners()` walking across a narrow arris picks the far edge that overlaps the one it came from (a return strip
+  split at the core's cut line lost half its mitre). Two new self-checks: joint pushes longer than 3x their depth
+  (`strays`, 0; a pin against a face pushed the other way, the casing's end face cut by a course joint, is dropped) and
+  stone faces folded over (`flipped`: 447, of which 444 were already left by fix 18's crossings; 3 new, at the floor-2
+  slab's bottom mitre where it meets the H/A fillet and on the penthouse).
+
+Triangles: the building's jointed stone objects 285,098 -> 328,924 (the part 425,184 -> 469,010). Joint stats: 30
+objects, 809 corners (805 before), 582 arris edges, 94 inside corners, 1589 vertical joints (counted per face, the
+chamfers' carries included), 3337 panels, 0 non-manifold / degenerate / non-planar, 0 strays (grid: 380 faces, 12
+inherited, 108 suppressed seams). Rebuilt: the building part (`target=building`), its wear (`target=building
+layers=wear`), the wear part (41 streaks), the composition; the site is unchanged (its tree pits have `corners: False`,
+which also keeps them out of the inside corners). Checks: the audit is 897 objects, 0 z-fights / 0 penetrations, and the
+site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix18d_slab_user`, `fix18d_inner_user`, `fix18d_slab_edge`, `fix18d_inner_corner`, `fix18d_terrace_corner`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix18d/` (`compare.png` = [user screenshot | before |
+after] in Solid rows, then Cycles rows; the screenshots in `references/`; the checks and the site audit). The before
+renders are in `poses/pre_fix18d/` and `poses/pre_fix18d_wb/`, the after in `poses/fix18d/` and `poses/fix18d_wb/`.
+
+**Fix 19: the penthouse's stones all one size (2026-10-16).** The user, in Solid view from above the roof terrace
+(images/23.webp, the penthouse with its wood door and slider): "make all stones the same size. even if they don't match
+the edges. check all 4 walls". The penthouse walls (`rb_penthouse_walls`, `TM_RB_penthouse_stone`, and its cap in
+`rb_penthouse_roof`) took the global courses (6 x 0.633 m from the roof slab top, under the deck) and each face cut its
+own equal panels of at most 1.2 m between its ends, so every piece between two openings had its own width (0.60, 0.70,
+0.99, 1.03, 1.10, 1.13, 1.19 m) and the joints wandered from piece to piece. Now the penthouse is a second joint grid,
+`joints.grids[1]` (`penthouse`, `mode: module`, `make_plan.penthouse_grid()`), laid out by
+`layer_materials.module_lines()`: one block, 1.2 x 0.626 m (the kit's 1200 mm large format, the podium's `panel_max`;
+the podium's course, 10.02 m / 16 = 0.62625, fix 13b), in stack bond as the podium and tower (b8 never shows the
+penthouse: it is kept under the sightline). The courses rise from the deck line (27.30: the roof paving's top) every
+0.626 m: 5 joints, the top course 0.619 m under the cap. Each wall's run is centred, a joint or a block on its centre,
+whichever leaves the larger end pieces: the front and rear (10.0 m) 8 blocks with a 0.80 m piece at each end, the sides
+(8.7 m) 6 blocks with 0.75 m ends. A wall's inner face, its reveals and the soffits over the openings take its outer
+face's lines (the longest parallel run on the same centre), so the joints run through the wall. The blocks are cut,
+never stretched, at the wall ends (fix 18's corner joints), the door, the slider and the windows, the cap and the deck;
+the courses are z-planes, so they run on round all four corners. The flush vertical seams inside the grid's box that
+are off its lines (an opening's head and sill pieces beside their jambs, the front and rear walls' ends beside the side
+walls) are not cut (`off_module()`; 28 more suppressed seams, 108 in all), and each face of a block running over such a
+seam takes its own plane's cell key (`cell_keys()`), so both pieces share one map offset; the module faces shade flat
+(a corner joint stopping under an uncut seam smeared its block in Solid). Other roof-level stone: the penthouse is the
+AI 638 headhouse itself (its interior faces are the same walls' inner faces, now on the grid); its cap keeps its
+corner joints; the roof frame (`rb_roof_frame`, fix 9's pilaster crowns, 0.12 m above the roof top) belongs to the
+tower's pilasters seen from b8 and is unchanged, as are the roof slab's fascias (the floors' slab fascia family).
+The global course planes above the roof top are now the grid's (the 27.25-31.05 band is gone). The podium keeps fix
+13b's courses and the tower is untouched (the build's other joint stats are unchanged). Joint stats: 30 objects, 805
+corners, 1257 vertical joints, 3083 panels, 0 non-manifold / degenerate / non-planar (grid: 380 faces, 12 inherited,
+108 suppressed seams). Rebuilt: the building part (`target=building`), its wear (`target=building layers=wear`), the
+wear part (41 streaks), the composition. Checks: the audit is 894 objects, 0 z-fights / 0 penetrations, and the site is
+42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix19_user_view`, `fix19_wall_front`, `fix19_wall_right`, `fix19_wall_rear`, `fix19_wall_left` (from the rear left,
+the annex in front of most of that wall) and `fix19_corner`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix19/` (`compare.png` = [user screenshot | before |
+after] in Solid rows, then Cycles rows; the user's screenshot in `references/`; the checks and both audits). The before
+renders are in `poses/pre_fix19/` and `poses/pre_fix19_wb/`, the after in `poses/fix19/` and `poses/fix19_wb/`.
+
+**Fix 20: the roof pavilion (2026-10-16).** The user, in Solid view from above the glazed annex (images/25.webp), four
+marks. **1, "extend the area a bit (it is not to match the wall. you can use 50% of the width available with the other
+house)":** the annex's front (-y) side moved out by `extend_front_share` (0.5) of the free width between it and the
+penthouse's front wall plane (y −1.2 to −2.2: 1.0 m), so 0.5 m: the annex is now y −1.7…4.3 (3.5 x 6.0 m), not aligned
+with the wall; `make_plan.roof()` writes the extended `y` (`y_before`, `free_width_m`, `extension_m` kept). Posts,
+beams, louvres (19, was 17), glazing (the long -x side now 4 panes of 1.35 m) and the interior follow. The island
+planter `annex_front` stays 0.3 m off the new front (its foliage ~0.24 m), the loungers and walkways are untouched.
+Interior (`props_layout.PENTHOUSE`): the kitchen is now measured from the annex's rear (run and shelf unchanged, clear
+of the left door's path); the island sits 0.5 m nearer the front with its centre on a blade, so its three stools and
+pendants keep their blades; the lounge corner follows the front. **2, "move the plant to the corner":** the potted plant
+stands in the inside corner of the long glass side and the rear glass (`corner_plant` 0.45 m in from both glass lines,
+its crown radius). **3, "create a door there":** the user's bay (second from the +y end, by the stools, pane `bay` 2)
+is a **manual sliding** glass door (`annex_pavilion.py`, `rb_annex_door` + `rb_annex_door_glass`), chosen because a
+swing leaf would sweep the stools: one framed leaf (50 mm stiles, 40 mm deep) hung 12 mm outside the frame's terrace
+face, overlapping both mullions by 50 mm, sliding toward -y past the fixed pane beside it; fix 16's header (the rail)
+under the beam with its slot, stainless track, hangers and end caps; a floor guide past the closed leaf's end; brush
+seals under the leaf and behind its end stiles; a stainless bar pull on standoffs outside and a flush pull inside at
+the closing edge; the sill stops at the opening, a 10 mm stainless threshold lies in the frame's plane there. A 0.5 m
+strip inside the opening is kept free (`annex door path`; 0 footprint problems). **4, "the ceiling is open, we need
+another metal plate inclined to cover from rain ... flat -> inclined will form a gap. that can be filled with glass":**
+a single-pitch standing-seam roof (`rb_annex_roof`, new slot `TM_RB_roof_metal`, anthracite, wear class steel) at 7°,
+falling 0.43 m from the penthouse wall to the -x side: underside 30.42 → 30.85, 0.10 m eaves and 0.06 m verge
+overhangs, 11 seams (~0.51 m panels), verge trims, a flashing up the wall whose top (30.98) stays 68 mm under the
+parapet top (`cap_clear_m`, checked ≥ 0.05 by make_plan), a box gutter under the low edge and a downpipe on the rear
+post with its spout and two brackets. Its structure (frame steel, in `rb_annex_frame`): a sloped eaves bearer, gable
+rafters over the front and rear beams, two purlins and a wall ledger. The gables' gaps between the beams and the
+rafters are glazed in 35 mm black frames (`rb_annex_frames` / `rb_annex_glass`), split over the walls' mullion: a
+triangle at the low end and a trapezoid (0.40 m at the wall) at the high end. The louvres stay as the inner ceiling.
+The roof stays outside the penthouse parapet, so the units and solar rows are clear; the sightline holds (the annex's highest point
+3.73 m above the roof at its front verge, y −1.76, against 4.76 m allowed). Rebuilt: the building (`target=building`, joint stats as fix
+19), the interiors (`target=interiors`), the building's wear (`layers=wear`), the wear part, the composition (props and
+site unchanged). Checks: the audit is 897 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden
+parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses: `fix20_user_view`,
+`fix20_extended_side`, `fix20_door`, `fix20_roof_high`, `fix20_side_triangle`, `fix20_interior`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix20/` (`compare.png` = [user screenshot | before | after]
+in Solid rows, then Cycles rows; the screenshot and its crops in `references/`; the checks and both audits). The before
+renders are in `poses/pre_fix20/` and `poses/pre_fix20_wb/`, the after in `poses/fix20/` and `poses/fix20_wb/`.
+
+**Fix 21: wall panels beside the piers, glass at the corners (2026-10-16).** The user, in Material Preview of the left
+side from above the street (images/34.webp: F on the left, G in the middle, H with the café on the right), circled fix
+7's panel at the G/H corner of the side room F2-G0-H0 and drew an arrow back to the F pier: "transfer that wall to near
+the column. all floors and the oposite side as well"; then, of the rear seen square-on (images/35.webp: the corner room
+D2-E0-F0 between the D and F piers), red strokes beside both piers on every floor: "then add walls where i marked in
+red". The rule in `make_plan.py` (`envelope.wall_panels`) is now a panel beside every room-dividing pier and none at a
+corner. Bays changed, on floors 1-5: H0 loses its start panel (the G/H corner is glazed) and F2 gains a start panel by
+pier F1/F2; mirrored, B1 loses its end panel (B/C glazed) and D0 gains an end panel by pier D0/D1; the rear room gains
+D2 start (pier D1/D2) and F0 end (pier F0/F1); it is its own mirror, and the front rooms already had fix 7's panels by
+the B and H piers (H1 start, B0 end, kept). Each side room keeps its pane count (H0 3 -> 4 panes, F2 4 -> 3; B1 3 -> 4,
+D0 4 -> 3); the sliders keep their panes, so the thresholds and pots do not move. 8 panels per floor (was 6), 40 in all.
+The curtains follow the glazed panes (160 panels on 85 tracks, as before, now on the corner glass and off the new
+panels). The furniture sets (`props_layout.residential`, `furniture.glass_margin`) keep their seats and tables in front of
+the glazed stretch, never before a panel (a lamp may stand by one): 19 sets were re-drawn, 3 more bay-floors stay empty
+(f3 E0, f4 D0, f4 F0; every unit still has a set), now 10 sofas, 40 armchairs, 22 dining tables. Fix 10's piers and guard
+runs, fix 8b's guard panels and fix 14 / 17's soffit plates and lights are untouched; the materials pass gives the new
+panels the column's courses, fix 18's arrises and fix 18d's inside-corner joints against the piers (inside corners 134,
+was 94 in fix 18d's count; joint stats: 30 objects, 809 corners, 1589 vertical joints, 3385 panels, 0 non-manifold /
+degenerate / non-planar, 0 strays). b8 shows both chamfer ends, where fix 7 had read a panel: the user's instruction
+overrides it there. Rebuilt: the building (`target=building`), the interiors (`target=interiors`), the building's wear
+(`layers=wear`), the wear part (41 streaks), the composition. Checks: the audit is 889 objects (fewer furniture pieces),
+0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all
+save=0` runs clean. New poses: `fix21_user_left`, `fix21_user_rear`, `fix21_left_room`, `fix21_right_room`,
+`fix21_rear_room`, `fix21_corner_gh`, `fix21_wall_f2`, `fix21_wall_d2`, `fix21_interior_gh`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix21/` (`compare.png` = [user screenshot | before |
+after] in Solid and Cycles rows, the close-ups, then b8 crops of both chamfer ends; the screenshots in `references/`; the
+checks and both audits). The before renders are in `poses/pre_fix21/` and `poses/pre_fix21_solid/`, the after in
+`poses/fix21/` and `poses/fix21_solid/`.
+
+**Fix 22: runoff streaks only where water concentrates (2026-10-16).** The user, of a streak in the middle of the
+loggia cover's face (images/36.webp) and of the H chamfer podium marked "EXAMPLE" (images/37.webp, arrows at the slab
+ends against the central pier, a recess's top corner and a slab's free end corner): "are these markings supposed to be
+water? they should be put in more strategic places, like corners or edge of columns. not in a flat surface". The
+streaks (`wear/features/runoff_streaks.py`, the wear part only; no part attributes changed) came from the guard glass
+joints, the roof guard's joints and the podium planters' weep holes, i.e. at seeded spots along flat fascias and
+panels, and one ran down the cover's face from a floor-1 guard joint. The sources are now the junctions: `slab_end`
+(every guard run's end at a room-dividing pier or a front pilaster, floors 1-5), `slab_corner` (the slabs' convex
+corners, floors 1-5 and the roof, one face by seed), `sill_corner` and `head_corner` (the upper recesses' lower and
+upper corners), `cover_end` (the cover's two ends at the wall) and `coping_end` (beside the pilaster crowns under the
+roof frame's cap); the lanterns' rust stays. The glass joint, roof joint and planter drain kinds are gone. Each drip
+point sits 6 cm off its junction; `hug()` scans the face sideways (three rows, 3 mm steps) for the edge it belongs to:
+an arris (the face falls away, an eased arris or corner joint counted from where it starts), a step (the pilaster,
+the cover's end) or, for slab ends and sill corners, a vertical joint within 12 cm; the streak runs down 2.5-5.5 cm
+off an arris or step (5.5-8 cm beside the coping, clear of the cap's overhang) or 1.2-3 cm beside the joint, drifting
+away from it. A corner, head, cover or coping source with no edge in reach carries nothing; a slab end without one
+keeps its plan junction line (floors 2-5, where the pier stands behind the fascia). The balcony slabs' corners are
+rounded (no arris): `round_corner()` runs their streak down the crown, square to the bisector. The amount drops to
+55 % where the drip point sees no sky (`exposure()`, 48 fixed rays; open faces see about 0.5, the lantern 0.19, the
+coping 0.33). The frame is re-centred on the streak, so decals and atlas tiles shrink (atlas 2048 x 512, was 1024
+high; 17,699 decal faces). The fix 18d chamfers and inside-corner joints and fix 21's panels are read from the current
+building part (the ray scene); `face_depth()` keeps a drip beside a joint from taking the groove's floor for the face.
+The decal material blends in EEVEE (`BLENDED`) instead of dithering: Material Preview had drawn the streaks as dark
+stippled dots, much stronger than the Cycles look (about 3 levels of 255 at full strength on the pale stone). Result:
+41 streaks before, 32 of 184 candidates after (14 slab ends: 9 beside a joint, 2 in a pilaster's inside corner, 3 on
+the junction line; 7 corners: 6 crowns, 1 arris; 3 sill, 3 head, 2 cover, 2 coping, 1 lantern), runs 0.33-1.32 m,
+none on a flat panel's middle or on the cover's face. Rebuilt: the wear part (`target=wear`), the composition. Checks:
+`wear=off` against the overlays removed and the switch cleared, and `runoff_streaks:0` against the overlays removed,
+both 0 px different (CPU, one thread, 16 spp, `fix22_cover_end`, `fix22_slab_pier`; scratch copy `scratch_f22chk`);
+the audit is 879 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0; hidden parts visible from b8:
+0 px; a fresh `target=all save=0` runs clean. New poses: `fix22_user_cover`, `fix22_user_example`, `fix22_slab_pier`,
+`fix22_opening_corner`, `fix22_sill_corner`, `fix22_balcony_end`, `fix22_cover_end`, and the debug overviews
+`fix22_overview_front|left|right|rear`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix22/`
+(`compare.png` = [user screenshot | before | after] in Cycles, the debug mask with every streak circled and EEVEE rows,
+the close-ups, then the before and after debug overviews; the screenshots in `references/`; the checks and both
+audits). The before renders are in `poses/pre_fix22/`, `poses/pre_fix22_debug/` and `poses/pre_fix22_eevee/`, the
+after in `poses/fix22/`, `poses/fix22_debug/` and `poses/fix22_eevee/`.
+
+Strength (2026-10-16, after fix 22): at the calibrated strength 1.0 a streak darkened its core by only about 15-25 of
+255 over a few pixels and read as nothing. A probe of `fix22_slab_pier` and `fix22_cover_end` at 1, 2.5 and 4
+(`tests/artifacts/screens/buildings/terramar_recessed/rebuild/streak_strength/probe_zoom.png`) set `DEFAULT_STRENGTH`
+to 2.5, a faint trail beside its edge; at 4 it is a hard line. `DIRT` turned warmer, (0.50, 0.54, 0.60) from
+(0.58, 0.56, 0.50): the old tint kept more blue and read blue-black as the strength rose.
+
+**Fix 23: earth soil, mounded (2026-10-16).** The user, from above the roof terrace (images/38.webp: the centre box,
+the lounge island, the pots and the ring troughs, all a flat tan `TM_RB_soil`): "replace the dirt on the pots with a
+proper dirt land PBR; get it from the game, there is a dark one that is good. also, create a small curvature, at the
+edges it is lower, and higher in the center".
+- **Material.** `TM_RB_soil` is the game's `assets/public/pbr/brown_mud` ("Brown Earth", the dark grey-brown; swatches
+  of the four candidates in `fix23/soil_candidates.png`), read in place: basecolor, normal_gl, ARM (roughness about
+  0.96, no metal). The set is one plan value, `materials.soil.set` (`forest_ground_06` is the reddish alternative).
+  `layer_materials.dress_soil()` lays it at world scale (UV = x / y in metres, `repeat_m` 1.0; the source is 1.3 m
+  across), offsets the map per mound by its face attribute `rb_soil_seed`, and blends a quarter-turned second sample
+  (its normal turned back) in by a soft mask, so no repeat lines up along a trough. Solid view takes the map's mean.
+- **Mound** (`soil.py`, plan `props.soil` from `props_layout.SOIL`). Every soil surface is a dome: its edge 5 mm under
+  the old flat soil where it meets the wall, rising 3.5 % of its width to the middle (8-35 mm, and at least 8 mm under
+  the rim), shaped by a soft minimum of the distances to the outline's edges (a box's corners round off without a
+  crease), triangulated on a 5 cm grid (finer in a small pot), smooth, its edge to the walls sharp. A round pot
+  (`mound_pots`) lowers its inner wall's foot ring with it. A planter built from solids (`mound_pockets`) keeps its
+  outside: the body top under the rims stays, and a 5 mm pocket wall in the planter's own material drops to the dome's
+  edge. In the street pits that wall is `TM_RB_threshold` (`pit_wall_slot`, the same paving limestone outside the pits'
+  joint rule), so no seam joint is cut under the coping.
+- **Where.** 235 mounds:
+  - props: 94 balcony pots, 44 podium boxes, 2 portal pots (fix 12), and on the roof 40 ring troughs, 3 islands, the
+    centre box and 11 pots;
+  - site: 4 tree pits and 2 entrance pots;
+  - interiors: 15 restaurant, 14 dining and 5 penthouse pots (the annex's corner plant of fix 20 among them).
+  Rises: pots 12-17 mm, podium boxes 12-20 mm, roof 20-35 mm, pits 30-35 mm.
+- **Plants.** `soil.lift()` re-seats every plant, palm, flower head and standard's stem on the mound. A plant whose
+  origin sits over the rim band takes the dome's edge, with 0 misses. A stem's flared foot stands on the highest point
+  under it, so nothing cuts into the soil.
+- **Wear.** The soil stays outside the wear classes.
+
+Rebuilt: `target=props`, `site`, `interiors`, then their `layers=wear`, the wear part (`target=wear`, fix 22's streaks
+kept) and the composition. Checks:
+- the audit is 880 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0;
+- hidden parts visible from b8: 0 px;
+- every soil object is 0 non-manifold;
+- a fresh `target=all save=0` runs clean.
+
+New poses: `fix23_terrace_top` (the user's view), `fix23_round_pot`, `fix23_planter_low`, `fix23_palm_pit`,
+`fix23_entrance_pot`. Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix23/`:
+`compare.png` = [user screenshot | before | after] in Cycles, then the close-ups, Solid rows and the swatch row. The
+renders are in `poses/pre_fix23(_solid)/` and `poses/fix23(_solid)/`, beside the checks and both audits.
+
 ### Roof and penthouse adjustments (2026-10-15)
 
 The user: "no dinner table in the roof top. improve the quality of the machines on top of penthouse. that sofa in front
@@ -2295,7 +2591,7 @@ splice in.
      rework no feature reads `ground` or `level`; they are written with `signals=all` for the debug view.
 3. **Overlays.** `terramar_wear.blend` (part `wear`, root `TM_WEAR`, one layer `wear_overlays`) holds geometry that only
    exists when worn, built by the features' `overlays()`: one collection `TM_WEAR_<name>` per feature (today
-   `TM_WEAR_runoff_streaks`, 30 decals), and `TM_WEAR_DEBUG` for markers shown in debug only.
+   `TM_WEAR_runoff_streaks`, 32 decals since fix 22), and `TM_WEAR_DEBUG` for markers shown in debug only.
    - The composition links `TM_WEAR` under `TERRAMAR_REBUILD`, so the audit checks it.
    - The switch excludes `TM_WEAR` from the view layer while off, and a feature's own collection while its strength is
      0. An overlay's material also reads the switch and scales with the strength.
@@ -2357,14 +2653,20 @@ Interior materials get no group: partition, ceiling, floor, core, hidden, and th
   an open wall's joints keep 60 %. The paving's drawn tile joints (roof deck, sidewalk) are found again from the
   object's x / y, one seeded value per joint line. At a full, sheltered run: 21 % darker, 52 % greyer, roughness
   +0.075.
-- **runoff_streaks** (220; overlays). Faint rain-runoff streaks below the few places where water leaves an edge: the
-  guard glass joints over the slab fascias, the roof guard's joints, the rounded corners, the guard shoes' ends at the
-  front pilasters, the podium planters' weep holes, the upper recesses' sill corners, and rust under one of the four
-  lanterns. 30 of 396 candidates carry one, by seeded probability (a little more often up high; the same place on the
-  next floor four times less often). Each streak draws its own amount, length (0.3-1.6 m), width, spread, wander and
-  rivulets. Its path is ray-cast on the building part: it stops at an arris, a recess head or an obstacle, is drawn
-  into a nearby vertical joint, and hangs a little at bed joints and at its drip edge. Each is one decal, camera rays
-  only, a tinted Transparent BSDF over a generated atlas, so it darkens and greys the stone's own shaded colour.
+- **runoff_streaks** (220; overlays). Faint rain-runoff streaks only where water concentrates and runs (fix 22): the
+  slab ends where a guard run stops against a room-dividing pier or a front pilaster (`slab_end`), the slabs' outer
+  corners (`slab_corner`, down one face beside a fold's arris or down a rounded corner's crown), the upper recesses'
+  lower and upper corners (`sill_corner`, `head_corner`), the loggia cover's ends (`cover_end`), beside the pilaster
+  crowns under the roof frame's cap (`coping_end`), and rust under one or two of the four lanterns. Never in the middle
+  of a flat panel or on the cover's face. 32 of 184 candidates carry one, by seeded probability (a little more often up
+  high and at the floor-1 terrace's ends; the same slab end or corner on another floor four times less often). From a
+  drip point a few cm off its junction the face is scanned sideways for the edge it hugs (arris, step or vertical
+  joint); the streak runs down 2.5-5.5 cm off it (5.5-8 cm beside the coping, clear of the cap) or along the joint,
+  drifting away from it, never onto it. Each streak draws its own amount, length (per kind, 0.3-1.5 m), width, spread,
+  wander and rivulets; the amount drops to 55 % on a drip point that sees no sky (48 rays). Its path is ray-cast on the
+  building part: it stops at an arris, a recess head or an obstacle and hangs a little at bed joints and at its drip
+  edge. Each is one decal, camera rays only, a tinted Transparent BSDF over a generated atlas, so it darkens and greys
+  the stone's own shaded colour; in EEVEE it blends (no dithered dots).
 - **glass_film** (300; exterior glass). A grime margin along each pane's edges, where water and dust dry against the
   frame: densest at the bottom gasket, gone by about 2.8 cm, gathering into the two bottom corners, a faint side margin
   low down, nothing under the head; the pane's field stays clear. Per pane (`pane_grime`): 22 % cleaned lately, street

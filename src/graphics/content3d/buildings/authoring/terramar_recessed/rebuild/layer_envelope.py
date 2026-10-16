@@ -13,7 +13,8 @@
 #                   stone; the materials pass cuts its course joints): slab to slab, as deep as the frames, in place of
 #                   the end pane beside each chamfer column and at the chamfer's far end; against a column the panel
 #                   follows the column's arc (the layout's 3 mm gap is the joint), elsewhere it meets the mullion or
-#                   the corner post face to face
+#                   the corner post face to face. User fix 21 (2026-10-16): the panels stand beside every room-dividing
+#                   pier (front and rear chamfers), none at a corner; the bays come from env["wall_panels"]
 # Frames and glass sit on the tower wall line (frame depth 0.12, glass 0.024, centred). Pieces meet face to face:
 # sills on the slab tops, heads under the slab undersides, jambs against pilasters and columns, glass between frame
 # members. The sliding panes are listed per bay in plan["envelope"] (doors) for the balconies layer.

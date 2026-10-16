@@ -46,6 +46,9 @@ def main():
     plan = L.load_plan()
     B.base_scene(plan)
     scene = bpy.context.scene
+    # EEVEE (Material Preview, Rendered EEVEE) filled the default 512 MB shadow pool (about 2900 of 2048 pages close
+    # to the building) and dropped shadows; 1024 MB holds them
+    scene.eevee.shadow_pool_size = '1024'
     local = bpy.data.collections.new(ROOT)
     scene.collection.children.link(local)
     linked = {}

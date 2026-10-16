@@ -717,7 +717,7 @@ def rods_clear_of_joints(rods, bay_s, joints, half_plate, clear):
     s0, s1 = bay_s
     k = math.ceil((s1 - s0) / joints["panel_max"] - 1e-9)
     lines = [s0 + (s1 - s0) * j / k for j in range(1, k)]
-    need = half_plate + joints["width"] / 2 + joints["bevel"] + clear
+    need = half_plate + joints["width"] / 2 + joints.get("wall", 0.0) + joints["bevel"] + clear
     out = []
     for s in rods:
         for j in lines:
@@ -730,7 +730,7 @@ def rods_clear_of_joints(rods, bay_s, joints, half_plate, clear):
 def anchor_clear_of_courses(z, planes, joints, half_plate, clear):
     """User fix 13: the anchor plates' centre height moved off any course joint of the podium's shared planes (the
     materials pass's podium grid) to `clear` past the joint's bevelled edge, towards the nearer side."""
-    need = half_plate + joints["width"] / 2 + joints["bevel"] + clear
+    need = half_plate + joints["width"] / 2 + joints.get("wall", 0.0) + joints["bevel"] + clear
     for zc in planes:
         if abs(z - zc) < need:
             z = zc - need if z < zc else zc + need
@@ -863,8 +863,13 @@ def sidewalk_cafe(plan, seed=632):
 # kerb side of the sidewalk. Palms stand in raised limestone tree-pit planters on the sidewalk (clear of
 # the café sets' chairs), the entrance planters at the spots AI 646 reserved, the lamps between them on the kerb side.
 # The pits' vertical corners are chamfered (2026-10-15, the user's fix 5: "make the flower pots chamfered on the
-# corner"): 50 mm legs on the 1.2 m box, the coping and its joints following the cut.
-STREET = {"pit": {"half": 0.6, "height": 0.40, "chamfer": 0.05}, "crown_clear": 0.4,
+# corner"): 50 mm legs on the 1.2 m box, the coping and its joints following the cut. round (2026-10-16, user fix 18
+# addendum 2: "bevel the hard edges of the palm bases; just a small rounded edge. 2 loops"): every exposed convex edge
+# of body and coping rounded to this radius in round_segments segments (layer_site_palms.round_edges). overhang
+# (2026-10-16): the coping stands 15 mm proud of the body, so their seam is a drip edge and no joint groove crosses the
+# body's rounded corners
+STREET = {"pit": {"half": 0.6, "height": 0.40, "chamfer": 0.05, "round": 0.012, "round_segments": 2, "overhang": 0.015},
+          "crown_clear": 0.4,
           # (run, s, v): b8's two tall palms, where CAM_B8's rays through their trunk bases (b8 x 278 / 845 at the sidewalk)
           # meet the sidewalk -- before the front corners, 4.26 m out from A's face, s beyond A's ends; then the far corners
           "palms": [("A", -2.55, 4.26), ("A", 12.55, 4.26), ("H", 1.4, 4.8), ("B", 10.6, 4.8)],
@@ -893,7 +898,9 @@ def street_dressing(plan, seed=633):
         U, N = runs[run]["along"], runs[run]["outward"]
         corner = lambda su, sv, c=c, U=U, N=N: [round(c[0] + (U[0] * su + N[0] * sv) * h, 4), round(c[1] + (U[1] * su + N[1] * sv) * h, 4)]  # noqa: E731
         pits.append({"run": run, "s": s, "loop": [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], "z": z,
-                     "height": STREET["pit"]["height"], "chamfer": STREET["pit"]["chamfer"]})
+                     "height": STREET["pit"]["height"], "chamfer": STREET["pit"]["chamfer"],
+                     "round": STREET["pit"]["round"], "round_segments": STREET["pit"]["round_segments"],
+                     "overhang": STREET["pit"]["overhang"]})
         soil = z + STREET["pit"]["height"] - 0.04
         p = STREET["palm"]
         model = rng.choice(p["models"])
@@ -972,6 +979,23 @@ def entrance_plants(plan, seed=12):
                        "entrance inside the portal, between the vestibule glazing and the wood lining; each clump is "
                        "turned (from rot_deg) to keep inside keep_in",
             "seed": seed, "pots": pots, "plants": plants}
+
+
+# User fix 23 (2026-10-16, "create a small curvature, at the edges it is lower, and higher in the center"): the soil of
+# every pot, planter, trough and tree pit is a gentle mound (soil.py), its edge rim_drop below the old flat soil where
+# it meets the wall, rising to the middle by rise_frac of the soil's width (rise_min .. rise_max, and at least rim_clear
+# under the rim); softness: the order of the soft minimum of the distances to the outline's edges that shapes it (a
+# box's corners round off); step: the triangulation's grid (at least min_cells across a small pot). Planters built from
+# solids get a pocket wall in their own material; the street tree pits' in pit_wall_slot, the same limestone (paving
+# family) outside the pits' joint rule, so the materials pass cuts no seam joint between it and the coping above.
+SOIL = {"rim_drop": 0.005, "rise_frac": 0.035, "rise_min": 0.008, "rise_max": 0.035, "rim_clear": 0.008,
+        "softness": 6.0, "step": 0.05, "min_cells": 8, "seed": 23, "pit_wall_slot": "TM_RB_threshold"}
+
+
+def soil():
+    return {"comment": "user fix 23: every soil surface a gentle mound (soil.py): lowest at the wall (rim_drop under the "
+                       "old flat soil), rising rise_frac of its width to the middle; plants re-seated on it",
+            **SOIL}
 
 
 # ---------------------------------------------------------------- AI 634: the interior base (residential floors)
@@ -1368,7 +1392,8 @@ RESIDENTIAL = {"curtain": {"v": -0.2, "half_depth": 0.07, "top_gap": 0.04, "hem"
                            "opening_weights": {"closed": 0.3, "half": 0.4, "open": 0.3}},
                "track": {"depth": 0.04, "height": 0.03},
                "partition_clear": 0.03,
-               "furniture": {"min_bay": 3.0, "end_clear": 0.35, "core_clear": 0.45,
+               # glass_margin (user fix 21): how far a seat or table may reach past the glazed stretch (the mullion)
+               "furniture": {"min_bay": 3.0, "end_clear": 0.35, "core_clear": 0.45, "glass_margin": 0.06,
                              "layouts": {"lounge": 0.45, "dining": 0.3, "reading": 0.25}, "tries": 12},
                "lamp": {"height": 1.55, "shade_r": 0.19, "shade_h": 0.3, "base_r": 0.15}}
 
@@ -1500,6 +1525,11 @@ def residential(plan, seed=637):
         for bay in env["bays"]:
             if bay["length"] < F["min_bay"]:
                 continue
+            # user fix 21 (2026-10-16): a set faces the view, so its seats and tables stand in front of the glazing,
+            # never before a solid wall panel (fix 7 / 21); only the floor lamp may stand by a panel
+            var = next(v for v in bay["variants"] if int(floor) in v["floors"])
+            g0 = min(q[0] for q in var["panes"]) - F["glass_margin"]
+            g1 = max(q[1] for q in var["panes"]) + F["glass_margin"]
             for attempt in range(F["tries"]):                         # another layout or centre until one fits
                 rng = random.Random(f"{seed}:furniture:{floor}:{bay['id']}:{attempt}")
                 new, lamp = furnish(rng, bay)
@@ -1511,8 +1541,9 @@ def residential(plan, seed=637):
                 polys = [_footprint(it) for it in new] + [lamp_quad]
                 # within the bay (clear of its ends), off the partitions, the core and the other sets
                 U, L = bay["along"], bay["length"]
-                ends_ok = all(F["end_clear"] <= (x - bay["a"][0]) * U[0] + (y - bay["a"][1]) * U[1] <= L - F["end_clear"]
-                              for poly in polys for x, y in poly)
+                along = lambda x, y: (x - bay["a"][0]) * U[0] + (y - bay["a"][1]) * U[1]  # noqa: E731
+                ends_ok = all(F["end_clear"] <= along(x, y) <= L - F["end_clear"] for poly in polys for x, y in poly)
+                ends_ok = ends_ok and all(g0 <= along(x, y) <= g1 for poly in polys[:-1] for x, y in poly)
                 if ends_ok and not any(_overlap(q, k) for q in polys for k in kept):
                     kept += polys
                     items += new
@@ -1544,12 +1575,19 @@ def residential(plan, seed=637):
 # (a 2.75 m strip); the stair door and the two lift doors on the core's front face (layer_roof.py) open on it, and it
 # leads to the front door, the slider and the left door into the annex. It is kept clear: a slim teak console against
 # the front wall between the door and the slider, plants in the corners; the sofa, side tables, lamp and the right
-# strip's armchair are gone. The annex (moved forward with the front wall; the y values below are from its front,
-# annex["y"][0]) stays the amenity room: the kitchen and the lounge corner.
-PENTHOUSE = {"run": {"y": [2.8, 5.2], "depth": 0.6, "top_over": 0.02, "height": 0.9, "top": 0.04,
-                     "shelf": {"z": 1.5, "depth": 0.3, "y": [3.0, 5.0], "thick": 0.03}},
-             "island": {"x": [-7.4, -6.5], "y": [3.0, 4.8], "body_inset": [0.25, 0.05], "height": 0.92, "top": 0.04,
+# strip's armchair are gone. The annex (moved forward with the front wall) stays the amenity room: the kitchen and the
+# lounge corner.
+# User fix 20 (2026-10-16): the annex's front moved out 0.5 m. The kitchen's y below are now from the annex's rear,
+# annex["y"][1] (the run and shelf stay where they were, clear of the left door's path); the island sits 0.5 m nearer
+# the front, its centre on a louvre blade so its three stools and pendants keep their blades; the lounge corner keeps
+# its place behind the front glass (from annex["y"][0]). The potted plant stands in the inside corner of the long glass
+# side and the rear glass (`corner_plant`: its centre this far in from both glass lines, the plant's crown radius), and
+# the strip inside the new sliding door (roof.annex.door, `inside_path` deep) is kept free.
+PENTHOUSE = {"run": {"y": [-2.7, -0.3], "depth": 0.6, "top_over": 0.02, "height": 0.9, "top": 0.04,
+                     "shelf": {"z": 1.5, "depth": 0.3, "y": [-2.5, -0.5], "thick": 0.03}},
+             "island": {"x": [-7.4, -6.5], "y": [-3.0, -1.2], "body_inset": [0.25, 0.05], "height": 0.92, "top": 0.04,
                         "stools_x": -7.62, "seat": 0.66},
+             "corner_plant": 0.45,
              "pendant": {"drop_to": 1.75, "shade_r": 0.14, "shade_h": 0.2, "cord_r": 0.006},
              "downlight": {"radius": 0.08, "height": 0.015},
              "door_path": 0.2,
@@ -1559,10 +1597,11 @@ PENTHOUSE = {"run": {"y": [2.8, 5.2], "depth": 0.6, "top_over": 0.02, "height": 
 
 def penthouse(plan):
     rf, st = plan["roof"], plan["structure"]
-    ay = rf["annex"]["y"][0]                                          # the annex's front: the kitchen's y are from it
+    ay = rf["annex"]["y"][0]                                          # the annex's front: the lounge's y are from it
+    ar = rf["annex"]["y"][1]                                          # its rear: the kitchen's (user fix 20)
     P = json.loads(json.dumps(PENTHOUSE))
     for part in (P["run"], P["run"]["shelf"], P["island"]):
-        part["y"] = [round(ay + v, 4) for v in part["y"]]
+        part["y"] = [round(ar + v, 4) for v in part["y"]]
     top = rf["roof_top"]
     walk = top + rf["paving"]                                         # the annex stands on the terrace paving
     ph, an = rf["penthouse"], rf["annex"]
@@ -1597,7 +1636,8 @@ def penthouse(plan):
     console = item("coffee_table", (co["x"], fy0 + 0.02 + co["size"][1] / 2), (0.0, 1.0), co["size"], top)
     console["h"] = co["h"]
     items.append(console)
-    plants = [{"at": [-8.0, round(ay + 2.55, 4)], "z": walk}, {"at": [-4.35, round(fy0 + 0.4, 4)], "z": top},
+    cp = P["corner_plant"]                                            # user fix 20: the annex's plant in its corner
+    plants = [{"at": [round(ax0 + cp, 4), round(ay1 - cp, 4)], "z": walk}, {"at": [-4.35, round(fy0 + 0.4, 4)], "z": top},
               {"at": [4.35, round(fy0 + 0.4, 4)], "z": top}, {"at": [-4.2, 4.5], "z": top}, {"at": [4.2, 5.2], "z": top}]
     I, R = P["island"], P["run"]
     stools = [[I["stools_x"], y] for y in blades if I["y"][0] + 0.25 <= y <= I["y"][1] - 0.25][::2]
@@ -1616,6 +1656,8 @@ def penthouse(plan):
               ("front door path", box([doors["front"][0] - dp, doors["front"][1] + dp], [py[0], py[0] + w + 0.9]))]
     blocks += [(f"annex post {k}", box([x0, x0 + p], [y0, y0 + p])) for k, (x0, y0) in
                enumerate((x0, y0) for x0 in (an["x"][0], an["x"][1] - p) for y0 in (an["y"][0], an["y"][1] - p))]
+    ad = an["door"]                                                   # user fix 20: the strip inside the sliding door
+    blocks.append(("annex door path", box([an["x"][0], an["x"][0] + p / 2 + fd + ad["inside_path"]], ad["span"])))
     rooms = [box(annex_in["x"], annex_in["y"]), box(inner["x"], inner["y"])]
     problems = [f"{a} overlaps {b}" for i, (a, pa) in enumerate(named) for b, pb in named[i + 1:] if _overlap(pa, pb)]
     problems += [f"{a} overlaps {b}" for a, pa in named for b, pb in blocks if _overlap(pa, pb)]

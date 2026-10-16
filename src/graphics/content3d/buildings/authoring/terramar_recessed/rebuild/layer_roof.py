@@ -12,7 +12,10 @@
 #   rb_penthouse_walls     pale stone walls (TM_RB_penthouse_stone) with a parapet, broken by the aerial's openings
 #   rb_penthouse_roof      its roof slab over the core, and the parapet cap
 #   rb_penthouse_frames / _glass / _doors   black frames, glass, the wood door leaves
-#   rb_annex_*             the glazed annex on the penthouse's -X side: posts, beams, louvred roof, glazing
+#   rb_annex_*             the glazed annex on the penthouse's -X side: posts, beams, louvred roof, glazing (user fix
+#                          20, 2026-10-16: its front 0.5 m further out; annex_pavilion.py adds the sliding door in the
+#                          long -x side, rb_annex_door / _door_glass, and the rain roof over the louvres, rb_annex_roof,
+#                          its structure in rb_annex_frame and its glazed gables in rb_annex_frames / _glass)
 #   rb_penthouse_core_doors   (2026-10-15) the core rises through the penthouse as the roof-access headhouse: on its
 #                          front face the stair door (teak leaf, black frame, lever) and two lift doors (brushed steel
 #                          frames and centre-opening leaves) with a call panel between them, opening on the lobby
@@ -34,9 +37,13 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import rb_lib as L  # noqa: E402
 import roof_units as RU  # noqa: E402
+import entrance_doors as ED  # noqa: E402
+import annex_pavilion as AP  # noqa: E402
 
 importlib.reload(L)
 importlib.reload(RU)
+importlib.reload(ED)
+importlib.reload(AP)
 
 COLLECTION = "RB_ROOF"
 LAYER = "roof"
@@ -167,7 +174,8 @@ def build(plan):
     made.append(L.pieces("rb_penthouse_roof", coll, roof_items, tags("penthouse", "penthouse_roof", True)))
     made.append(core_doors(plan, coll, top))
 
-    # the annex: posts, beams, louvred roof, glazing on its three open sides
+    # the annex: posts, beams, louvred roof, glazing on its three open sides (user fix 20, 2026-10-16: its front 0.5 m
+    # further out, a sliding door in the long -x side, a rain roof over the louvres with glazed gables: annex_pavilion)
     an = rf["annex"]
     ax, ay, p = an["x"], an["y"], an["post"]
     z_beam0 = walk + an["height"]
@@ -184,21 +192,23 @@ def build(plan):
     while y + lv["width"] / 2 <= ay[1] - p - 0.02:
         blades.append(L.piece(rect(ax[0] + p, ax[1] - p, y - lv["width"] / 2, y + lv["width"] / 2), [(zb - lv["thickness"], zb)], "TM_RB_louvre"))
         y += lv["spacing"]
-    made.append(L.pieces("rb_annex_frame", coll, posts + beams, tags("annex", "annex_frame", True)))
+    afr, agl, wall_mullions = [], [], []
+    for lo, hi, mid in ((ax[0] + p, ax[1] - p, ay[0] + p / 2), (ax[0] + p, ax[1] - p, ay[1] - p / 2)):
+        fbox = lambda a, b, mid=mid: rect(a, b, mid - fdp, mid + fdp)  # noqa: E731
+        gbox = lambda a, b, mid=mid: rect(a, b, mid - gd, mid + gd)  # noqa: E731
+        spans = L.equal_spans(lo, hi, max(1, round((hi - lo) / an["pane"])), fm)
+        L.glass_frame(spans, lo, hi, walk, z_beam0, fm, fm, fm, None, fbox, gbox, afr, agl)
+        wall_mullions = [(a[1], b[0]) for a, b in zip(spans, spans[1:])]
+    threshold = AP.door_wall(an, walk, z_beam0, fm, fdp, gd, afr, agl)            # the long -x side, its door pane open
+    d_items, d_extras, d_glass, door = AP.sliding_door(an, walk, z_beam0, fm, fdp)
+    r_struct, r_gfr, r_ggl, r_metal, r_pipe, rain = AP.rain_roof(an, walk, z_beam1, fm, fdp, gd, wall_mullions)
+    made.append(ED.make("rb_annex_frame", coll, posts + beams, r_struct, tags("annex", "annex_frame", True)))
     made.append(L.pieces("rb_annex_louvres", coll, blades, tags("annex", "annex_louvres", True)))
-    afr, agl = [], []
-    for axis, lo, hi, mid in (("x", ax[0] + p, ax[1] - p, ay[0] + p / 2), ("x", ax[0] + p, ax[1] - p, ay[1] - p / 2),
-                              ("y", ay[0] + p, ay[1] - p, ax[0] + p / 2)):
-        if axis == "x":
-            fbox = lambda a, b, mid=mid: rect(a, b, mid - fdp, mid + fdp)  # noqa: E731
-            gbox = lambda a, b, mid=mid: rect(a, b, mid - gd, mid + gd)  # noqa: E731
-        else:
-            fbox = lambda a, b, mid=mid: rect(mid - fdp, mid + fdp, a, b)  # noqa: E731
-            gbox = lambda a, b, mid=mid: rect(mid - gd, mid + gd, a, b)  # noqa: E731
-        n = max(1, round((hi - lo) / an["pane"]))
-        L.glass_frame(L.equal_spans(lo, hi, n, fm), lo, hi, walk, z_beam0, fm, fm, fm, None, fbox, gbox, afr, agl)
-    made.append(L.pieces("rb_annex_frames", coll, afr, tags("annex_frame", "annex_frames", True)))
-    made.append(L.pieces("rb_annex_glass", coll, agl, tags("annex_glass", "annex_glass", True)))
+    made.append(ED.make("rb_annex_frames", coll, afr, r_gfr, tags("annex_frame", "annex_frames", True)))
+    made.append(ED.make("rb_annex_glass", coll, agl, r_ggl, tags("annex_glass", "annex_glass", True)))
+    made.append(ED.make("rb_annex_door", coll, d_items + [threshold], d_extras, tags("annex_door", "annex_door", True)))
+    made.append(ED.make("rb_annex_door_glass", coll, d_glass, [], tags("annex_glass", "annex_door_glass", True)))
+    made.append(ED.make("rb_annex_roof", coll, r_pipe, r_metal, tags("annex_roof", "annex_roof", True)))
 
     # solar rows on edge rails, and the mechanical units, on the penthouse roof slab
     so = rf["solar"]
@@ -228,4 +238,5 @@ def build(plan):
     slots = RU.plant(bm, rf, z_roof)
     made.append(RU.to_object("rb_roof_units", coll, bm, slots, tags("unit", "roof_units", True)))
     return {"collection": COLLECTION, "objects": len(made), "faces": sum(len(o.data.polygons) for o in made),
-            "solar_modules": len(hexas), "louvres": len(blades), "names": [o.name for o in made]}
+            "solar_modules": len(hexas), "louvres": len(blades), "annex_door": door, "annex_rain_roof": rain,
+            "names": [o.name for o in made]}
