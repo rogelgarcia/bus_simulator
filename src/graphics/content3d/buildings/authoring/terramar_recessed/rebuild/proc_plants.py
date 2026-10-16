@@ -1,22 +1,29 @@
 # proc_plants.py -- AI 629: procedural plants the game's vegetation lacks, as prototypes for collection instances.
 #
 # The game ships trees and one shrub (assets/public/vegetation_lod0); b8's roof shows small palms and spiky rosettes
-# (yucca / cycad-like) against the sky. Both are built here as plain geometry (no textures), deterministic per variant:
-#   spiky   a short trunk under a rosette of ~40 narrow arching blades (golden-angle spiral, older blades lower and
-#           drooping), about 1.0 m tall, 0.6-0.8 m across
+# (yucca / cycad-like) against the sky, its street tall palms and its entrance leafy pot plants. All are built here from
+# detailed part modules (real leaves, no textures), deterministic per kind and variant:
+#   spiky   plant_spiky.py (user fix 12, 2026-10-15): a yucca / dracaena-like head of 70-90 keeled sword leaves (pale
+#           clasping bases, brown terminal spines, the oldest drooping, 1-3 dead hanging) on a 0.5-0.75 m leaf-scarred
+#           trunk; about 1.2-1.3 m tall, radius 0.5 m
 #   palm    the detailed palm (palm_tree.py, 2026-10-14) at roof scale: a 1.2-1.45 m trunk with its root base and boots
 #           under a narrow shuttlecock crown of 12-14 upright fronds with real leaflets, about 2.3-2.45 m tall, radius
-#           0.51-0.56 m (it keeps inside the roof guard)
+#           0.51-0.56 m (no longer instanced on the roof since 2026-10-15)
 #   street_palm  the detailed palm at street scale (AI 633, detailed 2026-10-14): a slender 7 m leaning trunk under a
 #           crown of 26-30 fronds of up to 2.75 m, the young upright, the mature arching, the old drooping below level,
 #           1-2 dead ones hanging under it; about 10 m tall, radius 2.1-2.3 m (b8's frontage palms)
-#   cycad   a short stout trunk under a dense crown of ~21 folded-strip fronds from upright to level (sago palm /
-#           pygmy date-like): the bushy spiky masses b8 shows at the roof corners, about 1.4 m tall, 1.6 m across
+#   cycad   plant_cycad.py (user fix 12): 28-34 stiff pinnate fronds (palm_frond.py's frond with 40-60 keeled leaflets
+#           per side) in two flushes out of a felt dome on a short trunk armoured with diamond leaf bases; about 1.45-1.5 m
+#           tall, radius 0.92-0.97 m (the roof's corner clusters and the entrance pots outside the portal)
+#   broadleaf  plant_broadleaf.py (user fix 12): a bird-of-paradise clump, 5-6 fans of paddle leaves on long petioles,
+#           split along their veins, leaning to one side (local -x, the open side of a portal corner); about 1.7 m tall
+#           (the pots inside the entrance portal)
 # ensure(kind, k) builds (or rebuilds) collection RBP_proc_<kind>_<k> under RB_PROP_PROTOTYPES with the same custom
 # properties the game prototypes carry (rb_model, rb_height, rb_radius), so the layers fit them to target sizes the same
-# way; their leaf material names end with _foliage (the clearance checks sample those vertices). The detailed palms also
-# carry rb_fit_aniso: layer_roof_planters.instances() keeps their xy / z scale ratio within it (never past either
-# target), so the fitting cannot squash a crown or stretch a trunk.
+# way; their leaf material names end with _foliage (the clearance checks sample those vertices). Every kind carries
+# rb_fit_aniso: layer_roof_planters.fit_scales keeps an instance's xy / z scale ratio within it (never past either
+# target), so the fitting cannot squash a crown or stretch a trunk -- real leaves would show it. The rosettes and
+# cycads (0.25) leave the layouts' slender targets more room than the palms (0.10) and the broadleaf (0.15).
 import importlib
 import math
 import os
@@ -25,107 +32,26 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import palm_tree  # noqa: E402
+import plant_shading  # noqa: E402
+import plant_cycad  # noqa: E402
+import plant_spiky  # noqa: E402
+import plant_broadleaf  # noqa: E402
 
-importlib.reload(palm_tree)
+for _mod in (palm_tree, plant_shading, plant_cycad, plant_spiky, plant_broadleaf):
+    importlib.reload(_mod)
 
 PROTOTYPES = "RB_PROP_PROTOTYPES"
 DETAILED = {"palm": "roof", "street_palm": "street"}      # kind -> palm_tree.py scale
+# kind -> (builder, materials, xy / z fitting tolerance)
+PLANTS = {"cycad": (plant_cycad.build_cycad, plant_cycad.materials, 0.30),
+          "spiky": (plant_spiky.build_spiky, plant_spiky.materials, 0.25),
+          "broadleaf": (plant_broadleaf.build_broadleaf, plant_broadleaf.materials, 0.15)}
 FIT_ANISO = 0.10                                         # the detailed palms' xy / z fitting tolerance
-LOOKS = {"RBP_proc_spiky_foliage": ((0.15, 0.27, 0.07), 0.50), "RBP_proc_cycad_foliage": ((0.11, 0.23, 0.05), 0.40),
-         "RBP_proc_trunk": ((0.21, 0.165, 0.12), 0.90)}
-
-
-def material(name):
-    rgb, rough = LOOKS[name]
-    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    mat.use_nodes = True
-    nt = mat.node_tree
-    nt.nodes.clear()
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
-    bsdf.inputs["Roughness"].default_value = rough
-    nt.links.new(out.inputs["Surface"], bsdf.outputs["BSDF"])
-    mat.diffuse_color = (*rgb, 1.0)
-    return mat
-
-
-def trunk(bm, slot, height, r0, r1, lean, sides=8, rings=6):
-    """A tapered trunk from z 0 to height, leaning along +x by lean * (z / height)^2."""
-    loops = []
-    for j in range(rings + 1):
-        t = j / rings
-        z, r = height * t, r0 + (r1 - r0) * t
-        cx = lean * t * t
-        loops.append([bm.verts.new((cx + r * math.cos(2 * math.pi * k / sides), r * math.sin(2 * math.pi * k / sides), z))
-                      for k in range(sides)])
-    for a, b in zip(loops, loops[1:]):
-        for k in range(sides):
-            bm.faces.new((a[k], a[(k + 1) % sides], b[(k + 1) % sides], b[k])).material_index = slot
-    bm.faces.new(list(reversed(loops[0]))).material_index = slot
-    bm.faces.new(loops[-1]).material_index = slot
-    return Vector((lean, 0.0, height))
-
-
-def direction(elev, az):
-    return Vector((math.cos(elev) * math.cos(az), math.cos(elev) * math.sin(az), math.sin(elev)))
-
-
-def spiky(bm, rng):
-    top = trunk(bm, 1, rng.uniform(0.15, 0.55), 0.07, 0.05, rng.uniform(-0.04, 0.04), sides=6, rings=3)
-    n = rng.randint(34, 46)
-    for i in range(n):
-        frac = i / (n - 1)
-        az = i * 2.39996 + rng.uniform(-0.15, 0.15)
-        elev = math.radians(82.0 - 72.0 * frac ** 0.9 + rng.uniform(-6.0, 6.0))
-        length = rng.uniform(0.55, 0.85) * (1.0 - 0.15 * frac)
-        droop = math.radians(5.0 + 28.0 * frac)
-        side = Vector((-math.sin(az), math.cos(az), 0.0))
-        p0 = top + direction(0.0, az) * 0.03
-        p1 = p0 + direction(elev, az) * length * 0.5
-        p2 = p1 + direction(elev - droop, az) * length * 0.5
-        w0, w1 = 0.045, 0.034
-        vs = [bm.verts.new(p0 - side * w0 / 2), bm.verts.new(p0 + side * w0 / 2), bm.verts.new(p1 + side * w1 / 2),
-              bm.verts.new(p1 - side * w1 / 2), bm.verts.new(p2)]
-        bm.faces.new((vs[0], vs[1], vs[2], vs[3])).material_index = 0
-        bm.faces.new((vs[3], vs[2], vs[4])).material_index = 0
-
-
-PALMS = {"cycad": {"trunk": (0.25, 0.6), "r": (0.13, 0.11), "lean": 0.04, "fronds": (18, 24), "length": (0.85, 1.1),
-                   "elev": (72.0, 70.0), "curl": 30.0}}
-
-
-def palm(bm, rng, kind="cycad"):
-    c = PALMS[kind]
-    top = trunk(bm, 1, rng.uniform(*c["trunk"]), c["r"][0], c["r"][1], rng.uniform(-c["lean"], c["lean"]),
-                sides=c.get("sides", 8), rings=c.get("rings", 6))
-    n = rng.randint(*c["fronds"])
-    stations = 6
-    for i in range(n):
-        frac = i / (n - 1)
-        az = i * 2.39996 + rng.uniform(-0.2, 0.2)
-        elev0 = math.radians(c["elev"][0] - c["elev"][1] * frac + rng.uniform(-8.0, 8.0))
-        length = rng.uniform(*c["length"])
-        side = Vector((-math.sin(az), math.cos(az), 0.0))
-        p = top + direction(0.0, az) * 0.05
-        rows = []
-        for j in range(stations + 1):
-            t = j / stations
-            if j:
-                elev = elev0 - math.radians(c["curl"]) * t ** 1.5
-                p = p + direction(elev, az) * length / stations
-            w = 0.02 if t < 0.08 else c.get("width", 0.32) * math.sin(math.pi * min(t * 1.08, 1.0)) ** 0.6
-            fold = Vector((0.0, 0.0, -0.18 * w))                     # the leaflets hang either side of the rachis
-            rows.append([bm.verts.new(p - side * w / 2 + fold), bm.verts.new(p), bm.verts.new(p + side * w / 2 + fold)])
-        for a, b in zip(rows, rows[1:]):
-            bm.faces.new((a[0], a[1], b[1], b[0])).material_index = 0
-            bm.faces.new((a[1], a[2], b[2], b[1])).material_index = 0
 
 
 def ensure(kind, k):
@@ -147,24 +73,17 @@ def ensure(kind, k):
     if kind in DETAILED:                       # one welded mesh with its own UVs, creases and attributes
         info = palm_tree.build_palm(bm, rng, scale=DETAILED[kind])
         me = palm_tree.to_mesh(name, bm, palm_tree.materials())
-        bm.free()
         coll["rb_fit_aniso"] = FIT_ANISO
-        coll["rb_tris"] = info["tris"]
+    elif kind in PLANTS:
+        build, mats, aniso = PLANTS[kind]
+        info = build(bm, rng)
+        me = palm_tree.to_mesh(name, bm, mats())
+        coll["rb_fit_aniso"] = aniso
     else:
-        if kind == "spiky":
-            spiky(bm, rng)
-        else:
-            palm(bm, rng, kind)
-        bm.normal_update()
-        uv = bm.loops.layers.uv.verify()
-        for f in bm.faces:
-            for lp in f.loops:
-                lp[uv].uv = (lp.vert.co.x + lp.vert.co.y, lp.vert.co.z)
-        me = bpy.data.meshes.new(name)
-        bm.to_mesh(me)
         bm.free()
-        me.materials.append(material(f"RBP_proc_{kind}_foliage"))
-        me.materials.append(material("RBP_proc_trunk"))
+        raise SystemExit(f"proc_plants: unknown kind {kind!r} (known: {sorted(DETAILED) + sorted(PLANTS)})")
+    bm.free()
+    coll["rb_tris"] = info["tris"]
     ob = bpy.data.objects.new(name, me)
     coll.objects.link(ob)
     leaf = [v.co for v in me.vertices]

@@ -10,8 +10,9 @@
 # terramar_composition.blend, the file the poses, the audit and the checks open:
 #   terramar_building.blend   TM_BUILDING   structure, envelope, balconies, podium, roof (penthouse, annex, solar), and
 #                                           the interior base (partitions, downlights)
-#   terramar_props.blend      TM_PROPS      the props on the building: balcony plants, podium and roof planters, roof
-#                                           furniture, storefront awnings
+#   terramar_props.blend      TM_PROPS      the props on the building: balcony plants, podium planters, the entrance
+#                                           portal's pot plants (user fix 12), roof planters, roof furniture, storefront
+#                                           awnings
 #   terramar_site.blend       RB_SITE       the street: sidewalk, cafe, palms, lamps, entrance planters
 #   terramar_interiors.blend  TM_INTERIORS  the furnished interiors: restaurant, upper dining room, residential curtains and
 #                                           furniture, penthouse
@@ -51,7 +52,8 @@ C = L.C
 # layers own RB_SITE themselves; its rebuild root is never created, so the materials pass only dresses it (no joints).
 # The wear part (2026-10-14) holds the wear module's overlay geometry, built from the features' overlays().
 PARTS = {"building": ("TM_BUILDING", ["structure", "envelope", "balconies", "podium", "roof", "interior_base"]),
-         "props": ("TM_PROPS", ["balcony_plants", "podium_planters", "roof_planters", "roof_furniture", "awnings"]),
+         "props": ("TM_PROPS", ["balcony_plants", "podium_planters", "entrance_plants", "roof_planters", "roof_furniture",
+                                "awnings"]),
          "site": ("RB_SITE", ["site_cafe", "site_palms"]),
          "interiors": ("TM_INTERIORS", ["restaurant_l0", "dining_l1", "residential", "penthouse"]),
          "wear": ("TM_WEAR", ["wear_overlays"])}

@@ -2121,6 +2121,1791 @@
                 1920,
                 1080
             ]
+        },
+        {
+            "name": "roof_terrace_eye",
+            "group": "props",
+            "label": "Roof terrace at standing eye height from the front-left, looking across the middle to the lounge and the penthouse front (2026-10-15: the central planter box, the pots with trees, the added seating)",
+            "items": [],
+            "location": [
+                -3.2,
+                -8.9,
+                28.9
+            ],
+            "target": [
+                5.0,
+                -2.0,
+                28.0
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix1_podium_corner_left",
+            "group": "detail",
+            "label": "User fix 1 (2026-10-15): the podium's H/A front corner from the sidewalk in front of the entrance, ground to podium top: the corner pier's vertical edge, the sidewalk along it",
+            "items": [],
+            "location": [
+                -1.8,
+                -19.0,
+                1.7
+            ],
+            "target": [
+                -5.0,
+                -11.0,
+                5.4
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix1_podium_corner_right",
+            "group": "detail",
+            "label": "User fix 1 (2026-10-15): the podium's A/B front corner from the sidewalk in front of the entrance, ground to podium top",
+            "items": [],
+            "location": [
+                1.8,
+                -19.0,
+                1.7
+            ],
+            "target": [
+                5.0,
+                -11.0,
+                5.4
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix2_loggia_cover",
+            "group": "detail",
+            "label": "User fix 2 (2026-10-15): the curved cover over the upper-podium loggia from the sidewalk, looking up: its bowed front, its eased underside and the thin reveal where it meets the jambs and the podium top",
+            "items": [],
+            "location": [
+                2.6,
+                -18.5,
+                4.2
+            ],
+            "target": [
+                0.0,
+                -11.0,
+                9.6
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix2_loggia_cover_above",
+            "group": "detail",
+            "label": "User fix 2 (2026-10-15): the curved cover from across the street at second-floor height, from the right: its plan curve (one convex bow since fix 2b) meeting the wall at each end, its top before the floor-1 guard",
+            "items": [],
+            "location": [
+                6.5,
+                -17.5,
+                13.0
+            ],
+            "target": [
+                0.0,
+                -11.0,
+                9.8
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix2b_loggia_cover_plan",
+            "group": "detail",
+            "label": "User fix 2b (2026-10-15): the loggia cover seen steeply from above the street: its plan outline, one convex bow from jamb to jamb with no reverse curve at the ends",
+            "items": [],
+            "location": [
+                1.2,
+                -15.0,
+                17.0
+            ],
+            "target": [
+                0.0,
+                -11.2,
+                10.1
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix2c_loggia_cover_corner",
+            "group": "detail",
+            "label": "User fix 2c (2026-10-15): the loggia cover's right end close up from the sidewalk at the right, looking up: the straight front turning back to the jamb through one convex rounded corner, the thin reveal behind it",
+            "items": [],
+            "location": [
+                5.6,
+                -15.2,
+                7.4
+            ],
+            "target": [
+                2.4,
+                -11.2,
+                9.7
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix2d_loggia_cover_end_top",
+            "group": "detail",
+            "label": "User fix 2d (2026-10-15): the loggia cover's left end seen from above: the straight front easing back into the jamb through a soft curve of growing radius, tangent to the front, square to the wall at the reveal",
+            "items": [],
+            "location": [
+                -1.2,
+                -14.6,
+                14.2
+            ],
+            "target": [
+                -2.3,
+                -11.2,
+                10.1
+            ],
+            "vfov_deg": 26.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix3_pilaster_terrace_right",
+            "group": "detail",
+            "label": "User fix 3 (2026-10-15): the right front pilaster's foot on the floor-1 terrace from across the street at terrace height: the pilaster stands inside the terrace, the guard runs on in front of it",
+            "items": [],
+            "location": [
+                8.5,
+                -19.5,
+                12.0
+            ],
+            "target": [
+                3.07,
+                -10.9,
+                11.0
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix3_pilaster_terrace_left_low",
+            "group": "detail",
+            "label": "User fix 3 (2026-10-15): the left front pilaster's foot from the sidewalk, looking up past the podium top: nothing of the pilaster past the podium edge or the floor-1 guard",
+            "items": [],
+            "location": [
+                -0.5,
+                -19.0,
+                1.7
+            ],
+            "target": [
+                -3.07,
+                -11.0,
+                11.4
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix4_canopy_end_right_b8",
+            "group": "detail",
+            "label": "User fix 4 (2026-10-15): from the b8 eye point, telephoto: the B chamfer canopies' open left ends over the storefront heads (the wood-coloured strip of the far room seen under each was the mark)",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                5.9,
+                -10.3,
+                4.0
+            ],
+            "vfov_deg": 2.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4_canopy_end_left_b8",
+            "group": "detail",
+            "label": "User fix 4 (2026-10-15): from the b8 eye point, telephoto, mirrored: the H chamfer canopies' ends over the storefront heads",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                -5.9,
+                -10.3,
+                4.0
+            ],
+            "vfov_deg": 2.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4_canopy_end_right_low",
+            "group": "detail",
+            "label": "User fix 4 (2026-10-15): from the sidewalk under the B0 canopy's left end: the storefront's head rail under the head panel",
+            "items": [],
+            "location": [
+                3.6,
+                -16.0,
+                2.0
+            ],
+            "target": [
+                6.0,
+                -10.3,
+                4.2
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix5_tree_pit_right",
+            "group": "detail",
+            "label": "User fix 5 (2026-10-15): the right front palm's raised limestone tree pit from the sidewalk, across its front right corner: the chamfered vertical corners, the coping's joints and the foot joint",
+            "items": [],
+            "location": [
+                9.55,
+                -17.55,
+                1.35
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                0.3
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix5_tree_pit_right_b8",
+            "group": "detail",
+            "label": "User fix 5 (2026-10-15): the right front palm's tree pit from the b8 stand, telephoto: what the b8 frame shows",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                7.55,
+                -15.26,
+                0.45
+            ],
+            "vfov_deg": 2.4,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix5_roof_centre_box",
+            "group": "detail",
+            "label": "User fix 5 (2026-10-15): the roof terrace's limestone centre box, from its front right: its chamfered corners",
+            "items": [],
+            "location": [
+                3.6,
+                -8.9,
+                29.2
+            ],
+            "target": [
+                0.9,
+                -5.5,
+                27.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix6_rod_anchor_wall",
+            "group": "detail",
+            "label": "User fix 6 (2026-10-15): a B0 canopy tie rod's wall end on the stone lintel, from just above the canopy's front: the anchor plate, its bolts, the eye bracket and the rod's clevis",
+            "items": [],
+            "location": [
+                8.4916,
+                -9.064,
+                5.55
+            ],
+            "target": [
+                7.2471,
+                -8.8095,
+                5.17
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix6_rod_fascia_end",
+            "group": "detail",
+            "label": "User fix 6 (2026-10-15): the same rod's lower end on the canopy's front fascia: the saddle, the tab and the rod's clevis",
+            "items": [],
+            "location": [
+                8.2653,
+                -10.6763,
+                4.6
+            ],
+            "target": [
+                8.0532,
+                -9.6156,
+                4.13
+            ],
+            "vfov_deg": 22.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix6_rods_left_b8",
+            "group": "detail",
+            "label": "User fix 6 (2026-10-15): from the b8 eye point, telephoto: the H chamfer canopies' tie rods where they meet the lintel (the user's mark 6)",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                -7.2,
+                -8.8,
+                4.85
+            ],
+            "vfov_deg": 2.4,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix7_chamfer_left_b8",
+            "group": "detail",
+            "label": "User fix 7 (2026-10-15): from the b8 eye point, telephoto: the H chamfer's floors 2-3 (the user's mark 7), the wall panels beside the chamfer column and at the G/H corner",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                -8.0,
+                -7.6,
+                16.4
+            ],
+            "vfov_deg": 8.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix7_chamfer_right_faceon",
+            "group": "detail",
+            "label": "User fix 7 (2026-10-15): the B chamfer face-on at floors 2-4: the wall panels beside the column and at the B/C corner between the sliders",
+            "items": [],
+            "location": [
+                19.6,
+                -17.1,
+                17.6
+            ],
+            "target": [
+                8.2,
+                -5.7,
+                18.2
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix7_chamfer_column_close",
+            "group": "detail",
+            "label": "User fix 7 (2026-10-15): close-up from the H chamfer's floor-3 balcony edge: a wall panel meeting the rounded chamfer column, its course joints, the mullion to the next slider and the curtains behind the glass",
+            "items": [],
+            "location": [
+                -11.0,
+                -9.6,
+                18.4
+            ],
+            "target": [
+                -8.2,
+                -5.75,
+                18.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8_corner_left_b8",
+            "group": "detail",
+            "label": "User fix 8 (2026-10-15): from the b8 eye point, telephoto: the upper-left slab corners (the user's mark 8), the floor-4/5 and roof guards round the H/A and G/H corners",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                -9.0,
+                -7.0,
+                24.6
+            ],
+            "vfov_deg": 9.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix8_corner_front_close",
+            "group": "detail",
+            "label": "User fix 8 (2026-10-15): close-up of the floor-5 guard round the H/A front corner, from outside a little above: straight glass facets and the connector posts",
+            "items": [],
+            "location": [
+                -7.6,
+                -14.4,
+                26.0
+            ],
+            "target": [
+                -4.9,
+                -10.75,
+                24.3
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8_corner_side_close",
+            "group": "detail",
+            "label": "User fix 8 (2026-10-15): close-up of the floor-4 guard round the G/H corner (the 1.0 m fillet), from outside a little above",
+            "items": [],
+            "location": [
+                -17.6,
+                -6.6,
+                22.4
+            ],
+            "target": [
+                -13.2,
+                -2.4,
+                20.9
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8_roof_corner_close",
+            "group": "detail",
+            "label": "User fix 8 (2026-10-15): the roof guard round the H/A corner and on along the front, from just above the roof edge",
+            "items": [],
+            "location": [
+                -7.4,
+                -13.9,
+                29.4
+            ],
+            "target": [
+                -4.6,
+                -10.8,
+                27.9
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8_podium_terrace",
+            "group": "detail",
+            "label": "User fix 8 (2026-10-15): the entrance terrace's guard round its right front corner (the 90 degree corner the glass used to bend round)",
+            "items": [],
+            "location": [
+                6.2,
+                -15.6,
+                8.4
+            ],
+            "target": [
+                3.3,
+                -12.0,
+                6.5
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8b_corner_gh_above",
+            "group": "detail",
+            "label": "User fix 8b (2026-10-15): the floor-4 guard at the G/H corner from outside and above (the user's screenshot 7): straight full panels meeting at one corner post, the slab edge below",
+            "items": [],
+            "location": [
+                -16.9,
+                -5.9,
+                23.6
+            ],
+            "target": [
+                -13.25,
+                -2.35,
+                20.7
+            ],
+            "vfov_deg": 36.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix8b_rear_corner_cd",
+            "group": "detail",
+            "label": "User fix 8b (2026-10-15): the floor-3 guard at the rear-right C/D corner, from outside a little above",
+            "items": [],
+            "location": [
+                18.3,
+                5.0,
+                19.6
+            ],
+            "target": [
+                13.25,
+                2.35,
+                17.4
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix4b_entrance_b8",
+            "group": "detail",
+            "label": "User fix 4b (2026-10-15): from the b8 eye point, telephoto: the main entrance portal, its stone jambs and head, the wood inside",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                0.0,
+                -12.15,
+                2.6
+            ],
+            "vfov_deg": 6.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4b_entrance_head_right",
+            "group": "detail",
+            "label": "User fix 4b (2026-10-15): the entrance's right top corner from the sidewalk, left of centre: the stone jamb return and head over the wood lining and panel",
+            "items": [],
+            "location": [
+                -1.2,
+                -17.5,
+                1.6
+            ],
+            "target": [
+                2.7,
+                -11.6,
+                3.6
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4b_entrance_head_left",
+            "group": "detail",
+            "label": "User fix 4b (2026-10-15): mirrored, the entrance's left top corner from the sidewalk",
+            "items": [],
+            "location": [
+                1.2,
+                -17.5,
+                1.6
+            ],
+            "target": [
+                -2.7,
+                -11.6,
+                3.6
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix9_roof_frame_b8",
+            "group": "detail",
+            "label": "User fix 9 (2026-10-15): the roof frame from b8's stand, telephoto: the two front pilasters run on up through the roof band, the head between them and the cap over both, proud of the side bands",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                0.0,
+                -11.0,
+                26.6
+            ],
+            "vfov_deg": 7.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix9_roof_frame_left_end",
+            "group": "detail",
+            "label": "User fix 9 (2026-10-15): the roof frame's left end from outside a little above the roof: the pilaster's crown, its stone return, the cap and the roof guard passing behind it",
+            "items": [],
+            "location": [
+                -8.2,
+                -15.6,
+                28.9
+            ],
+            "target": [
+                -3.3,
+                -11.0,
+                26.95
+            ],
+            "vfov_deg": 32.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix9_roof_frame_right_low",
+            "group": "detail",
+            "label": "User fix 9 (2026-10-15): the right pilaster's top and the roof frame from the street at the right, looking up: the frame proud of the side band, its shadow on it",
+            "items": [],
+            "location": [
+                9.5,
+                -24.0,
+                17.0
+            ],
+            "target": [
+                3.3,
+                -11.0,
+                26.4
+            ],
+            "vfov_deg": 20.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix9_roof_frame_top",
+            "group": "detail",
+            "label": "User fix 9 (2026-10-15): the roof frame's cap from outside and above: its segments over the crowns and the head's panels, the guard shoe running on just behind it",
+            "items": [],
+            "location": [
+                -1.2,
+                -13.6,
+                29.9
+            ],
+            "target": [
+                -2.9,
+                -10.95,
+                27.25
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix4c_entrance_soffit",
+            "group": "detail",
+            "label": "User fix 4c (2026-10-15): under the entrance's wood head band, looking up: its soffit downlights, its proud front past the stone, the veneer linings and panels",
+            "items": [],
+            "location": [
+                0.9,
+                -14.4,
+                1.6
+            ],
+            "target": [
+                -0.7,
+                -12.0,
+                3.9
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4c_entrance_3q",
+            "group": "detail",
+            "label": "User fix 4c (2026-10-15): the entrance from the sidewalk, three-quarter from the right: the head band proud of the stone wall, the left side wall and vestibule panel in veneer",
+            "items": [],
+            "location": [
+                5.2,
+                -18.0,
+                1.7
+            ],
+            "target": [
+                -0.4,
+                -12.0,
+                2.9
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix4c_veneer_close",
+            "group": "detail",
+            "label": "User fix 4c (2026-10-15): close-up of the left vestibule panel and side wall: the veneer's grain, book-matched leaves and satin coat",
+            "items": [],
+            "location": [
+                -0.6,
+                -13.3,
+                1.75
+            ],
+            "target": [
+                -2.6,
+                -11.3,
+                2.3
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix10_piers_right_b8",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): from the b8 eye point, telephoto: the B chamfer's floors 3-5 (the user's mark 10), the room-dividing pier carried out to the guard line, the guard glass stopping against it",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                8.6,
+                -6.6,
+                21.4
+            ],
+            "vfov_deg": 9.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix10_piers_left_b8",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): from the b8 eye point, telephoto: the H chamfer's floors 1-3, the piers between the units and the separate guard runs",
+            "items": [],
+            "location": [
+                0.0,
+                -60.933,
+                1.538
+            ],
+            "target": [
+                -8.6,
+                -6.6,
+                14.6
+            ],
+            "vfov_deg": 9.0,
+            "resolution": [
+                1600,
+                900
+            ]
+        },
+        {
+            "name": "fix10_pier_close",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): the B chamfer's pier at floor 4 from outside a little above: its face on the guard line, the guard runs ending at it with end posts, the slab edge in front",
+            "items": [],
+            "location": [
+                10.2,
+                -10.6,
+                22.6
+            ],
+            "target": [
+                9.0,
+                -6.5,
+                21.0
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix10_pier_balcony",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): on the B chamfer's floor-3 balcony looking along it at the pier: the paving, the guard's end post and the window wall panel beside the pier",
+            "items": [],
+            "location": [
+                6.85,
+                -8.3,
+                18.45
+            ],
+            "target": [
+                8.54,
+                -6.61,
+                17.6
+            ],
+            "vfov_deg": 60.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix10_terrace_pier",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): the B chamfer's floor-1 terrace from outside above: the pier on the podium roof, the edge planter boxes and the guard runs either side",
+            "items": [],
+            "location": [
+                10.4,
+                -10.9,
+                13.6
+            ],
+            "target": [
+                9.0,
+                -6.5,
+                10.8
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix10_rear_piers_d",
+            "group": "detail",
+            "label": "User fix 10 (2026-10-15): the rear-right D chamfer from outside: its two room-dividing piers carried out to the guard line on every floor",
+            "items": [],
+            "location": [
+                16.2,
+                16.2,
+                21.0
+            ],
+            "target": [
+                7.4,
+                7.4,
+                18.2
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix11_pier_right",
+            "group": "detail",
+            "label": "User fix 11 (2026-10-15): the right front pier beside the loggia from below left (the user's screenshot images/9.webp): its courses up to the floor-1 terrace, the top course and the vertical joints",
+            "items": [],
+            "location": [
+                1.6,
+                -16.2,
+                4.6
+            ],
+            "target": [
+                3.9,
+                -11.0,
+                8.4
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix11_portal_front",
+            "group": "detail",
+            "label": "User fix 11 (2026-10-15): the entrance portal and the front piers face-on, ground to podium top: the course grid over the jambs, the sign band, the slab lines and the piers",
+            "items": [],
+            "location": [
+                0.0,
+                -25.0,
+                5.2
+            ],
+            "target": [
+                0.0,
+                -11.5,
+                5.15
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix11_corner_right",
+            "group": "detail",
+            "label": "User fix 11 (2026-10-15): the right corner pier (A/B) from the B side: its courses round the corner, the storefront head beside it and the slab fascias' vertical joints over them",
+            "items": [],
+            "location": [
+                9.0,
+                -17.0,
+                2.6
+            ],
+            "target": [
+                5.0,
+                -11.0,
+                5.6
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_entrance_front",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): the entrance from the sidewalk at eye level (the user's images/14.webp): the leafy plants in their pots either side inside the portal, the cycad pots outside it",
+            "items": [],
+            "location": [
+                0.0,
+                -19.5,
+                1.6
+            ],
+            "target": [
+                0.0,
+                -12.0,
+                1.9
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_recess_plant_left",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): the left entrance-recess plant and its pot against the veneer side wall and the vestibule glazing, from the sidewalk",
+            "items": [],
+            "location": [
+                -0.4,
+                -14.2,
+                1.6
+            ],
+            "target": [
+                -2.45,
+                -11.6,
+                1.45
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_recess_plant_right",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): the right entrance-recess plant from the left, under the head band and its downlights",
+            "items": [],
+            "location": [
+                0.5,
+                -14.3,
+                1.25
+            ],
+            "target": [
+                2.45,
+                -11.6,
+                1.75
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_leaf_close",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): leaf close-up of the left recess plant: blades, midribs, veins, petioles",
+            "items": [],
+            "location": [
+                -1.55,
+                -12.75,
+                2.05
+            ],
+            "target": [
+                -2.45,
+                -11.6,
+                1.75
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_entrance_pot_right",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): the cycad in the charcoal pot right of the entrance: pinnate leaves with leaflets on the stout trunk",
+            "items": [],
+            "location": [
+                2.7,
+                -15.2,
+                1.75
+            ],
+            "target": [
+                4.05,
+                -12.65,
+                1.45
+            ],
+            "vfov_deg": 44.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix12_roof_spiky_cycad",
+            "group": "detail",
+            "label": "User fix 12 (2026-10-15): the roof's front-right cluster from inside the terrace: a spiky rosette of keeled leaves beside cycads (the shared proc_plants prototypes)",
+            "items": [],
+            "location": [
+                2.3,
+                -8.7,
+                29.0
+            ],
+            "target": [
+                4.4,
+                -10.24,
+                28.35
+            ],
+            "vfov_deg": 46.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_band_right",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): the right corner pier (A/B) and the B0 storefront head band beside it, from the sidewalk (the user's images/15.webp): the pier's courses running on across the band between the canopy and the planter",
+            "items": [],
+            "location": [
+                8.9,
+                -14.9,
+                3.4
+            ],
+            "target": [
+                6.0,
+                -10.0,
+                5.3
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_band_left",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): the mirror: the left corner pier (H/A) and the H1 storefront head band beside it",
+            "items": [],
+            "location": [
+                -8.9,
+                -14.9,
+                3.4
+            ],
+            "target": [
+                -6.0,
+                -10.0,
+                5.3
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_upper_band_right",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): the right corner pier and the B0 upper-podium head band under the floor-1 terrace: the same course planes up the upper podium",
+            "items": [],
+            "location": [
+                9.6,
+                -15.6,
+                6.4
+            ],
+            "target": [
+                6.0,
+                -10.0,
+                9.4
+            ],
+            "vfov_deg": 24.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_column_pier_right",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): the B chamfer's column pier between B0 and B1: both storefront head bands meeting it on the shared courses",
+            "items": [],
+            "location": [
+                13.0,
+                -12.4,
+                3.6
+            ],
+            "target": [
+                7.6,
+                -7.6,
+                5.6
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_sign_band",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): the entrance sign band face-on: its three courses on the podium's shared planes (4.0, 4.75, 5.27, 5.79) and the front piers beside it",
+            "items": [],
+            "location": [
+                0.0,
+                -21.0,
+                4.9
+            ],
+            "target": [
+                0.0,
+                -11.5,
+                4.95
+            ],
+            "vfov_deg": 30.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13_rear_corner",
+            "group": "detail",
+            "label": "User fix 13 (2026-10-15): a rear corner pier (C/D) and the C and D storefront head bands meeting it",
+            "items": [],
+            "location": [
+                20.5,
+                -1.5,
+                3.4
+            ],
+            "target": [
+                13.5,
+                2.5,
+                5.4
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_user_view",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): the user's view (images/16.webp): the B chamfer floors 2-4 from the street at the front right, telephoto, the right pilaster at the left: the soffit downlights against the B column pier's inner corner",
+            "items": [],
+            "location": [
+                15.5,
+                -33.0,
+                12.5
+            ],
+            "target": [
+                7.4,
+                -7.6,
+                19.0
+            ],
+            "vfov_deg": 21.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_corner_b",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): close up from outside the floor-3 guard, under floor 4's soffit: the B column pier's inner corner on its front (A) side, the soffit downlights clear of the pier, the wall and the slab edge",
+            "items": [],
+            "location": [
+                9.25,
+                -8.87,
+                18.6
+            ],
+            "target": [
+                8.12,
+                -6.75,
+                19.81
+            ],
+            "vfov_deg": 58.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_corner_h",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): the mirror: the H column pier's inner corner on its front side, floor 3, from outside the guard",
+            "items": [],
+            "location": [
+                -9.25,
+                -8.87,
+                18.6
+            ],
+            "target": [
+                -8.12,
+                -6.75,
+                19.81
+            ],
+            "vfov_deg": 58.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_corner_b_far",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): the B column pier's far (C) side, floor 3, from outside the guard: the soffit run to the B/C corner",
+            "items": [],
+            "location": [
+                11.4,
+                -5.3,
+                18.6
+            ],
+            "target": [
+                9.1,
+                -5.0,
+                19.81
+            ],
+            "vfov_deg": 58.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_rear_d",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): the D chamfer's soffit above floor 2 from outside its guard: the lights between the two rear column piers",
+            "items": [],
+            "location": [
+                10.6,
+                10.6,
+                15.2
+            ],
+            "target": [
+                7.4,
+                7.4,
+                16.46
+            ],
+            "vfov_deg": 72.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix14_entrance_band",
+            "group": "detail",
+            "label": "User fix 14 (2026-10-15): looking up at the entrance head band from the sidewalk: its soffit downlights, clear of the jambs' linings",
+            "items": [],
+            "location": [
+                0.9,
+                -15.6,
+                1.6
+            ],
+            "target": [
+                0.0,
+                -12.0,
+                3.9
+            ],
+            "vfov_deg": 52.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13b_sign_band",
+            "group": "detail",
+            "label": "User fix 13b (2026-10-15): the entrance sign band face-on (the user's images/19.webp): three equal courses between the wood head band and the floor-1 balcony, on the podium's one course height",
+            "items": [],
+            "location": [
+                0.0,
+                -19.0,
+                4.9
+            ],
+            "target": [
+                0.0,
+                -11.5,
+                4.85
+            ],
+            "vfov_deg": 28.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13b_store_bay",
+            "group": "detail",
+            "label": "User fix 13b (2026-10-15): the B0 storefront face-on: its frames and transom, the canopy with its tie rods and anchor plates, the head band's courses and the corner and column piers beside it",
+            "items": [],
+            "location": [
+                14.29,
+                -15.85,
+                3.6
+            ],
+            "target": [
+                7.22,
+                -8.78,
+                4.6
+            ],
+            "vfov_deg": 34.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix13b_corner_pier",
+            "group": "detail",
+            "label": "User fix 13b (2026-10-15): the right corner pier (A/B) from the street, ground to podium top: every course the same height, the sign band and the B0 head band on its planes",
+            "items": [],
+            "location": [
+                9.0,
+                -20.5,
+                2.0
+            ],
+            "target": [
+                5.0,
+                -11.0,
+                5.4
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix15_user_view",
+            "group": "detail",
+            "label": "User fix 15 (2026-10-15): the user's view (images/17.webp): the entrance's left jamb lining and the vestibule panel beside the doors, close from the sidewalk: the veneer plates, their reveal joints, no grain running on",
+            "items": [],
+            "location": [
+                -0.45,
+                -14.6,
+                1.45
+            ],
+            "target": [
+                -2.8,
+                -11.85,
+                2.15
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix15_right_side",
+            "group": "detail",
+            "label": "User fix 15 (2026-10-15): mirrored, the right jamb lining and vestibule panel: veneer plates and reveals",
+            "items": [],
+            "location": [
+                1.0,
+                -13.55,
+                1.55
+            ],
+            "target": [
+                2.75,
+                -11.45,
+                2.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix15_band_below",
+            "group": "detail",
+            "label": "User fix 15 (2026-10-15): the entrance head band and the head soffit from below: the plates' joints across the fascia and soffit, the corner reveals, the downlights clear of every joint",
+            "items": [],
+            "location": [
+                0.35,
+                -13.3,
+                1.6
+            ],
+            "target": [
+                -0.6,
+                -11.9,
+                3.9
+            ],
+            "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix15_entrance_front",
+            "group": "detail",
+            "label": "User fix 15 (2026-10-15): the entrance straight on from the sidewalk: the veneer plates on both side walls, the vestibule panels and the band",
+            "items": [],
+            "location": [
+                0.0,
+                -18.2,
+                1.9
+            ],
+            "target": [
+                0.0,
+                -12.0,
+                2.25
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix15_loggia_left",
+            "group": "detail",
+            "label": "User fix 15 (2026-10-15): the loggia's left lining, wood panel and soffit from the floor-1 terrace: the same veneer plates and reveals",
+            "items": [],
+            "location": [
+                1.3,
+                -11.5,
+                7.0
+            ],
+            "target": [
+                -2.9,
+                -10.1,
+                7.6
+            ],
+            "vfov_deg": 55.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_entrance_front",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the main entrance straight on from the sidewalk (the user's images/18.png): the pair of glass swing doors in the two centre bays, their bar pulls, the deeper closer transom, the fixed side bays",
+            "items": [],
+            "location": [
+                0.0,
+                -17.0,
+                1.7
+            ],
+            "target": [
+                0.0,
+                -11.06,
+                2.05
+            ],
+            "vfov_deg": 38.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_handles_pivots",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the door leaves close from the right: the bar pulls on standoffs, the astragal at the meeting stiles, the right leaf's bottom pivot strap and the floor spring plate, the 4 mm gaps",
+            "items": [],
+            "location": [
+                0.8,
+                -12.55,
+                1.25
+            ],
+            "target": [
+                0.2,
+                -11.06,
+                1.0
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_closer_top",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the doors' head: the transom's closer housing with its cover plates, the top pivot straps and pins, the gap under the transom",
+            "items": [],
+            "location": [
+                0.95,
+                -12.45,
+                1.75
+            ],
+            "target": [
+                0.45,
+                -11.06,
+                2.85
+            ],
+            "vfov_deg": 45.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_threshold_low",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the stainless threshold from low: the leaves' bottom rails 4 mm over it, the floor spring plates, the fixed bays' sill rails",
+            "items": [],
+            "location": [
+                0.55,
+                -11.95,
+                0.42
+            ],
+            "target": [
+                0.1,
+                -11.06,
+                0.2
+            ],
+            "vfov_deg": 50.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_slider_terrace",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the loggia's automatic sliding doors from the floor-1 terrace: the two leaves in front of the fixed side panels, the operator header with its motion sensor, the floor guides",
+            "items": [],
+            "location": [
+                1.6,
+                -12.0,
+                7.4
+            ],
+            "target": [
+                -0.2,
+                -10.06,
+                7.25
+            ],
+            "vfov_deg": 58.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix16_slider_header",
+            "group": "detail",
+            "label": "User fix 16 (2026-10-15): the sliders' header close up from below: the operator housing, its end caps and sensor, the leaves' top rails under it, the meeting stiles' rubber seals",
+            "items": [],
+            "location": [
+                0.55,
+                -10.95,
+                7.55
+            ],
+            "target": [
+                0.2,
+                -10.12,
+                8.25
+            ],
+            "vfov_deg": 48.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix17_user_view",
+            "group": "detail",
+            "label": "User fix 17 (2026-10-15): the user's view (images/16.webp): the B chamfer floors 2-4 from the street at the front right, telephoto, the right pilaster at the left and the B column pier in the middle: the soffits' veneer plates and their spotlights",
+            "items": [],
+            "location": [
+                15.5,
+                -33.0,
+                12.5
+            ],
+            "target": [
+                7.6,
+                -7.2,
+                18.2
+            ],
+            "vfov_deg": 15.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix17_soffit_below",
+            "group": "detail",
+            "label": "User fix 17 (2026-10-15): standing at the floor-3 guard of the B chamfer looking up along floor 4's soffit to the B column pier: the long plates in three courses, the border plate on the free edge, one spotlight per light-course plate",
+            "items": [],
+            "location": [
+                5.98,
+                -9.52,
+                18.45
+            ],
+            "target": [
+                7.86,
+                -6.73,
+                19.81
+            ],
+            "vfov_deg": 75.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix17_fitting_macro",
+            "group": "detail",
+            "label": "User fix 17 (2026-10-15): one soffit spotlight at macro distance (B chamfer, floor 4's soffit): the warm emitting lens in its thin matte-black trim ring on the veneer plate",
+            "items": [],
+            "location": [
+                7.66,
+                -7.62,
+                19.47
+            ],
+            "target": [
+                7.53,
+                -7.42,
+                19.81
+            ],
+            "vfov_deg": 40.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix17_band_below",
+            "group": "detail",
+            "label": "User fix 17 (2026-10-15): the entrance head band from below at the user's images/20.webp view: one spotlight centred on each of its seven plates",
+            "items": [],
+            "location": [
+                0.35,
+                -13.3,
+                1.6
+            ],
+            "target": [
+                -0.6,
+                -11.9,
+                3.9
+            ],
+            "vfov_deg": 62.0,
+            "resolution": [
+                1920,
+                1080
+            ]
+        },
+        {
+            "name": "fix17_tower_soffits",
+            "group": "detail",
+            "label": "User fix 17 (2026-10-15): the tower's soffits from the street at the front right, low: every floor's veneer layout stacked, the corners mitred",
+            "items": [],
+            "location": [
+                21.0,
+                -27.0,
+                2.0
+            ],
+            "target": [
+                7.0,
+                -5.0,
+                17.0
+            ],
+            "vfov_deg": 42.0,
+            "resolution": [
+                1920,
+                1080
+            ]
         }
     ]
 }

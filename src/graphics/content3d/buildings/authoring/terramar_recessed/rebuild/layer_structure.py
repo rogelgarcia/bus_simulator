@@ -4,11 +4,23 @@
 #   rb_slab_<name>      one solid per slab of plan.structure.slabs. Face sets (material slots):
 #                         TM_RB_slab_fascia  the outer edge            TM_RB_hidden   faces in contact (core, pilasters)
 #                         TM_RB_slab_top     balcony / terrace top     TM_RB_floor    interior floor plate (inside the wall line)
-#                         TM_RB_soffit       balcony underside         TM_RB_ceiling  interior ceiling
+#                         <core>             balcony underside         TM_RB_ceiling  interior ceiling
+#                         (user fix 17, 2026-10-15: the balcony undersides are the dark core of the soffit's veneer
+#                         plates, plan balconies.soffit_veneer.core; the plates hang under it, layer_balconies.py)
 #                         TM_RB_roof_top     roof and entrance canopy tops
 #                       Residential slabs are notched around the front pilasters; every slab has a hole at the core.
-#   rb_pilaster_<side>  the two front pilasters, full height from the podium roof to the roof slab, proud of the slab edge
-#   rb_column_<run><n>  the rounded chamfer columns, one object per marker holding its storey-high segments
+#                       The ground, upper-podium and podium-roof slabs stand on the podium outline, whose corners are
+#                       sharp (user fix 1, 2026-10-15); the residential and roof slabs keep the balcony edge's fillets.
+#                       The podium roof slab is notched over the loggia for its curved cover (user fix 2, 2026-10-15).
+#   rb_pilaster_<side>  the two front pilasters, from the floor-2 slab to the roof slab, proud of the slab edge
+#   rb_pilaster_<side>_terrace  their floor-1 storey on the podium roof, inside the terrace: its face on the floor-1
+#                       guard shoe's back, the guard running on in front (user fix 3, 2026-10-15)
+#   rb_roof_frame       the pilasters run on up through the roof band as a frame (user fix 9, 2026-10-15): their
+#                       crowns and the head between them faced in the pilasters' plane, a stone cap in segments over both
+#   rb_column_<run><n>  the room-dividing chamfer columns, one object per marker holding its storey-high segments. User
+#                       fix 10 (2026-10-15): each runs out across the balcony as a stone pier, its face on the guard's
+#                       outer face, the front arrises eased (plan.structure.columns: proud, front_radius); the paving
+#                       and the guard stop against its sides (layer_balconies.py)
 #   rb_core             stair + two lift shafts, from below the ground slab to the penthouse roof
 #   rb_entrance_jamb_<side>  the entrance volume's side walls, under its canopy
 # Stone returns (2026-10-14, plan["returns"]): the entrance jambs' front corners wrap into the opening as a stone return
@@ -153,12 +165,46 @@ def finish_kept(name, coll, bm, slots, tags, keep, smooth_deg=30.0):
     return ob
 
 
+def roof_frame(rf, panel_max, coll):
+    """User fix 9 (2026-10-15): the roof band from pilaster to pilaster faced in the pilasters' plane, so they run on up
+    through it as a frame (b8), and the cap over it. Solids, face to face (contact faces TM_RB_hidden):
+      the crowns    each pilaster continued from the roof slab's underside to its top, in front of the slab fascia; the
+                    outer side is the stone return back to the side band;
+      the head      between the crowns in the same plane (the materials pass panels it; seams mark the crowns' edges);
+      the cap       on the frame and the roof slab's edge, proud of the face and ends by its overhang, back short of the
+                    guard shoe; in segments over each crown and each of the head's panels, so its seams continue the
+                    frame's vertical joints."""
+    (x_lo, x_hi), (y_face, y_back), (z0, z1) = rf["x"], rf["y"], rf["z"]
+    cap = rf["cap"]
+    ov = cap["overhang"]
+    hid, stone = "TM_RB_hidden", "TM_RB_pilaster"
+    items = []
+    for x0, x1 in rf["crowns"]:
+        outer_left = abs(x0 - x_lo) < 1e-6
+        loop = L.rect(x0, x1, y_face, y_back)                        # sides: front, right, back, left
+        sides = [stone, hid if outer_left else stone, hid, stone if outer_left else hid]
+        items.append(([(z0, z1)], [(loop, sides)], [([loop], hid, hid)]))
+    h0, h1 = rf["head"]
+    head = L.rect(h0, h1, y_face, y_back)
+    items.append(([(z0, z1)], [(head, [stone, hid, hid, hid])], [([head], hid, stone)]))
+    k = math.ceil((h1 - h0) / panel_max - 1e-9)                       # the head's panels (layer_materials.py)
+    cuts = [x_lo - ov] + [rf["crowns"][0][1]] + [h0 + (h1 - h0) * j / k for j in range(1, k)] \
+        + [rf["crowns"][1][0], x_hi + ov]
+    (cy0, cy1), (cz0, cz1) = cap["y"], cap["z"]
+    for j, (a, b) in enumerate(zip(cuts, cuts[1:])):
+        loop = L.rect(a, b, cy0, cy1)
+        sides = [stone, stone if j == len(cuts) - 2 else hid, stone, stone if j == 0 else hid]
+        items.append(([(cz0, cz1)], [(loop, sides)], [([loop], stone, stone)]))
+    return L.pieces("rb_roof_frame", coll, items, tags("roof_frame", "roof_frame"))
+
+
 def build(plan):
     coll = L.layer_collection(COLLECTION)
     st = plan["structure"]
     lay = plan["layers"]
     edge = L.ccw([tuple(p) for p in lay["balcony_edge"]["outline"]])
-    wall = L.ccw([tuple(p) for p in lay["tower_wall_line"]["outline"]])
+    podium = L.ccw([tuple(p) for p in lay["podium"]["outline"]])      # the same line, corners sharp (user fix 1)
+    wall =L.ccw([tuple(p) for p in lay["tower_wall_line"]["outline"]])
     pil = plan["markers"]["front_pilasters"]
     y_front, y_wall = pil[0]["y"]
     core = st["core"]
@@ -170,9 +216,20 @@ def build(plan):
     ent_rect = L.rect(ex[0], ex[1], ey[0], ey[1])                     # y: front .. the podium line
 
     # podium outline with the entrance bump (ground and upper podium slabs)
-    edge_ent = L.insert_points(edge, [(ex[0], y_front), (ex[1], y_front)])
+    edge_ent = L.insert_points(podium, [(ex[0], y_front), (ex[1], y_front)])
     i = L.index_of(edge_ent, (ex[0], y_front))
     bumped = edge_ent[:i + 1] + [(ex[0], ey[0]), (ex[1], ey[0])] + edge_ent[i + 1:]
+
+    # podium roof slab: notched over the loggia for its curved cover (user fix 2, 2026-10-15); the notch's faces line
+    # the cover's reveal, so they are the joint material
+    joint = M.joint_slot()
+    nt = plan["podium"]["loggia_cover"]["notch"]
+    (nx0, nx1), (_, ny) = nt["x"], nt["y"]
+    edge_n = L.insert_points(podium, [(nx0, y_front), (nx1, y_front)])
+    i = L.index_of(edge_n, (nx0, y_front))
+    notched_podium = edge_n[:i + 1] + [(nx0, ny), (nx1, ny)] + edge_n[i + 1:]
+    notch_sides = ["TM_RB_slab_fascia"] * len(notched_podium)
+    notch_sides[i:i + 3] = [joint] * 3
 
     # residential: notches round the pilasters
     xs = [x for m in pil for x in m["x"]]                             # left outer, left inner, right inner, right outer
@@ -197,8 +254,8 @@ def build(plan):
     # pilaster's) and the centre bay between the pilasters. Along their fascias (2026-10-14) the bottom keeps a stone
     # return strip `ret` wide (the cladding's thickness), then a gap `gap` wide and `gd` deep, then the soffit
     rt = plan["returns"]
-    joint = M.joint_slot()
     ret, gap, gd = rt["fascia_return"], rt["gap"], rt["gap_depth"]
+    veneer_core = plan["balconies"]["soffit_veneer"]["core"]              # user fix 17: under the veneer plates
     cut = round((co["x"][0] + co["x"][1]) / 2, 6)                    # rb_lib cuts the core's region there
     fascia_run = L.path(notched, (r_out, y_front), (l_out, y_front))  # every fascia but the centre bay's
     centre_run = [(l_in, y_front), (r_in, y_front)]
@@ -235,7 +292,7 @@ def build(plan):
             quads = [cutl([out[k], out[k + 1], inn[k + 1], inn[k]])[0] for k in range(n - 1)]   # a piece per fascia face
             lowers.append(([(lp, mats)], [([q], INTERNAL, "TM_RB_slab_fascia") for q in quads]))
         lowers.append(([cutl(rest, rest_mats), (core_loop, "TM_RB_hidden")],
-                       [([cutl(soffit_c)[0]], INTERNAL, "TM_RB_soffit"), ([cutl(soffit_m)[0]], INTERNAL, "TM_RB_soffit"),
+                       [([cutl(soffit_c)[0]], INTERNAL, veneer_core), ([cutl(soffit_m)[0]], INTERNAL, veneer_core),
                         ([cutl(wall_pil)[0], core_loop], INTERNAL, "TM_RB_ceiling")]))
         return stacked_slab(name, coll, z0, z1, gd, upper, lowers, rt, tg)
 
@@ -253,7 +310,7 @@ def build(plan):
         lowers = [([cutl(edge, ["TM_RB_slab_fascia"] * n), cutl(e_r, [joint] * n)],
                    [([q], INTERNAL, "TM_RB_slab_fascia") for q in quads]),
                   ([cutl(e_g, [joint] * n), (core_loop, "TM_RB_hidden")],
-                   [([cutl(e_g)[0], cutl(wall)[0]], INTERNAL, "TM_RB_soffit"),
+                   [([cutl(e_g)[0], cutl(wall)[0]], INTERNAL, veneer_core),
                     ([cutl(wall)[0], core_loop], INTERNAL, "TM_RB_ceiling")])]
         return stacked_slab(name, coll, z0, z1, gd, upper, lowers, rt, tg)
 
@@ -269,8 +326,8 @@ def build(plan):
                          [([edge_ent, core_loop], "TM_RB_floor", "TM_RB_ceiling"),
                           ([ent_rect], "TM_RB_roof_top", "TM_RB_soffit")], tags("slab", s["name"]))
         elif kind == "podium_roof":
-            ob = L.solid(name, coll, span, [(edge, "TM_RB_slab_fascia"), hole],
-                         [([edge, wall], "TM_RB_slab_top", "TM_RB_ceiling"),
+            ob = L.solid(name, coll, span, [(notched_podium, notch_sides), hole],
+                         [([notched_podium, wall], "TM_RB_slab_top", "TM_RB_ceiling"),
                           ([wall, core_loop], "TM_RB_floor", "TM_RB_ceiling")], tags("slab", s["name"]))
         elif kind == "residential":
             ob = residential(name, s["z"][0], s["z"][1], tags("slab", s["name"]))
@@ -280,13 +337,24 @@ def build(plan):
             raise ValueError(f"unknown slab kind {kind}")
         made.append(ob)
 
-    # front pilasters: proud of the slab edge, back face on the wall line, podium roof to roof slab
+    # front pilasters: back face on the wall line. From the floor-2 slab to the roof slab proud of the slab edge; the
+    # floor-1 storey (user fix 3) a piece of its own inside the terrace, its face on the guard shoe's back, so the upper
+    # pilaster's underside shows as a stone soffit in front of it
+    ter = st["pilasters"]["terrace"]
+    y_out, y_ter = y_front - st["pilasters"]["proud_m"], ter["y_front"]
     for m, side in zip(pil, ("left", "right")):
-        loop = L.rect(m["x"][0], m["x"][1], y_front - st["pilasters"]["proud_m"], y_wall)
-        made.append(L.prism(f"rb_pilaster_{side}", coll, loop, [tuple(st["pilasters"]["z"])], "TM_RB_pilaster",
-                            tags("pilaster", side), mat_top="TM_RB_hidden", mat_bottom="TM_RB_hidden"))
+        x0, x1 = m["x"]
+        under, rest = L.rect(x0, x1, y_out, y_ter), L.rect(x0, x1, y_ter, y_wall)
+        loop = [(x0, y_out), (x1, y_out), (x1, y_ter), (x1, y_wall), (x0, y_wall), (x0, y_ter)]
+        made.append(L.solid(f"rb_pilaster_{side}", coll, [(ter["z"][1], st["pilasters"]["z"][1])], [(loop, "TM_RB_pilaster")],
+                            [([under], "TM_RB_hidden", "TM_RB_pilaster"), ([rest], "TM_RB_hidden", "TM_RB_hidden")],
+                            tags("pilaster", side)))
+        made.append(L.prism(f"rb_pilaster_{side}_terrace", coll, rest, [tuple(ter["z"])], "TM_RB_pilaster",
+                            tags("pilaster", f"{side}_terrace"), mat_top="TM_RB_hidden", mat_bottom="TM_RB_hidden"))
+    made.append(roof_frame(st["pilasters"]["roof_frame"], plan["materials"]["joints"]["panel_max"], coll))
 
-    # rounded chamfer columns, storey by storey between the slabs
+    # chamfer columns, storey by storey between the slabs: since user fix 10 piers out to the guard line, standing on
+    # the slab (the paving round them) under the soffit of the slab above
     cs = st["columns"]
     section = rounded_rect(cs["width"], -cs["behind"], cs["proud"], cs["front_radius"], cs["back_radius"])
     counts = {}

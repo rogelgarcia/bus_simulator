@@ -2,9 +2,10 @@
 #
 # Run through build.py (layers=residential; needs the envelope and interior_base layers). Builds RB_INTERIOR/RB_RESIDENTIAL
 # under its part root:
-#   rb_res_curtains_f<n>   white sheer panels behind every bay's glazing on floor n, hung from the track and drawn to
-#                          seeded positions; each panel is a folded sheet (more gathered = deeper, tighter folds) in
-#                          TM_RB_sheer (part transparent, part diffuse and translucent, so daylight shines through)
+#   rb_res_curtains_f<n>   white sheer panels behind every bay's glazing on floor n, hung from the track: a left and a
+#                          right panel per span (2026-10-15), each drawn to its own seeded opening (the narrow corner
+#                          lights one panel); each panel is a folded sheet (more gathered = deeper, tighter folds) in
+#                          TM_RB_sheer (nearly opaque, mostly diffuse, a little translucent)
 #   rb_res_tracks          the ceiling tracks the panels hang from, one per glazed span (TM_RB_curtain_track)
 #   RB_RESIDENTIAL_FURNITURE/rb_res_furn_f<n>_<k>_<kind>  the seeded lounge, dining and reading sets near the windows:
 #                          one object per item, the detailed furniture placed by layer_roof_furniture.furnish (identical
@@ -31,8 +32,11 @@ for mod in (L, BP, RF):
 PARENT = "RB_INTERIOR"
 COLLECTION = "RB_RESIDENTIAL"
 LAYER = "residential"
-SHEER = ("TM_RB_sheer", (0.93, 0.92, 0.89), 0.8, 0.25)                # name, fabric colour, opacity (the rest shows
+SHEER = ("TM_RB_sheer", (0.90, 0.89, 0.86), 0.95, 0.12)             # name, fabric colour, opacity (the rest shows
                                                                       # through), translucent share of the cloth
+# 2026-10-15: 0.8 opaque and a quarter translucent read as grey glass from b8 (the user circled an A1 bay as having no
+# curtains). Under the balcony slabs only daylight from the window side lights a sheer (a pure translucent cloth went
+# darker, an opaque diffuse one brightest), so the cloth is now nearly opaque and mostly diffuse.
 TRACK = ("TM_RB_curtain_track", (0.80, 0.80, 0.78), 0.4)
 SHADE = ("TM_RB_lamp_shade", (0.93, 0.88, 0.78), (1.0, 0.78, 0.50), 10.0)   # linen, warm glow, emission strength
 

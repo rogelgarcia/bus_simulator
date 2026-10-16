@@ -5,7 +5,11 @@
 #   - the glazing wraps the front corners onto the chamfers, and meets the rounded chamfer columns and the pilasters;
 #   - the front centre bay (between the pilasters) has warm wood reveal panels, about 0.66 m wide, on both sides on
 #     floors 1-4, with four 1.0 m panes between; on floor 5 the panel zones are glazed (six panes).
+#   - (user fix 7, 2026-10-15) the front chamfers are not glazed end to end: a solid stone panel stands on both sides of
+#     each chamfer column and at the chamfer's far end, on every floor (env["wall_panels"]; a variant's "walls").
 # The sides (C, G) and the rear (D, E, F) are seen in neither reference: they repeat the chamfer glazing.
+#   - (user fix 10, 2026-10-15) the chamfer columns are piers out to the guard line (plan.structure.columns): at the
+#     wall line their sides are flat, so a bay ends at the pier's side and its jamb or wall panel meets it face on.
 #
 # The tower wall line is the glazing line. Each run's straight part is cut into bays by its posts -- the rounded
 # corner posts (on the wall line's 0.25 m fillets), the front pilasters and the chamfer columns -- and each bay into
@@ -53,6 +57,19 @@ def doors(n):
     if n % 2:
         return [n // 2]
     return [n // 2 - 1, n // 2]
+
+
+def solid_ends(var, length, ends):
+    """User fix 7 (2026-10-15): the end panes listed in `ends` ("start" / "end") become solid wall panels. A panel spans
+    from the bay's end (its jamb included) to the mullion before the next pane; the doors keep their panes (renumbered)."""
+    keep = list(range(len(var["panes"])))
+    walls = []
+    if "start" in ends and len(keep) > 1:
+        walls.append([0.0, var["panes"][keep.pop(0)][1]])
+    if "end" in ends and len(keep) > 1:
+        walls.append([var["panes"][keep.pop()][0], round(length, 4)])
+    return {**var, "panes": [var["panes"][i] for i in keep], "doors": [keep.index(i) for i in var["doors"] if i in keep],
+            "walls": sorted(walls)}
 
 
 def layout(wall_sharp, wall_radius, pilasters, columns, col_spec, env, runs):
@@ -108,7 +125,8 @@ def layout(wall_sharp, wall_radius, pilasters, columns, col_spec, env, runs):
             else:
                 count = max(1, round((length - start_off - end_off) / env["pane_target"]))
                 pp = panes(length, start_off, end_off, count, member)
-                bay["variants"] = [{"floors": floors, "wood": [], "panes": pp, "doors": doors(count)}]
+                bay["variants"] = [solid_ends({"floors": floors, "wood": [], "panes": pp, "doors": doors(count)}, length,
+                                              env.get("wall_panels", {}).get(bay["id"], []))]
             bays.append(bay)
             k += 1
     for i in range(n):                                        # corner posts: the fillet at sharp corner i

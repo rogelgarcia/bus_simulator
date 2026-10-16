@@ -9,6 +9,11 @@
 #   rb_wood_f<n>    the front centre bay's warm wood reveal panels (TM_RB_wood), floors 1-4; where a panel meets a
 #                   pilaster's stone side it stops short by a shadow gap (2026-10-14, plan["returns"]), floored by a
 #                   dark backer strip (TM_RB_stone_joint) gap_depth behind the panel's face
+#   rb_wall_f<n>    (user fix 7, 2026-10-15) the front chamfers' solid wall panels (env["wall_slot"], the chamfer columns'
+#                   stone; the materials pass cuts its course joints): slab to slab, as deep as the frames, in place of
+#                   the end pane beside each chamfer column and at the chamfer's far end; against a column the panel
+#                   follows the column's arc (the layout's 3 mm gap is the joint), elsewhere it meets the mullion or
+#                   the corner post face to face
 # Frames and glass sit on the tower wall line (frame depth 0.12, glass 0.024, centred). Pieces meet face to face:
 # sills on the slab tops, heads under the slab undersides, jambs against pilasters and columns, glass between frame
 # members. The sliding panes are listed per bay in plan["envelope"] (doors) for the balconies layer.
@@ -90,7 +95,7 @@ def build(plan):
     joint = M.joint_slot()
     made = []
     for floor, (z0, z1) in enumerate(env["storeys"], start=1):
-        frames, glass, wood = [], [], []
+        frames, glass, wood, walls = [], [], [], []
         zh, zs = z1 - env["head"], z0 + env["sill"]
         zt1 = zh - env["transom_below_head"]
         zt0 = zt1 - env["transom"]
@@ -102,13 +107,15 @@ def build(plan):
             world = lambda pts: [(a[0] + U[0] * s + N[0] * v, a[1] + U[1] * s + N[1] * v) for s, v in pts]  # noqa: E731
             box = lambda s0, s1, v0, v1: world([(s0, v0), (s1, v0), (s1, v1), (s0, v1)])  # noqa: E731
             wood_spans = [tuple(w) for w in var["wood"]]
+            wall_spans = [tuple(w) for w in var.get("walls", [])]
+            solid = wood_spans + wall_spans                   # full-height pieces: no rails, no pane
             lo, hi = 0.0, length
             for end, kind in ((0, bay["ends"][0]), (1, bay["ends"][1])):
                 if kind == "corner":
                     continue
                 edge = 0.0 if end == 0 else length
-                if any(w0 - 1e-6 <= edge <= w1 + 1e-6 for w0, w1 in wood_spans):
-                    continue                                  # the wood panel meets the pilaster itself
+                if any(w0 - 1e-6 <= edge <= w1 + 1e-6 for w0, w1 in solid):
+                    continue                                  # the wood or wall panel meets the pilaster / column itself
                 if kind == "pilaster":
                     loop = box(0.0, m, -d, d) if end == 0 else box(length - m, length, -d, d)
                 else:
@@ -125,10 +132,18 @@ def build(plan):
                 for s0, s1 in ((w0, w0 + a0), (w1 - a1, w1)):
                     if s1 - s0 > 1e-6:
                         wood.append(L.piece(box(s0, s1, -d, d - rt["gap_depth"]), [(z0, z1)], joint))
-            for r0, r1 in gaps(lo, hi, wood_spans):            # head and sill rails between full-height pieces
+            for w0, w1 in wall_spans:                          # user fix 7: a stone wall panel, slab to slab
+                if w0 < 1e-6 and bay["ends"][0] == "column":
+                    loop = world(column_jamb(False, length, w1, d, col))
+                elif w1 > length - 1e-6 and bay["ends"][1] == "column":
+                    loop = world(column_jamb(True, length, length - w0, d, col))
+                else:
+                    loop = box(w0, w1, -d, d)
+                walls.append(L.piece(loop, [(z0, z1)], env["wall_slot"]))
+            for r0, r1 in gaps(lo, hi, solid):                 # head and sill rails between full-height pieces
                 frames.append(L.piece(box(r0, r1, -d, d), [(zh, z1), (z0, zs)], "TM_RB_frame"))
             panes = [tuple(p) for p in var["panes"]]
-            for s0, s1 in gaps(lo, hi, panes + wood_spans):    # jambs and mullions between the rails
+            for s0, s1 in gaps(lo, hi, panes + solid):         # jambs and mullions between the rails
                 frames.append(L.piece(box(s0, s1, -d, d), [(zs, zh)], "TM_RB_frame"))
             for s0, s1 in panes:
                 frames.append(L.piece(box(s0, s1, -d, d), [(zt0, zt1)], "TM_RB_frame"))
@@ -137,6 +152,10 @@ def build(plan):
         made.append(L.pieces(f"rb_glass_f{floor}", coll, glass, tags("glass", f"glass_f{floor}", floor)))
         if wood:
             made.append(L.pieces(f"rb_wood_f{floor}", coll, wood, tags("wood", f"wood_f{floor}", floor)))
+        if walls:
+            made.append(L.pieces(f"rb_wall_f{floor}", coll, walls, tags("wall", f"wall_f{floor}", floor)))
     doors = sum(len(v["doors"]) for b in env["bays"] for v in b["variants"])
+    panels = sum(len(v.get("walls", [])) for b in env["bays"] for v in b["variants"])
     return {"collection": COLLECTION, "objects": len(made), "faces": sum(len(o.data.polygons) for o in made),
-            "bays": len(env["bays"]), "door_panes_per_layout": doors, "names": [o.name for o in made]}
+            "bays": len(env["bays"]), "door_panes_per_layout": doors, "wall_panels_per_floor": panels,
+            "names": [o.name for o in made]}

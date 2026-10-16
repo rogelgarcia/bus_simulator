@@ -19,22 +19,24 @@ NONE = 0
 SLOTS = {
     # stone: the kit limestone of the walls (layer_materials family "stone")
     "TM_RB_slab_fascia": "stone", "TM_RB_pilaster": "stone", "TM_RB_column": "stone", "TM_RB_podium_stone": "stone",
-    "TM_RB_penthouse_stone": "stone",
+    "TM_RB_penthouse_stone": "stone", "TM_RB_cover_stone": "stone",
     # paving: the walking faces and the limestone pieces that stand on them (tree pits, roof troughs share TM_RB_paving)
     "TM_RB_paving": "paving", "TM_RB_threshold": "paving", "TM_RB_slab_top": "paving", "TM_RB_roof_paving": "paving",
     "TM_RB_site_paving": "paving",
     # joint: the floors of the stone joints cut as geometry (layer_materials.JOINT_MATERIAL)
     "TM_RB_stone_joint": "joint",
-    # wood_ext: the teak reveals, door linings and the entrance lining
-    "TM_RB_wood": "wood_ext",
-    "TM_RB_soffit": "soffit",
+    # wood_ext: the teak reveals, door linings, and the entrance's veneer (linings, panels, soffits, head band; fix 4c)
+    # and the veneer plates' dark reveals and core (user fix 15; added to a class by user fix 17)
+    "TM_RB_wood": "wood_ext", "TM_RB_veneer": "wood_ext", "TM_RB_veneer_reveal": "wood_ext",
+    # soffit: the balcony undersides, since user fix 17 veneer plates (TM_RB_soffit_veneer) on the slabs' dark core
+    "TM_RB_soffit": "soffit", "TM_RB_soffit_veneer": "soffit",
     # steel: window and storefront frames, guard shoes and rails, lantern bodies (all TM_RB_frame), the louvres, the
     # storefront canopies (TM_RB_awning: slatted charcoal metal, not fabric; 2026-10-14)
     "TM_RB_frame": "steel", "TM_RB_louvre": "steel", "TM_RB_awning": "steel",
     "TM_RB_glass": "glass_ext",
-    # planter: the props' dark planter metal and the pots
+    # planter: the props' dark planter metal and the pots (the entrance portal's glazed pots: user fix 12)
     "TM_RB_planter_metal": "planter", "TM_RB_pot_charcoal": "planter", "TM_RB_pot_light_grey": "planter",
-    "TM_RB_pot_white": "planter",
+    "TM_RB_pot_white": "planter", "TM_RB_pot_glazed": "planter",
     "TM_RB_furn_teak": "furn_teak",
     # fabric: the cafe umbrellas' canvas
     "TM_RB_cafe_canopy": "fabric",

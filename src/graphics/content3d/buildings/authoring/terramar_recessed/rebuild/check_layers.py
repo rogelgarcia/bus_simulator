@@ -106,8 +106,10 @@ def sightline(scene, cam, path):
 def roof_level(scene, cam, path, z_min):
     """Only what stands at roof level or above, from the given camera."""
     hidden = []
-    for ob in bpy.data.collections[L.ROOT].all_objects:
-        top = max((ob.matrix_world @ v.co).z for v in ob.data.vertices) if ob.type == "MESH" and ob.data.vertices else -1e9
+    # a list first: hide_render rebuilds the collections' object caches, which crashed the live all_objects iterator
+    # once the roof gained its pots and centre box (2026-10-15)
+    for ob in list(bpy.data.collections[L.ROOT].all_objects):
+        top =max((ob.matrix_world @ v.co).z for v in ob.data.vertices) if ob.type == "MESH" and ob.data.vertices else -1e9
         if top < z_min and not ob.hide_render:
             ob.hide_render = True
             hidden.append(ob)

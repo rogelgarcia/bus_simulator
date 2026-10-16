@@ -6,12 +6,17 @@
 #   lounge        a three-seat sofa and two armchairs on open teak frames (outdoor), a coffee table, two side tables
 #   loungers      two sun loungers with their feet towards the view and a side table between them (2026-10-15: the
 #                 dining set and the front-centre armchairs are gone; the middle of the terrace is open paving)
+#   lounge_rear   (2026-10-15, later) the same lounge behind the penthouse, the sofa backing onto its rear wall
+#   bistro        a round bistro table (furniture_tables_seating's café table) and two slat-back chairs, front left
+#   armchairs_front / armchairs_side  two teak-framed armchairs facing the view with a side table, front right and on
+#                 the left side strip (the centre box and the pots of AI 629 fill the middle and the corners)
 # Materials: the detailed furniture's (furniture_materials.py): TM_RB_furn_teak, TM_RB_furn_metal and the group's seeded
 # cushion tone, TM_RB_furn_fabric_<offwhite|ecru|greige>. The paving tiles are the materials pass's roof_paving family
 # on the deck's own face set (TM_RB_roof_paving).
 # Every object is tagged rb_hide_from_b8: check_layers.py renders them red from CAM_B8 and must find 0 pixels. The layer
-# also checks each footprint: at least clear_of_guard_m inside the guard shoe's inner line, clear of AI 629's islands and
-# of the penthouse and its annex.
+# also checks each footprint: at least clear_of_guard_m inside the guard shoe's inner line, clear of AI 629's islands,
+# centre box (0.6 m, a path round it) and pots, of the strips before the penthouse's doors, and of the penthouse and its
+# annex.
 #
 # The shared placement (the restaurant, the upper dining room, the residential units, the penthouse, the café):
 #   furnish(coll, items, prefix, tagger, z=None) -> (objects, stats)
@@ -223,7 +228,12 @@ def checks(plan, items):
     rf = plan["roof"]
     loop = [tuple(q) for q in plan["props"]["roof_planters"]["keep_inside"]]
     clear_m = plan["props"]["roof_furniture"]["clear_of_guard_m"]
-    obstacles = [(i["id"], i["rect"], 0.25) for i in plan["props"]["roof_planters"]["islands"]]
+    rp = plan["props"]["roof_planters"]
+    obstacles = [(i["id"], i["rect"], 0.25) for i in rp["islands"]]
+    # 2026-10-15: the centre box and the pots (their squares), and the strips kept free before the penthouse's doors
+    obstacles += [("centre box", rp["centre"]["rect"], 0.6)] + [("path", p, 0.0) for p in rp["paths"]]
+    obstacles += [(f"pot {p['id']}", [p["at"][0] - p["radius"], p["at"][0] + p["radius"], p["at"][1] - p["radius"],
+                                      p["at"][1] + p["radius"]], 0.2) for p in rp["pots"]]
     px, py = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"]
     an = rf["annex"]
     obstacles += [("penthouse", [px[0], px[1], py[0], py[1]], 0.5), ("annex", [an["x"][0], an["x"][1], an["y"][0], an["y"][1]], 0.5)]

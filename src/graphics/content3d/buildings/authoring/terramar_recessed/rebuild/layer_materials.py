@@ -9,6 +9,12 @@
 #                                  arm = AO / roughness / metallic, normal_gl) through the node group TM_RB_limestone,
 #                                  4 m repeat, a calibrated linear tone on the base colour
 #                 wood             the calibrated warm tone of AI 645 (no wood texture is installed), flat
+#                 veneer           (user fix 4c, 2026-10-15) the entrance and loggia wood: a procedural book-matched
+#                                  quarter-cut teak-walnut veneer under a satin clear coat (dress_veneer); since user
+#                                  fix 15 laid per plate (the podium layer's veneer plates carry their own map), each
+#                                  plate with its own grain, tone and hue; veneer_reveal: the plates' dark reveals;
+#                                  since user fix 17 also the balcony soffits' long plates (TM_RB_soffit_veneer, the
+#                                  balconies layer's plates, their own slot for the wear's soffit class)
 #                 glass            clear Principled glass whose shadow rays pass (lit rooms behind the glazing)
 #                 steel / plaster / partition / interior_floor / concrete    plain Principled settings
 #               The sign letters keep the kit's own sign sets (the podium layer's TM_RB_sign_* materials).
@@ -24,6 +30,14 @@
 #                 objects        (2026-10-14) joints.objects joints named objects in whichever part holds them, on a
 #                                face set the rules leave alone elsewhere (the site's limestone tree pits on
 #                                TM_RB_paving); `base` adds a joint at the foot of their sides, where they meet the paving
+#                 grids          (user fix 11, 2026-10-15) joints.grids lays a region out as one regular grid of blocks
+#                                across its pieces (the front centre: portal, front and corner piers, their fascias):
+#                                its own course planes, equal within each band between its datums; vertical joints per
+#                                plane, shared by every course; flush seams inside it off its course planes left uncut,
+#                                and a block running over such a seam takes one map offset in both pieces; the slab
+#                                fascias and plinth meeting it flush take their vertical joints from the stone they meet;
+#                                since user fix 13 the grid is the whole podium (its `slots` only), so the storefront head
+#                                bands, the piers and the returns on every run share one set of course planes
 #               A joint is a groove `width` wide and `depth` deep with a `bevel` each side; its floor takes the joint
 #               material (TM_RB_stone_joint). Each panel (a region bounded by joint floors) gets its own UV offset,
 #               seeded, so the kit's 4 m repeat does not line up from panel to panel. An object is cut once: it is
@@ -39,6 +53,7 @@ import math
 import os
 import random
 import sys
+from bisect import bisect_right
 
 import bmesh
 import bpy
@@ -55,6 +70,7 @@ LAYER = "materials"
 STONE_GROUP = "TM_RB_limestone"
 JOINT_MATERIAL = "TM_RB_stone_joint"
 JOINT_LAYOUT = os.path.join(L.C.REBUILD_DIR, "joint_layout.json")
+TAU = 2.0 * math.pi
 
 
 def joint_slot():
@@ -236,6 +252,178 @@ def dress_tiles(mat, folder, fam):
     mat.diffuse_color = (*[c * k for c, k in zip(mean, fam["tone"])], 1.0)
 
 
+def dress_veneer(mat, fam):
+    """A luxury quarter-cut veneer (user fix 4c, 2026-10-15), procedural on the box UVs (1 m, V = z on walls): the grain
+    runs along V on the walls and along x on the soffits and the band (U and V swapped where the face looks up or down,
+    whose box UVs are (x, y)). Across the grain the face is cut into pairs of leaves 2 * leaf wide; each pair mirrors
+    its grain about its centre seam (book-matched) and draws its own seed, so its tone, hue and figure differ from its
+    neighbours, mirrored left / right of the building's centre line but never identical (the side and the face's plane
+    feed the seed). The grain: growth lines ~pitch apart wavering along the board, most faint and a few strong, broad
+    colour bands and darker ribbon stripes, fine elongated pores; a fine dark V-joint `joint` wide between pairs; a
+    faint bump under a satin clear coat. User fix 15: on a veneer plate (face attributes rb_veneer_w / rb_veneer_seed
+    from layer_podium.dress_panels, its UVs starting at the plate's edge) the pairs divide the plate evenly, so the book
+    match stays inside it, without the V-joint (the plate's modelled reveal is the joint); the plate draws its own grain
+    scale (panel_jitter), tone (panel_vary) and hue and its pairs vary less (pair_vary_in_panel), so the grain restarts
+    at every reveal. Faces without the attributes keep the layout above."""
+    nt, out = fresh_tree(mat)
+    n, links = nt.nodes, nt.links
+
+    def math(op, a, b=None, c=None, clamp=False):
+        m = n.new("ShaderNodeMath")
+        m.operation = op
+        m.use_clamp = clamp
+        for i, v in enumerate((a, b, c)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                m.inputs[i].default_value = v
+            else:
+                links.new(m.inputs[i], v)
+        return m.outputs[0]
+
+    def mix(t, a, b, kind="FLOAT"):
+        m = n.new("ShaderNodeMix")
+        m.data_type = kind
+        sock = {"FLOAT": (2, 3, 0), "RGBA": (6, 7, 2)}[kind]
+        if isinstance(t, (int, float)):
+            m.inputs["Factor"].default_value = t
+        else:
+            links.new(m.inputs["Factor"], t)
+        for i, v in zip(sock[:2], (a, b)):
+            if isinstance(v, (int, float)):
+                m.inputs[i].default_value = v
+            elif isinstance(v, (tuple, list)):
+                m.inputs[i].default_value = (*v, 1.0)
+            else:
+                links.new(m.inputs[i], v)
+        return m.outputs[sock[2]]
+
+    def comb(x, y, z=0.0):
+        c = n.new("ShaderNodeCombineXYZ")
+        for i, v in enumerate((x, y, z)):
+            if isinstance(v, (int, float)):
+                c.inputs[i].default_value = v
+            else:
+                links.new(c.inputs[i], v)
+        return c.outputs[0]
+
+    def noise(vec, w, detail=2.0, rough=0.5):
+        t = n.new("ShaderNodeTexNoise")
+        t.noise_dimensions = "4D"
+        t.inputs["Scale"].default_value = 1.0
+        t.inputs["Detail"].default_value = detail
+        t.inputs["Roughness"].default_value = rough
+        links.new(t.inputs["Vector"], vec)
+        links.new(t.inputs["W"], w)
+        return t.outputs["Fac"]
+
+    def smooth(x, e0, e1):
+        m = n.new("ShaderNodeMapRange")
+        m.interpolation_type = "SMOOTHSTEP"
+        m.inputs["From Min"].default_value, m.inputs["From Max"].default_value = e0, e1
+        links.new(m.inputs["Value"], x)
+        return m.outputs["Result"]
+
+    tc = n.new("ShaderNodeTexCoord")
+    uv = n.new("ShaderNodeSeparateXYZ")
+    links.new(uv.inputs[0], tc.outputs["UV"])
+    geo = n.new("ShaderNodeNewGeometry")
+    nrm = n.new("ShaderNodeSeparateXYZ")
+    links.new(nrm.inputs[0], geo.outputs["True Normal"])
+    horiz = math("GREATER_THAN", math("ABSOLUTE", nrm.outputs["Z"]), 0.5)
+    across = mix(horiz, uv.outputs["X"], uv.outputs["Y"])               # a: across the grain, b: along it
+    along = mix(horiz, uv.outputs["Y"], uv.outputs["X"])
+    dot = n.new("ShaderNodeVectorMath")                                  # the face's plane, for the seed
+    dot.operation = "DOT_PRODUCT"
+    links.new(dot.inputs[0], geo.outputs["Position"])
+    links.new(dot.inputs[1], geo.outputs["True Normal"])
+    plane = math("ROUND", math("MULTIPLY", dot.outputs["Value"], 20.0))
+    # user fix 15: a plate (layer_podium.dress_panels) carries its width across the grain and a seed as face attributes,
+    # and its UVs start at its edge: its leaves divide it evenly (book-matched inside it only, no V-joint: the plate's
+    # reveal is the joint) and it draws its own grain scale, tone and hue; elsewhere (has = 0) the 4c layout as before
+    att_w, att_s = n.new("ShaderNodeAttribute"), n.new("ShaderNodeAttribute")
+    for att, name in ((att_w, "rb_veneer_w"), (att_s, "rb_veneer_seed")):
+        att.attribute_type = "GEOMETRY"
+        att.attribute_name = name
+    pw_plate = att_w.outputs["Fac"]
+    has = math("GREATER_THAN", pw_plate, 0.01)
+    leaves = math("MAXIMUM", math("ROUND", math("DIVIDE", pw_plate, 2.0 * fam["leaf"])), 1.0)
+    pw = mix(has, 2.0 * fam["leaf"], math("DIVIDE", pw_plate, leaves))
+    prnd = n.new("ShaderNodeTexWhiteNoise")                              # the plate's own draws
+    prnd.noise_dimensions = "3D"
+    links.new(prnd.inputs["Vector"], comb(math("MULTIPLY", att_s.outputs["Fac"], 1000.0), 3.0, float(fam["seed"])))
+    prgb = n.new("ShaderNodeSeparateColor")
+    links.new(prgb.inputs["Color"], prnd.outputs["Color"])
+    centred = lambda r: math("SUBTRACT", math("MULTIPLY", r, 2.0), 1.0)  # noqa: E731
+    jit = math("ADD", 1.0, math("MULTIPLY", has, math("MULTIPLY", centred(prnd.outputs["Value"]), fam["panel_jitter"])))
+    k_plate = math("ADD", 1.0, math("MULTIPLY", has, math("MULTIPLY", centred(prgb.outputs["Red"]), fam["panel_vary"])))
+    q = math("DIVIDE", math("ABSOLUTE", across), pw)
+    pair, f = math("FLOOR", q), math("FRACT", q)
+    s_m = math("MULTIPLY", math("ABSOLUTE", math("SUBTRACT", f, 0.5)), pw)  # metres from the pair's centre seam
+    s = math("DIVIDE", s_m, jit)                                          # the plate's grain scale
+    along = math("DIVIDE", along, jit)
+    edge = math("MULTIPLY", math("MINIMUM", f, math("SUBTRACT", 1.0, f)), pw)
+    groove = math("SUBTRACT", 1.0, smooth(edge, fam["joint"] * 0.3, fam["joint"] * 0.5))
+    groove = math("MULTIPLY", groove, math("SUBTRACT", 1.0, has))
+    side = math("SIGN", across)
+    rnd = n.new("ShaderNodeTexWhiteNoise")
+    rnd.noise_dimensions = "3D"
+    links.new(rnd.inputs["Vector"], comb(pair, math("ADD", math("ADD", math("MULTIPLY", side, 7.0), plane),
+                                                    math("MULTIPLY", att_s.outputs["Fac"], 1000.0)), float(fam["seed"])))
+    r1 = rnd.outputs["Value"]
+    rgb = n.new("ShaderNodeSeparateColor")
+    links.new(rgb.inputs["Color"], rnd.outputs["Color"])
+    w = math("MULTIPLY", r1, 97.0)                                       # the pair's own figure
+    warp = noise(comb(math("MULTIPLY", s, 6.0), math("MULTIPLY", along, 0.6)), w, 2.0, 0.5)
+    pitch = noise(comb(math("MULTIPLY", s, 3.0), math("MULTIPLY", along, 0.1)), math("ADD", w, 5.0), 1.0, 0.5)
+    rings = math("MULTIPLY", math("DIVIDE", s, fam["pitch"]), math("ADD", 0.8, math("MULTIPLY", pitch, 0.4)))
+    phase = math("ADD", rings, math("MULTIPLY", warp, 4.0))             # growth lines, wavering along the board
+    line = math("ADD", 0.5, math("MULTIPLY", 0.5, math("COSINE", math("MULTIPLY", phase, TAU))))
+    late = smooth(line, 0.55, 0.97)                                      # narrow dark latewood lines
+    amp = smooth(noise(comb(math("MULTIPLY", s, 90.0), math("MULTIPLY", along, 0.5)), w, 2.0, 0.6), 0.35, 0.75)
+    late = math("MULTIPLY", late, math("ADD", 0.1, math("MULTIPLY", amp, 0.9)))   # most lines faint, a few strong
+    band = smooth(noise(comb(math("MULTIPLY", s, 18.0), math("MULTIPLY", along, 0.25)), math("ADD", w, 13.0), 3.0,
+                        0.55), 0.3, 0.75)                                # broad honey / brown colour bands
+    ribbon = smooth(noise(comb(math("MULTIPLY", s, 32.0), math("MULTIPLY", along, 0.12)), math("ADD", w, 29.0), 2.0,
+                          0.5), 0.42, 0.62)                              # the quarter-cut's darker ribbon stripes
+    pore = smooth(noise(comb(math("MULTIPLY", s, 1400.0), math("MULTIPLY", along, 40.0)), w, 1.0, 0.5), 0.66, 0.8)
+    body = mix(band, tuple(fam["mid"]), tuple(fam["light"]), "RGBA")
+    col = mix(math("MULTIPLY", ribbon, fam["ribbon"]), body, tuple(fam["dark"]), "RGBA")
+    col = mix(math("MULTIPLY", late, 0.8), col, tuple(fam["dark"]), "RGBA")
+    col = mix(math("MULTIPLY", pore, 0.35), col, tuple(fam["dark"]), "RGBA")
+    vary = mix(has, fam["vary"], fam["vary"] * fam["pair_vary_in_panel"])  # a plate's leaves: one flitch
+    k = math("ADD", 1.0, math("MULTIPLY", math("SUBTRACT", math("MULTIPLY", r1, 2.0), 1.0), vary))
+    k = math("MULTIPLY", k, k_plate)
+    tone = n.new("ShaderNodeVectorMath")                                  # the pair's (and plate's) tone ...
+    tone.operation = "SCALE"
+    links.new(tone.inputs[0], col)
+    links.new(tone.inputs["Scale"], k)
+    warm = n.new("ShaderNodeVectorMath")                                  # ... and its hue, warmer or cooler
+    warm.operation = "MULTIPLY"
+    links.new(warm.inputs[0], tone.outputs["Vector"])
+    warm.inputs[1].default_value = (1.05, 0.99, 0.92)
+    hue = mix(has, rgb.outputs["Green"], math("ADD", math("MULTIPLY", rgb.outputs["Green"], 0.3),
+                                              math("MULTIPLY", prgb.outputs["Green"], 0.7)))   # a plate's hue
+    col = mix(math("MULTIPLY", hue, 0.8), tone.outputs["Vector"], warm.outputs["Vector"], "RGBA")
+    col = mix(groove, col, tuple(fam["joint_rgb"]), "RGBA")
+    rough = math("ADD", fam["roughness"], math("ADD", math("MULTIPLY", late, 0.06), math("MULTIPLY", pore, 0.15)))
+    rough = mix(groove, rough, 0.75)
+    height = math("SUBTRACT", math("ADD", math("MULTIPLY", late, 0.15), math("MULTIPLY", pore, 0.6)), groove)
+    bump = n.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = fam["bump"]
+    bump.inputs["Distance"].default_value = 0.001
+    links.new(bump.inputs["Height"], height)
+    bsdf = n.new("ShaderNodeBsdfPrincipled")
+    links.new(bsdf.inputs["Base Color"], col)
+    links.new(bsdf.inputs["Roughness"], rough)
+    links.new(bsdf.inputs["Normal"], bump.outputs["Normal"])
+    bsdf.inputs["Coat Weight"].default_value = fam["coat"]
+    bsdf.inputs["Coat Roughness"].default_value = fam["coat_roughness"]
+    bsdf.inputs["Coat IOR"].default_value = 1.5
+    links.new(out.inputs["Surface"], bsdf.outputs["BSDF"])
+    mat.diffuse_color = (*fam["mid"], 1.0)
+
+
 def dress_glass(mat, fam):
     """Clear glass whose shadow rays pass (a transparent BSDF, tinted, for Light Path's shadow rays): Cycles' glass
     otherwise blocks the sun's shadow rays and the rooms behind the glazing go dark (AI 634)."""
@@ -289,6 +477,8 @@ def dress_materials(m):
                 dress_tiles(mat, folder, fam)
             elif fam_name == "glass":
                 dress_glass(mat, fam)
+            elif fam_name in ("veneer", "soffit_veneer"):             # user fix 4c / 17: the luxury wood
+                dress_veneer(mat, fam)
             else:
                 dress_plain(mat, fam["rgb"], fam["roughness"], fam.get("metallic", 0.0))
             dressed[slot] = fam_name
@@ -368,12 +558,10 @@ def solid_ids(me):
     return [find(p.vertices[0]) for p in me.polygons]
 
 
-def seam_joints(objects, jt):
-    """Seams between flush stone pieces: coplanar stone faces of different solids (or objects) facing the same way and
-    sharing a stretch of a boundary edge. Returns {object name: {face index: [(t, s, e, e0, e1)]}}: the joint plane
-    t . p = s through the seam (t in the face's plane, square to the edge) and the shared stretch e0..e1 along e."""
-    tol, tol_c = 2e-4, 2e-4
-    recs, buckets = [], {}
+def stone_faces(objects, jt):
+    """World-space records of the objects' stone faces (a slot of their joint rules), before any cut: (object name, face
+    index, solid id, normal, plane offset, points, slot, rule)."""
+    recs = []
     for ob in objects:
         me = ob.data
         rules = rules_for(ob, jt)
@@ -388,11 +576,141 @@ def seam_joints(objects, jt):
                 continue
             n = (rot @ p.normal).normalized()
             pts = [mw @ me.vertices[v].co for v in p.vertices]
-            c = n.dot(pts[0])
-            rec = (ob.name, p.index, sid[p.index], n, c, pts)
-            nk = tuple(round(x, 3) for x in n)
-            buckets.setdefault((nk, round(c / tol_c)), []).append(len(recs))
-            recs.append(rec)
+            slot = names[p.material_index]
+            recs.append((ob.name, p.index, sid[p.index], n, n.dot(pts[0]), pts, slot, rules[slot]))
+    return recs
+
+
+# ---------------------------------------------------------------- grids (user fix 11, 2026-10-15)
+
+
+def lateral(n):
+    """The horizontal direction across a vertical face (the axis its vertical joints are placed along)."""
+    return Vector((-n.y, n.x, 0.0)).normalized()
+
+
+def divide(s0, s1, panel_max):
+    """The cuts that split s0..s1 into equal panels of at most panel_max."""
+    k = math.ceil((s1 - s0) / panel_max - 1e-9)
+    return [s0 + (s1 - s0) * j / k for j in range(1, k)]
+
+
+def cluster(values, tol):
+    """The values sorted, runs closer than tol merged into their mean."""
+    runs = []
+    for v in sorted(values):
+        if runs and v - runs[-1][-1] <= tol:
+            runs[-1].append(v)
+        else:
+            runs.append([v])
+    return [sum(r) / len(r) for r in runs]
+
+
+def in_box(p, box, tol=1e-4):
+    return all(box[k][0] - tol <= p[i] <= box[k][1] + tol for i, k in enumerate("xyz"))
+
+
+def plane_groups(recs, idx):
+    """recs[i] for i in idx grouped by plane: the same normal (to 1e-3) and offsets within 0.2 mm (float32). Returns
+    {(normal key, offset): [i]}, the key's zeros unsigned so it prints the same for every piece."""
+    by_n = {}
+    for i in idx:
+        by_n.setdefault(tuple(round(x, 3) + 0.0 for x in recs[i][3]), []).append(i)
+    out = {}
+    for nk, ids in by_n.items():
+        ids.sort(key=lambda i: recs[i][4])
+        run = []
+        for i in ids + [None]:
+            if run and (i is None or recs[i][4] - recs[run[-1]][4] > 2e-4):
+                out[(nk, round(sum(recs[j][4] for j in run) / len(run), 4) + 0.0)] = run
+                run = []
+            if i is not None:
+                run.append(i)
+    return out
+
+
+def grid_layout(recs, jt):
+    """The joint grids (joints.grids): {object: {face index: {"z", "v", "cell"}}} for the faces they lay out, and stats.
+      region faces   vertical stone faces wholly inside the grid's box: course planes "z" = the grid's own; vertical
+                     joints "v" = their plane's lines inside the face, the lines being the plane's face ends (merged
+                     within `cluster`) plus each gap between them cut into equal panels of at most panel_max; "cell"
+                     (grid, plane, course planes, lines) keys each panel's map offset to its grid cell
+      inherit faces  a face set of `inherit` outside the box meeting a region face flush along its top or bottom edge:
+                     "v" = the ends and vertical joints of every stone face it meets so, each gap left cut into equal
+                     panels; "z" None (its course planes stay the shared ones)"""
+    out, stats = {}, {"grid_faces": 0, "inherited_faces": 0}
+    pm, vmin = jt["panel_max"], jt["vertical_min_height"]
+    clear = jt["width"] / 2 + jt["bevel"] + jt["margin"]
+    zr = [(min(p.z for p in r[5]), max(p.z for p in r[5])) for r in recs]
+    vert = [i for i, r in enumerate(recs) if abs(r[3].z) < 0.1]
+    groups = plane_groups(recs, vert)
+    group_of = {i: key for key, ids in groups.items() for i in ids}
+
+    def span(i):
+        t = lateral(recs[i][3])
+        s = [p.dot(t) for p in recs[i][5]]
+        return min(s), max(s)
+
+    def tall(i):
+        return recs[i][7]["verticals"] and zr[i][1] - zr[i][0] >= vmin
+
+    for g in jt.get("grids", []):
+        slots = g.get("slots")                          # fix 13: the stone the grid lays out (not the site's tree pits)
+        region = {i for i in vert
+                  if all(in_box(p, g["box"]) for p in recs[i][5]) and (not slots or recs[i][6] in slots)}
+        lines, own = {}, {}
+        for key, ids in groups.items():
+            ids = [i for i in ids if i in region]
+            if not ids:
+                continue
+            breaks = cluster([s for i in ids for s in span(i)], g["cluster"])
+            lines[key] = sorted(breaks + [c for a, b in zip(breaks, breaks[1:]) for c in divide(a, b, pm)])
+        for i in region:
+            key = group_of[i]
+            s0, s1 = span(i)
+            own[i] = [s for s in lines[key] if s0 + clear < s < s1 - clear] if tall(i) else []
+            out.setdefault(recs[i][0], {})[recs[i][1]] = {"z": g["course_planes"], "v": own[i],
+                                                          "cell": (g["name"], key, g["course_planes"], lines[key])}
+        stats["grid_faces"] += len(region)
+        for key, ids in groups.items():                                 # inherit faces, plane by plane
+            for f in ids:
+                if f in region or recs[f][6] not in g["inherit"] or not tall(f):
+                    continue
+                near = [r for r in ids if r != f and (abs(zr[r][1] - zr[f][0]) < 2e-3 or abs(zr[r][0] - zr[f][1]) < 2e-3)
+                        and min(span(r)[1], span(f)[1]) - max(span(r)[0], span(f)[0]) > g["min_panel"]]
+                if not any(r in region for r in near):
+                    continue
+                s0, s1 = span(f)
+                fixed = []
+                for r in near:
+                    q0, q1 = span(r)
+                    fixed += [q0, q1] + (own[r] if r in region else divide(q0, q1, pm) if tall(r) else [])
+                fixed = [s for s in cluster(fixed, g["cluster"]) if s0 + g["min_panel"] < s < s1 - g["min_panel"]]
+                cuts = [c for a, b in zip([s0] + fixed, fixed + [s1]) for c in divide(a, b, pm)]
+                out.setdefault(recs[f][0], {})[recs[f][1]] = {"z": None, "v": sorted(fixed + cuts)}
+                stats["inherited_faces"] += 1
+    return out, stats
+
+
+def off_grid(p0, p1, grids):
+    """True where a horizontal seam from p0 to p1 lies inside a grid's box but on none of its course planes: the block
+    runs on over the piece boundary there, so the seam is not cut."""
+    return any(in_box(p0, g["box"]) and in_box(p1, g["box"]) and all(abs(p0.z - zc) > 1e-3 for zc in g["course_planes"])
+               for g in grids)
+
+
+def seam_joints(recs_all, jt, stats=None):
+    """Seams between flush stone pieces: coplanar stone faces of different solids (or objects) facing the same way and
+    sharing a stretch of a boundary edge. Returns {object name: {face index: [(t, s, e, e0, e1)]}}: the joint plane
+    t . p = s through the seam (t in the face's plane, square to the edge) and the shared stretch e0..e1 along e.
+    A horizontal seam off a grid's course planes inside its box is left uncut (counted in stats["suppressed_seams"])."""
+    tol, tol_c = 2e-4, 2e-4
+    grids = jt.get("grids", [])
+    recs, buckets = [], {}
+    for name, index, sid, n, c, pts, _, _ in recs_all:
+        nk = tuple(round(x, 3) for x in n)
+        buckets.setdefault((nk, round(c / tol_c)), []).append(len(recs))
+        recs.append((name, index, sid, n, c, pts))
     out = {}
     min_len = jt.get("seam_min_length", 0.02)
     done = set()
@@ -424,6 +742,10 @@ def seam_joints(objects, jt):
                     hi = min(max(e.dot(p0), e.dot(p1)), max(e.dot(q0), e.dot(q1)))
                     if hi - lo < min_len:
                         continue
+                    if abs(t.z) > 0.99 and off_grid(p0 + e * (lo - e.dot(p0)), p0 + e * (hi - e.dot(p0)), grids):
+                        if stats is not None:
+                            stats["suppressed_seams"] = stats.get("suppressed_seams", 0) + 1
+                        continue
                     tc, sc = canonical(t, s)
                     for name, face in ((oa, fa), (ob_, fb)):       # a face may share one line with several pieces
                         lst = out.setdefault(name, {}).setdefault(face, [])
@@ -451,9 +773,10 @@ def merge_stretches(recs, tol):
     return out
 
 
-def cut_joints(ob, jt, joint_mat, seams=None):
+def cut_joints(ob, jt, joint_mat, seams=None, grid=None):
     """Cut the stone joints into one object; returns its stats and its layout record (or None if it has no stone).
-    seams: {face index: [(t, s, e, e0, e1)]} from seam_joints()."""
+    seams: {face index: [(t, s, e, e0, e1)]} from seam_joints(); grid: {face index: {"z", "v", "cell"}} from
+    grid_layout(), the faces whose course planes ("z", unless None) and vertical joints ("v") a joint grid lays out."""
     me = ob.data
     names = [m.name if m else "" for m in me.materials]
     rules = rules_for(ob, jt)
@@ -486,16 +809,21 @@ def cut_joints(ob, jt, joint_mat, seams=None):
         pts = [v.co.copy() for v in f.verts]
         rec = {"n": n, "pts": pts, "slot": names[f.material_index], "z": [], "v": [],     # v: [(t, s)] vertical joint planes
                "s": merge_stretches((seams or {}).get(i, []), tol)}                     # s: [(t, s, e, e0, e1)] seams
+        g = (grid or {}).get(i)                                        # a joint grid's layout for this face (fix 11)
+        if g and g.get("cell"):
+            rec["cell"] = g["cell"]
         if abs(n.z) < 0.5 and f.material_index in course_idx:
             z0, z1 = min(p.z for p in pts), max(p.z for p in pts)
-            rec["z"] = [zc for zc in jt["course_planes"] if z0 < zc - clear and z1 > zc + clear]
+            planes = g["z"] if g and g["z"] is not None else jt["course_planes"]
+            rec["z"] = [zc for zc in planes if z0 < zc - clear and z1 > zc + clear]
         tall = max(p.z for p in pts) - min(p.z for p in pts) >= jt["vertical_min_height"]
         if abs(n.z) < 0.1 and f.material_index in vert_idx and tall:
             t = Vector((-n.y, n.x, 0.0)).normalized()
-            s = [p.dot(t) for p in pts]
-            s0, s1 = min(s), max(s)
-            k = math.ceil((s1 - s0) / jt["panel_max"] - 1e-9)
-            rec["v"] = [canonical(t, s0 + (s1 - s0) * j / k) for j in range(1, k)]
+            if g:
+                rec["v"] = [canonical(t, s) for s in g["v"]]
+            else:
+                s = [p.dot(t) for p in pts]
+                rec["v"] = [canonical(t, c) for c in divide(min(s), max(s), jt["panel_max"])]
         if abs(n.z) < 0.1 and rules[rec["slot"]].get("base") and min(p.z for p in pts) < foot + tol:
             e = Vector((-n.y, n.x, 0.0)).normalized()                  # a joint at the foot: its strip from the foot up
             ext = [p.dot(e) for p in pts]
@@ -636,9 +964,32 @@ def cut_joints(ob, jt, joint_mat, seams=None):
                         stack.append(h)
         panels.append(panel)
     repeat = jt.get("repeat_m", 4.0)
+
+    def cell_key(panel):
+        """A grid panel's key: its grid cell on the plane holding most of its grid faces (a block whose seam with the
+        next piece is not cut takes the same map offset in both pieces). None off the grids."""
+        acc = {}
+        for g in panel:
+            cell = faces[g[orig]].get("cell")
+            if cell:
+                a = g.calc_area()
+                k = acc.setdefault(cell[:2], [0.0, Vector(), cell])
+                k[0] += a
+                k[1] += g.calc_center_median() * a
+        if not acc:
+            return None
+        a, c, (name, plane, zs, lines) = max(acc.values(), key=lambda k: k[0])
+        if a < 1e-8:
+            return None
+        c = c / a
+        course, column = bisect_right(zs, c.z), bisect_right(lines, c.dot(lateral(Vector(plane[0]))))
+        return f"{jt['seed']}:grid:{name}:{plane}:{course}:{column}"
     for panel in panels:
-        lo = min((tuple(round(c, 3) for c in v.co) for g in panel for v in g.verts))
-        rng = random.Random(hashlib.md5(f"{jt['seed']}:{ob.name}:{lo}".encode()).hexdigest())
+        key = cell_key(panel)
+        if key is None:
+            lo = min((tuple(round(c, 3) for c in v.co) for g in panel for v in g.verts))
+            key = f"{jt['seed']}:{ob.name}:{lo}"
+        rng = random.Random(hashlib.md5(key.encode()).hexdigest())
         du, dv = rng.uniform(0.0, repeat), rng.uniform(0.0, repeat)
         for g in panel:
             for lp in g.loops:
@@ -693,9 +1044,12 @@ def build(plan):
         todo.append(ob)
     # seams pair the objects cut in this run only: a piece already cut has moved its edges, so a layer rebuilt alone
     # gets its own half of a seam with a piece of another layer (target= rebuilds the whole part and cuts both halves)
-    seams = seam_joints(todo, jt) if jt.get("seams") else {}
+    recs = stone_faces(todo, jt)
+    grids, grid_stats = grid_layout(recs, jt)                  # user fix 11 / 13: the podium's regular block grid
+    grid_stats["suppressed_seams"] = 0
+    seams = seam_joints(recs, jt, grid_stats) if jt.get("seams") else {}
     for ob in todo:
-        stats, rec = cut_joints(ob, jt, joint_mat, seams.get(ob.name))
+        stats, rec = cut_joints(ob, jt, joint_mat, seams.get(ob.name), grids.get(ob.name))
         if stats is None:
             continue
         per_object[ob.name] = stats
@@ -717,5 +1071,5 @@ def build(plan):
               for k in ("vertical_joints", "seam_joints", "joint_floor_faces", "panels", "non_manifold", "degenerate_faces",
                         "non_planar_faces")}
     return {"layer": LAYER, "dressed": len(dressed), "missing_slots": missing, "jointed_objects": len(per_object),
-            "skipped_already_jointed": len(skipped), **totals, "per_object": per_object,
+            "skipped_already_jointed": len(skipped), **totals, "grids": grid_stats, "per_object": per_object,
             "names": sorted(per_object)}

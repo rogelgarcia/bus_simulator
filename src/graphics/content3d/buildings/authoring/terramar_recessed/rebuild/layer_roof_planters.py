@@ -3,21 +3,32 @@
 # Run through build.py (layers=roof_planters; needs the roof layer, and the vegetation decoded by
 # decode_vegetation_glb.mjs). Builds RB_PROPS/RB_ROOF_PLANTERS under its part root:
 #   rb_roof_planter_boxes  every box as one object, soil (TM_RB_soil) 40 mm below the rim: the perimeter ring's low
-#                          limestone troughs (TM_RB_paving, dressed by the materials pass; straight modules and one curved
-#                          module per corner arc), each a body with thin rim walls and end caps, and the islands'
-#                          dark-metal boxes (TM_RB_planter_metal, a body and a rim with a hole)
+#                          limestone troughs (TM_RB_paving, dressed by the materials pass; straight modules and one mitred
+#                          L module per sharp corner, user fix 8b), each a body with thin rim walls and end caps, and
+#                          the islands' dark-metal boxes (TM_RB_planter_metal, a body and a rim with a hole)
+#   rb_roof_centre_box     the low limestone box in the middle of the front terrace (2026-10-15), built like an island
+#                          with its vertical corners chamfered (plan box "chamfer", like the street's tree pits)
+#   rb_roof_pots           the large tapered pots (layer_balcony_plants.pot, light grey, charcoal or white) at the ring's
+#                          corners and by the penthouse doors (2026-10-15)
+#   rb_roof_tree_stems     the clear stems of the viburnum standards (TM_RB_tree_stem), in pots, the centre box and troughs
+#   rb_roof_flowers        flower heads over the centre box's viburnum (layer_podium_planters' heads and TM_RB_flower_*)
 #   rb_roof_plant_<place>_<n>  collection instances: the ring's low viburnum, the feature clusters and fill plants
-#                          (procedural cycads, detailed palms (palm_tree.py) and spiky rosettes from proc_plants.py,
-#                          linden olives with a companion form) and the islands' plants
-# Instances are fitted to their target height and crown radius (fit_scales); the detailed palms keep their xy / z scale
-# ratio within rb_fit_aniso (10 %), never past either target, and the summary lists their scales.
-# The perimeter foliage must stay inside the guard shoe's inner line (plan "keep_inside"): the layer counts every point
-# outside it.
+#                          (procedural cycads and spiky rosettes from proc_plants.py, linden olives with a companion form,
+#                          viburnum standards), the islands', the pots' and the centre box's plants. No palms on the roof
+#                          since 2026-10-15 (the user: "no palm tree at the roof top"): linden olives and standards instead
+# Instances are fitted to their target height and crown radius (fit_scales); a prototype with rb_fit_aniso keeps its
+# xy / z scale ratio within it, and the summary lists those scales.
+# Every plant's foliage must stay inside the guard shoe's inner line (plan "keep_inside"): the layer counts every point
+# outside it. The pots and the centre box are checked against the islands, each other, the paths before the penthouse's
+# doors, the penthouse and its annex, and the ring's troughs; they and the flowers are tagged rb_hide_from_b8 (the
+# CAM_B8 sightline check must find 0 px of them).
 import importlib
 import math
 import os
+import random
 import sys
 
+import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
@@ -36,10 +47,14 @@ for mod in (L, BP, PP, proc_plants, PL):
 COLLECTION = "RB_ROOF_PLANTERS"
 LAYER = "roof_planters"
 RIM, SOIL_DROP = 0.03, 0.04
+STEM = ("TM_RB_tree_stem", (0.19, 0.15, 0.11), 0.85)                  # a standard's clear stem: grey-brown bark
 
 
-def tags(element, name):
-    return {"rb_layer": LAYER, "rb_element": element, "tm_element": COLLECTION, "tm_role": element, "rb_name": name}
+def tags(element, name, hidden=False):
+    t = {"rb_layer": LAYER, "rb_element": element, "tm_element": COLLECTION, "tm_role": element, "rb_name": name}
+    if hidden:
+        t["rb_hide_from_b8"] = True
+    return t
 
 
 def ring_module(bx, m):
@@ -64,11 +79,107 @@ def ring_module(bx, m):
 
 
 def island(bx, m):
-    outer = [tuple(q) for q in bx["loop"]]
+    """A box: the body up to the soil and a rim with a hole. A box with a chamfer (the limestone centre box, 2026-10-15,
+    like the street's tree pits) has its vertical corners cut, the rim's soil side following them."""
+    outer = L.ccw(L.chamfer(L.ccw([tuple(q) for q in bx["loop"]]), bx.get("chamfer", 0.0)))
     inner = PP.inset(outer, RIM)
     z0, z1 = bx["z"], bx["z"] + bx["height"]
     return [([(z0, z1 - SOIL_DROP)], [(outer, m)], [([outer], "TM_RB_soil", m)]),
             ([(z1 - SOIL_DROP, z1)], [(outer, m), (inner, m)], [([outer, inner], m, m)])]
+
+
+def stem(bm, st, slot, sides=10):
+    """A standard's stem: a slightly tapered, leaning cylinder from its foot on the soil to its top inside the crown,
+    with a little flare at the foot; closed at both ends."""
+    (fx, fy), (tx, ty), (z0, z1), r = st["foot"], st["top"], st["z"], st["r"]
+    rings = []
+    for t, rr in ((0.0, 1.35 * r), (0.04, 1.1 * r), (0.5, 0.95 * r), (1.0, 0.75 * r)):
+        cx, cy, z = fx + (tx - fx) * t, fy + (ty - fy) * t, z0 + (z1 - z0) * t
+        rings.append([bm.verts.new((cx + rr * math.cos(2 * math.pi * k / sides), cy + rr * math.sin(2 * math.pi * k / sides), z))
+                      for k in range(sides)])
+    for a, b in zip(rings, rings[1:]):
+        for k in range(sides):
+            bm.faces.new((a[k], a[(k + 1) % sides], b[(k + 1) % sides], b[k])).material_index = slot
+    bm.faces.new(list(reversed(rings[0]))).material_index = slot
+    bm.faces.new(rings[-1]).material_index = slot
+
+
+def flowers(coll, bx, seed):
+    """Flower heads over the box's low viburnum, inside its rim: three colours of layer_podium_planters' mix."""
+    bm = bmesh.new()
+    slots = list(PP.FLOWERS)
+    weights = [PP.FLOWERS[k][1] for k in slots]
+    rng = random.Random(f"{seed}:flowers:{bx['id']}")
+    colours = rng.sample(range(len(slots)), k=3)
+    inner = PP.inset([tuple(q) for q in bx["loop"]], RIM + 0.02)
+    placed = 0
+    for _ in range(bx["flowers"] * 4):
+        if placed == bx["flowers"]:
+            break
+        p = rng.choice(bx["plants"])
+        k = math.sqrt(rng.uniform(0.0, 1.0)) * 0.8                    # on the crown's dome, just inside its leaves
+        ang, rr = rng.uniform(0, 2 * math.pi), p["radius"] * k
+        h = p["height"] * (0.5 + 0.42 * (1.0 - k * k)) * rng.uniform(0.92, 1.0)
+        c = Vector((p["at"][0] + rr * math.cos(ang), p["at"][1] + rr * math.sin(ang), p["z"] + h))
+        if not PP.inside(inner, c):
+            continue
+        PP.flower_head(bm, c, rng.uniform(0.014, 0.024), rng.choices(colours, weights=[weights[i] for i in colours])[0], rng)
+        placed += 1
+    for name, (rgb, _) in PP.FLOWERS.items():
+        BP.plain_material(name, rgb, 0.6)
+    return L.finish("rb_roof_flowers", coll, bm, slots, tags("flowers", "roof_flowers", hidden=True), smooth_deg=1.0), placed
+
+
+def layout_checks(plan, rp):
+    """The pots and the centre box against the islands, each other, the door paths, the penthouse and its annex (by
+    rp["pot_config"]["clear"]) and the ring's troughs (their inner line, keep_inside 0.66 m in): (problems, closest)."""
+    import layer_roof_furniture as RF                                 # its overlaps / edge distance helpers
+    rf = plan["roof"]
+    clear = rp["pot_config"]["clear"]
+    trough_in = rp["config"]["guard_gap"] + rp["config"]["depth"]
+    loop = [tuple(q) for q in rp["keep_inside"]]
+    px, py, an = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"], rf["annex"]
+    rects = [(f"island {i['id']}", i["rect"]) for i in rp["islands"]] + [(f"path {k}", p) for k, p in enumerate(rp["paths"])]
+    rects += [("penthouse", [px[0], px[1], py[0], py[1]]), ("annex", [an["x"][0], an["x"][1], an["y"][0], an["y"][1]])]
+    centre = rp["centre"]["rect"]
+    shapes = [(f"pot {p['id']}", [(p["at"][0] + p["radius"] * math.cos(2 * math.pi * k / 16),
+                                   p["at"][1] + p["radius"] * math.sin(2 * math.pi * k / 16)) for k in range(16)])
+              for p in rp["pots"]]
+    shapes.append(("centre box", [(centre[0], centre[2]), (centre[1], centre[2]), (centre[1], centre[3]), (centre[0], centre[3])]))
+    problems, closest = [], 1e9
+    for i, (name, poly) in enumerate(shapes):
+        for other, rect in rects:
+            # the door pots stand beside the doors and against the penthouse: only their path strips and the wall line
+            # itself count for them (the 0.55 m from the wall is the layout's)
+            margin = 0.0 if other == "penthouse" else clear
+            if RF.overlaps(poly, rect, margin):
+                problems.append(f"{name} within {margin} m of {other}")
+        for other, poly2 in shapes[i + 1:]:
+            gap = min(math.dist(a, b) for a in poly for b in poly2)
+            if gap < clear:
+                problems.append(f"{name} within {clear} m of {other}")
+        d = min(RF.edge_distance(loop, q) for q in poly)
+        closest = min(closest, d)
+        if d < trough_in + clear or not all(RF.inside(loop, q) for q in poly):
+            problems.append(f"{name} {d:.2f} m from the guard line (the troughs end {trough_in:.2f} m in)")
+    return problems, closest
+
+
+def drop_unused_palms():
+    """Remove the roof palm prototypes (RBP_proc_palm_*) nothing instances any more (2026-10-15: no palms on the roof),
+    so an in-place rebuild leaves the part as a fresh build would: their objects, meshes and collections."""
+    used = {ob.instance_collection.name for ob in bpy.data.objects if ob.instance_type == "COLLECTION" and ob.instance_collection}
+    dropped = []
+    for c in [c for c in bpy.data.collections if c.name.startswith("RBP_proc_palm_") and c.name not in used]:
+        datas = [ob.data for ob in c.all_objects if ob.data is not None]
+        for ob in list(c.all_objects):
+            bpy.data.objects.remove(ob, do_unlink=True)
+        for d in datas:
+            if not d.users and isinstance(d, bpy.types.Mesh):
+                bpy.data.meshes.remove(d)
+        dropped.append(c.name)
+        bpy.data.collections.remove(c)
+    return dropped
 
 
 def prototype(model):
@@ -149,11 +260,37 @@ def build(plan):
     L.clear_collection(coll)
     BP.prop_materials()
     BP.plain_material(PP.METAL[0], PP.METAL[1], PP.METAL[2])
+    BP.plain_material(*STEM)
     rp = plan["props"]["roof_planters"]
-    items = []
+    items, centre = [], []
     for bx in rp["boxes"]:
-        items += ring_module(bx, rp["config"]["material"]) if bx["kind"] == "ring" else island(bx, PP.METAL[0])
+        if bx["kind"] == "centre":
+            centre += island(bx, bx["material"])
+        else:
+            items += ring_module(bx, rp["config"]["material"]) if bx["kind"] == "ring" else island(bx, PP.METAL[0])
     made = [L.pieces("rb_roof_planter_boxes", coll, items, tags("planter_box", "roof_planter_boxes"))]
+    if centre:
+        made.append(L.pieces("rb_roof_centre_box", coll, centre, tags("planter_box", "roof_centre_box", hidden=True)))
+    bm = bmesh.new()                                                  # the pots
+    slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
+    for p in rp["pots"]:
+        BP.pot(bm, slots, p["at"], p["z"], p["radius"], p["height"], p["colour"])
+    if rp["pots"]:
+        made.append(L.finish("rb_roof_pots", coll, bm, slots, tags("pot", "roof_pots", hidden=True), smooth_deg=40.0))
+    else:
+        bm.free()
+    stems = [f["stem"] for f in rp["features"] if "stem" in f]
+    if stems:
+        bm = bmesh.new()
+        for st in stems:
+            stem(bm, st, 0)
+        made.append(L.finish("rb_roof_tree_stems", coll, bm, [STEM[0]], tags("stem", "roof_tree_stems"), smooth_deg=60.0))
+    n_flowers = 0
+    for bx in rp["boxes"]:
+        if bx.get("flowers"):
+            ob, n = flowers(coll, bx, rp["seed"])
+            made.append(ob)
+            n_flowers += n
     models = sorted({p["model"] for bx in rp["boxes"] for p in bx["plants"]} | {f["model"] for f in rp["features"]}
                     | {f["companion"]["model"] for f in rp["features"] if "companion" in f})
     protos = {m: prototype(m) for m in models}
@@ -163,11 +300,9 @@ def build(plan):
         for i, p in enumerate(bx["plants"]):
             placed += [(bx["kind"] == "ring", x) for x in instances(coll, p, protos, f"rb_roof_plant_{bx['id']}_{i + 1}")]
     counts = {}
-    islands = {i["id"] for i in rp["islands"]}                       # the island features stand in the open
-    for f in rp["features"]:
+    for f in rp["features"]:                                          # every tree and feature plant is checked
         counts[f["place"]] = counts.get(f["place"], 0) + 1
-        perimeter = f["place"] not in islands
-        placed += [(perimeter, x) for x in instances(coll, f, protos, f"rb_roof_plant_{f['place']}_{counts[f['place']]}")]
+        placed += [(True, x) for x in instances(coll, f, protos, f"rb_roof_plant_{f['place']}_{counts[f['place']]}")]
     fits = {ob.name: palm_fit(M) for _, (ob, M, proto) in placed if proto.get("rb_fit_aniso")}
     loop = [tuple(q) for q in rp["keep_inside"]]
     worst, crossing = -1e9, []
@@ -179,9 +314,17 @@ def build(plan):
         worst = max(worst, reach)
         if reach > 0.0:
             crossing.append({"plant": ob.name, "by_m": round(reach, 3)})
+    dropped = drop_unused_palms()
+    problems, closest_pot = layout_checks(plan, rp)
+    for p in problems:
+        print("WARNING roof planters:", p)
+    palms = [ob.name for _, (ob, M, proto) in placed if "palm" in proto.name]
     return {"collection": COLLECTION, "objects": len(made), "boxes": len(rp["boxes"]), "shrubs": rp["shrubs"],
             "features": len(rp["features"]), "feature_kinds": rp["feature_counts"], "instances": len(placed),
-            "perimeter_foliage_outside_guard": len(crossing), "closest_m": round(-worst, 3), "crossing": crossing[:10],
+            "pots": len(rp["pots"]), "stems": len(stems), "flowers": n_flowers, "palms": len(palms),
+            "palm_prototypes_dropped": dropped,
+            "layout_problems": problems, "pots_closest_to_guard_m": round(closest_pot, 3),
+            "foliage_outside_guard": len(crossing), "closest_m": round(-worst, 3), "crossing": crossing[:10],
             "prototypes": {m: [round(c["rb_height"], 2), round(c["rb_radius"], 2)] for m, c in protos.items()},
             "palm_fit": fits,
             "palm_aniso_max": round(max((abs(f[0] / f[1] - 1.0) for f in fits.values()), default=0.0), 3),

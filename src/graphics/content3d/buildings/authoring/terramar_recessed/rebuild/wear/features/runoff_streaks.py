@@ -5,9 +5,13 @@
 #   glass_joint    a balcony slab's fascia (floors 1-5) below a joint between two guard glass panels: the glass sheds
 #                  its rain down the joint onto the 0.15 m ledge outside the guard shoe, which spills it over the fascia
 #   roof_joint     the same below the roof guard's panel joints, down the roof slab's taller fascia
-#   corner         a slab fascia on a rounded corner, where the ledge's water gathers on the turn
-#   shoe_end       the fascia beside a front pilaster, where the guard shoe stops and the balcony floor's water gets out
-#                  past its end
+#   corner         a slab fascia on a rounded corner, where the ledge's water gathers on the turn and leaves at one of the
+#                  guard's corner posts
+# The guard's joints are its connector posts (user fix 8, 2026-10-15: balcony_layout.guard_layout, the same layout the
+# guards are built from; floor 1 the terrace runs of user fix 3, in front of the pilasters; user fix 10: the runs stop
+# at the room-dividing piers, whose end posts are no joints).
+#   shoe_end       the fascia beside a front pilaster or a room-dividing pier, where the guard shoe stops and the balcony
+#                  floor's water gets out past its end
 #   planter_drain  the podium edge (floor 1) below an edge planter box's weep hole: over the podium roof fascia and on
 #                  down the stone below it (a pier, or the lintel band down to an upper recess's head)
 #   sill_corner    a lower corner of an upper podium recess: the recess floor and its planter box drain over the front
@@ -52,6 +56,8 @@ import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
+import balcony_layout          # the guards' panels and posts (the rebuild directory is on the path)
+
 from .. import classes, context, nodes
 
 NAME = "runoff_streaks"
@@ -83,9 +89,9 @@ KINDS = {
     "lantern": dict(count=(1, 2), amount=(0.65, 0.95), length=(0.25, 0.55), w0=(0.012, 0.020)),
 }
 HEIGHT = (5.0, 27.0, 0.75, 1.25)   # the probability factor: HEIGHT[2] at z HEIGHT[0] rising to HEIGHT[3] at HEIGHT[1]
-ARC_SEG = 0.25                 # guard-line segments shorter than this belong to a rounded corner
 END_IN = (0.03, 0.10)          # a shoe end's streak sits this far in from the pilaster
 SILL_IN = (0.03, 0.12)         # a sill corner's streak sits this far in from the pier face
+APART = 0.40                   # two kept streaks at least this far apart along an edge (their decals must not overlap)
 STACK = 0.25                   # the same joint, corner or shoe end on another floor carries one this much less often:
                                # the guards repeat floor to floor, their streaks must not stack into a pattern
 
@@ -97,7 +103,9 @@ TOL = 0.025                    # a face within this of the start face (curvature
 FORWARD = 0.012                # something standing further forward than this is an obstacle (the streak stops at it)
 GROOVE = 0.0015                # deeper than this behind the face is a joint groove
 ATTRACT = 0.03                 # a vertical joint this close to the drip point draws the streak into it
-ROD_BOX = (0.03, 0.05, 0.04)   # awning tie-rod anchors on the lintel face: half-width, depth, half-height (obstacles)
+ROD_BOX = (0.03, 0.05, 0.04)   # awning tie-rod anchors on the lintel face: half-width, depth, half-height (obstacles);
+                               # with the plan's config.hardware (user fix 6) the anchor plate grown by ROD_MARGIN
+ROD_MARGIN = 0.005
 
 # ---------------------------------------------------------------------------------------------------- the look
 PX = 0.003                     # mask resolution (m per pixel)
@@ -144,47 +152,48 @@ def _at(path, s):
     return tuple(b), ((b[1] - a[1]) / seg, -(b[0] - a[0]) / seg)
 
 
-def _arcs(path):
-    """Arc-length ranges of the rounded corners: maximal runs of segments shorter than ARC_SEG."""
-    out, acc, start = [], 0.0, None
-    for a, b in zip(path, path[1:]):
-        seg = math.dist(a, b)
-        if seg < ARC_SEG:
-            start = acc if start is None else start
-        elif start is not None:
-            out.append((start, acc))
-            start = None
-        acc += seg
-    if start is not None:
-        out.append((start, acc))
-    return [r for r in out if r[1] - r[0] > 0.3]
-
-
 def _source(kind, sid, p, n, z, **extra):
     return {"kind": kind, "id": sid, "p": (float(p[0]), float(p[1])), "n": (float(n[0]), float(n[1])), "z": float(z),
             **extra}
 
 
 # ---------------------------------------------------------------------------------------------------- candidates
+def _behind_frame(plan, p):
+    """User fix 9 (2026-10-15): a roof guard post behind the roof frame's cap (the front pilasters' crowns and the head
+    between them), whose ledge water cannot spill over the front there."""
+    rf = plan["structure"]["pilasters"].get("roof_frame")
+    if not rf:
+        return False
+    ov = rf["cap"]["overhang"]
+    return rf["x"][0] - ov <= p[0] <= rf["x"][1] + ov and p[1] < rf["cap"]["y"][1] + 0.1
+
+
 def candidates(plan):
     """Every place water can leave an edge onto the stone, with a stable id."""
     b, env, pd = plan["balconies"], plan["envelope"], plan["podium"]
     out = []
-    guards = [(f"f{floor}", r, top, run) for floor, (top, _) in enumerate(env["storeys"], start=1)
-              for r, run in enumerate(b["guard_runs"])]
-    guards += [("roof", h, plan["roof"]["roof_top"], half) for h, half in enumerate(plan["roof"]["guard_halves"])]
-    for level, r, top, run in guards:
+    guards = []
+    for floor, (top, _) in enumerate(env["storeys"], start=1):      # user fix 10: the runs' own ends (stop at a pier)
+        runs = b["terrace_guard_runs"] if floor == 1 else b["guard_runs"]
+        ends = b.get("terrace_guard_run_ends" if floor == 1 else "guard_run_ends", [("open", "open")] * len(runs))
+        guards += [(f"f{floor}", r, top, run, tuple(end)) for r, (run, end) in enumerate(zip(runs, ends))]
+    guards += [("roof", h, plan["roof"]["roof_top"], half, ("post", "joint"))
+               for h, half in enumerate(plan["roof"]["guard_halves"])]
+    outward = lambda post: (post["t"][1], -post["t"][0])       # noqa: E731  (the runs are counter-clockwise)
+    for level, r, top, run, ends in guards:
         total = _length(run)
-        n = max(1, math.ceil(total / b["panel_max"]))
+        lay = balcony_layout.guard_layout(run, b, ends)
         kind = "roof_joint" if level == "roof" else "glass_joint"
-        for k in range(1, n):                                   # the joints between the guard's glass panels
-            p, nr = _at(run, total * k / n)
-            out.append(_source(kind, f"{level}:{r}:joint{k}", p, nr, top))
-        for k, (s0, s1) in enumerate(_arcs(run)):                # the rounded corners
+        joints = [q for q in lay["posts"] if q["kind"] == "straight"]
+        for k, q in enumerate(joints, start=1):                 # the posts between the guard's glass panels
+            if level == "roof" and _behind_frame(plan, q["p"]):
+                continue                                        # user fix 9: the roof frame's cap holds that water back
+            out.append(_source(kind, f"{level}:{r}:joint{k}", q["p"], outward(q), top))
+        for k, group in enumerate(balcony_layout.corner_groups(lay)):   # the rounded corners: at one of their posts
             sid = f"{level}:{r}:corner{k}"
-            p, nr = _at(run, _lerp((s0, s1), _lerp((0.2, 0.8), _seed(sid, "at"))))
-            out.append(_source("corner", sid, p, nr, top))
-        if level != "roof":                                     # the shoe's ends at the pilasters
+            q = group[min(int(_seed(sid, "at") * len(group)), len(group) - 1)]
+            out.append(_source("corner", sid, q["p"], outward(q), top))
+        if level != "roof" and math.dist(run[0], run[-1]) > 1e-6:      # the shoe's ends at the pilasters and piers
             for end in (0, 1):
                 sid = f"{level}:{r}:end{end}"
                 d = _lerp(END_IN, _seed(sid, "in"))
@@ -215,11 +224,14 @@ def candidates(plan):
 def select(cands):
     """The candidates that carry a streak: each kept with its kind's probability (lanterns: one or two of them). A
     joint, corner or shoe end repeats on every floor's guard: once one floor's carries a streak, the same place on the
-    floors above carries one only STACK as often."""
+    floors above carries one only STACK as often. Two streaks never share the stone: a candidate within APART of one
+    already kept on the same edge is passed over (the floor-1 guard's posts can fall beside an edge box's weep hole)."""
     keep, stacked = [], set()
     for c in cands:
         k = KINDS[c["kind"]]
         if "p" not in k:
+            continue
+        if any(math.dist(c["p"], q["p"]) < APART and abs(c["z"] - q["z"]) < 0.3 for q in keep):
             continue
         column = c["id"].split(":", 1)[1] if c["kind"] in ("glass_joint", "corner", "shoe_end") else None
         p = k["p"] * _height_factor(c["z"]) * (STACK if column in stacked else 1.0)
@@ -318,10 +330,15 @@ def surfaces(path, plan):
         bpy.data.libraries.remove(lib)
     aw = plan["props"]["storefront_awnings"]
     rod_z = aw["config"]["rod_anchor_z"]
+    box = ROD_BOX
+    hw = aw["config"].get("hardware")
+    if hw:                     # the plate, out to the clevis past the eye tab's pin
+        box = (hw["plate"][0] / 2 + ROD_MARGIN, hw["plate"][2] + hw["tab"][1] + hw["clevis"][2] + ROD_MARGIN,
+               hw["plate"][1] / 2 + ROD_MARGIN)
     for c in aw["canopies"]:
         for s in c["rods"]:
             at = (c["p"][0] + c["along"][0] * s, c["p"][1] + c["along"][1] * s, rod_z)
-            codes.extend([OTHER] * _box_tris(at, c["along"], c["outward"], *ROD_BOX, verts, tris))
+            codes.extend([OTHER] * _box_tris(at, c["along"], c["outward"], *box, verts, tris))
     return BVHTree.FromPolygons(verts, tris, all_triangles=True), np.array(codes, dtype=np.int8)
 
 

@@ -39,10 +39,13 @@ def split_panes(length, start_off, end_off, n, member):
     return out
 
 
-def layout(poly, radii, runs, columns, entrance, cfg):
-    """Corner piers, column piers and bays per run, the entrance pieces, lanterns and the prop reservations."""
+def layout(poly, radii, runs, columns, entrance, cfg, outline_radii=None):
+    """Corner piers, column piers and bays per run, the entrance pieces, lanterns and the prop reservations. radii: the
+    plan's fillets, which set how far the corner piers reach along the runs; outline_radii: the podium outline's own
+    corners (sharp since user fix 1, 2026-10-15), recorded in "corners" (default: radii)."""
     n = len(poly)
     t = [r * math.tan(math.radians(22.5)) for r in radii]          # every outline corner is 135 degrees
+    outline_radii = radii if outline_radii is None else outline_radii
     ext = cfg["pier_ext"]
     e_half, e_front = entrance["half_width"], entrance["y_front"]
     out_runs, piers, bays = [], [], []
@@ -78,7 +81,7 @@ def layout(poly, radii, runs, columns, entrance, cfg):
                          "storefront_door": g_n // 2, "upper_panes": split_panes(length, cfg["member"], cfg["member"], u_n, cfg["member"])})
     corners = []
     for i in range(n):                                             # corner piers: run i-1's end face to run i's start face
-        corners.append({"at": runs[i - 1] + "/" + runs[i], "corner": i, "radius": radii[i]})
+        corners.append({"at": runs[i - 1] + "/" + runs[i], "corner": i, "radius": outline_radii[i]})
     # lanterns: the entrance jambs' fronts and the outer piers of both front chamfers
     lanterns = [{"kind": "entrance_jamb", "x": round(sgn * (e_half - entrance["jamb"] / 2), 4), "y": e_front, "outward": [0.0, -1.0]}
                 for sgn in (-1, 1)]

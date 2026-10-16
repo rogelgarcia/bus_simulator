@@ -2,8 +2,10 @@
 #
 # Run through build.py (layers=roof; needs the structure). Builds RB_ROOF under its part root. The roof slab edge
 # itself (deep, rounded, 0.68 m) is the structure's; this layer adds:
-#   rb_roof_guard          the frameless glass guard all round on the roof guard line (two mitred halves meeting at
-#                          the front and rear centres; shoe and rail TM_RB_frame, glass panels <= 1.6 m)
+#   rb_roof_guard          the glass guard all round on the roof guard line (two mitred halves meeting at the front
+#                          and rear centres; shoe and rail TM_RB_frame, flat glass panels <= 1.6 m; user fix 8,
+#                          2026-10-15: sharp corners (fix 8b) and a slim post at every glass junction,
+#                          the posts where the halves meet owned by the half that starts there)
 #   rb_roof_paving         the flat terrace deck (TM_RB_paving, 50 mm; the drainage falls stay in the slab below), its
 #                          walking surface a face set of its own (TM_RB_roof_paving: the materials pass lays the tiles, AI 630),
 #                          from the guard shoe to the penthouse walls
@@ -110,7 +112,7 @@ def build(plan):
 
     guard = []
     for half in rf["guard_halves"]:
-        L.guard_along(half, top, groof, guard)
+        L.guard_along(half, top, groof, guard, ends=("post", "joint"))
     made.append(L.pieces("rb_roof_guard", coll, guard, tags("guard", "roof_guard", False)))
 
     px, py = rf["penthouse_rect"]["x"], rf["penthouse_rect"]["y"]

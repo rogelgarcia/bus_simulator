@@ -134,6 +134,7 @@ PODIUM_BOX = {
                 "tall": {"height": (1.10, 1.40), "radius": (0.28, 0.32)}},
 }
 MODULE_MAX, MODULE_GAP, END_GAP, CORNER_FREE, GUARD_GAP = 2.4, 0.04, 0.04, 0.70, 0.05
+PIER_GAP = 0.08             # user fix 10 (2026-10-15): an edge box stops this far from a room-dividing pier's side
 SHRUBS = KINDS["shrub"]["models"]
 
 
@@ -213,7 +214,8 @@ def podium_planters(plan, seed=628):
                 cfg["flowers_per_m"] * (m1 - m0), guards)
 
     # edge: behind the floor-1 guard along the podium top; a strip end met by another run's strip, or the run's open
-    # end, is a corner the guard rounds: it stays free
+    # end, is a corner the guard rounds: it stays free. A strip end at a pier (user fix 10) keeps PIER_GAP, and the
+    # boxes beside it keep their foliage behind the pier's side too
     cfg = PODIUM_BOX["edge"]
     strips = b["podium_planter_strips"]
     z = lv["podium_top"] + b["paving"]
@@ -234,8 +236,11 @@ def podium_planters(plan, seed=628):
         at = _frame(a, U, N)
         rng = random.Random(f"{seed}:edge:{k}")
         guards = [_plane(at(0.0, -glass_half), N)]
-        s0 = CORNER_FREE if corner(k, "from") else END_GAP
-        s1 = length - (CORNER_FREE if corner(k, "to") else END_GAP)
+        piers = st.get("pier_ends", [False, False])
+        s0 = PIER_GAP if piers[0] else CORNER_FREE if corner(k, "from") else END_GAP
+        s1 = length - (PIER_GAP if piers[1] else CORNER_FREE if corner(k, "to") else END_GAP)
+        guards += [_plane(at(0.0, 0.0), (-U[0], -U[1]))] if piers[0] else []
+        guards += [_plane(at(length, 0.0), U)] if piers[1] else []
         short = length < 2.0                                          # the boxes beside the front pilasters
         for j, (m0, m1) in enumerate(_modules(s0, s1)):
             v_mid = (v_out + v_in) / 2
@@ -285,26 +290,59 @@ def podium_planters(plan, seed=628):
 # band all round and planter islands. 2026-10-15 (the user: "is the grass area too cluttered?"): three islands instead of
 # six, kept near the edges so they frame AI 630's two zones and leave the middle open paving: one before the annex behind
 # the loungers, one behind the lounge by the penthouse's right corner, one on the right side strip.
+# 2026-10-15, later (the user: "add more vases with trees, maybe a box at the center with some small trees and flowers.
+# no palm tree at the roof top. substitute"): no palms on the roof; the clusters' and islands' palms are linden olives
+# now (the cycads and spiky rosettes stay: they read as agave-like rosettes, not palms). Large pots with a small tree
+# stand inside the planter ring at the eight corners and flank the penthouse door and slider: a linden olive with its
+# companion form, or a viburnum standard (a clipped ball on a clear stem). A low limestone box in the middle of the front
+# terrace holds two small olives and a standard over low viburnum and flowers, with paths kept all round it.
 ROOF_BOX = {"depth": 0.63, "height": 0.30, "guard_gap": 0.03, "island_height": 0.50, "material": "TM_RB_paving",
             "greens": {"height": (0.35, 0.65), "radius": (0.25, 0.31), "spacing": 0.36},
             "inner_greens": {"height": (0.45, 0.80), "radius": (0.32, 0.42), "spacing": 0.55, "v": -0.62},
             "feature_v": -0.58, "fill_every": 2.6, "fill_kinds": [("cycad", 0.5), ("spiky", 0.3), ("olive", 0.2)],
             "island_scale": {"height": 1.15, "radius": 1.5},
-            # palm: the detailed palm's compact fan crown (2026-10-14) reads as b8's roof palms on a shorter stem
-            "kinds": {"palm": {"height": (1.8, 2.3), "radius": (0.48, 0.54), "models": ["proc/palm_0", "proc/palm_1", "proc/palm_2"]},
-                      "cycad": {"height": (1.3, 1.9), "radius": (0.46, 0.54), "models": ["proc/cycad_0", "proc/cycad_1", "proc/cycad_2"]},
+            "kinds": {"cycad": {"height": (1.3, 1.9), "radius": (0.46, 0.54), "models": ["proc/cycad_0", "proc/cycad_1", "proc/cycad_2"]},
                       "spiky": {"height": (1.1, 1.6), "radius": (0.36, 0.46), "models": ["proc/spiky_0", "proc/spiky_1", "proc/spiky_2"]},
-                      "olive": {"height": (1.6, 2.1), "radius": (0.40, 0.50), "models": KINDS["olive"]["models"]}}}
-# feature clusters by place: corners (named by the runs they join) and straight-run midpoints; A's middle stays low (b8)
+                      "olive": {"height": (1.6, 2.1), "radius": (0.40, 0.50), "models": KINDS["olive"]["models"]},
+                      # a viburnum standard: the crown (height, radius) on a clear stem; the stem is the pots' geometry
+                      "standard": {"height": (0.62, 0.78), "radius": (0.30, 0.38), "stem": (0.75, 0.95), "stem_r": 0.024,
+                                   "models": KINDS["shrub"]["models"]}}}
 # feature clusters by place: corners (named by the runs they join) and straight-run midpoints; A's middle stays low (b8).
 # Besides the clusters, every run but A carries a fill plant each fill_every metres (the aerial's continuous band).
-ROOF_CLUSTERS = {"HA": ["cycad", "palm", "cycad", "spiky"], "AB": ["spiky", "cycad", "palm", "cycad"], "BC": ["cycad", "olive"],
-                 "GH": ["olive", "cycad"], "CD": ["olive", "cycad"], "DE": ["palm", "cycad"], "EF": ["cycad", "palm"],
+ROOF_CLUSTERS = {"HA": ["cycad", "olive", "cycad", "spiky"], "AB": ["spiky", "cycad", "olive", "cycad"], "BC": ["cycad", "olive"],
+                 "GH": ["olive", "cycad"], "CD": ["olive", "cycad"], "DE": ["olive", "cycad"], "EF": ["cycad", "olive"],
                  "FG": ["cycad", "olive"], "B": ["cycad", "spiky", "cycad"], "H": ["cycad", "spiky", "cycad"],
-                 "D": ["olive", "palm"], "F": ["palm", "olive"], "C": ["cycad"], "G": ["cycad"], "E": ["spiky"]}
-ROOF_ISLANDS = [{"id": "annex_front", "rect": [-7.8, -5.8, -3.4, -2.0], "kinds": ["palm", "cycad"], "shrubs": 3},
+                 "D": ["olive", "standard"], "F": ["standard", "olive"], "C": ["cycad"], "G": ["cycad"], "E": ["spiky"]}
+ROOF_ISLANDS = [{"id": "annex_front", "rect": [-7.8, -5.8, -3.4, -2.0], "kinds": ["olive", "cycad"], "shrubs": 3},
                 {"id": "lounge_back", "rect": [5.6, 7.6, -3.2, -1.8], "kinds": ["cycad", "olive"], "shrubs": 3},
-                {"id": "side_right", "rect": [10.2, 11.4, -0.6, 0.8], "kinds": ["palm"], "shrubs": 2}]
+                {"id": "side_right", "rect": [10.2, 11.4, -0.6, 0.8], "kinds": ["olive"], "shrubs": 2}]
+# The pots: "corner_in" puts a corner pot's rim this far in from the guard shoe's inner line, on the corner's bisector
+# (the ring's troughs end 0.66 m in, their inner row leans to about 1.1 m). The fixed pots stand 0.55 m off the
+# penthouse's front wall, beside its door and slider. Trees: weights per pot; sizes above the soil.
+ROOF_POTS = {"radius": (0.34, 0.42), "height": (0.62, 0.80), "colours": [("light_grey", 0.45), ("charcoal", 0.35), ("white", 0.20)],
+             "corner_in": 1.15, "trees": [("olive", 0.6), ("standard", 0.4)],
+             # the two front corners: further in and lower, so the pots stay under CAM_B8's sightline over the slab
+             "front_corners": {"ids": ["HA", "AB"], "corner_in": 1.5, "height": (0.56, 0.62)},
+             "olive": {"height": (1.45, 1.85), "radius": (0.42, 0.52)},
+             "fixed": [{"id": "door_left", "at": [-4.2, -2.85], "radius": (0.30, 0.33)},
+                       {"id": "door_right", "at": [-2.0, -2.85], "radius": (0.30, 0.33)},
+                       {"id": "slider_right", "at": [4.42, -2.85], "radius": (0.32, 0.36)}],
+             "clear": 0.25}                         # m: pots off the islands, the centre box, each other and door paths
+# The centre box: low limestone (TM_RB_paving) in the middle of the front terrace, low enough to keep the space open
+# (and under CAM_B8's sightline); its trees along its long axis, low viburnum between them, flowers over the viburnum.
+# chamfer (2026-10-15): its vertical corners cut like the street's tree pits (STREET["pit"]["chamfer"]).
+ROOF_CENTRE = {"id": "centre", "rect": [-1.7, 1.7, -6.3, -4.7], "height": 0.42, "material": "TM_RB_paving",
+               "chamfer": 0.05,
+               "trees": [("olive", -1.05), ("standard", 0.0), ("olive", 1.05)],
+               "olive": {"height": (1.15, 1.40), "radius": (0.40, 0.48)}, "standard": {"stem": (0.55, 0.65)},
+               # low viburnum: a staggered row along each long side and one between the trees, so little soil shows
+               "shrubs": {"per_row": 8, "edge_in": 0.27, "between": [-1.45, -0.52, 0.52, 1.45], "height": (0.26, 0.42),
+                          "radius": (0.20, 0.27)}, "flowers": 130}
+# User fix 8b (2026-10-15): the guard line's corners are sharp, so the ring has no corner arcs any more; its corner
+# trough is a mitred L reaching CORNER_ARM along each run from the corner (the runs' modules start after it)
+ROOF_CORNER_ARM = 0.6
+# the penthouse's doors, kept free in front (x range, depth from the front wall)
+ROOF_PATHS = {"depth": 1.2, "doors": [[-3.6, -2.6], [0.5, 3.8]]}
 RUN_ORDER = ["A", "B", "C", "D", "E", "F", "G", "H"]
 
 
@@ -323,6 +361,19 @@ def _offset_left(path, d):
             m = ((a[0] + b[0]) / k, (a[1] + b[1]) / k)
         out.append((path[i][0] + m[0] * d, path[i][1] + m[1] * d))
     return out
+
+
+def _along(path, t):
+    """The point at fraction t (0..1) of an open polyline's length."""
+    total = sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+    s = min(max(t, 0.0), 1.0) * total
+    for a, b in zip(path, path[1:]):
+        seg = math.dist(a, b)
+        if s <= seg or b is path[-1]:
+            u = s / seg if seg > 0 else 0.0
+            return (a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u)
+        s -= seg
+    return tuple(path[-1])
 
 
 class Ring:
@@ -348,6 +399,20 @@ class Ring:
         t = (b[0] - a[0]) / L, (b[1] - a[1]) / L
         return (a[0] + t[0] * ds + t[1] * v, a[1] + t[1] * ds - t[0] * v)
 
+    def corner_in(self, s, d):
+        """The point d inside both runs at the sharp corner at arc length s (on its bisector); off a corner, d inside
+        the loop at s."""
+        off = lambda i: abs((s - self.cum[i] + self.length / 2) % self.length - self.length / 2)  # noqa: E731
+        k = min(range(len(self.pts)), key=off)
+        if off(k) > 1e-6:
+            return self.at(s, -d)
+        a, p, b = self.pts[k - 1], self.pts[k], self.pts[(k + 1) % len(self.pts)]
+        la, lb = math.dist(a, p), math.dist(p, b)
+        n1 = (-(p[1] - a[1]) / la, (p[0] - a[0]) / la)               # the left (inward) normals of the two runs
+        n2 = (-(b[1] - p[1]) / lb, (b[0] - p[0]) / lb)
+        k2 = 1.0 + n1[0] * n2[0] + n1[1] * n2[1]
+        return (p[0] + (n1[0] + n2[0]) / k2 * d, p[1] + (n1[1] + n2[1]) / k2 * d)
+
     def path(self, s0, s1):
         """The loop's points from arc length s0 to s1 (s1 > s0, both within one turn)."""
         out = [self.at(s0)]
@@ -359,8 +424,10 @@ class Ring:
         return [q for i, q in enumerate(out) if i == 0 or math.dist(q, out[i - 1]) > 1e-6]
 
 
-def _feature(rng, kind, xy, z_soil):
-    k = ROOF_BOX["kinds"][kind]
+def _feature(rng, kind, xy, z_soil, size=None):
+    """A tree or feature plant at xy on the soil: model, size (size overrides the kind's ranges), turn; an olive gets
+    its companion form; a standard its stem (from the soil to under the crown, whose base "z" sits on the stem)."""
+    k = dict(ROOF_BOX["kinds"][kind], **(size or {}))
     rec = {"kind": kind, "model": rng.choice(k["models"]), "at": [round(xy[0], 4), round(xy[1], 4)], "z": round(z_soil, 4),
            "height": round(uniform(rng, k["height"]), 3), "radius": round(uniform(rng, k["radius"]), 3),
            "rot_deg": round(rng.uniform(0.0, 360.0), 1)}
@@ -369,6 +436,13 @@ def _feature(rng, kind, xy, z_soil):
         rec["companion"] = {"model": models[(models.index(rec["model"]) + 1) % len(models)],
                             "rot_deg": round((rec["rot_deg"] + rng.uniform(110.0, 160.0)) % 360.0, 1),
                             "height": round(rec["height"] * rng.uniform(0.82, 0.92), 3), "radius": round(rec["radius"] * 0.95, 3)}
+    if kind == "standard":                    # the crown (at, z) on the stem's top, its foot 15 % up into the crown
+        stem = uniform(rng, k["stem"])
+        top = (xy[0] + rng.uniform(-0.02, 0.02), xy[1] + rng.uniform(-0.02, 0.02))     # a slight seeded lean
+        rec["stem"] = {"foot": [round(xy[0], 4), round(xy[1], 4)], "top": [round(top[0], 4), round(top[1], 4)],
+                       "z": [round(z_soil, 4), round(z_soil + stem, 4)], "r": k["stem_r"]}
+        rec["at"] = rec["stem"]["top"]
+        rec["z"] = round(z_soil + stem - 0.15 * rec["height"], 4)
     return rec
 
 
@@ -378,7 +452,7 @@ def roof_planters(plan, seed=629):
     loop = [tuple(q) for q in rf["props"]["terrace_planters_ai629"]["outer"]]
     n = len(loop)
     segs = [math.dist(loop[k], loop[(k + 1) % n]) for k in range(n)]
-    straight = [k for k in range(n) if segs[k] > 0.5]                 # the eight runs; the short segments are the arcs
+    straight = [k for k in range(n) if segs[k] > 0.5]                 # the eight runs (short segments: arcs, if any)
     # name the straight runs by their outward normals against the podium runs'
     runs = {r["run"]: r["outward"] for r in plan["podium"]["runs"]}
     names = {}
@@ -392,16 +466,20 @@ def roof_planters(plan, seed=629):
     z = rf["roof_top"] + rf["paving"]
     soil = z + cfg["height"] - 0.04
     gap = MODULE_GAP
-    # pieces in ring order: each straight run, then the arc after it
-    pieces = []
+    # pieces in ring order: each straight run, then the corner after it: its arc, or (user fix 8b) at a sharp corner a
+    # mitred L reaching ROOF_CORNER_ARM along both runs
     order = straight[straight.index(start):] + straight[:straight.index(start)]
+    corners = []
     for idx, k in enumerate(order):
-        s0 = ring.cum[(k - start) % n]
-        s1 = s0 + segs[k]
+        s1 = ring.cum[(k - start) % n] + segs[k]
+        s2 = ring.cum[(order[(idx + 1) % len(order)] - start) % n] if idx + 1 < len(order) else ring.length
+        corners.append((s1, s2) if s2 - s1 > 1e-6 else (s1 - ROOF_CORNER_ARM, s1 + ROOF_CORNER_ARM))
+    pieces = []
+    for idx, k in enumerate(order):
         nxt = order[(idx + 1) % len(order)]
-        s2 = ring.cum[(nxt - start) % n] if idx + 1 < len(order) else ring.length
-        pieces.append(("run", names[k], s0, s1))
-        pieces.append(("corner", names[k] + names[nxt], s1, s2))
+        s0 = corners[idx - 1][1] - (ring.length if idx == 0 else 0.0)
+        pieces.append(("run", names[k], s0, corners[idx][0]))
+        pieces.append(("corner", names[k] + names[nxt], *corners[idx]))
     boxes, features = [], []
     rng = random.Random(f"{seed}:ring")
     v_out, v_in = -cfg["guard_gap"], -(cfg["guard_gap"] + cfg["depth"])
@@ -411,16 +489,20 @@ def roof_planters(plan, seed=629):
             path = ring.path(m0, m1)
             outer, inner = _offset_left(path, -v_out), _offset_left(path, -v_in)
             foot = [[round(x, 4), round(y, 4)] for x, y in outer + list(reversed(inner))]
+            if kind == "corner":       # round a sharp corner (fix 8b) on the trough's own mitred offsets, v deep on both runs
+                pos = lambda s, v, path=path, m0=m0, m1=m1: _along(_offset_left(path, -v), (s - m0) / (m1 - m0))  # noqa: E731
+            else:
+                pos = ring.at
             nn = max(1, round((m1 - m0) / cfg["greens"]["spacing"]))
             greens = []
             for g in range(nn):
                 s = m0 + (g + 0.5 + rng.uniform(-0.2, 0.2)) * (m1 - m0) / nn
-                plant = _plant(rng, ring.at(s, (v_out + v_in) / 2 + rng.uniform(-0.03, 0.03)), soil, cfg["greens"])
+                plant = _plant(rng, pos(s, (v_out + v_in) / 2 + rng.uniform(-0.03, 0.03)), soil, cfg["greens"])
                 greens.append(plant)
             ig = cfg["inner_greens"]                                  # a fuller inner row, leaning over the terrace
             for g in range(max(1, round((m1 - m0) / ig["spacing"]))):
                 s = m0 + (g + 0.5 + rng.uniform(-0.2, 0.2)) * (m1 - m0) / max(1, round((m1 - m0) / ig["spacing"]))
-                greens.append(_plant(rng, ring.at(s, ig["v"] + rng.uniform(-0.02, 0.02)), soil, ig))
+                greens.append(_plant(rng, pos(s, ig["v"] + rng.uniform(-0.02, 0.02)), soil, ig))
             boxes.append({"id": f"ring_{name}_{j}", "kind": "ring", "loop": foot, "z": round(z, 4), "height": cfg["height"],
                           "path": [[round(x, 4), round(y, 4)] for x, y in path], "v": [v_in, v_out], "plants": greens})
         cluster = ROOF_CLUSTERS.get(name, [])
@@ -461,17 +543,63 @@ def roof_planters(plan, seed=629):
                                  {"height": (0.40, 0.65), "radius": (0.22, 0.30)}))
         boxes.append({"id": f"island_{isl['id']}", "kind": "island", "loop": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
                       "z": round(z, 4), "height": cfg["island_height"], "plants": plants})
+    # the centre box: trees along its long axis, low viburnum between them, flowers (the layer) over the viburnum
+    C = ROOF_CENTRE
+    x0, x1, y0, y1 = C["rect"]
+    crng = random.Random(f"{seed}:centre")
+    csoil = z + C["height"] - 0.04
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    for kd, du in C["trees"]:
+        xy = (cx + du + crng.uniform(-0.06, 0.06), cy + crng.uniform(-0.08, 0.08))
+        features.append({"place": C["id"], **_feature(crng, kd, xy, csoil, C.get(kd))})
+    shrubs = []
+    sh = C["shrubs"]
+    for row, (v, stagger) in enumerate(((y0 + sh["edge_in"], 0.0), (y1 - sh["edge_in"], 0.5))):
+        n = sh["per_row"] - (1 if stagger else 0)
+        for i in range(n):                                            # along the box, off its rim
+            u = x0 + sh["edge_in"] + (i + 0.5 + stagger + crng.uniform(-0.15, 0.15)) * (x1 - x0 - 2 * sh["edge_in"]) / sh["per_row"]
+            shrubs.append(_plant(crng, (u, v + crng.uniform(-0.04, 0.04)), csoil, sh))
+    for du in sh["between"]:                                          # between and beyond the trees
+        shrubs.append(_plant(crng, (cx + du + crng.uniform(-0.05, 0.05), cy + crng.uniform(-0.05, 0.05)), csoil, sh))
+    boxes.append({"id": "centre", "kind": "centre", "loop": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "z": round(z, 4),
+                  "height": C["height"], "chamfer": C["chamfer"], "material": C["material"], "plants": shrubs,
+                  "flowers": C["flowers"]})
+    # the pots: one at each corner of the ring, on its bisector inside the troughs, and the fixed ones by the doors
+    P = ROOF_POTS
+    prng = random.Random(f"{seed}:pots")
+    spots, fc = [], P["front_corners"]
+    for kind, name, s0, s1 in pieces:
+        if kind == "corner":
+            r = round(uniform(prng, P["radius"]), 3)
+            front = name in fc["ids"]
+            spots.append((f"corner_{name}", ring.corner_in((s0 + s1) / 2, (fc if front else P)["corner_in"] + r), r,
+                          fc["height"] if front else P["height"]))
+    spots += [(f["id"], tuple(f["at"]), round(uniform(prng, f["radius"]), 3), P["height"]) for f in P["fixed"]]
+    pots = []
+    for pid, xy, r, heights in spots:
+        h = round(uniform(prng, heights), 3)                          # rounded first: the soil the stems stand on
+        tree = pick(prng, P["trees"])
+        psoil = z + h - 0.05                                          # BP.pot's soil: 50 mm under the rim
+        f = _feature(prng, tree, xy, psoil, P.get(tree))
+        pots.append({"id": pid, "at": [round(xy[0], 4), round(xy[1], 4)], "z": round(z, 4), "radius": r, "height": h,
+                     "colour": pick(prng, P["colours"])})
+        features.append({"place": f"pot_{pid}", **f})
     counts = {}
     for f in features:
         counts[f["kind"]] = counts.get(f["kind"], 0) + 1
     return {"comment": "AI 629 roof planters: a perimeter ring of low limestone troughs (modules of at most %.1f m, one per "
-                       "corner arc) just inside the guard, planted with low viburnum; feature clusters (procedural cycads, "
-                       "palms and spiky rosettes, linden olives) at the corners and run midpoints and fill plants along the "
-                       "runs -- none along the front's middle, as b8 -- and planter islands after the aerial. 'keep_inside' "
-                       "is the loop the perimeter foliage must stay inside (the guard shoe's inner line)" % MODULE_MAX,
+                       "corner) just inside the guard, planted with low viburnum; feature clusters (procedural cycads "
+                       "and spiky rosettes, linden olives, viburnum standards; no palms) at the corners and run midpoints "
+                       "and fill plants along the runs -- none along the front's middle, as b8 -- planter islands after "
+                       "the aerial, large pots with a small tree at the ring's corners and by the penthouse doors, and a "
+                       "low centre box with small trees, viburnum and flowers. 'keep_inside' is the loop the foliage must "
+                       "stay inside (the guard shoe's inner line); 'paths' the strips kept free before the penthouse's "
+                       "doors" % MODULE_MAX,
             "seed": seed, "boxes": boxes, "features": features, "feature_counts": counts,
             "shrubs": sum(len(b["plants"]) for b in boxes), "keep_inside": [list(q) for q in loop], "config": ROOF_BOX,
-            "clusters": ROOF_CLUSTERS, "islands": ROOF_ISLANDS}
+            "clusters": ROOF_CLUSTERS, "islands": ROOF_ISLANDS, "pots": pots, "pot_config": ROOF_POTS,
+            "centre": ROOF_CENTRE, "paths": [[d[0], d[1], round(rf["penthouse_rect"]["y"][0] - ROOF_PATHS["depth"], 4),
+                                              rf["penthouse_rect"]["y"][0]] for d in ROOF_PATHS["doors"]]}
 
 
 # ---------------------------------------------------------------- AI 630: the roof terrace's furniture
@@ -482,6 +610,10 @@ def roof_planters(plan, seed=629):
 # Each group stands in the frame of its run of the terrace loop (u along the run, v inward from the guard shoe's inner
 # line), far enough in to stay out of CAM_B8's view and clear of AI 629's planting (its ring reaches about 1.1 m in).
 # Every item has a facing (its local front, +v) in world terms; the layer models the pieces.
+# 2026-10-15, later (the user: "add more furniture on the top now. it is a bit empty after the dinning table removal"):
+# a second lounge behind the penthouse (its sofa backing onto the rear wall, facing the rear view), a bistro set (a round
+# table and two slat-back chairs) at the front left, and two armchairs with a side table facing the view at the front
+# right and on the left side strip. The loungers stay; AI 629's centre box and pots take the middle and the corners.
 CUSHIONS = [("offwhite", 0.5), ("ecru", 0.3), ("greige", 0.2)]
 ROOF_GROUPS = [
     {"id": "lounge", "run": "B", "u": -0.9, "v": 2.7, "items": [                 # an L: the armchairs flank the table
@@ -490,10 +622,22 @@ ROOF_GROUPS = [
     {"id": "loungers", "run": "H", "u": 0.9, "v": 2.6, "items": [                  # a lounger's front is its foot end
         ("lounger", -0.62, 0.0, "out"), ("lounger", 0.62, 0.0, "out"),            # feet towards the view
         ("side_table", 0.0, 0.62, "in")]},                                          # between the raised backs
+    {"id": "lounge_rear", "run": "E", "u": 0.0, "v": 4.1, "items": [            # the sofa backs onto the penthouse
+        ("coffee_table", 0.0, 0.0, "out"), ("sofa", 0.0, 1.0, "out"), ("armchair", -1.55, -0.1, "+u"),
+        ("armchair", 1.55, -0.1, "-u"), ("side_table", -1.3, 1.0, "out"), ("side_table", 1.3, 1.0, "out")]},
+    {"id": "bistro", "run": "A", "u": -3.4, "v": 3.4, "items": [                 # the chairs face across the table
+        ("cafe_table", 0.0, 0.0, "in"), ("dining_chair", -0.66, 0.0, "+u"), ("dining_chair", 0.66, 0.0, "-u")]},
+    # v 3.0 (was 2.9): user fix 8b's sharp guard corner puts the AB corner pot on the true bisector, 8 cm nearer
+    {"id": "armchairs_front", "run": "A", "u": 2.6, "v": 3.0, "items": [         # facing the view, a table between
+        ("armchair", -0.72, 0.0, "out"), ("armchair", 0.72, 0.0, "out"), ("side_table", 0.0, 0.05, "out")]},
+    {"id": "armchairs_side", "run": "G", "u": 0.0, "v": 2.6, "items": [
+        ("armchair", -0.72, 0.0, "out"), ("armchair", 0.72, 0.0, "out"), ("side_table", 0.0, 0.05, "out")]},
 ]
 CLEAR_OF_GUARD = 1.2          # every footprint corner at least this far inside the guard shoe's inner line
 ITEM_SIZE = {"dining_table": (2.4, 0.95), "dining_chair": (0.48, 0.52), "sofa": (2.1, 0.9), "armchair": (0.85, 0.85),
-             "coffee_table": (1.1, 0.6), "low_table": (0.9, 0.55), "side_table": (0.44, 0.44), "lounger": (0.7, 2.0)}
+             "coffee_table": (1.1, 0.6), "low_table": (0.9, 0.55), "side_table": (0.44, 0.44), "lounger": (0.7, 2.0),
+             "cafe_table": (0.8, 0.8)}
+ITEM_EXTRA = {"cafe_table": {"top_r": 0.38, "hole_r": 0.025, "h": 0.74}}       # a bistro table (its umbrella hole kept small)
 
 
 def roof_furniture(plan, seed=630):
@@ -526,11 +670,13 @@ def roof_furniture(plan, seed=630):
             turn = math.radians(rng.uniform(-4.0, 4.0)) if jitter else 0.0
             fx, fy = fx * math.cos(turn) - fy * math.sin(turn), fx * math.sin(turn) + fy * math.cos(turn)
             items.append({"group": g["id"], "kind": kind, "at": [round(at[0], 4), round(at[1], 4)],
-                          "face": [round(fx, 5), round(fy, 5)], "size": list(ITEM_SIZE[kind]), "cushion": cushion})
+                          "face": [round(fx, 5), round(fy, 5)], "size": list(ITEM_SIZE[kind]), "cushion": cushion,
+                          **ITEM_EXTRA.get(kind, {})})
     return {"comment": "AI 630 roof furniture after the aerial: groups in the frames of their terrace runs (u along, v in "
                        "from the guard shoe's inner line); 'face' is each item's front (its local +v); 'size' its footprint "
                        "(width along its local u, depth along v). The layer checks every footprint against the guard "
-                       "(at least clear_of_guard_m inside), the islands and the penthouse, and tags the pieces "
+                       "(at least clear_of_guard_m inside), the islands, the centre box, the pots, the door paths and "
+                       "the penthouse, and tags the pieces "
                        "rb_hide_from_b8 for the CAM_B8 sightline check.",
             "seed": seed, "z": round(plan["roof"]["roof_top"] + plan["roof"]["paving"], 4), "items": items,
             "clear_of_guard_m": CLEAR_OF_GUARD, "groups": [g["id"] for g in ROOF_GROUPS]}
@@ -541,14 +687,66 @@ def roof_furniture(plan, seed=630):
 # (about 24 degrees: at 12 the canopies read edge-on from CAM_B8, where b8 shows a clear slatted band),
 # none over the entrance; a dark front fascia and thin diagonal tie rods to the wall; the side faces carry them too (the
 # aerial). AI 646 reserved one per podium bay (all 13). Each hangs from a plate on the storefront's head panel just under
-# the stone lintel and slopes down and out past the pier faces; its rods end flat on the lintel's face.
-AWNING = {"slope_deg": 24.0, "back_top": 4.70, "plate": [0.04, 0.12], "end_gap": 0.02, "rail": [0.04, 0.08],
-          "fascia": [0.04, 0.14], "slat": [0.05, 0.02], "slat_pitch": 0.09, "rod": 0.018, "rod_anchor_z": 5.22,
-          "rod_end_inset": 0.25, "rod_every": 2.4}
+# the stone lintel and slopes down and out past the pier faces.
+# Tie-rod hardware (user fix 6, 2026-10-15: "add small connectors to the rods of the cover, so they don't grow from the
+# wall"): each round rod (`rod`: diameter) is pinned at both ends. On the lintel's face a bolted anchor plate (`plate`:
+# along, high, thick; its centre at rod_anchor_z) carries an eye tab (`tab`: thickness, the pin's reach from the plate,
+# the eye's radius); on the fascia's top a saddle (`saddle`: along, thick; as deep as the fascia) carries a smaller tab
+# with its pin `fascia_pin` above the saddle. The rod ends in a clevis fork over each tab (`clevis`: cheek thickness, the
+# gap to the tab, the fork's radius at the pin, its body's radius and length from the pin) with a jam nut, and a pin with
+# a head and a nut (`pin`: radius). An anchor plate never straddles a stone joint: a rod whose plate would cover one of
+# the lintel's vertical joints (the materials pass's equal panels of at most joints.panel_max) moves clear of it.
+# User fix 13: nor a course joint: the plates' height moves off the podium's shared course planes by `course_clear` (b8
+# shows the brackets on a block face, not hugging a joint).
+# User fix 13b: the heights hang on the storefront heads' stone bottom (the lintel, moved onto a course plane): the
+# canopy's back top `back_below_lintel` under it, the anchor plates' design centre `rod_anchor_above_lintel` over it
+# (fix 6's 4.70 / 5.19 under the old 4.75 lintel; the rods keep fix 6's angle)
+AWNING = {"slope_deg": 24.0, "back_below_lintel": 0.05, "plate": [0.04, 0.12], "end_gap": 0.02, "rail": [0.04, 0.08],
+          "fascia": [0.04, 0.14], "slat": [0.05, 0.02], "slat_pitch": 0.09, "rod": 0.016, "rod_anchor_above_lintel": 0.44,
+          "rod_end_inset": 0.25, "rod_every": 2.4,
+          "hardware": {"plate": [0.09, 0.15, 0.008], "plate_corner": 0.008, "bolt_at": [0.030, 0.055],
+                       "bolt": [0.0085, 0.005], "washer": [0.011, 0.0015], "tab": [0.008, 0.035, 0.014],
+                       "saddle": [0.06, 0.006], "saddle_bolt_at": 0.021, "fascia_pin": 0.024, "fascia_tab_r": 0.012,
+                       "clevis": [0.005, 0.0005, 0.013, 0.0125, 0.052], "nut": 0.008, "pin": 0.006,
+                       "joint_clear": 0.012, "course_clear": 0.04}}
+
+
+def rods_clear_of_joints(rods, bay_s, joints, half_plate, clear):
+    """Move each rod whose anchor plate (half_plate either side) would cover a vertical lintel joint (the bay's lintel
+    face cut in equal panels of at most joints.panel_max) to `clear` past the joint's bevelled edge (towards +s on a tie)."""
+    s0, s1 = bay_s
+    k = math.ceil((s1 - s0) / joints["panel_max"] - 1e-9)
+    lines = [s0 + (s1 - s0) * j / k for j in range(1, k)]
+    need = half_plate + joints["width"] / 2 + joints["bevel"] + clear
+    out = []
+    for s in rods:
+        for j in lines:
+            if abs(s - j) < need:
+                s = j + need if s >= j - 1e-3 else j - need
+        out.append(round(s, 4))
+    return out
+
+
+def anchor_clear_of_courses(z, planes, joints, half_plate, clear):
+    """User fix 13: the anchor plates' centre height moved off any course joint of the podium's shared planes (the
+    materials pass's podium grid) to `clear` past the joint's bevelled edge, towards the nearer side."""
+    need = half_plate + joints["width"] / 2 + joints["bevel"] + clear
+    for zc in planes:
+        if abs(z - zc) < need:
+            z = zc - need if z < zc else zc + need
+    return round(z, 4)
 
 
 def storefront_awnings(plan):
     pd = plan["podium"]
+    jt = plan["materials"]["joints"]
+    hw = AWNING["hardware"]
+    lintel = pd["ground_lintel"][0]                                       # the storefront heads' stone bottom
+    back_top = round(lintel - AWNING["back_below_lintel"], 4)
+    design_z = round(lintel + AWNING["rod_anchor_above_lintel"], 4)
+    cfg = dict(AWNING, back_top=back_top, rod_anchor_design_z=design_z,
+               rod_anchor_z=anchor_clear_of_courses(design_z, jt["course_planes"], jt, hw["plate"][1] / 2,
+                                                    hw["course_clear"]))
     runs = {r["run"]: r for r in pd["runs"]}
     v_back = pd["storefront"]["plane_v"] + pd["frame_depth"] / 2         # the storefront frames' outer face
     out = []
@@ -560,13 +758,16 @@ def storefront_awnings(plan):
         n_rods = max(2, 1 + math.ceil((s1 - s0 - 2 * AWNING["rod_end_inset"]) / AWNING["rod_every"]))
         rods = [round(s0 + AWNING["rod_end_inset"] + k * (s1 - s0 - 2 * AWNING["rod_end_inset"]) / (n_rods - 1), 4)
                 for k in range(n_rods)]
+        rods = rods_clear_of_joints(rods, a["s"], jt, hw["plate"][0] / 2, hw["joint_clear"])
         out.append({"run": a["run"], "bay": a["bay"], "p": r["p"], "along": r["along"], "outward": r["outward"],
                     "s": [round(s0, 4), round(s1, 4)], "v": [round(v_back, 4), round(v_front, 4)],
-                    "z_top": [AWNING["back_top"], round(AWNING["back_top"] - drop, 4)], "rods": rods})
+                    "z_top": [back_top, round(back_top - drop, 4)], "rods": rods})
     return {"comment": "AI 631 storefront canopies, one per podium bay: s along the bay between the pier faces, v from the "
                        "storefront frames' outer face out past the podium outline (v 0), the slat plane's top falling from "
-                       "z_top[0] to z_top[1]; tie rods at 'rods' (s) from the fascia to the lintel face at rod_anchor_z",
-            "config": AWNING, "lintel_bottom": pd["ground_lintel"][0], "canopies": out}
+                       "z_top[0] to z_top[1]; tie rods at 'rods' (s) pinned to a tab on the fascia's top and to an "
+                       "anchor plate on the lintel face centred at rod_anchor_z (config.hardware; user fix 6), moved off the "
+                       "podium's course joints from rod_anchor_design_z (user fix 13)",
+            "config": cfg, "lintel_bottom": pd["ground_lintel"][0], "canopies": out}
 
 
 # ---------------------------------------------------------------- AI 632: the sidewalk café (site dressing)
@@ -583,21 +784,35 @@ CAFE = {"sets_per_bay": 2, "v": 2.4, "s_jitter": 0.15, "chair_radius": 0.62, "ch
 SIDEWALK = {"width": 6.0, "top": None, "front_y_cut": -2.0}
 
 
-def sidewalk(plan):
-    """The sidewalk slab's footprint: the balcony edge's front part (runs H, A, B; points below front_y_cut) with the
-    entrance's bump as the inner edge, and the plain front path moved width outward as the outer edge."""
-    loop = [tuple(q) for q in plan["layers"]["balcony_edge"]["outline"]]
+def _front_path(outline, cut):
+    """The counter-clockwise outline's front part (runs H, A, B): its points at or below y = cut, from where it crosses
+    the cut on the G side to where it crosses it on the C side (both crossings included)."""
+    loop = [tuple(q) for q in outline]
     area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(loop, loop[1:] + loop[:1]))
     if area < 0:
         loop.reverse()
-    n = len(loop)
-    front = [i for i in range(n) if loop[i][1] < SIDEWALK["front_y_cut"]]
-    start = next(i for i in front if loop[i - 1][1] >= SIDEWALK["front_y_cut"])   # first front point, after the G side
-    path = []
-    i = start
-    while loop[i % n][1] < SIDEWALK["front_y_cut"]:
-        path.append(loop[i % n])
+    pts = []
+    for a, b in zip(loop, loop[1:] + loop[:1]):
+        pts.append(a)
+        if (a[1] - cut) * (b[1] - cut) < 0:
+            t = (cut - a[1]) / (b[1] - a[1])
+            pts.append((a[0] + (b[0] - a[0]) * t, cut))
+    n = len(pts)
+    below = lambda i: pts[i % n][1] <= cut + 1e-9  # noqa: E731
+    start = next(i for i in range(n) if below(i) and not below(i - 1))   # the first front point, after the G side
+    path, i = [], start
+    while below(i):
+        path.append(pts[i % n])
         i += 1
+    return path
+
+
+def sidewalk(plan):
+    """The sidewalk slab's footprint: the podium outline's front part (runs H, A, B, below front_y_cut) with the
+    entrance's bump as the inner edge, against the podium's sharp corners (user fix 1, 2026-10-15); the balcony edge's
+    front part (the plan's fillets) moved width outward as the outer edge, the kerb line as before."""
+    cut = SIDEWALK["front_y_cut"]
+    path = _front_path(plan["layers"]["podium"]["outline"], cut)
     ent = plan["layers"]["entrance"]["outline"]
     ex = sorted({round(q[0], 4) for q in ent})
     ey = sorted({round(q[1], 4) for q in ent})
@@ -606,7 +821,7 @@ def sidewalk(plan):
         inner.append(a)
         if b is not None and abs(a[1] - b[1]) < 1e-6 and a[0] < ex[0] < b[0] and abs(a[1] - ey[1]) < 1e-3:
             inner += [(ex[0], ey[1]), (ex[0], ey[0]), (ex[1], ey[0]), (ex[1], ey[1])]   # round the entrance's bump
-    outer = _offset_left(path, -SIDEWALK["width"])
+    outer = _offset_left(_front_path(plan["layers"]["balcony_edge"]["outline"], cut), -SIDEWALK["width"])
     foot = inner + list(reversed(outer))
     return [[round(x, 4), round(y, 4)] for x, y in foot]
 
@@ -647,7 +862,9 @@ def sidewalk_cafe(plan, seed=632):
 # street corners; a large dark leafy plant in a planter flanks each side of the entrance; dark lamp posts stand at the
 # kerb side of the sidewalk. Palms stand in raised limestone tree-pit planters on the sidewalk (clear of
 # the café sets' chairs), the entrance planters at the spots AI 646 reserved, the lamps between them on the kerb side.
-STREET = {"pit": {"half": 0.6, "height": 0.40}, "crown_clear": 0.4,
+# The pits' vertical corners are chamfered (2026-10-15, the user's fix 5: "make the flower pots chamfered on the
+# corner"): 50 mm legs on the 1.2 m box, the coping and its joints following the cut.
+STREET = {"pit": {"half": 0.6, "height": 0.40, "chamfer": 0.05}, "crown_clear": 0.4,
           # (run, s, v): b8's two tall palms, where CAM_B8's rays through their trunk bases (b8 x 278 / 845 at the sidewalk)
           # meet the sidewalk -- before the front corners, 4.26 m out from A's face, s beyond A's ends; then the far corners
           "palms": [("A", -2.55, 4.26), ("A", 12.55, 4.26), ("H", 1.4, 4.8), ("B", 10.6, 4.8)],
@@ -676,7 +893,7 @@ def street_dressing(plan, seed=633):
         U, N = runs[run]["along"], runs[run]["outward"]
         corner = lambda su, sv, c=c, U=U, N=N: [round(c[0] + (U[0] * su + N[0] * sv) * h, 4), round(c[1] + (U[1] * su + N[1] * sv) * h, 4)]  # noqa: E731
         pits.append({"run": run, "s": s, "loop": [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], "z": z,
-                     "height": STREET["pit"]["height"]})
+                     "height": STREET["pit"]["height"], "chamfer": STREET["pit"]["chamfer"]})
         soil = z + STREET["pit"]["height"] - 0.04
         p = STREET["palm"]
         model = rng.choice(p["models"])
@@ -709,6 +926,52 @@ def street_dressing(plan, seed=633):
                        "CC0 street_lamp_01, read-only) on the kerb side",
             "seed": seed, "z": z, "pits": pits, "palms": palms, "pit_greens": greens, "pots": pots,
             "entrance_plants": entrance_plants, "lamps": lamps, "lamp_model": STREET["lamp"]}
+
+
+# ---------------------------------------------------------------- user fix 12: the plants inside the entrance portal
+# b8 (the user's images/14.webp): a tall, dark, leafy plant in a pot on each side of the entrance, inside the portal
+# against the wood side walls, beside the vestibule glazing. The user: "add plants on the both sides of the entrance ...
+# use actual leaves". Each pot stands between the glazing's end frame and the wood lining (`toward_door` off the middle,
+# toward the doors, so the clump clears the lining), set back toward the vestibule; its plant is proc_plants' bird-of-paradise clump (plant_broadleaf.py), which leans to its local -x: the
+# layer turns it (from rot_deg, in steps) so the clump keeps inside `keep_in`, the box the portal leaves it: short of
+# the lining and of the vestibule plane by `clear`, out of the doors' way (|x| >= door_clear), no further forward than
+# `front` past the wall face, and `head` below the wood head band (its downlights).
+ENTRANCE_PLANTS = {"pot": {"radius_top": 0.26, "radius_bottom": 0.215, "height": 0.74, "colour": "glazed"},
+                   "back_gap": 0.18, "toward_door": 0.09, "clear": 0.03, "door_clear": 1.35, "front": 0.15, "head": 0.30,
+                   "plant": {"height": (1.74, 1.84), "radius": (0.88, 0.94),
+                             "models": ["proc/broadleaf_0", "proc/broadleaf_1"]},
+                   "lean_dir": (0.55, -0.83)}             # the right pot's open side: toward the doors and the street
+
+
+def entrance_plants(plan, seed=12):
+    pd = plan["podium"]
+    ent, ed = pd["entrance"], pd["entrance_detail"]
+    z = plan["structure"]["ground_floor_level"]
+    c = ENTRANCE_PLANTS
+    lining = ent["half_width"] - ent["jamb"] - ed["wood_lining"]        # the side lining's face (|x|)
+    glazing = max(abs(x) for x in ed["grid_x"])                          # the glazing's end frame (|x|)
+    vest = ed["vestibule_y"][0]                                          # the vestibule plane's front (y)
+    pot = c["pot"]
+    rim = pot["radius_top"] + 0.006                                      # the pot's lip
+    band_bottom = ed["lintel_bottom"] - ed["head_band"]["thickness"]
+    rng = random.Random(f"{seed}:entrance_plants")
+    pots, plants = [], []
+    for k, sgn in enumerate((-1, 1)):
+        at = [round(sgn * (0.5 * (lining + glazing) - c["toward_door"]), 4), round(vest - c["back_gap"] - rim, 4)]
+        pots.append({"side": "left" if sgn < 0 else "right", "at": at, "z": z, **pot})
+        lx, ly = c["lean_dir"][0] * -sgn, c["lean_dir"][1]               # the open side, mirrored on the left
+        rot = math.degrees(math.atan2(-ly, -lx))                         # local -x (the clump's lean) onto it
+        lo, hi = sorted((sgn * c["door_clear"], sgn * (lining - c["clear"])))
+        plants.append({"kind": "broadleaf", "model": c["plant"]["models"][k], "at": at,
+                       "z": round(z + pot["height"] - 0.05, 4), "height": round(uniform(rng, c["plant"]["height"]), 3),
+                       "radius": round(uniform(rng, c["plant"]["radius"]), 3), "rot_deg": round(rot % 360.0, 1),
+                       "keep_in": {"x": [round(lo, 4), round(hi, 4)],
+                                   "y": [round(ent["y_front"] - c["front"], 4), round(vest - c["clear"], 4)],
+                                   "z_max": round(band_bottom - c["head"], 4)}})
+    return {"comment": "user fix 12: a pot with a bird-of-paradise clump (proc/broadleaf, real leaves) each side of the "
+                       "entrance inside the portal, between the vestibule glazing and the wood lining; each clump is "
+                       "turned (from rot_deg) to keep inside keep_in",
+            "seed": seed, "pots": pots, "plants": plants}
 
 
 # ---------------------------------------------------------------- AI 634: the interior base (residential floors)
@@ -1040,7 +1303,10 @@ def restaurant_l0(plan, seed=635):
 DINING = {"band_v": [-1.9, -5.7], "rows": [{"v": -2.35, "table": [0.7, 0.7], "chairs": 2, "pitch": 1.6},
                                            {"v": -4.55, "table": [1.2, 0.8], "chairs": 4, "pitch": 1.8}],
           "end_inset": 0.5, "chair_gap": 0.42, "pendant": dict(RESTAURANT["pendant"]),
-          "loggia_room": {"x": [-2.8, 2.8], "y": [-9.8, -1.2], "rows_y": [-8.6, -6.25, -3.9, -1.55], "cols_x": [-1.65, 0.0, 1.65]},
+          # door_aisle (user fix 16, 2026-10-15): the loggia's centre bays are automatic sliders onto the terrace; the
+          # front row's spot in line with them stays free, the way in from the doors (as the ground floor's entrance)
+          "loggia_room": {"x": [-2.8, 2.8], "y": [-9.8, -1.2], "rows_y": [-8.6, -6.25, -3.9, -1.55], "cols_x": [-1.65, 0.0, 1.65],
+                          "door_aisle": 0.1},
           "sideboard": {"x": [-2.6, 2.6], "back_y": [0.4, 0.78], "back_h": 2.2},
           "banquette": dict(RESTAURANT["banquette"]),
           "terrace": {"cols_x": [-1.55, 1.55], "y": -10.78, "table": [0.7, 0.7]},
@@ -1058,7 +1324,8 @@ def dining_l1(plan, seed=636):
     room.banquettes(core, seed, ceiling)
     room.bands(pd, seed, z, ceiling, doors=False)
     G = D["loggia_room"]
-    room.grid(random.Random(f"{seed}:loggia"), G, "loggia_room", lambda y: ceiling)
+    room.grid(random.Random(f"{seed}:loggia"), G, "loggia_room", lambda y: ceiling,
+              skip=[(x, G["rows_y"][0]) for x in G["cols_x"] if abs(x) < G["door_aisle"]])    # user fix 16
     terrace_z = max(b["z"] for b in plan["props"]["podium_planters"]["boxes"] if b["kind"] == "terrace")
     T = D["terrace"]
     rng = random.Random(f"{seed}:terrace")
@@ -1084,14 +1351,21 @@ def dining_l1(plan, seed=636):
 
 # ---------------------------------------------------------------- AI 637: residential curtains and furniture
 # b8: the residential sliders show white sheer curtains, partly drawn, with hints of furniture inside. Every bay's
-# glazed span on floors 1-5 gets a ceiling track and sheer panels drawn to seeded positions (a pair from both ends, one
-# side drawn, or stacked open), split where a partition meets the glazing; no two floors share a pattern. Each bay of a
+# glazed span on floors 1-5 gets a ceiling track and sheer panels drawn to seeded positions, split where a partition
+# meets the glazing; no two floors share a pattern. 2026-10-15 (the user: "use left and right curtains on all floors.
+# with different openings"): every span takes a left and a right panel, each drawn to its own seeded share of the span
+# (15-45 %): nearly closed, half open or wide open, never the same opening as the span on the floor below; the narrow
+# corner lights (A0, A2) take one panel from their corner side. Each bay of a
 # unit (bays of 3 m and more) gets a seeded set near its window: a lounge (sofa facing the window, coffee table, floor
 # lamp), a dining table with chairs and a lamp, or a reading corner (two armchairs, side table, lamp). Furniture keeps off
 # the partitions, the core and the bay ends; the curtains hang between the frames and the furniture.
 RESIDENTIAL = {"curtain": {"v": -0.2, "half_depth": 0.07, "top_gap": 0.04, "hem": 0.015, "fold_pitch": 0.1,
-                           "amp": [0.025, 0.05], "end_trim": {"corner": 0.12, "other": 0.03}, "min_panel": 0.3,
-                           "styles": {"pair": 0.4, "start": 0.2, "end": 0.2, "open": 0.2}},
+                           "amp": [0.025, 0.05], "end_trim": {"corner": 0.12, "other": 0.03}, "min_panel": 0.22,
+                           # every span a left and a right panel; each panel's share of the span by the span's opening
+                           "pair_min_span": 0.8,                      # narrower: one panel from the corner side
+                           "single": [0.45, 0.8],
+                           "openings": {"closed": [0.36, 0.45], "half": [0.22, 0.36], "open": [0.15, 0.22]},
+                           "opening_weights": {"closed": 0.3, "half": 0.4, "open": 0.3}},
                "track": {"depth": 0.04, "height": 0.03},
                "partition_clear": 0.03,
                "furniture": {"min_bay": 3.0, "end_clear": 0.35, "core_clear": 0.45,
@@ -1124,8 +1398,11 @@ def residential(plan, seed=637):
         """The bay's glazed span trimmed at its ends, split wherever a partition crosses the curtain strip."""
         pt = _line(bay)
         t = C["end_trim"]
-        s0 = min(q[0] for q in panes) + (t["corner"] if bay["ends"][0] == "corner" else t["other"])
-        s1 = max(q[1] for q in panes) - (t["corner"] if bay["ends"][1] == "corner" else t["other"])
+        g0, g1 = min(q[0] for q in panes), max(q[1] for q in panes)     # the glazed stretch (user fix 7: not behind the
+        at0 = bay["ends"][0] == "corner" and g0 < 1e-3                  # wall panels; the corner trim only where the
+        at1 = bay["ends"][1] == "corner" and g1 > bay["length"] - 1e-3  # glazing still wraps the corner post)
+        s0 = g0 + (t["corner"] if at0 else t["other"])
+        s1 = g1 - (t["corner"] if at1 else t["other"])
         v0, v1 = C["v"] - C["half_depth"], C["v"] + C["half_depth"]
         step = 0.01
         n = int((s1 - s0) / step)
@@ -1149,21 +1426,20 @@ def residential(plan, seed=637):
                 out.append([round(a, 4), round(e, 4)])
         return out
 
-    def drawn(rng, a, e):
-        """Seeded curtain panels over the span [a, e]: (style, [(s0, s1, anchor), ...])."""
+    def drawn(rng, a, e, bay, below):
+        """Seeded curtain panels over the span [a, e]: (opening, [(s0, s1, anchor), ...]). A left and a right panel, each
+        drawn to its own share of the span within the opening's range; the opening differs from below (the same span on
+        the floor below). A light narrower than pair_min_span takes one panel from its corner side."""
         w, mp = e - a, C["min_panel"]
-        if w < 2 * mp:                                                # a narrow light: one panel from either side
-            f = rng.uniform(0.5, 1.0) * w
-            return ("start", [(a, a + f, "start")]) if rng.random() < 0.5 else ("end", [(e - f, e, "end")])
-        style = _pick(rng, C["styles"])
-        if style == "pair":
-            f0, f1 = rng.uniform(0.15, 0.45), rng.uniform(0.15, 0.45)
-            return style, [(a, a + max(mp, f0 * w), "start"), (e - max(mp, f1 * w), e, "end")]
-        if style in ("start", "end"):
-            f = max(mp, rng.uniform(0.4, 0.85) * w)
-            return style, [(a, a + f, "start")] if style == "start" else [(e - f, e, "end")]
-        f0, f1 = max(mp, rng.uniform(0.1, 0.18) * w), max(mp, rng.uniform(0.1, 0.18) * w)
-        return style, [(a, a + f0, "start"), (e - f1, e, "end")]
+        if w < C["pair_min_span"]:
+            f = max(mp, rng.uniform(*C["single"]) * w)
+            side = "start" if bay["ends"][0] == "corner" else "end" if bay["ends"][1] == "corner" else rng.choice(("start", "end"))
+            return "single", [(a, a + f, "start")] if side == "start" else [(e - f, e, "end")]
+        weights = {k: v for k, v in C["opening_weights"].items() if k != below}
+        opening = _pick(rng, weights)
+        lo, hi = C["openings"][opening]
+        f0, f1 = rng.uniform(lo, hi), rng.uniform(lo, hi)
+        return opening, [(a, a + max(mp, f0 * w), "start"), (e - max(mp, f1 * w), e, "end")]
 
     def furnish(rng, bay):
         """A seeded set near the bay's window: lounge, dining or reading (items, lamp position)."""
@@ -1195,24 +1471,27 @@ def residential(plan, seed=637):
             it["at"] = [round(it["at"][0], 4), round(it["at"][1], 4)]
         return new, lamp
 
-    curtains, tracks, items, lamps, skipped, patterns = [], [], [], [], [], {}
+    curtains, tracks, items, lamps, skipped, patterns, below = [], [], [], [], [], {}, {}
     for floor in sorted(env["floors"], key=int):
         z0, z1 = env["floors"][floor]
         for attempt in range(20):                                     # re-roll until no earlier floor shares the pattern
             rng = random.Random(f"{seed}:curtains:{floor}:{attempt}")
-            fc, ft, sig = [], [], []
+            fc, ft, sig, here = [], [], [], {}
             for bay in env["bays"]:
                 var = next(v for v in bay["variants"] if int(floor) in v["floors"])
-                for a, e in spans(bay, var["panes"]):
+                for j, (a, e) in enumerate(spans(bay, var["panes"])):
                     ft.append({"floor": int(floor), "bay": bay["id"], "s": [a, e]})
-                    style, panels = drawn(rng, a, e)
-                    sig.append(style)
+                    opening, panels = drawn(rng, a, e, bay, below.get((bay["id"], j)))
+                    sig.append(opening)
+                    here[(bay["id"], j)] = opening
                     for s0, s1, anchor in panels:
                         fc.append({"floor": int(floor), "bay": bay["id"], "s": [round(s0, 4), round(s1, 4)], "anchor": anchor,
-                                   "z": [round(z0 + C["hem"], 4), round(z1 - C["top_gap"], 4)], "phase": round(rng.random(), 4)})
+                                   "opening": opening, "z": [round(z0 + C["hem"], 4), round(z1 - C["top_gap"], 4)],
+                                   "phase": round(rng.random(), 4)})
             if tuple(sig) not in patterns.values():
                 break
         patterns[floor] = tuple(sig)
+        below = here
         curtains += fc
         tracks += [dict(t, z=z1) for t in ft]
         # furniture near the windows
@@ -1243,7 +1522,9 @@ def residential(plan, seed=637):
                 skipped.append(f"f{floor}_{bay['id']}")
     lines = {b["id"]: {"a": b["a"], "along": b["along"], "outward": b["outward"]} for b in env["bays"]}
     return {"comment": "AI 637 residential: sheer curtains on a ceiling track behind every bay's glazing on floors 1-5, "
-                       "drawn to seeded positions (no two floors share a pattern), split at the partitions; a seeded "
+                       "a left and a right panel per span drawn to seeded openings (closed / half / open, never the "
+                       "span's opening on the floor below; no two floors share a pattern; the narrow corner lights one "
+                       "panel), split at the partitions; a seeded "
                        "lounge, dining or reading set with a floor lamp near the window of every bay of 3 m and more",
             "seed": seed, "config": R, "lines": lines, "curtains": curtains, "tracks": tracks, "items": items,
             "lamps": lamps, "patterns": {k: list(v) for k, v in patterns.items()}, "skipped_sets": skipped}

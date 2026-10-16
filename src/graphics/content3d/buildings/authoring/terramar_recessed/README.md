@@ -489,7 +489,7 @@ the composition.
 | File | Root | Holds | Layers |
 | --- | --- | --- | --- |
 | `terramar_building.blend` | `TM_BUILDING` | the architecture | structure, envelope, balconies, podium, roof (penthouse, annex, solar, units), interior_base (partitions, downlights) |
-| `terramar_props.blend` | `TM_PROPS` | the props on the building | balcony_plants, podium_planters, roof_planters, roof_furniture, awnings |
+| `terramar_props.blend` | `TM_PROPS` | the props on the building | balcony_plants, podium_planters, entrance_plants (user fix 12), roof_planters, roof_furniture, awnings |
 | `terramar_site.blend` | `RB_SITE` | the street | site_cafe (sidewalk, café), site_palms (palms, pits, entrance pots, lamps) |
 | `terramar_interiors.blend` | `TM_INTERIORS` | the furnished interiors | restaurant_l0, dining_l1, residential, penthouse |
 | `terramar_wear.blend` | `TM_WEAR` | the wear module's overlays (2026-10-14): the runoff streak decals | wear_overlays |
@@ -558,8 +558,9 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `rb_lib.py` | shared helpers: collections, the `TM_RB_*` materials, `solid()` (closed solids from plan regions as n-gons: a region with holes is cut along a line through its hole, and every loop gets the cut points, so tops, bottoms and side faces share their vertices), box UVs, the plan cameras |
 | `layer_structure.py` | the structure layer, `RB_STRUCTURE` (below) |
 | `layer_envelope.py` / `envelope_layout.py` | the envelope layer, `RB_ENVELOPE`, and its bay/pane layout (written into the plan by `make_plan.py`) |
-| `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots) |
+| `layer_balconies.py` / `balcony_layout.py` | the balconies layer, `RB_BALCONIES`, and its layout (paving pieces, guard runs, downlights, planter slots; `guard_layout()`: every guard's flat glass panels and connector posts, user fix 8; `soffit_plates()`: the soffits' veneer plates and their downlights, and `fitting()` / `punch()`: the building's one spotlight fitting and its hole in a plate, user fix 17) |
 | `layer_podium.py` / `podium_layout.py` / `trace_sign.py` | the podium layer, `RB_PODIUM`, its layout, and the sign tracer (kit masks -> letter outlines) |
+| `entrance_doors.py` | user fix 16: the front centre's glazed walls with their door bays open and glazing beads on every fixed pane (`Wall`), the entrance's glass swing pair with its hardware (`swing_pair`), the loggia's automatic sliders with header, sensors, guides and seals (`sliders`), from `plan["podium"]["entrance_detail"]["doors"]`; used by `layer_podium.py` |
 | `layer_roof.py` | the roof layer, `RB_ROOF` (its layout is `plan["roof"]`, written by `make_plan.py`) |
 | `roof_units.py` | the penthouse roof's mechanical plant into a caller's bmesh (2026-10-15): top-discharge condensing units (rails on pads, feet, finned coil faces behind a wire guard, seamed service panels, fans with pitched blades under domed guards) and a side-discharge condenser, the insulated lines, the covered pipe tray and the roof hood; `plant(bm, plan["roof"], z)`, `materials()` (`TM_RB_unit_*`, `TM_RB_lift_steel`); test renders with `-- out=` |
 | `b8_camera_fit.py` | fits `CAM_B8` to the plan by least squares over the b8 picks (used by `make_plan.py`, written to `plan["cameras"]`) |
@@ -567,10 +568,15 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `layer_materials.py` | the materials pass (AI 648): re-dresses every `TM_RB_*` slot from `plan["materials"]` and cuts the stone joints into the layers' objects (since 2026-10-14 also the seams between flush pieces and the named `joints.objects`, such as the site's tree pits); `build.py` runs it after any geometry layer it rebuilds |
 | `sample_tones.py` | b8 vs a `CAM_B8` render, box by box (stone, wood, soffit): mean colours, linear ratios, the suggested tone |
 | `compose_joint_layout.py` | the stone joint layout as one elevation per run, from `joint_layout.json` |
-| `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks; `fit_scales` fits every instance to its target (the detailed palms within 10 % xy / z) |
+| `layer_roof_planters.py` / `proc_plants.py` | the roof terrace's planters and trees (AI 629), `RB_PROPS/RB_ROOF_PLANTERS`, from `plan["props"]["roof_planters"]`; the procedural cycads, palms and spiky rosettes the game's vegetation lacks (no palms on the roof since 2026-10-15; `proc_plants.py` still builds the street palms); the large pots, the centre box, the standards' stems and its flowers (2026-10-15); `fit_scales` fits every instance to its target (the detailed palms within 10 % xy / z) |
 | `palm_frond.py` | one detailed feather-palm frond into a caller's bmesh (petiole, tapering rachis, individual creased leaflets; young / mature / old / dead), and its three materials (`RBP_palm_leaflet_foliage`, `RBP_palm_rachis`, `RBP_palm_dead_foliage`); test renders with `-- out=` |
 | `palm_trunk.py` | the palm trunk with its leaf-scar rings and crown boot zone into a caller's bmesh (`rbp_*` attributes, cylindrical UVs), and `RBP_palm_bark` / `RBP_palm_boot`; test renders with `-- out=` |
 | `palm_base.py` | the root base (boss, adventitious roots, root initials) welded under the trunk, and `RBP_palm_root` (the bark blended into the root zone); test renders with `-- out=` |
+| `plant_shading.py` | user fix 12: the detailed pot plants' node materials: `leaf_material` (tone by `rb_tint`, pinnate or parallel veins as a line and a bump, midrib, margin, base and tip colours, paler underside, translucency), `stem_material`, `bark_material` (by the point attribute `rb_relief`) |
+| `plant_broadleaf.py` | user fix 12: a bird-of-paradise clump into a caller's bmesh (5-6 fans of petioled paddle leaves, V-folded, split along the veins, leaning to local -x), `RBP_broadleaf_leaf_foliage` / `RBP_broadleaf_stem`; `proc/broadleaf_<k>` |
+| `plant_cycad.py` | user fix 12: the cycad (a diamond-armoured trunk, a felt dome, 28-34 pinnate fronds from `palm_frond.build_frond` with the `cycad` age it registers), `RBP_cycad_*`; `armoured_trunk()` shared with the rosette; `proc/cycad_<k>` |
+| `plant_spiky.py` | user fix 12: the spiky rosette (70-90 keeled sword leaves with pale bases and brown spines, 1-3 dead, on a leaf-scarred trunk), `RBP_spiky_*`; `proc/spiky_<k>` |
+| `proc_plants.py` | the procedural prototypes `RBP_proc_<kind>_<k>` (`ensure(kind, k)`): `street_palm` / `palm` (palm_tree.py), `cycad`, `spiky`, `broadleaf` (the modules above, since user fix 12); each carries `rb_fit_aniso` (palms 0.10, broadleaf 0.15, spiky 0.25, cycad 0.30) |
 | `palm_tree.py` | the whole palm as one mesh (2026-10-14): trunk, base welded on its ring, a crown of 20-30 fronds on the boot zone; `build_palm(bm, rng, scale="street" \| "roof")`, used by `proc_plants.py` for `street_palm` and `palm`; test renders with `-- out=` |
 | `furniture_materials.py` | the furniture's shared materials (2026-10-14), one source for both furniture modules: `TM_RB_furn_teak`, `TM_RB_furn_metal`, `TM_RB_furn_fabric_<offwhite\|ecru\|greige>` (procedural, UV driven, shifted per object so linked duplicates differ), and the plain `TM_RB_teak` / `TM_RB_charcoal_metal` of the box-built bar, ceiling, kitchen, poles and lamps |
 | `furniture_chairs.py` | detailed chairs into a caller's bmesh (2026-10-14): `dining_chair` (teak, slat / cane / band backs, a seat pad), `cafe_chair` (rattan bistro, arm / side, woven seat and back), `bar_stool`; `build(bm, item, z, slot)`, `materials()` (adds the rattan, wrap, weave and cane materials); test renders with `-- out=` |
@@ -580,12 +586,13 @@ Until 2026-10-14 everything lived in one file, `terramar_rebuild.blend`. The per
 | `layer_interior_base.py` | the interior base (AI 634), `RB_INTERIOR/RB_INTERIOR_BASE`: partitions and ceiling downlights, from `plan["interior"]["base"]` (`props_layout.py`) |
 | `layer_restaurant_l0.py` | the ground-floor restaurant (AI 635), `RB_INTERIOR/RB_RESTAURANT_L0`: furniture, bar, wood ceiling, pendants, plants, fill lights, from `plan["interior"]["restaurant_l0"]` (`props_layout.py`) |
 | `layer_dining_l1.py` | the upper-podium dining room (AI 636), `RB_INTERIOR/RB_DINING_L1`: furniture, sideboard, pendants, plants, fill and ceiling-wash lights, from `plan["interior"]["dining_l1"]` (`props_layout.py`); reuses `layer_restaurant_l0.py`'s pieces |
-| `layer_residential.py` | residential curtains and furniture (AI 637), `RB_INTERIOR/RB_RESIDENTIAL`: sheer panels and tracks, furniture sets, floor lamps, from `plan["interior"]["residential"]` (`props_layout.py`) |
+| `layer_residential.py` | residential curtains and furniture (AI 637), `RB_INTERIOR/RB_RESIDENTIAL`: sheer panels and tracks (a left and a right panel per span since 2026-10-15), furniture sets, floor lamps, from `plan["interior"]["residential"]` (`props_layout.py`) |
 | `layer_penthouse.py` | the penthouse interior (AI 638), `RB_INTERIOR/RB_PENTHOUSE`: furniture, kitchen, pendants, downlights, lamps, plants, fills, from `plan["interior"]["penthouse"]` (`props_layout.py`); every object tagged `rb_hide_from_b8` |
-| `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`) |
+| `layer_awnings.py` | the storefront canopies (AI 631), `RB_PROPS/RB_AWNINGS`, from `plan["props"]["storefront_awnings"]` (`props_layout.py`); the tie rods' anchor plates, tabs, clevises and pins (user fix 6) |
 | `layer_site_palms.py` | the street palms, entrance planters and lamps (AI 633), site dressing in `RB_SITE/RB_SITE_PALMS`, from `plan["props"]["street_dressing"]` (`props_layout.py`) |
 | `layer_site_cafe.py` | the sidewalk and its café (AI 632), site dressing in `RB_SITE` (outside `TERRAMAR_REBUILD`), from `plan["props"]["sidewalk_cafe"]` (`props_layout.py`) |
 | `layer_podium_planters.py` | the podium's planter boxes (AI 628), `RB_PROPS/RB_PODIUM_PLANTERS`, from `plan["props"]["podium_planters"]` (`props_layout.py`) |
+| `layer_entrance_plants.py` | user fix 12: the pot plants inside the entrance portal, `RB_PROPS/RB_ENTRANCE_PLANTS` (props part): glazed pots (`TM_RB_pot_glazed`) and `proc/broadleaf` clumps turned to keep inside the plan's `keep_in` box, from `plan["props"]["entrance_plants"]` (`props_layout.entrance_plants`) |
 | `layer_balcony_plants.py` / `props_layout.py` / `decode_vegetation_glb.mjs` | the balcony planting (AI 627), `RB_PROPS/RB_BALCONY_PLANTS`, its seeded layout (written into `plan["props"]` by `make_plan.py`), and the converter that makes the game's KTX2 vegetation readable by Blender |
 
 Base scene: `INSPECTION_RIG` (appended once from the baseline: the calibrated sky, sun, ground and rig cameras, with
@@ -983,7 +990,8 @@ metallic). Each canopy has:
 - a wall plate on the storefront head panel, 30 mm under the lintel;
 - two sloping side rails, with the transverse slats between them (50 mm, at a 90 mm pitch);
 - a 140 mm front fascia;
-- the tie rods, sheared so both ends are vertical faces: flat on the lintel, standing on the fascia, so nothing penetrates.
+- the tie rods, sheared so both ends are vertical faces: flat on the lintel, standing on the fascia, so nothing penetrates
+  (replaced by round rods pinned to an anchor plate and a fascia tab: user fix 6, 2026-10-15).
 
 They are well above the pier lanterns (2.70–3.02 m).
 
@@ -1430,6 +1438,573 @@ New poses: `umbrella_closeup` and `umbrella_underside`. Evidence is in
 - `ref/`: the b8 crops; `b8_cafe_strip_b8_pre_post.png`: b8, before and after in `CAM_B8`;
 - the checks, both audits and `umbrella_clearance.json`.
 
+### User fixes (2026-10-15)
+
+**Fix 1: sharp podium corners.** The user: "the edge of the building should be straight, no curves (change only the 2
+first floors)". b8 shows the podium's corners (front H/A and A/B, and the chamfer ends G/H and B/C) as plain vertical
+edges. The plan now gives the podium its own outline, `layers.podium.outline`: the balcony edge's sharp polygon
+(`PODIUM_CORNER_RADIUS = 0` in `make_plan.py`, all eight corners; `dimensions_m.podium_corner_radius`). It is used by:
+- the ground, upper-podium and podium-roof slabs (`layer_structure.py`; the podium roof is the podium's top band);
+- the corner piers (`layer_podium.py`, `plan.podium.corners[].radius` = 0). Their faces keep their old positions along
+  the runs (the fillets' tangent points + `pier_ext`; `podium_layout.layout(..., outline_radii=)`), so the bays,
+  storefronts, canopies, planter boxes and café reservations do not move;
+- the sidewalk's inner edge (`props_layout.sidewalk`, against the sharp slab; its kerb still follows the balcony edge).
+
+The tower's slabs, balconies (the floor-1 guard and paving on the podium roof included) and roof keep the 0.64 / 1.0 m
+fillets. The joints are cut per flat face as before. Checks: the audit is 716 objects, 0 z-fights / 0 penetrations, and
+the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix1_podium_corner_left` and `fix1_podium_corner_right`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix1/` (`compare.png` = [b8 | before | after] in the b8
+frame plus the two corner close-ups; the checks and both audits). The before renders are in `poses/pre_fix1/`.
+
+**Fix 2: the loggia's curved cover.** The user: "it is missing a curved covering (check the references); make it as a
+separate piece, make sure there is a connection line (very thin) between the wall and the piece, instead of
+continuation of the wall". b8 and the aerial show the upper-podium loggia's head, between the front jambs from the loggia
+head up to the podium top, as one curved stone piece: it bows out in front of the wall and sweeps back into the wall at
+each end, and its underside's front edge is soft. The model now has it as its own object, `rb_loggia_cover`
+(`layer_podium.py loggia_cover()`, plan `podium.loggia_cover` from `LOGGIA_COVER` in `make_plan.py`). It is lofted
+through vertical sections: the front bows out 0.45 m, with a smootherstep S over 0.9 m at each end, tangent to the wall
+line, and flat in the middle. The underside's front arris is rounded to 50 mm and the top arris eased by 8 mm. It sits
+in a notch of the podium roof slab (`layer_structure.py`). A 6 mm reveal parts it from the jambs' stone returns and
+from the slab; the reveal's floor, 18 mm in, is a dark backer strip of `TM_RB_stone_joint`. The loggia head keeps its
+body, shadow gap and wood soffit, but loses its face slab (`head(..., face=False)`). The cover has its own slot,
+`TM_RB_cover_stone`: the same dressed limestone, no panel joints (one piece, as b8 shows), and wear class stone.
+Checks: the audit is 717 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible
+from b8: 0 px. A fresh `target=all save=0` runs clean (structure 19 objects, podium 15). New poses: `fix2_loggia_cover` and `fix2_loggia_cover_above`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix2/`
+(`compare.png` = [b8 | before | after] in the b8 frame, then the two close-ups, with the aerial beside the upper one;
+the checks and both audits). The before renders are in `poses/pre_fix2/`.
+
+**Fix 2b: one convex bow.** The user, on the cover's ends sweeping back into the wall: "not an S curve. just one way
+curve in the 2nd floor protection". The cover's front is now, in plan, a single circular segment from jamb to jamb: 0.45 m
+deep at the centre (radius 9.66 m over the 5.83 m span), meeting the wall line at each jamb's return at about 18°, one
+curvature sign along its whole length (`loggia_cover()` in `layer_podium.py`, 48 sections; `LOGGIA_COVER` lost its
+`sweep`). The reveal, the backer strip, the rounded underside arris, the slab notch and the floor-1 terrace on top are
+unchanged. Checks: the audit is 719 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts
+visible from b8: 0 px. A fresh `target=all save=0` runs clean (podium 15 objects). New pose: `fix2b_loggia_cover_plan`
+(steeply from above). Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix2b/` (`compare.png` =
+[b8 | before | after] in the b8 frame, then the user's marked screenshot beside the sidewalk close-up, the view from the
+right and the view from above; the checks and both audits). The before renders are in `poses/pre_fix2b/`.
+
+**Fix 2c: straight front, rounded ends.** The user, on the bow: "still not correct. it should be straight in the middle.
+but curved on the sides" (their trace, images/8.webp: a flat front with a convex corner turning back to each jamb). In
+plan the cover is now half a rounded rectangle: a straight front 0.45 m in front of the wall line, a 0.40 m convex
+fillet at each end (`LOGGIA_COVER["corner_radius"]`, read from b8's corner shading: about 15 px at about 36 px/m) and a
+5 cm square return into the jamb reveal; one curvature sign, no S, no overall bow. `loggia_cover()` now stacks plan
+rings, the outline offset inwards along its normals by the profile (50 mm round bottom arris, 8 mm eased top), so the
+arrises follow the corners too (672 triangles, manifold). The reveal, the backer strip, the slab notch and the floor-1
+terrace guard behind it are unchanged. Checks: the audit is 721 objects, 0 z-fights / 0 penetrations, and the site is
+42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New pose:
+`fix2c_loggia_cover_corner` (the right end from the sidewalk). Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix2c/` (`compare.png` = [b8 | before | after] in the b8
+frame, then the user's trace beside the sidewalk close-up, the corner, the view from the right and the view from above;
+the checks and both audits). The before renders are in `poses/pre_fix2c/`.
+
+**Fix 2d: softer ends.** The user, on the rounded ends (images/10.webp, from above): "make the curve softer". Each end
+of the cover is now a quarter clothoid instead of the 0.40 m fillet and 5 cm square return (`clothoid_corner()` in
+`layer_podium.py`; `LOGGIA_COVER["corner"]` = "clothoid", 24 segments per corner, in `make_plan.py`). Its curvature
+grows from zero where it leaves the straight front, so it is tangent and curvature-continuous to the front, to square
+with the wall where it meets the jamb's reveal, so there is no kink at the jamb. With the 0.45 m projection it runs
+0.80 m along the front (the straight middle is 4.23 m). Its radius is above 0.8 m over the first 40 % of the curve and
+0.33 m at the wall line. The outline lies inside the old one. The edge profiles, the reveal and backer, the slab notch
+and the floor-1 terrace guard are unchanged. Checks: the audit is 722 objects, 0 z-fights / 0 penetrations, and the
+site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean (podium 15
+objects). New pose: `fix2d_loggia_cover_end_top` (the left end from above). Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix2d/` (`compare.png` = [b8 | before | after] in the b8
+frame, then the user's 10.webp beside the same top view (`fix2b_loggia_cover_plan`), the new pose, the corner and the
+sidewalk close-ups; the checks and both audits). The before renders are in `poses/pre_fix2d/`.
+
+**Fix 3: the pilasters inside the floor-1 terrace.** The user: "the pillar should be inside the balcony, not extending
+outside". On the floor-1 terrace (the podium roof) the two front pilasters stood on the podium edge, 0.2 m past the
+terrace guard, which stopped against their sides; their foot even overhung the podium fascia by 5 cm. b8 shows them inside
+the terrace there, with the floor-1 rail running on in front of them. Now:
+- each pilaster's floor-1 storey is its own piece, `rb_pilaster_<side>_terrace` (`layer_structure.py`), from the podium
+  roof to the floor-2 slab, its face on the guard shoe's back face (`structure.pilasters.terrace`: `y_front` −10.82,
+  3 cm behind the guard line). The pilaster above, `rb_pilaster_<side>`, starts at the floor-2 slab's underside, proud of
+  the slab edges as before; its underside in front of the terrace piece is a stone soffit;
+- the floor-1 guard is one closed run round the building (`balconies.terrace_guard_runs`, from `make_plan.py`; shoe and
+  rail as closed rings, `layer_balconies.py ring()`), with a panel joint mid-front. Floors 2–5 keep their runs, which stop
+  against the pilasters.
+
+Every other column was checked against the guard line: the chamfer columns stand 1.17 m inside it, and the pilasters on
+floors 2–5 are the facade's frame between the slab edges, not standing on a balcony. No pillar passes a guard line now.
+Fix 10 can carry the room dividers out to the guard line the same way. Checks: the audit is 719 objects, 0
+z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh
+`target=all save=0` runs clean (structure 21 objects). New poses: `fix3_pilaster_terrace_right` and
+`fix3_pilaster_terrace_left_low`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix3/`
+(`compare.png` = [b8 | before | after] in the b8 frame, wide and at each pilaster, then the close-ups; the checks and
+both audits). The before renders are in `poses/pre_fix3/`.
+
+**Fix 4: the wood-coloured strip under the canopies.** The user: "there is a small wood detail that goes outside the
+cover area" (the right storefront canopy's left end). No wood piece is there: a wood-material mask of the b8 frame
+shows wood only in the entrance portal, the loggia and the café, and every wood face stays inside its opening. Ray
+probes of the marked pixels found the storefronts' transom glass: its top 5 cm sliver, right under the head panel,
+looked through the restaurant at the far storefronts' warm-lit lintel undersides and pier tops. Under each canopy's
+open, sloping end that sliver read as a teak strip or bracket sticking out past the canopy's fascia (B0, B1 and the
+mirrored H0, H1). The storefronts had no head rail; the glass ran straight up to the head panel. They now have one,
+`podium.storefront.head_rail` = 0.10 m (`make_plan.py`), as the upper recesses' glazing has (`layer_podium.py`, in
+`rb_storefront_frames`). The glass now stops at 3.90 m, and under the canopies a dark head band reads, as in b8.
+Checks: the audit is 719 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible
+from b8: 0 px. A fresh `target=all save=0` runs clean. New poses: `fix4_canopy_end_right_b8`, `fix4_canopy_end_left_b8`
+and `fix4_canopy_end_right_low`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix4/`
+(`compare.png` = [b8 | before | after] in the b8 frame for both chamfers, then the user's mark beside the telephoto and
+sidewalk close-ups; the wood mask and probe renders in `probe/`; the checks and both audits). The before renders are
+in `poses/pre_fix4/`.
+
+**Fix 4b: the entrance's wood inside its stone.** The user, on fix 4: "the wood under canopy is actually in the main
+entrance, check the reference (no need to fix what was done, it is good)". b8 frames the entrance's wood in stone: the
+jambs' sides are stone back to the doors, and about 10 px of stone stands between the wood panels and the pier front on
+each side. Ours ran the wood from the jambs' 0.10 m returns (edge-on from b8's stand) to the outer edge of the opening:
+the side linings on the jambs' faces and the vestibule panels beside the glazing reached the jambs, so from the street
+the wood went out to the stone's edge. Now (`layer_podium.py stone_side()`, in `rb_podium_lintels`) each jamb's side is
+a 30 mm stone facing in the side linings' place, behind the return's shadow gap as before, back to the vestibule, where
+it wraps 0.20 m along the vestibule plane as a back return (`podium.entrance_detail.back_return`, `make_plan.py`); the
+wood panel beside the glazing (`rb_podium_wood`) starts 10 mm past it, the gap floored by a backer strip 18 mm in. The
+wood stays the panels either side of the doors (0.88 m -> 0.67 m) and the soffit under the stone head, which spans the
+opening as b8's wood head band does. Mirrored left and right; fix 4's storefront head rails are unchanged. The materials
+pass joints the new stone with the lintels. Checks: the audit is 721 objects, 0 z-fights / 0 penetrations, and the site
+is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean (podium 15 objects). New
+poses: `fix4b_entrance_b8`, `fix4b_entrance_head_right` and `fix4b_entrance_head_left`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix4b/` (`compare.png` = [b8 | before | after] of the
+entrance in the b8 frame, the user's mark beside the telephoto, then the two top corners and the jamb return; wood
+masks before and after in `probe/`; the checks and both audits). The before renders are in `poses/pre_fix4b/`.
+
+**Fix 4c: wood sides back, a wood head band, a luxury veneer.** The user, on fix 4b: "this change was incorrect; you can
+leave the back wall totally as orange, no need for a stone strip. what is missing is a wood subtle cover on the door that
+surpasses the front wall; and the orange wall is actually wood. if you can have a high luxury wood there (but needs to be
+luxury)", and on 4b's jamb facing: "that stone is not needed". Fix 4b is reverted: `stone_side()` and
+`entrance_detail.back_return` are gone, the entrance jambs' sides are wood linings again (behind the returns' shadow gaps)
+and the vestibule panels reach the jambs. New (`layer_podium.py head_band()`, plan `podium.entrance_detail.head_band`):
+`rb_entrance_band`, a veneer band 0.12 m deep under the sign band across the opening (10 mm short of the linings and
+returns), from 0.15 m in front of the front stone wall to 0.30 m behind it, its sides' UVs turned so the grain runs along
+it; and `rb_entrance_downlights`, 12 small warm discs on its soffit (`TM_RB_entrance_light`, emissive). All the entrance
+and loggia wood (linings, vestibule and loggia panels, both heads' soffits, the band) is now `TM_RB_veneer`
+(`layer_materials.py dress_veneer()`, plan `materials.veneer`): a procedural quarter-cut teak-walnut veneer on the box
+UVs, with fine growth lines wavering along the board, ribbon stripes and colour bands, pores, and 0.21 m leaves
+book-matched in pairs. Each pair gets its own seeded tone, hue and figure, a fine dark V-joint parts the pairs, and a
+satin clear coat sits over a faint bump. The albedos are saturated toward b8's teak and stay <= 0.33. The wear class is
+wood_ext (`wear/classes.py`), so teak_weather still acts on it, the band included. The flat `TM_RB_wood` stays on the
+front centre's reveal panels and the penthouse doors. Fix 4's storefront head rails and the returns' shadow gaps are
+unchanged. Checks: the audit is 724 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts
+visible from b8: 0 px. A fresh `target=all save=0` runs clean (podium 17 objects). New poses: `fix4c_entrance_soffit`,
+`fix4c_entrance_3q` and `fix4c_veneer_close`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix4c/`
+(`compare.png` = [b8 | before | after] of the entrance in the b8 frame, then the user's 12/11/13 marks beside their
+views and the new close-ups; `compare_b8_entrance.png`; `poses/`; the user's marks in `references/`; the veneer test
+stand in `test/`; the checks and both audits). The before renders are in `poses/pre_fix4c/`.
+
+**Fix 5: chamfered planter corners.** The user: "make the flower pots chamfered on the corner" (the raised limestone
+tree pit at the right front palm's foot). All four street tree pits (`layer_site_palms.py pit_pieces()`) now have their
+vertical corners cut by a 50 mm chamfer (`STREET["pit"]["chamfer"]` in `props_layout.py`, plan
+`street_dressing.pits[].chamfer`; the pit `loop` stays the 1.2 m square footprint). The body and the coping follow the
+chamfered outline; the coping is now four L-shaped corner stones meeting mid-side (was two full sides and two between
+them, whose seam sat 6 cm from the corner), and its soil side is the same outline 60 mm in. The materials pass's coping
+seam and foot joint run round the chamfers by themselves; the mid-side coping seams replace the corner ones. The roof
+terrace's limestone centre box (`layer_roof_planters.py island()`, `ROOF_CENTRE["chamfer"]`) gets the same 50 mm
+chamfer, its rim following it. The ring's limestone troughs are not changed: they run on as one closed ring with butt
+joints, so they have no free corners; the dark-metal islands and podium boxes are another family. Helper:
+`rb_lib.chamfer()`. Soil, plants and palms are unchanged. Checks: the audit is 719 objects, 0 z-fights / 0 penetrations,
+and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix5_tree_pit_right`, `fix5_tree_pit_right_b8` and `fix5_roof_centre_box`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix5/` (`compare.png` = [b8 | before | after] in the b8
+frame, the user's mark beside the telephoto, then the close-ups of both front pits and the roof box; the checks and both
+audits). The before renders are in `poses/pre_fix5/`.
+
+**Fix 6: tie-rod connectors.** The user: "add small connectors to the rods of the cover, so they don't grow from the
+wall". The canopies' 39 tie rods (`layer_awnings.py`, `rb_awnings`) were sheared square bars ending flat on the lintel
+and standing on the fascia. Each is now a 16 mm round rod pinned at both ends, all in `TM_RB_awning`:
+- on the lintel's face a 90 x 150 x 8 mm anchor plate with rounded corners, its back flat on the stone (contact, no
+  anchor modelled into the stone), four hex bolts with washers, and an 8 mm eye tab reaching 35 mm out;
+- on the fascia's top a 60 mm saddle as deep as the fascia, two bolt heads and a smaller tab;
+- at each rod end a clevis fork over the tab (two cheeks, a body, a jam nut), and a pin with a head and a nut. The hex
+  heads and nuts are turned per instance (seeded).
+
+The rod runs pin to pin: the wall pin sits at 5.19 m (`rod_anchor_z`, the plate's centre), the fascia pin 30 mm above
+the fascia top. The line stays within 2 cm of the old one (43°). The sizes are in `AWNING["hardware"]`
+(`props_layout.py`, plan `props.storefront_awnings.config.hardware`). The middle rod of eight bays fell exactly on the
+lintel's mid-bay vertical joint. `rods_clear_of_joints()` now moves a rod 64 mm along when its plate would cover a joint
+(the materials pass's equal panels of at most `joints.panel_max`), so no plate straddles a joint: the closest joint is
+12 mm past a plate's edge. The wear's runoff streaks take the plate (+5 mm) as the anchor obstacle
+(`runoff_streaks.py`, from `config.hardware`). The wear part was rebuilt; the 30 streaks stop and run as before.
+`rb_awnings`: 53.4 k triangles (about 1.3 k per rod). Checks: the audit is 719 objects, 0 z-fights / 0 penetrations, and
+the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix6_rod_anchor_wall`, `fix6_rod_fascia_end` and `fix6_rods_left_b8`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix6/` (`compare.png` = [b8 | before | after] in the b8
+frame, the user's mark beside the telephoto, then the wall and fascia close-ups; `probe/` holds a raw vs denoised render
+of the plate, whose stepped dark patch is the pin stack's real shadow in the head-on sun; the checks and both audits).
+The before renders are in `poses/pre_fix6/`.
+
+**Fix 7: wall panels on the front chamfers.** The user: "not every bay in the room is windows, there are walls as
+well". They marked three panes on the H chamfer's floor 2 (the pane at the G/H end and the panes either side of the
+chamfer column) and pointed at the same bays on floor 3. b8 shows the same on both front chamfers and every floor: a
+solid stone panel, about a pane wide and storey high, on both sides of each chamfer column (with the column it reads as
+one wide stone pier) and at the chamfer's far end; the end at the front corner stays glazed and wraps onto A. The plan
+now lists the solid ends per bay, `envelope.wall_panels` (`make_plan.py`: H0 start + end, H1 start, mirrored B0 end,
+B1 start + end) and `wall_slot` (`TM_RB_column`, the columns' limestone). `envelope_layout.solid_ends()` turns each end
+pane into a `walls` span (from the bay's end, its jamb included, to the mullion before the next pane); the door panes keep
+their sliders (renumbered), so the thresholds and balcony plants do not move. `layer_envelope.py` builds them as
+`rb_wall_f<n>`: slab to slab, as deep as the frames; against a column the panel follows the column's arc with the
+layout's 3 mm gap as its joint, elsewhere it meets the mullion or the corner post face to face; no rails or jamb there.
+The materials pass cuts the course joints, on the column's own course planes. Six panels per floor, 30 in all; H0 and
+B1 keep three sliders, H1 and B0 four. The curtains and their tracks (`props_layout.residential`, `layer_residential`)
+follow the glazed panes only, so no curtain hangs behind a panel; the corner trim applies only where the glazing still
+reaches the corner post. The furniture is unchanged. Checks: the audit is 724 objects, 0 z-fights / 0 penetrations, and
+the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean (envelope 19
+objects). New poses: `fix7_chamfer_left_b8`, `fix7_chamfer_right_faceon` and `fix7_chamfer_column_close`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix7/` (`compare.png` = [b8 | before | after] in the b8
+frame for both chamfers, the user's mark beside the telephoto, then the face-on and close-ups; the checks and both
+audits). The before renders are in `poses/pre_fix7/`.
+
+**Fix 8: straight glass, metal connectors.** The user: "don't use curved glass, make only straight glass, and where glass
+meets there must be a connector metal" (the rounded slab corners at the upper left). The guards' glass bent round the
+corner fillets (12-segment arcs), and the entrance terrace's guard bent its glass round its two 90 degree corners. Now
+every guard is built from flat panels with a post at every glass-to-glass junction:
+- the guard line rounds each corner in straight facets (`make_plan.py faceted()`: chords of the fillet, ends on the arc,
+  about `balconies.facet_target` = 0.35 m long): one facet on the front corners' 0.49 m fillets, two on the 0.85 m ones.
+  The shoe and the continuous top rail follow the facets (b8's rail reads curved, but a bent rail over chord glass would
+  leave the glass off the rail's 40 mm width; at 37 mm sagitta at most the facets read round from b8's stand). The balcony
+  paving, the roof deck and the roof planter ring are offsets of the same faceted line, so the troughs facet too;
+- `balcony_layout.guard_layout()` cuts each run into straight legs, equal panels of at most 1.6 m per leg, and puts a
+  30 x 30 mm charcoal post (`TM_RB_frame`, `balconies.post`) at every junction: between panels, at every facet or corner
+  turn (on the bisector), at the closed floor-1 run's start, and where the roof halves meet (owned by the half that
+  starts there). The glass stops 4 mm clear of each post. Used by `layer_balconies.py` and `rb_lib.guard_along()`
+  (roof, podium recesses, entrance terrace): 325 panels and 317 posts on floors 1-5, 66 and 66 on the roof;
+- the envelope's glazing, the penthouse and the annex were already flat panes between frames (the wall-line corners
+  are metal corner posts), so they are unchanged;
+- the roof deck stops 1 mm short of the shoe (a sealant joint): flush, the shoe's long base n-gon (float32 normal
+  tilted ~3e-5) read as cut by the deck in the audit;
+- wear: the runoff streaks take their guard joints from the same layout (the posts; a corner's streak at one of its
+  posts, seeded), floor 1 now from the closed terrace run (no shoe ends there), and two kept streaks stay at least
+  `APART` = 0.4 m apart on an edge, so their decals never overlap; the wear part was rebuilt (25 streaks, none
+  skipped). The posts are steel members for `metal_chalk` like the rails.
+
+Checks: the audit is 719 objects (five fewer streak decals), 0 z-fights / 0 penetrations, and the site is 42 objects,
+0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. Roof planters: 0 foliage past the guard.
+New poses: `fix8_corner_left_b8`, `fix8_corner_front_close`, `fix8_corner_side_close`, `fix8_roof_corner_close` and
+`fix8_podium_terrace`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix8/` (`compare.png` =
+[b8 | before | after] in the b8 frame at both upper corners, the user's mark beside the telephoto, then the close-ups;
+the checks and both audits). The before renders are in `poses/pre_fix8/`.
+
+**Fix 8b: straight runs, one post per corner.** The user, on fix 8's chords: "adjust the glass parts so we don't have
+those intermediate small glasses to form a pseudo curve ... to have straight glass parts without those small
+adaptations" (screenshot `images/7.webp`, the two narrow panels at the G/H corner). Every slab corner is a 45° turn, so
+the chords were 0.35-0.38 m panels between full ones. The guard line is now the balcony edge's sharp polygon inset by
+0.15 m (`make_plan.py guard_line()`, replacing `faceted()`; `balconies.facet_target` is gone): each run from corner to
+corner (or pilaster) is one straight leg of equal panels (1.18-1.50 m, at most 1.6), and two runs meet at a single post
+on the corner's bisector. Floors 1-5 (the floor-1 terrace's closed run included) have 272 panels and 264 posts (was
+325 / 317), the roof 56 / 56. The podium recesses and the entrance terrace were already straight with plain corners.
+The slab edges, fascias, soffits and their stone joints keep their 0.64 / 1.0 m fillets. b8 reads the corners as rounded
+from afar, but what reads rounded there is the thick stone edge; its rail turns tightly. Keeping the fillets keeps that
+read, and the shoe's outer corner still stays 77 / 48 mm inside the stone arc (120 mm along the runs). The paving, the
+roof deck and the roof planter ring follow the sharp line. The ring's corner trough is now a mitred L reaching
+`ROOF_CORNER_ARM` = 0.6 m along each run (`props_layout.py`); its plants sit on the trough's own mitred offsets, and the
+corner pots stand on the true bisector (`Ring.corner_in()`). That brought pot AB 8 cm nearer the front armchairs, which
+moved 0.1 m in (`v` 3.0). Wear: the corner streaks come from the single corner posts; the wear part was rebuilt (27
+streaks, none skipped). Checks: the audit is 721 objects, 0 z-fights / 0 penetrations, and the site is 42 objects,
+0/0. Hidden parts visible from b8: 0 px. Roof planters: 0 foliage past the guard (closest 3.2 cm), no layout or
+footprint problems. A fresh `target=all save=0` runs clean. New poses: `fix8b_corner_gh_above` and
+`fix8b_rear_corner_cd`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix8b/` (`compare.png`
+= [b8 | before | after] in the b8 frame at both upper corners, the user's screenshot beside the same corner, then the
+close-ups of the front, side, rear and roof corners; the checks and both audits). The before renders are in
+`poses/pre_fix8b/`.
+
+**Fix 9: the pilasters run on through the roof as a frame.** The user: "the front pillars should extend outside of the
+building in the roof, it is like a molding to the building". b8 frames the front centre at the top: the pilasters carry
+on up through the roof band, the band between them is one stone head in their plane, proud of the side bands (it shades
+the left one), and a cap line tops both. Ours stopped the pilasters under the roof slab, whose band ran on unbroken in
+front of them. The roof band from pilaster to pilaster is now faced in the pilasters' plane (`rb_roof_frame`,
+`layer_structure.py roof_frame()`, plan `structure.pilasters.roof_frame` from `ROOF_FRAME` in `make_plan.py`): each
+pilaster's crown, from the roof slab's underside to its top, its outer side the stone return to the side band, and the
+head between them. A stone cap, 0.12 m tall and 0.05 m proud of the face and the ends, runs over the frame and the roof
+slab's edge, its back 2 cm short of the roof guard shoe, which runs on behind it unchanged (as do the guard posts, the
+deck and the planter ring). The cap is cut in segments over each crown and each of the head's five panels, so the
+materials pass's seams carry the frame's joints through it: vertical joints on the pilasters' edges and the head's
+panels, the crowns' bed joint on the pilasters below. The frame stands in the pilasters' 5 cm plane (`PILASTER_PROUD`,
+which the b8 camera fit uses), so it reads less proud than b8's (about 0.15 m there). Wear: no roof runoff streak starts
+behind the cap (`runoff_streaks._behind_frame`); the wear part was rebuilt (27 streaks, as before). Checks: the audit is
+722 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh
+`target=all save=0` runs clean (structure 22 objects). New poses: `fix9_roof_frame_b8`, `fix9_roof_frame_left_end`,
+`fix9_roof_frame_right_low` and `fix9_roof_frame_top`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix9/` (`compare.png` = [b8 | before | after] in the b8
+frame, wide, upscaled and at the left crown, the user's mark beside the telephoto, then the close-ups; the checks and
+both audits). The before renders are in `poses/pre_fix9/`.
+
+**Fix 10: the room dividers run out to the guard line.** The user: "the pillars that separate the rooms should extend up
+to the balcony, the balcony glass should be interrupted". b8's chamfer columns reach the slab edge and the guard glass
+stops against them; ours stood 1.17 m inside the guard line, which ran on in front of them. The six room-dividing columns
+(the front chamfers' B1/H1 and, consistently, the rear chamfers' D1/D2/F1/F2) are now stone piers on every floor, the
+floor-1 terrace included. They keep the casing's 0.9 m width and its back, and their face is on the guard's outer face:
+the shoe front, 1.38 m from the wall line (`structure.columns.proud`; `casing_proud` keeps the old 0.18 m). Nothing of
+them passes the guard (fix 3's rule), and the slab edge's 0.12 m ledge runs on in front. The front arrises are eased by
+20 mm (`PIER` in `make_plan.py`): a larger round would leave the guard's ends standing proud of a curved face. With the
+section in the plan:
+- the envelope's jambs and fix 7's wall panels meet the pier's flat sides with the 3 mm gap, so each bay is 33 mm
+  shorter at a pier. The pane counts are unchanged, and the thresholds, curtains and pots follow;
+- the balcony paving is a piece per room, cut 8 mm from each pier (`balconies.pier_joint`), which replaces the step round
+  the column fronts (`bulge_columns` is gone);
+- the guard is cut into runs between the piers (`balcony_layout.split_at_piers` / `ring_at_piers`;
+  `balconies.guard_run_ends` / `terrace_guard_run_ends`). A run stops against a pier's side with an end post, its face
+  on the pier (`guard_layout` end kind "stop"), and its panels divide the span between the end posts' centres: 1.17-1.43
+  m, even per leg. The shoe and the rail butt the pier's side. The pilaster ends are unchanged. Floors 1-5 have 281
+  panels and 303 posts (was 272 / 264);
+- no soffit downlight sits under a pier's top (28 per floor, was 32);
+- the floor-1 edge planter strips on H and B stop 8 cm from the piers, and the boxes beside a pier keep their foliage
+  behind its side (`pier_ends`, `props_layout.PIER_GAP`);
+- the slabs, fascias, soffits and their joints are unchanged; the materials pass cuts the column courses into the piers.
+
+Wear: the guard's shoe ends at the piers are new `shoe_end` sources and the end posts are no joints. The wear part was
+rebuilt (41 streaks, none skipped; was 27). Checks: the audit is 738 objects, 0 z-fights / 0 penetrations, and the site
+is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix10_piers_right_b8`, `fix10_piers_left_b8`, `fix10_pier_close`, `fix10_pier_balcony`, `fix10_terrace_pier` and
+`fix10_rear_piers_d`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix10/` (`compare.png` =
+[b8 | before | after] in the b8 frame, wide and upscaled at both chamfers, then the user's mark beside the telephoto and
+the close-ups; the checks and both audits). The before renders are in `poses/pre_fix10/`.
+
+**Fix 11: one block grid on the front centre.** The user (images/9.webp, the right front pier beside the loggia): "the
+stones on the front, on the side of the main doors, must have blocks of equal size and alignment; the top row is
+misaligned and shorter". The pier's courses followed every datum (0.64, 0.75, 0.63, the 0.41 slab fascia, 0.67, 0.61, the
+0.41 fascia), and the fascias cut their own equal panels across their whole width (the top row's joint sat between the
+pier's). The materials pass now has joint grids (`joints.grids`, `layer_materials.grid_layout`; plan values from
+`make_plan.front_centre_grid`). The front centre's box holds the portal (jambs, returns, sign band, its slab fascia), the
+front piers, the loggia jamb strips and the corner piers' faces on B / H, ground floor to podium top. Inside it:
+- the courses are equal between the edges every face must meet: 6 x 0.642 m to the door head (4.0), 3 x 0.597 over the
+  sign band to the portal top (5.79, b8's three courses), 7 x 0.626 up to the podium top;
+- the flush seams under the slab fascias (5.38, 9.76) are not cut: the block runs on over the piece boundary, and both
+  halves take one map offset, keyed to the grid cell (16 seams);
+- the vertical joints are laid per plane, shared by every course: the faces' ends are fixed lines (3.45, the jamb line
+  2.848, the corners), each gap cut into equal panels of at most `panel_max` (the piers 2 x 0.775, the sign band and its
+  fascia 5 x 1.139); the courses run on round the portal's sides, the jamb returns and the corner piers' faces;
+- the slab fascias and the plinth that meet the region flush (`inherit`) take their vertical joints from the stone
+  above and below them, so along the B and H chamfers they now line up with the storefront heads and piers (11 faces).
+
+Left as is: on a corner pier's chamfer face the courses (the front's) meet the storefront head beside it (4.75 / 5.38)
+at a T, 15-19 cm apart. The tower (pilasters, columns, slabs) is unchanged: its poses render pixel-identical. Joint
+self-checks: 0 degenerate, 0 non-planar, 0 non-manifold (30 objects, 1585 panels). Checks: the audit is 738 objects, 0 z-fights / 0
+penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs
+clean. The building part was rebuilt (`target=building`), then the wear part and the composition. New poses:
+`fix11_pier_right`, `fix11_portal_front`, `fix11_corner_right`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix11/` (`compare.png` = the user's screenshot and b8 crops
+beside [before | after]: the pier, the b8 frame, the pier face-on, the corner pier, the jamb returns; the checks and both
+audits). The before renders are in `poses/pre_fix11/`.
+
+**Fix 12: plants inside the entrance, real leaves on the pot plants.** The user (images/14.webp, b8's entrance with
+arrows to the plants inside the portal): "add plants on the both sides of the entrance; there are plants nearby already,
+keep them but improve the geometry; use actual leaves, and not simplified geometry (just like you did for the palm
+trees)". New (`layer_entrance_plants.py`, props part, plan `props.entrance_plants` from `props_layout.entrance_plants`):
+a tall glazed charcoal pot (`TM_RB_pot_glazed`, recessed foot, slight belly, rounded lip; wear class planter) each side
+of the doors, between the glazing's end frame and the veneer lining, set back toward the vestibule, standing on the
+entrance floor; in each a bird-of-paradise clump (`plant_broadleaf.py`, `proc/broadleaf_0|1`, ~20-23k triangles): 5-6
+fans of petioled paddle leaves, V-folded with a crisp midrib, pinnate veins and a waxy paler underside in the shader
+(`plant_shading.py`), natural droop, margins rolling down, seeded tints and splits along the veins, leaning away from
+the wall. Each clump is turned (7.5 degree steps from the plan's rot_deg) until its foliage keeps inside `keep_in`:
+clear of the lining and the vestibule plane by 30 mm, out of the doors' way (|x| >= 1.35), 0.3 m under the head band and
+its downlights (achieved: 1-19 cm to the sides, 1.07 m under the band; 1.66-1.73 m tall above the soil). The existing
+plants keep their places, rebuilt with real leaves through `proc_plants.ensure`: the cycads (`plant_cycad.py`: a
+diamond-armoured trunk, a felt dome, 28-34 fronds of `palm_frond.build_frond` with a registered stiff `cycad` age, ~47-54k
+triangles) and the spiky rosettes (`plant_spiky.py`: 70-90 keeled sword leaves, pale bases, brown spines, 1-3 dead,
+~12-13k). Both are shared: the entrance pots outside the portal (site) and the roof's feature clusters (props: 23
+cycads, 9 rosettes). Every proc kind now carries `rb_fit_aniso` (cycad 0.30, spiky 0.25, broadleaf 0.15), so the
+slender layout targets lower a plant instead of squashing it: the cycads now stand 1.0-1.3 m (the entrance ones 1.17 m;
+they were stretched to 1.8-1.9 m), the rosettes 1.0-1.4 m. Roof foliage outside the guard: 0 (closest 3.2 cm). Checks: the audit is 739 objects, 0
+z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all
+save=0` runs clean. Rebuilt: props (`entrance_plants`, `roof_planters`), site (`site_palms`), the wear part and the
+composition; the building is unchanged. New poses: `fix12_entrance_front`, `fix12_recess_plant_left`,
+`fix12_recess_plant_right`, `fix12_leaf_close`, `fix12_entrance_pot_right`, `fix12_roof_spiky_cycad`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix12/` (`compare.png` = the user's mark and the b8
+entrance crop beside [before | after], then the recess plant, leaf, cycad pot and roof close-ups; the module test
+renders in `test/` and `test_cs/`; the references; the checks and both audits). The before renders are in
+`poses/pre_fix12/`.
+
+**Fix 13: one set of course planes for the whole podium.** The user (images/15.webp, the A/B corner pier and the B0
+storefront head band between the canopy and the floor-1 planter): "misaligned". Fix 11's grid covered only the front
+centre (courses 4.597 / 5.193 there), while the storefront head bands kept the global courses: their stone bottom at
+4.75 and the lintel / slab-fascia seam at 5.38 met the pier's chamfer face at a T, 15-19 cm off its joints (fix 11's
+leftover); the upper head bands (9.15 / 9.76) did the same. The joint grid is now the whole podium (`joints.grids[0]`,
+`podium`, `make_plan.podium_grid()`): the box holds the podium outline and the portal, and its `slots` (podium stone,
+pilaster, column, slab fascia) keep other stone out. Its datums are every edge a podium face must meet: the ground
+0.15, the door head 4.0, the storefront heads' stone bottom 4.75, the upper podium 5.79, the upper heads' stone bottom
+9.15 and the podium top 10.17. One shared course height, 0.618 m, is re-derived from `course_target` within +-20 %
+(`podium_courses()`: the height whose rounded course counts keep every band's courses closest to it). The courses are
+6 x 0.642, 0.75, 2 x 0.52 (planes 4.75 / 5.27 / 5.79), 5 x 0.672 and 2 x 0.51 (9.66). The podium's global course
+planes are the grid's. So every pier, head band, slab fascia, return and column pier on all eight runs shares one set
+of planes. The 5.38 and 9.76 seams are left uncut: the block runs on over them with one map offset (80 seams). The sign
+band now reads as b8 does, with a joint between its two lines (4.75) and one above "TERRA & MAR" (5.27). The vertical
+joints are laid per plane as in fix 11: equal panels per run, the same lines on the head band and the fascia above it
+(the rods' joint clearance is unchanged). The tie-rod anchor plates (centre 5.19) straddled the new 5.27 joint, so
+`props_layout.anchor_clear_of_courses()` nudges them off the shared planes by `hardware.course_clear` = 40 mm, to 5.148
+(`rod_anchor_design_z` keeps 5.19). That is a 4 cm drop, and the rods run about a degree flatter. The plates
+now sit on the lower block's face. Joint self-checks: 0 non-manifold, 0 degenerate, 0 non-planar (300 grid faces, 12
+inherited). Rebuilt: the building part (`target=building`), the props' `awnings`, the wear part (41 streaks, as
+before), the composition. Checks: the audit is 739 objects, 0 z-fights / 0 penetrations, and the site is 42 objects,
+0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses: `fix13_band_right`,
+`fix13_band_left`, `fix13_upper_band_right`, `fix13_column_pier_right`, `fix13_sign_band` and `fix13_rear_corner`.
+Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix13/` (`compare.png` = b8 crops of both corner
+piers and the sign band beside [before | after], then the user's screenshot beside the band close-ups, then the upper
+band, the column pier, the rear corner and the anchor plate; the user's mark in `references/`; the checks and both
+audits). The before renders are in `poses/pre_fix13/`.
+
+**Fix 14: soffit downlights clear of the walls.** The user (images/16.webp, the B chamfer's wood soffits with two lights
+circled at the inner corner against the column pier): "this light got too close from the wall. redistribute all lights
+so there is a minimum padding. or just remove them if it would be too cluttered; the current distance between lights is
+good". The balcony lights were one even row round the whole soffit centre line with only a 0.25 m skip at the piers and
+pilasters: the circled light's rim stood 0.29 m from the B pier, a D pier light 0.32 m, and the ring was lopsided
+(28 per soffit). Now (`balcony_layout.soffit_lights` / `even_stations`, `make_plan.soffit_downlights`) the centre line is
+cut at the six piers and the two front pilasters into eight stretches, and each is lit evenly at the pitch closest to
+the old 2.2 m (by ratio): cells with a light at each centre where half a pitch clears the padding, else the end lights on
+the padding and the rest evenly between. Plan values: `balconies.downlight.clear_wall` 0.40 m (rim to a pier, pilaster
+or wall face; the wall is the window frames' outer face) and `clear_edge` 0.30 m (rim to the slab edge). Every rim is
+then measured in plan against those footprints and outlines and a light short of either is dropped
+(`balconies.downlight_check`: none dropped). Result: 30 lights per soffit (stretches 5.31 / 6.44 / 14.24 / 3.87 / 13.62
+m with 2 / 3 / 6 / 2 / 6 lights, pitches 1.94-2.66 m), symmetric about x 0, closest rims 0.91 m to a pier or pilaster,
+0.63 m to the frames, 0.69 m to the slab edge; the same points under every soffit, floors 1-5 (the floor-1 terrace
+and the roof overhang included), 150 in all (was 140). The entrance head band keeps its old pitch as
+`head_band.light_pitch` (0.4733 m) with `clear_wall` 0.40 m to the linings at its ends; `make_plan.podium()` lays out
+`light_x`: 11 lights at 0.485 m, rims 0.40 m from the linings (were 12, rims 0.22 m). Across its 0.45 m depth they stay
+centred, 0.20 m from either edge: the band is their whole housing, so the 0.30 m edge rule cannot apply there. The
+loggia, the upper-podium recesses and the penthouse have no soffit lights (the penthouse's downlights are inside its
+ceiling). Rebuilt: the building part (`target=building`; joint stats as fix 13's), the wear part (41 streaks), the
+composition. Checks: the audit is 739 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden
+parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses: `fix14_user_view`, `fix14_corner_b`,
+`fix14_corner_h`, `fix14_corner_b_far`, `fix14_rear_d` and `fix14_entrance_band`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix14/` (`compare.png` = b8 crops of the chamfer soffits
+and the entrance band beside [before | after], the user's screenshot beside the user-view pose, then the pier corners,
+a plan of the old and new lights, the A-B corner, the far side and the rear chamfer; the user's mark in `references/`; the checks and
+both audits). The before renders are in `poses/pre_fix14/`.
+
+**Fix 13b: one course height for the whole podium.** The user (images/19.webp, the sign band over the entrance, its
+courses arrowed): "different sizes. incorrect. prefer same size". Fix 13 kept the datums and let the courses vary
+(6 x 0.642 / 0.75 / 2 x 0.52 / 5 x 0.672 / 2 x 0.51), so the sign band read 0.75 + 2 x 0.52. Now the datums move onto
+one course height (`make_plan.PODIUM_COURSES`, `podium_course_datums()`): the floor levels stay (ground 0.15, upper
+podium 5.79, podium top 10.17), each storey is cut into whole courses whose heights agree within 1 cm (window 0.5-0.8
+m), and the split that moves PODIUM's design heights least wins; only 9 + 7 qualifies (0.6267 / 0.6257 m; the splits
+tried are in `plan.podium.courses`). Moves: the door head 4.0 -> 3.91 (-9 cm; the sign band is 3 equal courses, as b8's
+three, measured 22 / 24 / 25 px there; ours now 22 / 22 / 21), the storefront heads' stone bottom 4.75 -> 4.537 (-21.3
+cm), the upper heads' 9.15 -> 8.919 (-23.1 cm), the loggia head 9.37 -> 8.919 (-45.1 cm: on the upper heads' plane; b8's
+loggia opening is 0.74 of the upper podium and its cover 0.26, 9.37 gave 0.82 / 0.18, now 0.71 / 0.29; the cover is
+1.25 m tall). The storefront and upper transoms and head panels move with their heads; the canopies hang from the
+lintel (`AWNING.back_below_lintel` 0.05, anchor plates `rod_anchor_above_lintel` 0.44 -> 4.977, clear of the planes
+without a nudge, the rods back at fix 6's 43.0 degrees); the wood head band, its 11 downlights (fix 14's `light_x`) and
+the recess plants' ceiling (z_max 3.49, 0.98 m clear) follow the door head; the sign lines sit at `band_at` of the band
+(b8: 0.5 / 0.24 -> 4.85 / 4.361, "TERRA & MAR" centred on the middle course). Interiors unchanged (no interior value
+moved). Joint self-checks as fix 13 (0 non-manifold / degenerate / non-planar, 300 grid faces). Rebuilt: the building
+part (`target=building`), the props' `entrance_plants` and `awnings`, the wear part (41 streaks), the composition.
+Checks: the audit is 739 objects, 0 z-fights / 0 penetrations, and the site is 42 objects, 0/0. Hidden parts visible
+from b8: 0 px. A fresh `target=all save=0` runs clean. New poses: `fix13b_sign_band`, `fix13b_store_bay`,
+`fix13b_corner_pier`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix13b/` (`compare.png` =
+[b8 | before | after] of the sign band, the loggia and the B0 head in the b8 frame, the user's screenshot beside the sign
+band close-ups, the course table (`courses_table.png`), then the storefront bay, the corner pier, the anchor plate, the
+head band and the loggia cover; the user's mark in `references/`; the checks and both audits). The before renders are
+in `poses/pre_fix13b/`.
+
+**Fix 15: veneer plates with real reveals.** The user (images/17.webp, the entrance's left jamb lining and the vestibule
+panel in one continuous grain): "it is unlikely that we will have a single plate of wood correct? if that's the case, can
+you add the subdivision? but if adding subdivision the plates cannot have continuity". Every veneer face of the entrance
+and the loggia (the jamb linings, the vestibule and loggia panels, both heads' soffits, the head band's fascia and soffit)
+is now real plates (`layer_podium.py veneer_box()`, plan `podium.entrance_detail.veneer_panels` from `VENEER_PANELS` /
+`veneer_panels()` in `make_plan.py`): a 5 mm skin over a core in the new dark slot `TM_RB_veneer_reveal`
+(`materials.veneer_reveal`), split into equal plates per face with a 5 mm wide, 5 mm deep reveal between them; the head
+soffits' plates sit on the lintel's lowest piece, now that dark core. Plate widths 0.6-1.2 m, nearest 0.9 (a narrower
+face is one plate), at most 2.7 m tall: the linings and panels are one plate wide (0.83-0.92 m) and two tall (1.88 m at
+the entrance, its joint at 2.03 on a podium course plane; 1.56 m at the loggia); the band and the entrance soffit share
+7 plates of 0.81 m, the loggia soffit 7 of 0.83 m. No plate wraps a corner: a wall's plates stop a reveal short of the
+soffit and of the panel behind it (inside corners), and the band's fascia and soffit both stop short of their arris (a
+square quirk). `panel_cuts()` picks the band layout whose joints keep every downlight's rim >= 0.05 m from a joint's
+edge (achieved 0.052; fix 14's 11 `light_x` unchanged). Each plate's face gets its own map (UVs from the plate's edge,
+a seeded offset along the grain) and the face attributes `rb_veneer_w` / `rb_veneer_seed` (`dress_panels()`), which
+`dress_veneer()` now reads: the leaves divide the plate and book-match only inside it (no V-joint: the reveal is the
+joint), and each plate draws its own grain scale (+-15 %), tone (+-9 %) and hue, so the grain visibly restarts at every
+reveal; faces without the attributes keep the 4c layout. The satin coat and fine vertical grain are unchanged. Plates:
+30 in `rb_podium_wood`, 14 in `rb_entrance_band`, every one matched to its face. The fix 12 recess plants read plan
+values only and the faces did not move, so the props were not rebuilt. Rebuilt: the building part (`target=building`;
+joint stats as fix 13: 300 grid faces, 12 inherited, 80 suppressed seams, 0 non-manifold / degenerate / non-planar),
+the wear part (41 streaks), the composition. Checks: the audit is 739 objects, 0 z-fights / 0 penetrations, and the site
+is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix15_user_view`, `fix15_right_side`, `fix15_band_below`, `fix15_entrance_front`, `fix15_loggia_left`. Evidence:
+`tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix15/` (`compare.png` = [b8 | before | after] of the
+entrance in the b8 frame, the user's screenshot beside the user-view pose and a corner crop, then the band from below,
+the right side, straight on, the loggia and fix 4c's close-up; the user's screenshot and the b8 crop in `references/`;
+the checks and both audits). The before renders are in `poses/pre_fix15/`.
+
+**Fix 16: real doors.** The user (images/18.png, the entrance glazing's two centre bays circled from the transom down):
+"these must be real doors; in the second floor it can be automatic slide doors; Add handlers, rails, connectors". The
+front centre's two glazed walls (the vestibule's and the loggia's, same 1 m grid) are now built by `entrance_doors.py`
+from `podium.entrance_detail.doors` (`ENTRANCE_DOORS` in `make_plan.py`, replacing the unused `doors` spans); `bays`
+[1, 2] open, the outer bays stay fixed. `Wall` stops the sill at the opening, drops the mullion between the door bays (a
+stub over the head), makes the transom over them the door head, and holds every fixed pane (12) between 18 x 12 mm
+glazing beads on both faces. **Entrance** (`rb_entrance_doors` + `rb_entrance_door_glass`): a pair of glass swing doors,
+leaves 0.963 x 2.75 m (x 0.003-0.966, z 0.166-2.916) in black steel (hinge stiles 60 mm, meeting stiles 70 mm, rails
+70 / 110 mm, 45 mm deep round 12 mm glass), 4 mm clear of the jambs, the head and the threshold, 6 mm apart; long
+stainless bar pulls (1.2 m, 32 mm, on two standoffs) on both faces of both meeting stiles; an astragal on the right leaf's
+street face and a seal fin in the meeting gap; offset pivots (pins at x +-0.936 to the head and to the floor) with
+stainless patch straps on both faces at the top and bottom hinge corners; the transom over the doors deepened to
+2.92-3.06 (the concealed overhead closers), screwed cover plates on both faces; a chamfered stainless threshold 12 mm
+high, 0.24 m deep, the floor springs' cover plates set flush in it. The transom stays at 2.92 and the head at 3.91.
+**"Second floor"**, read as the floor above the entrance: the loggia's same two centre bays (`rb_loggia_sliders` +
+`rb_loggia_slider_glass`), because they open onto the floor-1 terrace's middle, between its two tables (AI 636), on the
+building's axis over the entrance. They are automatic bi-parting sliders: two framed leaves (50 mm stiles, 40 mm deep)
+hung 12 mm in front of the frame's terrace face, overlapping the fixed mullions by 50 mm so they slide past the fixed
+panels; an operator header (3.99 x 0.17 x 0.16 m, top on the transom's) with a slot in its underside holding the
+stainless track and the leaves' hangers, stainless end caps; motion sensors with dark lenses on the header's terrace face
+and on the head's room face (the opening's head comes down to the header's bottom); floor guides on the paving past the
+closed leaves' ends; brush seals under the leaves and behind their outer stiles, rubber seals at the meeting stiles;
+small flush pulls; a stainless threshold in the frame's plane, flush with the terrace paving. New slots (plan
+`materials`): `TM_RB_stainless`, `TM_RB_seal`, `TM_RB_sensor_lens` (no wear class). Triangles: 1532 + 24 (entrance),
+444 + 24 (loggia). Interiors: the loggia room's front-row spot in line with the sliders stays free (`DINING`
+`loggia_room.door_aisle`, as the ground floor's entrance), so the way in is clear: the dining room has 50 tables, 120
+chairs, 48 pendants (was 51 / 124 / 49), 0 footprint problems. The head band, its downlights, the veneer plates and the
+recess plants are unchanged and clear. Rebuilt: the building part (`target=building`; joint stats as fix 13: 300 grid
+faces, 12 inherited, 80 suppressed seams, 0 non-manifold / degenerate / non-planar), the interiors (`target=interiors`,
+clean), the wear part (41 streaks), the composition. Checks: the audit is 738 objects, 0 z-fights / 0 penetrations, and
+the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs clean. New poses:
+`fix16_entrance_front`, `fix16_handles_pivots`, `fix16_closer_top`, `fix16_threshold_low`, `fix16_slider_terrace`,
+`fix16_slider_header`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix16/` (`compare.png` =
+[b8 | before | after] of the entrance and the loggia in the b8 frame, the user's screenshot beside the entrance straight
+on, then the hardware, threshold, header and terrace close-ups; the user's screenshot and b8 crops in `references/`; the
+checks and both audits). The before renders are in `poses/pre_fix16/`.
+
+**Fix 17: luxury wood soffits, one spotlight per plate.** The user: "use the wood material in the ceiling of all floors
+replacing the orange finish. favor larger wood pieces; horizontally larger (and layout as if it is luxury)"; then, on the
+head band's 11 lights over 7 plates (images/20.webp): "use one light source on each plate, centralized"; and "replace the
+circle gray dots for light sources on each floor; those small spotlights, should have a black casing around them, really
+small". The flat orange `TM_RB_soffit` was on the balcony undersides only: the floor-2 to floor-5 slabs and the roof
+slab, the five soffits over floors 1-5 (the floor-1 terrace's included). No other exterior ceiling uses that slot:
+the upper-podium recesses have plaster ceilings, and the entrance volume's covered top keeps it unseen. Those soffit
+faces are now fix 15's dark core (`TM_RB_veneer_reveal`, `layer_structure.py`, plan `balconies.soffit_veneer.core`).
+Under each one hangs `rb_soffit_plates_f<n>` (`layer_balconies.py soffit_plates()`). The plates are 5 mm thick with
+5 mm reveals, in their own slot `TM_RB_soffit_veneer`: fix 4c's veneer, but with a satin coat of 0.3 / 0.35 (plan
+`materials.soffit_veneer`), because at 0.75 the street's grazing view mirrored the ground and turned the wood olive. The
+layout comes from `SOFFIT_VENEER` / `balcony_layout.soffit_plates()` in `make_plan.py`:
+- three courses run parallel to the slab edge, from the shadow gap's line (0.05 m) to the frames' face (1.44 m). Each is
+  about 0.46 m wide: the border plate on the free edge, the light course centred on the soffit's centre line, and the
+  inner course;
+- each leg of the sharp outline is cut at the piers and the pilasters. Each segment is divided symmetrically into equal
+  plates near 2.2 m (1.9-2.7), and the three courses share the end joints;
+- legs meet on mitres on the corner's bisector. The border plates are clipped to the filleted edge, and each pier front
+  gets a 60 mm border filler.
+
+That gives 96 plates per soffit: 2.655 (centre), 2.625 (B/H), 2.189 (C/E/G), 2.316 and 1.936 m (D/F), and 1.204 m
+between each front pilaster and its corner. That last one is shorter than the rule allows; it is the whole piece there.
+The layout is the same under every floor, and the grain seed shifts per floor. There is one downlight at the centre of
+each light-course plate, 30 per soffit and 150 in all (fix 14 also had 150). Every rim stays clear by fix 14's check:
+0.57 m to a pier or pilaster, 0.66 m to the frames and 0.72 m to the edge. The head band keeps its 7 plates (0.81 m),
+now with 7 lights, one on each plate's centre (`head_band.light_x`, `plates`); fix 14 had 11. Their rims sit 0.38 m
+from the linings, which is as far as the end plates' centres allow. Every downlight on the building, 157 in all, is a
+linked copy of one mesh, `rb_downlight_fitting` (`fitting()`, 188 triangles; plan `balconies.downlight`):
+- a 55 mm warm lens (`TM_RB_downlight`, emission 120, as the band's old lights);
+- a 6 mm matte-black trim ring (`TM_RB_downlight_trim`) standing 1.5 mm proud, with the lens 1 mm up inside it;
+- it sits on the core in a hole of its plate (`punch()`), with a 1 mm shadow gap.
+
+Wear classes: `TM_RB_veneer_reveal` is wood_ext and `TM_RB_soffit_veneer` is soffit. Rebuilt: the building part
+(`target=building`; joint stats as fix 13: 300 grid faces, 12 inherited, 80 suppressed seams, 0 non-manifold /
+degenerate / non-planar), the wear part and the composition. Checks: the audit is 894 objects, 0 z-fights / 0
+penetrations, and the site is 42 objects, 0/0. Hidden parts visible from b8: 0 px. A fresh `target=all save=0` runs
+clean. New poses: `fix17_user_view`, `fix17_soffit_below`, `fix17_fitting_macro`, `fix17_band_below`,
+`fix17_tower_soffits`. Evidence: `tests/artifacts/screens/buildings/terramar_recessed/rebuild/fix17/`:
+- `compare.png`: b8 crops beside [before | after] in the b8 frame, the user's 16 / 20 screenshots beside their views,
+  then the soffit, the tower and the macro of the fitting;
+- the user's screenshots and the b8 crops in `references/`;
+- the checks and both audits.
+
+The before renders are in `poses/pre_fix17/`.
+
 ### Roof and penthouse adjustments (2026-10-15)
 
 The user: "no dinner table in the roof top. improve the quality of the machines on top of penthouse. that sofa in front
@@ -1477,6 +2052,76 @@ Evidence is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/roof
 - `poses/pre_roofadj_vs_rebuild/`: 7 sheets;
 - `units_test/`: the module's test renders;
 - the checks and both audits.
+
+### Curtain pairs and roof furnishing (2026-10-15)
+
+The user: "use left and right curtains on all floors. with different openings. add more furniture on the top now. it is
+a bit empty after the dinning table removal. add more vases with trees, maybe a box at the center with some small trees
+and flowers. no palm tree at the roof top. substitute". They had circled a front-centre (A1) bay in the b8 view whose
+glazing showed no curtains.
+
+**Why the A1 bay read empty.** The A1 spans had curtains, but floors 1–3 drew only one panel (styles `start` / `end`),
+and the sheer (80 % cloth, a quarter translucent) rendered about as dark as the glass from b8 (sRGB ~85 against ~60).
+Under the balcony slabs only daylight from the window side lights a sheer. Test renders
+(`curtains_roof/sheer_tests/`) showed a translucent cloth going darker and an opaque diffuse one brightest.
+
+**Curtains** (`props_layout.residential()`, `layer_residential.py`):
+- every glazed span on every floor takes a left and a right panel. The one-side and stacked-open styles are gone;
+- each span draws an opening, never the one the same span had on the floor below: `closed` (each panel 36–45 % of the
+  span), `half` (22–36 %) or `open` (15–22 %). Each panel draws its own share, so the gap is off-centre;
+- the narrow corner lights (A0, A2, 0.55 m) take one panel from their corner side (45–80 %);
+- `TM_RB_sheer` is now 95 % cloth and 12 % translucent (was 80 % / 25 %), colour 0.90.
+
+Result: 160 panels on 85 tracks (75 pairs, 10 singles; 62 half, 44 closed, 44 open), and no two floors share a pattern.
+From b8 the A1 bays now show a pale panel on each side on every floor.
+
+**Roof planting** (`props_layout.roof_planters()`, `layer_roof_planters.py`):
+- **No palms.** The clusters' and islands' palms are linden olives now; D and F take a viburnum standard. The cycads
+  and spiky rosettes stay: they read as agave-like rosettes, not palms. The unused `RBP_proc_palm_*` prototypes are
+  dropped from the props part. Features: 22 olives, 8 standards, 24 cycads, 10 spiky, 0 palms.
+- **Pots.** Eleven large tapered pots (`rb_roof_pots`, r 0.30–0.42 m, h 0.56–0.80 m; light grey, charcoal or white):
+  - one at each of the ring's eight corners, on the bisector inside the troughs. The two front corners sit further in
+    and lower (1.5 m, ≤ 0.62 m), so they stay under the sightline;
+  - three by the penthouse: either side of the door, and right of the slider.
+  - Each holds a linden olive (1.45–1.85 m, with its companion form) or a viburnum standard: a clipped ball on a clear
+    stem (`rb_roof_tree_stems`, `TM_RB_tree_stem`).
+- **Centre box.** A low limestone box (`rb_roof_centre_box`, 3.4 × 1.6 × 0.42 m) in the middle of the front terrace.
+  It holds two small olives (1.15–1.4 m) and a standard, 19 low viburnum in three rows, and 130 flower heads on the
+  viburnum's crowns (`rb_roof_flowers`). Paths are kept all round it: furniture stays 0.6 m off it.
+- **Checks.** The pots and the box are checked against the islands, each other, the 1.2 m strips before the
+  penthouse's door and slider, the penthouse, the annex and the troughs (`layout_problems`: none; closest pot 1.07 m
+  from the guard line). Every plant's foliage is now checked against the guard line, not only the perimeter's: 0 outside
+  (closest 3.2 cm). The pots, the box and the flowers are tagged `rb_hide_from_b8`. A ray test against the roof slab
+  finds the centre box's plants and the door pots' trees 0 % visible from `CAM_B8`. The front-corner pot trees show over
+  the guard, as the palms did.
+
+**Roof furniture** (`props_layout.ROOF_GROUPS`, `layer_roof_furniture.py`; the loungers and the B lounge stay):
+
+| Group | Where | Pieces |
+| --- | --- | --- |
+| `lounge_rear` | behind the penthouse (run E, 4.1 m in) | the B lounge again, the sofa backing onto the rear wall, facing the rear view |
+| `bistro` | front left (run A) | a round bistro table (the café table, a 25 mm umbrella hole) and two slat-back chairs |
+| `armchairs_front` | front right (run A, 2.9 m in) | two teak-framed armchairs facing the view, a side table between |
+| `armchairs_side` | left side strip (run G) | the same, beside the annex |
+
+24 items, 35.8 k triangles placed (33.1 k stored). The footprint check now also covers the centre box, the pots and the
+door strips: 0 problems, closest to the guard 1.25 m.
+
+`check_layers.py`: the aerial roof-level pass iterated `all_objects` live while hiding objects, and crashed Blender once
+the roof had more objects. It now iterates a list.
+
+Checks:
+- the audit: 716 objects, 0 z-fights, 0 penetrations; the site: 42 objects, 0 / 0. A pot's soil had been rounded
+  differently from its stem's foot (10 penetrating faces), so the pot height is now rounded first;
+- hidden parts visible from b8: 0 px. The first front-corner pots showed 13 px over the slab edge, which is why they
+  moved in and down;
+- a fresh `target=all save=0` build runs clean.
+
+New pose: `roof_terrace_eye` (standing eye height from the front left, across the centre box to the lounge). Evidence
+is in `tests/artifacts/screens/buildings/terramar_recessed/rebuild/curtains_roof/`:
+- `poses/pre_curtains_roof_vs_post_curtains_roof/`: 8 sheets;
+- `sheer_tests/`: the sheer variants and `b8_a1_ref_pre_v4.png` (b8, before, after);
+- the checks, both audits and `terramar_rebuild.audit.json`.
 
 ### Stone returns and connection joints (2026-10-14)
 

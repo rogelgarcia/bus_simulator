@@ -15,9 +15,13 @@ from mathutils import Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(HERE) not in sys.path:
     sys.path.insert(0, os.path.dirname(HERE))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import balcony_layout  # noqa: E402  (pure Python: the guards' panels and posts, user fix 8)
 import tm_common as C  # noqa: E402
 
 importlib.reload(C)        # a headed session keeps modules imported by earlier runs
+importlib.reload(balcony_layout)
 
 ROOT = os.environ.get("TM_RB_ROOT", "TERRAMAR_REBUILD")   # every layer's collection lives under it: build.py sets the
                                                          # part file's root (TM_BUILDING, TM_PROPS, TM_INTERIORS)
@@ -40,6 +44,8 @@ MATERIALS = {
     "TM_RB_frame": (0.025, 0.025, 0.028),
     "TM_RB_glass": (0.80, 0.86, 0.90),
     "TM_RB_wood": (0.42, 0.22, 0.10),
+    "TM_RB_veneer": (0.26, 0.13, 0.06),           # user fix 4c: the entrance's luxury veneer (layer_materials)
+    "TM_RB_veneer_reveal": (0.03, 0.021, 0.015),  # user fix 15: the veneer plates' reveals and core (layer_podium)
     "TM_RB_paving": (0.58, 0.56, 0.52),
     "TM_RB_roof_paving": (0.66, 0.64, 0.60),
     "TM_RB_site_paving": (0.62, 0.61, 0.58),
@@ -47,13 +53,18 @@ MATERIALS = {
     "TM_RB_downlight": (0.90, 0.90, 0.88),
     "TM_RB_podium_stone": (0.80, 0.77, 0.71),
     "TM_RB_penthouse_stone": (0.82, 0.79, 0.73),
+    "TM_RB_cover_stone": (0.80, 0.77, 0.71),
     "TM_RB_solar": (0.04, 0.05, 0.08),
     "TM_RB_unit": (0.55, 0.56, 0.57),
     "TM_RB_louvre": (0.10, 0.10, 0.11),
+    "TM_RB_stainless": (0.60, 0.60, 0.58),        # user fix 16: the entrance doors' hardware (entrance_doors.py)
+    "TM_RB_seal": (0.018, 0.018, 0.018),          # user fix 16: rubber and brush seals
+    "TM_RB_sensor_lens": (0.01, 0.01, 0.012),     # user fix 16: the sliders' motion sensor lenses
 }
 # Placeholder surface settings until the materials layer (AI 648): (roughness, metallic, transmission)
 SURFACE = {"TM_RB_frame": (0.35, 0.3, 0.0), "TM_RB_glass": (0.02, 0.0, 1.0), "TM_RB_wood": (0.55, 0.0, 0.0),
-           "TM_RB_solar": (0.15, 0.4, 0.0), "TM_RB_unit": (0.45, 0.5, 0.0)}
+           "TM_RB_veneer": (0.45, 0.0, 0.0), "TM_RB_solar": (0.15, 0.4, 0.0), "TM_RB_unit": (0.45, 0.5, 0.0),
+           "TM_RB_stainless": (0.27, 1.0, 0.0), "TM_RB_sensor_lens": (0.06, 0.0, 0.0)}
 
 
 def args(argv=None):
@@ -349,6 +360,21 @@ def rect(x0, x1, y0, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
+def chamfer(loop, c):
+    """A convex loop with every corner cut by a chamfer whose legs are c long along the two edges (2026-10-15, fix 5):
+    each corner becomes two points, on its incoming then its outgoing edge; c <= 0 returns the loop unchanged."""
+    if c <= 0:
+        return [tuple(p) for p in loop]
+    out = []
+    n = len(loop)
+    for i in range(n):
+        p, a, b = loop[i], loop[i - 1], loop[(i + 1) % n]
+        da, db = math.dist(p, a), math.dist(p, b)
+        out.append((p[0] + (a[0] - p[0]) * c / da, p[1] + (a[1] - p[1]) * c / da))
+        out.append((p[0] + (b[0] - p[0]) * c / db, p[1] + (b[1] - p[1]) * c / db))
+    return out
+
+
 def insert_points(loop, points, eps=1e-6):
     """Insert points that lie on the loop's edges (each into the edge it falls on, in order along the edge)."""
     out = []
@@ -393,40 +419,19 @@ def band(path, v0, v1):
     return side(v1) + list(reversed(side(v0)))
 
 
-def sub_path(path, s0, s1):
-    """The part of an open polyline between arc lengths s0 and s1."""
-    out, acc = [], 0.0
-    for a, b in zip(path, path[1:]):
-        seg = math.dist(a, b)
-        if seg > 0 and acc + seg >= s0 and acc <= s1:
-            lerp = lambda s, a=a, b=b, acc=acc, seg=seg: (a[0] + (b[0] - a[0]) * (s - acc) / seg, a[1] + (b[1] - a[1]) * (s - acc) / seg)  # noqa: E731
-            if not out:
-                out.append(lerp(max(s0, acc)))
-            if acc + seg <= s1:
-                out.append(tuple(b))
-            else:
-                out.append(lerp(s1))
-                break
-        acc += seg
-    return [q for i, q in enumerate(out) if i == 0 or math.dist(q, out[i - 1]) > 1e-6]
-
-
-def panels(path, max_len, gap):
-    """Equal panels of at most max_len along an open polyline, gap between them."""
-    total = sum(math.dist(a, b) for a, b in zip(path, path[1:]))
-    n = max(1, math.ceil(total / max_len))
-    w = total / n
-    return [sub_path(path, k * w + (gap / 2 if k else 0.0), (k + 1) * w - (gap / 2 if k < n - 1 else 0.0)) for k in range(n)]
-
-
-def guard_along(path, z, g, out):
-    """A frameless glass guard on an open polyline at floor level z (g = plan["balconies"] dimensions): dark shoe and
-    top rail as mitred strips, glass panels of at most g["panel_max"] with g["panel_gap"] joints."""
+def guard_along(path, z, g, out, ends=("open", "open")):
+    """A glass guard on an open polyline at floor level z (g = plan["balconies"] dimensions): dark shoe and top rail as
+    mitred strips, flat glass panels of at most g["panel_max"] and a slim post at every glass-to-glass junction (user
+    fix 8, 2026-10-15: no bent glass; balcony_layout.guard_layout, whose `ends` say what stands at the run's ends)."""
     rail_top = z + g["paving"] + g["guard_height"]
+    span = [(z + g["shoe"]["height"], rail_top - g["rail"]["height"])]
     out.append(piece(band(path, -g["shoe"]["width"] / 2, g["shoe"]["width"] / 2), [(z, z + g["shoe"]["height"])], "TM_RB_frame"))
     out.append(piece(band(path, -g["rail"]["width"] / 2, g["rail"]["width"] / 2), [(rail_top - g["rail"]["height"], rail_top)], "TM_RB_frame"))
-    for pan in panels(path, g["panel_max"], g["panel_gap"]):
-        out.append(piece(band(pan, -g["glass"] / 2, g["glass"] / 2), [(z + g["shoe"]["height"], rail_top - g["rail"]["height"])], "TM_RB_glass"))
+    lay = balcony_layout.guard_layout(path, g, ends)
+    for pan in lay["panels"]:
+        out.append(piece(band(pan, -g["glass"] / 2, g["glass"] / 2), span, "TM_RB_glass"))
+    for post in lay["posts"]:
+        out.append(piece(balcony_layout.post_loop(post, g), span, "TM_RB_frame"))
 
 
 def glass_frame(spans, lo, hi, z0, z1, member, sill, head, transom, box, gbox, frames, glass):
