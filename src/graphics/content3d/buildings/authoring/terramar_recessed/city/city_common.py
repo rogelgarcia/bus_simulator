@@ -5,15 +5,21 @@
 # Mar part files in its place, and saves the copy here under tests/artifacts/. render_city_shots.py (stills) and
 # render_flyover.py (the portrait video) open the copy. Nothing here writes a Bradbury file.
 #
-# THE PLACEMENT. The Terra & Mar parts are modelled in their own frame (tm_common: front run A faces -Y, street z 0,
-# sidewalk top 0.15). The Bradbury's site is the block between Broadway (its east face at x 16.99, kerb at 21.19) and
-# 3rd Street (south face y -17.88), its pavement top Z_GROUND 0.201, the sun at azimuth +40 (east-north-east, 42.9 up):
-# Broadway's face sunlit, 3rd Street's in shade. Terra & Mar is TURNED 90 degrees so its front faces east onto
-# Broadway, sunlit, with its right side (north) sunlit too: local (x, y) -> world (-y, x), then moved by OFFSET, so the
-# front edge of its own forecourt paving (local y -17) lands on the Bradbury's Broadway wall line, centred on the
-# block's north-south middle, and its sidewalk top (0.15) on the Bradbury's pavement top (0.201). Everything else in
-# these scripts (cameras, flyover shots, boxes) is written in the Terra & Mar frame and mapped by to_world().
+# THE PLACEMENT (user 2026-10-16: "the front of the building should face the corner ... that same corner must face the
+# entrance of terra e mar"). The Terra & Mar parts are modelled in their own frame (tm_common: front run A faces -Y,
+# street z 0, sidewalk top 0.15). They stand on the Bradbury's own block, at its corner of Broadway (the east kerb, x
+# 21.19) and 3rd Street (the south kerb, y -22.08) -- the corner every Bradbury corner shot looks at. Terra & Mar's plan
+# is a chamfered octagon, so TURNED 45 degrees its front run A faces that corner (south-east) and its two front chamfers
+# (runs B and H, 45 degrees to A) run parallel to Broadway and to 3rd Street: a corner building with its entrance on
+# the cut corner, as the Bradbury has its chamfer there. Both street faces (the balcony edge, which the podium follows)
+# stand SETBACK back from their kerb lines -- room for the café sets along them -- and its sidewalk top (0.15) on the
+# Bradbury's pavement top (0.201). The sun stands at azimuth +40 as for the Bradbury: the Broadway face sunlit, 3rd
+# Street's in shade, the corner face at a grazing light. Its own forecourt paving (RB_SITE_GROUND, a rectangle for the
+# unturned plan) is not used: the block's whole sidewalk is rebuilt in the Bradbury's materials (city_ground.py).
+# Everything else in these scripts that belongs to the building (its box, the flyover's pivots) is written in the Terra
+# & Mar frame and mapped by to_world(); the cameras are written in the world, at the Bradbury's own stands.
 import math
+from mathutils import Vector
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -24,12 +30,11 @@ BUILDING_ID = "terramar_recessed"
 BRADBURY_SCENE = os.path.join(ROOT, "tests", "artifacts", "blender", "bradbury", "portal_project", "bradbury_scene.blend")
 # the Terra & Mar part files (rebuild/build.py target=...), linked into the copy
 REBUILD_DIR = os.path.join(ROOT, "tests", "artifacts", "blender", BUILDING_ID, "rebuild")
-PARTS = {   # collection name -> part file; RB_SITE's children are linked one by one (the paving is lifted apart)
+PARTS = {   # collection name -> part file; RB_SITE's children one by one (its forecourt paving is left out)
     "TM_BUILDING": "terramar_building.blend",
     "TM_PROPS": "terramar_props.blend",
     "TM_INTERIORS": "terramar_interiors.blend",
     "TM_WEAR": "terramar_wear.blend",
-    "RB_SITE_GROUND": "terramar_site.blend",
     "RB_SITE_CAFE": "terramar_site.blend",
     "RB_SITE_PALMS": "terramar_site.blend",
 }
@@ -43,10 +48,12 @@ FLYOVER_DIR = os.path.join(SCREENS, "flyover")
 
 # the placement (see above)
 Z_GROUND = 0.201                     # the Bradbury's pavement top
-TM_SIDEWALK = 0.15                   # the Terra & Mar sidewalk top in its own frame (RB_SITE_GROUND, the café and palms stand on it)
-ROT_DEG = 90.0
-OFFSET = (-0.006, -0.25, Z_GROUND - TM_SIDEWALK)
-SITE_GROUND_LIFT = 0.003             # the Terra & Mar forecourt paving stands this much proud of the Bradbury pavement: no shared plane
+TM_SIDEWALK = 0.15                   # the Terra & Mar sidewalk top in its own frame (the café and palms stand on it)
+KERB_E, KERB_S = 21.194, -22.079       # the block's Broadway and 3rd Street kerb lines (scn_pavement's pad_hi.x / pad_lo.y)
+SETBACK = 6.5                        # the street faces' balcony edge back from the kerb line
+CHAMFER_C = (13.35 + 2.4379) / 2 ** 0.5   # runs B and H: their distance from the plan centre (plan roof.guard_halves; the balcony edge)
+ROT_DEG = 45.0
+OFFSET = (KERB_E - SETBACK - CHAMFER_C, KERB_S + SETBACK + CHAMFER_C, Z_GROUND - TM_SIDEWALK)
 EYE = 1.62                           # a standing eye over the pavement
 
 # the light scale. The Terra & Mar parts were lit and tuned (interior area lights in W/m2, emissive downlights and

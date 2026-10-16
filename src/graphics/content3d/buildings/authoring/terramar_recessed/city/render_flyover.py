@@ -15,15 +15,16 @@
 #   blender -b -P render_flyover.py -- frames=none encode=1          the MP4 from the frames already on disk
 #   blender -b -P render_flyover.py -- engine=eevee                  a quick EEVEE preview (own frames folder and MP4)
 #
-# THE SHOTS (SHOTS below), written in the Terra & Mar frame (front run A faces -Y; city_common.to_world maps them onto
-# the Bradbury's site, where the front faces east onto Broadway, sunlit): the building from the air, descending from
-# the front-right onto the hero framing; a lateral dolly along the front at balcony height (planters, guards, teak
-# soffits); a standing eye on the forecourt tilting up the front; a push-in on the entrance between the potted cycads
-# until the restaurant inside reads through the doors; a rise over the roof guard onto the terrace and the penthouse;
-# and a closing pull-up orbit from the hero framing that runs on for TAIL_SECS at a creep. The neighbour tower the
-# Bradbury's scene stands across Broadway lies 30 m in front of the building (world x 42.5..68.5): check=1 prints
-# where it lands in each shot. Timing, exposure, blur, EEVEE and render management: see the Bradbury script's header,
-# unchanged here (the EEVEE preview opens the same city scene: Terra & Mar's wear compiles in EEVEE, b85640c4).
+# THE SHOTS (SHOTS below), in the world, on the Bradbury's own moves round the Broadway / 3rd Street corner that Terra &
+# Mar's entrance faces (user 2026-10-16: the entrance faces that corner; the back of the block -- the city's open
+# parking parcels -- stays out of the frames, as the Bradbury's flyover kept it out): the building from the air,
+# descending from the south-south-east onto the Bradbury's reference stand; a lateral dolly along the sunlit Broadway
+# face at balcony height (planters, guards, teak soffits); a standing eye on the Broadway sidewalk tilting up that face;
+# a push-in from the corner onto the entrance until the restaurant inside reads through the doors; a rise over the roof
+# guard onto the terrace and the penthouse; and a closing pull-up orbit from the reference stand about the entrance face
+# that runs on for TAIL_SECS at a creep. check=1 prints where the building and the neighbour tower (across Broadway)
+# land in each shot. Timing, exposure, blur, EEVEE and render management: see the Bradbury script's header, unchanged
+# here (the EEVEE preview opens the same city scene: Terra & Mar's wear compiles in EEVEE, b85640c4).
 import bpy, os, sys, math, time
 from mathutils import Vector
 from bpy_extras.object_utils import world_to_camera_view
@@ -43,10 +44,12 @@ TAIL_SECS = 2.0                                 # the closing shot runs on this 
 WIDTH, HEIGHT = 1080, 1920                      # portrait full HD
 BLOCK = C.TM_BOX                                # the building's box, Terra & Mar frame (corners() maps it into the city)
 TOWER = C.TOWER_WORLD                           # the Bradbury scene's neighbour tower, world
-CENTRE = (0.0, 0.5)                             # the building's plan centre, the orbits' pivot
-G = C.Z_GROUND - C.OFFSET[2]                    # the pavement's top in the Terra & Mar frame
+G = C.Z_GROUND                                  # the pavement's top
 E = G + EYE
-HERO_EYE, HERO_AIM = (42.0, -64.0, 24.0), (1.0, 0.0, 14.5)   # render_city_shots.py's hero_3q
+FRONT = C.to_world((0.0, -10.85))[:2]           # the entrance face's middle (run A's balcony edge): the orbit's pivot
+FACE_E = C.KERB_E - C.SETBACK                   # the Broadway face (run B's balcony edge), x
+REF_EYE = (54.12, -38.71, G + 14.4)             # the Bradbury's reference stand (build_scene.py VIEWS["ref_3q"]) ...
+REF_AIM = (2.75, -10.65, 14.5)                   # ... aimed at Terra & Mar whole (render_city_shots.py's ref_3q)
 # the timing profile (item 32): a short ease-in, a long hard ease-out, and the closing shot's creeping tail
 EASE_IN = 0.10                                  # the share of a move's time spent accelerating from rest (a smoothstep of the velocity)
 EASE_OUT_LAST = (0.20, 0.05)                    # the deceleration: the last 20% of a move's time covers 5% of its path -- an ease-out
@@ -88,28 +91,29 @@ def profile(n, n_move):
             ps.append(share + TAIL_SHARE * (k - n_move + 1) / (n - n_move))
     return ps
 def lerp(a, b, t): return tuple(x + (y - x) * t for x, y in zip(a, b))
-def orbit(az, r, z):                            # a point r out from the plan centre at azimuth az (degrees from +x, Terra & Mar frame), z up
-    return (CENTRE[0] + r * math.cos(math.radians(az)), CENTRE[1] + r * math.sin(math.radians(az)), z)
-HERO_AZ = math.degrees(math.atan2(HERO_EYE[1] - CENTRE[1], HERO_EYE[0] - CENTRE[0]))
-HERO_R = math.hypot(HERO_EYE[0] - CENTRE[0], HERO_EYE[1] - CENTRE[1])
+def orbit(az, r, z):                            # a point r out from the entrance face's middle at azimuth az (degrees from +x), z up
+    return (FRONT[0] + r * math.cos(math.radians(az)), FRONT[1] + r * math.sin(math.radians(az)), z)
+REF_AZ = math.degrees(math.atan2(REF_EYE[1] - FRONT[1], REF_EYE[0] - FRONT[0]))
+REF_R = math.hypot(REF_EYE[0] - FRONT[0], REF_EYE[1] - FRONT[1])
 def up_pose(t):
-    # a standing eye on the forecourt 4.5 m from the front, rising a little as it tilts from 25 to 72 degrees up: the sign, then the stack
-    z = E + 0.5 * t; tilt = math.radians(25.0 + 47.0 * t)
-    return (2.6, -16.6, z), (2.6, -16.6 + math.cos(tilt), z + math.sin(tilt))
-# (name, lens mm on the frame's long side, pose(p) -> (eye, aim) in the Terra & Mar frame, tail seconds)
+    # a standing eye on the Broadway sidewalk by the kerb, 5.6 m off the face (clear of the awnings and umbrellas),
+    # rising a little as it tilts from 35 to 75 degrees up
+    z = E + 0.5 * t; tilt = math.radians(35.0 + 40.0 * t); x, y = FACE_E + 5.6, -3.0
+    return (x, y, z), (x - math.cos(tilt), y, z + math.sin(tilt))
+# (name, lens mm on the frame's long side, pose(p) -> (eye, aim) in the world, tail seconds)
 SHOTS = [
-    ("air", 24, lambda t: (lerp((125.0, -20.0, 70.0), HERO_EYE, t), lerp((0.0, -8.0, 6.0), HERO_AIM, t)), 0.0),
-    ("facade", 40, lambda t: (lerp((-7.0, -27.0, 16.5), (7.0, -27.0, 16.5), t), lerp((-7.0, -12.0, 15.0), (7.0, -12.0, 15.0), t)), 0.0),
+    ("air", 24, lambda t: (lerp((36.0, -103.0, 60.0), REF_EYE, t), lerp((-6.0, -2.0, 8.0), REF_AIM, t)), 0.0),
+    ("broadway", 45, lambda t: (lerp((FACE_E + 16.0, -9.0, 16.5), (FACE_E + 16.0, 3.0, 16.5), t), lerp((FACE_E, -9.0, 15.0), (FACE_E, 3.0, 15.0), t)), 0.0),
     ("up", 24, up_pose, 0.0),
-    ("entrance", 30, lambda t: (lerp((3.0, -25.0, E + 0.3), (0.7, -17.2, E), t), lerp((0.0, -11.6, 2.6), (0.0, -9.5, 2.0), t)), 0.0),
-    ("roof", 24, lambda t: (lerp((15.0, -25.0, 25.5), (9.0, -19.0, 35.0), t), lerp((2.0, -2.0, 28.0), (0.0, 3.0, 28.2), t)), 0.0),
-    ("close", 24, lambda t: (orbit(HERO_AZ + 32.0 * t, HERO_R + 24.0 * t, HERO_EYE[2] + 30.0 * t), lerp(HERO_AIM, (0.0, 0.0, 10.0), t)), TAIL_SECS),
+    ("entrance", 30, lambda t: (lerp((24.0, -25.0, E + 0.3), (16.6, -17.5, E), t), lerp((11.2, -12.1, 2.6), (9.9, -10.8, 2.0), t)), 0.0),
+    ("roof", 24, lambda t: (lerp((24.0, -26.0, 25.5), (19.0, -21.0, 35.0), t), lerp((6.0, -7.0, 28.0), (3.5, -4.4, 28.2), t)), 0.0),
+    ("close", 24, lambda t: (orbit(REF_AZ - 12.0 * t, REF_R + 12.0 * t, REF_EYE[2] + 22.0 * t), lerp(REF_AIM, (3.5, -4.4, 10.0), t)), TAIL_SECS),
 ]
 N_MOVE = int(round(SECS * FPS))                 # frames of a move
 def n_frames(shot): return N_MOVE + int(round(shot[3] * FPS))   # a shot's frames: its move and its tail
 P = {s[0]: profile(n_frames(s), N_MOVE) for s in SHOTS}         # every frame's path parameter, by shot
 # the exposure per shot, stops over the scene's own (THE EXPOSURE PER SHOT above); expo=<shot>:<stops>,... overrides
-EXPOSURE_BY_SHOT = {}                           # none: every shot looks at a sunlit face
+EXPOSURE_BY_SHOT = {}                           # none so far (the Bradbury's escapes shot lifted its shaded face +1)
 for tok in args.get("expo", "").split(","):
     if ":" in tok:
         k, v = tok.split(":", 1); assert k in {s[0] for s in SHOTS}, f"expo: no such shot {k}"; EXPOSURE_BY_SHOT[k] = float(v)
@@ -233,7 +237,7 @@ def corners(bb, world=False):
 def pose(shot, k):
     # the camera at frame k (1..n) of a shot: its eye and aim at the frame's path parameter
     name, lens, fn = shot[:3]
-    eye, aim = (C.to_world(v) for v in fn(P[name][k - 1]))
+    eye, aim = fn(P[name][k - 1])
     cd.lens = lens; cam.location = Vector(eye)
     cam.rotation_euler = (Vector(aim) - Vector(eye)).to_track_quat('-Z', 'Y').to_euler()
     far = max((Vector(eye) - c).length for c in corners(BLOCK))

@@ -10,11 +10,9 @@
 #   blender -b -P render_city_shots.py --                           the full UHD set (3840 x 2160, 128 spp, OptiX denoised)
 #
 # Opens the city copy (build_city_scene.py -> city_common.CITY_BLEND) and never saves it. A view is (eye, aim, lens mm
-# [, shift_y]) written in the TERRA & MAR FRAME (front run A faces -Y, x to its right, z up from its street), mapped into
-# the city by city_common.to_world(), so the views follow the placement if it ever changes. The lens is on the frame's
-# long side (36 mm sensor). shift_y is Blender's lens shift (a fraction of the long side): a level camera lifting its
-# frame keeps the verticals vertical, as an architectural photograph does. The neighbour tower the Bradbury's scene puts
-# across Broadway stands 30 m in front of the building (world x 42.5..68.5), so street-level front views stay inside it.
+# [, shift_y]) in the world, at the Bradbury's own stands round the Broadway / 3rd Street corner, which Terra & Mar's
+# entrance faces. The lens is on the frame's long side (36 mm sensor). shift_y is Blender's lens shift (a fraction of the
+# long side): a level camera lifting its frame keeps the verticals vertical, as an architectural photograph does.
 # Output: <out>/<view>.png (city_common.SHOTS_DIR, under the gitignored tests/artifacts/screens/buildings/terramar_recessed/city/).
 import math
 import os
@@ -31,27 +29,29 @@ if HERE not in sys.path:
 import city_common as C  # noqa: E402
 
 args, _ = C.parse_args(sys.argv)
-G = C.Z_GROUND - C.OFFSET[2]          # the Bradbury pavement's top in the Terra & Mar frame (0.15): a standing eye stands on it
+G = C.Z_GROUND                          # the pavement's top: a standing eye stands on it
 E = G + C.EYE
 
-# name -> (eye, aim, lens[, shift_y]); all in the Terra & Mar frame
+# name -> (eye, aim, lens[, shift_y]), in the WORLD: the Bradbury's own stands round the Broadway / 3rd Street corner
+# (build_scene.py's VIEWS), re-aimed at Terra & Mar's entrance face and its 32 m height. None looks from the back:
+# behind the block lie the city's open parking parcels (user 2026-10-16), which the Bradbury's stands never show.
 VIEWS = {
-    # the hero: an elevated three-quarter from the front-right, both sunlit faces (front on Broadway, right side north)
-    "hero_3q":        ((42.0, -64.0, 24.0), (1.0, 0.0, 14.5), 32),
-    # straight-on front from the far Broadway pavement, standing eye, the frame lifted to take in the whole height
-    "front_street":   ((0.0, -38.5, E), (0.0, 0.0, E), 17, 0.22),
-    # three-quarter from the front-left, across the crossing (the Bradbury's own reference corner), elevated
-    "front_left_3q":  ((-42.0, -48.0, 18.0), (0.0, -2.0, 12.5), 32),
-    # low-angle close-up from the base looking up the front toward the top
-    "low_up":         ((2.6, -16.0, G + 0.45), (0.6, -11.0, 26.0), 15),
-    # the entrance and the café from the forecourt's edge, standing eye
-    "entrance":       ((6.5, -22.5, E), (0.0, -11.8, 3.6), 26),
-    # the roof terrace and penthouse from above the front-right
-    "roof":           ((22.0, -32.0, 48.0), (0.0, 1.5, 28.5), 30),
-    # the rear three-quarter (the shaded sides), elevated
-    "rear_3q":        ((-46.0, 54.0, 24.0), (0.0, 0.0, 14.5), 32),
-    # the building in its city: a high aerial from the south-east
-    "aerial_city":    ((95.0, -150.0, 110.0), (0.0, -5.0, 8.0), 40),
+    # the Bradbury's reference stand (ref_3q: 14.4 m up, 44.5 m off the corner at azimuth -30), the whole building
+    "ref_3q":         ((54.12, -38.71, G + 14.4), (2.75, -10.65, 14.5), 28),
+    # the Bradbury's hero stand (hero_3q), from the south-east, higher
+    "hero_3q":        ((56.0, -50.0, 19.0), (0.05, -9.0, 14.0), 30),
+    # the Bradbury's st_corner: standing on the far pavement across the crossing, the entrance face whole
+    "st_corner":      ((41.0, -41.0, E), (9.0, -10.0, 14.0), 20),
+    # the Bradbury's st_along: out in the crossing, the Broadway face running away north
+    "st_along":       ((26.0, -26.0, E), (14.0, 6.0, 12.0), 24),
+    # the entrance and the corner café from the kerb's corner, standing eye
+    "entrance":       ((18.5, -19.5, E), (11.2, -12.1, 3.4), 26),
+    # low-angle close-up from the base of the entrance face looking up toward the top
+    "low_up":         ((13.6, -14.6, G + 0.45), (9.4, -9.0, 28.0), 15),
+    # the roof terrace and penthouse from above the corner
+    "roof":           ((36.0, -40.0, 50.0), (4.0, -5.0, 28.0), 30),
+    # the building in its city: a high aerial from the south-east, over the crossing
+    "aerial_city":    ((100.0, -125.0, 95.0), (2.0, -6.0, 8.0), 40),
 }
 
 want = args.get("views", "all")
@@ -61,7 +61,7 @@ assert not unknown, f"no such view(s) {unknown}; have {', '.join(VIEWS)}"
 if args.get("list") == "1":
     for n, v in VIEWS.items():
         print(f"VIEW {n:14s} eye {v[0]} aim {v[1]} {v[2]} mm" + (f" shift_y {v[3]}" if len(v) > 3 else "")
-              + f"  world eye {tuple(round(c, 2) for c in C.to_world(v[0]))}")
+)
     raise SystemExit
 
 SCENE = os.path.abspath(args.get("scene", C.CITY_BLEND))
@@ -103,7 +103,7 @@ cam = bpy.data.objects.new("tm_city_cam", cd); S.collection.objects.link(cam); S
 
 
 def pose(view):
-    eye, aim, lens = (Vector(C.to_world(view[0])), Vector(C.to_world(view[1])), view[2])
+    eye, aim, lens = (Vector(view[0]), Vector(view[1]), view[2])
     cd.lens = lens; cd.shift_x = 0.0; cd.shift_y = view[3] if len(view) > 3 else 0.0
     cam.location = eye
     cam.rotation_euler = (aim - eye).to_track_quat('-Z', 'Y').to_euler()

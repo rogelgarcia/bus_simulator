@@ -7,14 +7,16 @@
 # neighbour, furniture and city, everything BradburyBlock/build_scene.py builds), and in memory:
 #   1. removes the BRADBURY_BLOCK collection (the linked worn block, its wear-only children) and the Bradbury's own
 #      cameras, then purges what nothing uses any more (the block's library);
-#   2. LINKS the Terra & Mar part collections (city_common.PARTS) and stands each one as a collection instance in a
-#      TERRAMAR collection, turned and moved by the placement (city_common: front onto Broadway). Linking whole
-#      collections, not objects, means a part rebuilt with new objects shows up the next time the copy is opened --
-#      the trap the Bradbury's object-linked scene had. The forecourt paving (RB_SITE_GROUND) is lifted
-#      SITE_GROUND_LIFT over the Bradbury pavement so the two never share a plane;
-#   3. sets the Terra & Mar wear switch on the scene (rebuild/wear/controls.apply, every feature at its default);
-#   4. rescales the light (city_common's light scale): exposure -4.29 and every Bradbury light source x 2^4.29;
-#   5. saves the copy as city_common.CITY_BLEND (relative paths). The Bradbury's file is never saved.
+#   2. rebuilds the block's sidewalk and worn kerb in the Bradbury's own materials round a parking lot at the back
+#      (city_ground.py);
+#   3. LINKS the Terra & Mar part collections (city_common.PARTS) and stands each one as a collection instance in a
+#      TERRAMAR collection, turned and moved by the placement (city_common: the entrance on the Broadway / 3rd Street
+#      corner). Linking whole collections, not objects, means a part rebuilt with new objects shows up the next time
+#      the copy is opened -- the trap the Bradbury's object-linked scene had. Every site prop (café sets, palms, pots,
+#      lamps) is checked to stand on the sidewalk, clear of the kerb's top and of the lot;
+#   4. sets the Terra & Mar wear switch on the scene (rebuild/wear/controls.apply, every feature at its default);
+#   5. rescales the light (city_common's light scale): exposure -4.29 and every Bradbury light source x 2^4.29;
+#   6. saves the copy as city_common.CITY_BLEND (relative paths). The Bradbury's file is never saved.
 # Rerun it after the Bradbury's build_scene.py rebuilds its scene; Terra & Mar part rebuilds need no rerun.
 import math
 import os
@@ -27,6 +29,7 @@ for p in (HERE, os.path.join(HERE, "..", "rebuild")):
     if p not in sys.path:
         sys.path.insert(0, os.path.normpath(p))
 import city_common as C  # noqa: E402
+import city_ground  # noqa: E402
 
 args, _ = C.parse_args(sys.argv)
 SRC = os.path.abspath(args.get("src", C.BRADBURY_SCENE))
@@ -73,7 +76,10 @@ left = [lib.filepath for lib in bpy.data.libraries]
 print(f"CITY: removed the Bradbury block ({n_obj} objects) and {n_cam} cameras; libraries left: {left}")
 assert not any("bradbury_block" in p for p in left), f"the block's library is still in use: {left}"
 
-# ---------------------------------------------------------------- 2. Terra & Mar in
+# ---------------------------------------------------------------- 2. the block's sidewalk, kerb and parking lot
+LOT, KERB_RECT = city_ground.build(S, log=lambda m: print("CITY: " + m))
+
+# ---------------------------------------------------------------- 3. Terra & Mar in
 S.name = "TERRAMAR_CITY"
 tm = bpy.data.collections.new("TERRAMAR")
 S.collection.children.link(tm)
@@ -93,8 +99,7 @@ for name, fname in C.PARTS.items():
     inst = bpy.data.objects.new(f"TM_{name}", None)
     inst.instance_type = 'COLLECTION'; inst.instance_collection = coll
     inst.rotation_euler = (0.0, 0.0, math.radians(C.ROT_DEG))
-    lift = C.SITE_GROUND_LIFT if name == "RB_SITE_GROUND" else 0.0
-    inst.location = (C.OFFSET[0], C.OFFSET[1], C.OFFSET[2] + lift)
+    inst.location = C.OFFSET
     tm.objects.link(inst); n_parts += 1
     print(f"CITY: {name} from {fname}: {len(coll.all_objects)} objects, instanced at {tuple(round(v, 3) for v in inst.location)} "
           f"turned {C.ROT_DEG:g}")
@@ -104,14 +109,34 @@ for vl in S.view_layers:
         if lc.collection is protos:
             lc.exclude = True
 
-# ---------------------------------------------------------------- 3. the wear switch
+# every site prop on the sidewalk: each object's vertices (its box when large), through the instance, inside the pavement
+bpy.context.view_layer.update()
+off = 0
+for inst in tm.objects:
+    if not inst.name.startswith("TM_RB_SITE"):
+        continue
+    for o in inst.instance_collection.all_objects:
+        if o.type not in {'MESH', 'EMPTY', 'CURVE', 'LIGHT'}:
+            continue
+        mw = inst.matrix_world @ o.matrix_world
+        if o.type == 'MESH' and len(o.data.vertices) < 50000:   # the vertices themselves: one mesh may hold many pits or pots
+            pts = [mw @ v.co for v in o.data.vertices]
+        else:
+            pts = [mw @ C.Vector(c) for c in o.bound_box] if o.type != 'LIGHT' else [mw.translation]
+        bad = [q for q in pts if not city_ground.inside_sidewalk(q.x, q.y, *KERB_RECT, LOT, margin=0.1)]
+        if bad and o.type == 'MESH' and len(o.data.vertices) and max(o.dimensions) < 60:
+            off += 1
+            print(f"CITY: WARNING site prop {o.name} leaves the sidewalk at ({bad[0].x:.2f}, {bad[0].y:.2f})")
+print(f"CITY: site props checked against the sidewalk: {off} off it")
+
+# ---------------------------------------------------------------- 4. the wear switch
 from wear import controls as wear_controls  # noqa: E402
 if WEAR == "off":
     wear_controls.clear(S)
 else:
     wear_controls.apply(S, WEAR)
 
-# ---------------------------------------------------------------- 4. the light scale
+# ---------------------------------------------------------------- 5. the light scale
 k = C.LIGHT_SCALE
 S.view_settings.exposure = C.EXPOSURE
 scaled = []
@@ -130,7 +155,7 @@ for m in bpy.data.materials:
                 print(f"CITY: WARNING a local emissive material not scaled: {m.name}")
 print(f"CITY: exposure {C.EXPOSURE:.4f}, light sources x {k:.3f}: {', '.join(scaled)}")
 
-# ---------------------------------------------------------------- 5. save the copy
+# ---------------------------------------------------------------- 6. save the copy
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=OUT, relative_remap=True, compress=True)
 print(f"CITY: {n_parts} Terra & Mar parts placed; saved {OUT}")

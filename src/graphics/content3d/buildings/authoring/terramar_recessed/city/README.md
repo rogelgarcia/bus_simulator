@@ -8,8 +8,9 @@ site. Nothing here writes a Bradbury file (copy-only rule): the scene is a copy,
 | Script | What it does |
 | --- | --- |
 | `city_common.py` | paths, the placement (`to_world`), the light scale |
-| `build_city_scene.py` | opens `bradbury_scene.blend`, removes `BRADBURY_BLOCK`, its cameras and its library chain, links the Terra & Mar part collections as instances, sets the wear switch, rescales the light, saves `tests/artifacts/blender/terramar_recessed/city/terramar_city_scene.blend` |
-| `render_city_shots.py` | repeatable UHD stills from a table of views written in the Terra & Mar frame |
+| `city_ground.py` | the block's sidewalk and worn kerb rebuilt in the Bradbury's materials round a rear parking lot |
+| `build_city_scene.py` | opens `bradbury_scene.blend`, removes `BRADBURY_BLOCK`, its cameras and its library chain, rebuilds the block's ground (`city_ground.py`), links the Terra & Mar part collections as instances, sets the wear switch, rescales the light, saves `tests/artifacts/blender/terramar_recessed/city/terramar_city_scene.blend` |
+| `render_city_shots.py` | repeatable UHD stills from a table of views at the Bradbury's corner stands |
 | `render_flyover.py` | the portrait 1080 x 1920 flyover (frames + H.264 MP4) |
 
 ## Commands
@@ -31,16 +32,31 @@ Outputs (gitignored): stills in `tests/artifacts/screens/buildings/terramar_rece
 
 ## Placement
 
-Terra & Mar is turned 90 degrees so its front (run A, -Y in its own frame) faces east onto Broadway: the scene's sun
-stands at azimuth +40 (east-north-east), so the front and the right side are sunlit (facing 3rd Street, as the
-Bradbury's south face does, the front would be in shade). The front edge of its forecourt paving lies on the
-Bradbury's Broadway wall line, centred north-south on the block; its sidewalk top (0.15 in its frame) sits on the
-Bradbury's pavement top (0.201) and the forecourt paving 3 mm proud of it. The parts are **linked as collections** and
-instanced, so a rebuilt part (new objects included) shows up when the scene is opened again; only a change to the
-Bradbury's scene needs `build_city_scene.py` rerun.
+Terra & Mar stands on the Bradbury's own block, at its Broadway / 3rd Street corner, the corner every Bradbury corner
+shot (`ref_3q`, `hero_3q`, `st_corner`, `st_along`) looks at. Its plan is a chamfered octagon, so turned 45 degrees its
+entrance face (run A) faces that corner and its two front chamfers (runs B, H) run parallel to Broadway and 3rd Street.
+Both street faces stand `SETBACK` 6.5 m back from the kerb lines, which leaves room for the café sets. Its sidewalk top
+(0.15 in its frame) sits on the Bradbury's pavement top (0.201). The parts are linked as collections and instanced, so a
+rebuilt part, new objects included, shows up when the scene is opened again. Only a change to the Bradbury's scene needs
+`build_city_scene.py` rerun. The build checks every site prop (café sets, palms, pots, lamps) lands on the sidewalk.
 
-The Bradbury's block is larger (54 x 35 m) than Terra & Mar with its forecourt (32 x 39 m): the block's pavement west of
-the building stays open as a paved plaza.
+Under the scene's sun (azimuth +40, as for the Bradbury) the Broadway face is sunlit, the 3rd Street face shaded and the
+entrance face lit at a grazing angle, as the Bradbury's chamfer is.
+
+## Ground
+
+`city_ground.py` replaces the block's `scn_pavement` / `scn_kerb` with the same materials (`GND_pavement`: scored slabs,
+joint dirt, wall-base grime; `GND_kerb`: rolled edge, block joints, foot dirt, tide lines, chips) round a new outline:
+the kerb rectangle with a 24 x 33 m parking lot cut into its back (west) half at road level, opening onto the west
+street through a 7 m driveway. The kerb (the Bradbury's profile, copied) runs round the lot and the driveway, and the
+lot's floor is the scene's own street asphalt (no wheel wear), with bays in the city's line paint. Terra & Mar's own
+forecourt paving (`RB_SITE_GROUND`, a rectangle for the unturned plan) is not used.
+
+## Cameras
+
+Stills and flyover stand where the Bradbury's do, round the corner, and none looks from the back: behind the block lie
+the city's open parking parcels, which the Bradbury's stands never show. The neighbour tower across Broadway (the
+Bradbury's off-frame shadow caster) is kept out of the corner framings (`check=1` reports it).
 
 ## Light
 
