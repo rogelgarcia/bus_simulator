@@ -1,5 +1,44 @@
 # Offline bake framework
 
+The explicit `vegetation/ramification-3d` leaf extends the current shared 2D
+grammar through spatial geometry hooks. It uses the shared Blender/browser
+configuration and isolated runtime, stages under prompt 650, and prohibits
+publication. Fresh revision directories retain partial as well as completed
+runs. Reference hashes, graph audits, reopened saved-mesh checks, complete view
+sets, output hashes and input stability gate completion. Species/seed subsets
+are pilots; only all five species with seeds 1/31/92 constitute a complete review.
+Its `phase=review` can refresh junction diagnostics from an authenticated prior
+revision into a fresh directory. Current graphs and render settings must match;
+saved visible geometry, GLB and unaffected renders must retain their identities.
+It repeats saved-mesh audits and all output gates. `phase=preview` remains a
+graph-only incomplete diagnostic and never substitutes for the EEVEE collection.
+See `tools/bake_vegetation/ramification3d/README.md`.
+
+Its `phase=finish` authenticates a neutral source revision, preserves the exact
+saved shoot geometry and shared graph, develops continuous root collars and
+buttresses, and applies the retained species bark PBR. Inputs include the species
+maps and metadata; copies and packed/embedded images are authenticated. The
+EEVEE set adds root side/top, collar and bark details. New builds also require
+neutral front/side/oblique trunk close-ups: seventeen views before finishing,
+twenty-one after. Historical fourteen/eighteen-view receipts retain their
+original contract. Saved UVs,
+material connections, fine-root fidelity, root/cane overlap, and embedded GLB
+PBR textures/tangents gate completion. Export triangulation is applied only to
+temporary evaluated geometry. Existing neutral outputs and installed assets
+remain untouched; this phase cannot publish.
+
+The explicit `vegetation/branching-study` leaf stages a standalone 2D architecture
+experiment under `tests/artifacts/screens/vegetation_branching_study/`. It uses
+Node and Chromium through the shared `browserExecutable`, validates three seeds
+for each species, reference/graph/output hashes and image decoding, and refuses
+publication. PNG/JPEG collections retain their original bytes, extensions, source
+paths and hashes; `complete-studies` adds the second matching reference set.
+Completed output directories are preserved. It is excluded from production
+parents and does not modify 3D models.
+The ramification review additionally exports matched-frame branching stages and
+phase/tier metadata from the same graphs; it uses the existing browser and hash
+gates. See `tools/bake_vegetation/branching_study/README.md`.
+
 The enhanced-reference `leaf-wireframe` diagnostic accepts an authenticated saved
 candidate and a separate ignored output. It reuses the registered Blender backend,
 source stability checks and publication restrictions; it produces topology renders

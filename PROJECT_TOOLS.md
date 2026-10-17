@@ -42,6 +42,7 @@ individual leaf commands, scoped parameters and recovery, and
 | vegetationNaturalFoliage | `tools/bake_vegetation/natural_foliage/` | Reference shoot growth, crowding reduction, additive coverage calibration and matched before/after renders | `node tools/bake.mjs --target vegetation/natural-foliage`; see its README |
 | vegetationHybridLod0 | `tools/bake_vegetation/hybrid_lod0/` | Detailed silhouette leaves, simple curved volume leaves and flat interior branchlet cards | `node tools/bake.mjs --target vegetation/hybrid-lod0`; CPU baking, staged review only; see its README |
 | vegetationEnhancedReference | `tools/bake_vegetation/enhanced_reference/` | Separate enhanced references, spatial fork growth, curved blades, saved-leaf wireframes, AI PBR import and before/after species studies | `node tools/bake.mjs --target vegetation/enhanced-reference`; see its README |
+| vegetationBranchingStudy | `tools/bake_vegetation/branching_study/` | Shared V2 species architecture, explicit bifurcation tiers, basal canes, context profiles, support sizing and authenticated SVG/Chromium reference review | `node tools/bake.mjs --target vegetation/branching-study`; see its README |
 | bakeVegetation | `tools/bake_vegetation/` | Author, validate and publish five original species with three mature variants each, detailed 3D wood, solid leaves and editable specimen sources | `node tools/bake.mjs --target vegetation`; select a species leaf if needed; add `--publish` to install validated library assets; see its README |
 | bakeLandscape | `tools/bake_landscape/` | Import exact coastal source, prepare current-source geometry hierarchy, prepare independent soil PBR appearance tiers, bake global terrain fields, or install a verified cache bundle, all into the local gitignored landscape cache (never Git/LFS) with validated publication | `node tools/bake.mjs --target landscape/coastal-import --set "landscape/coastal-import:source=<source.zip>" --publish`; `--target landscape/hierarchy --publish`; `--target landscape/appearance --set "landscape/appearance:source-root=<public-pbr-folder>" --publish`; `--target landscape/terrain-fields --publish`; `--target landscape/cache-install --set "landscape/cache-install:bundle=<bundle-directory>" --publish`; see its README ("Local landscape cache") |
 | landscapeServer | `tools/landscape_server/` | Serve Landscape Fabrication and its local selection-context handoff on loopback port 8002 (separate from reserved 8001) | `node tools/landscape_server/run.mjs` |
@@ -163,3 +164,18 @@ Uses the shared bake configuration and rejects city publication; see its README.
 the `wireframe` / `core-gallery` phases. The domain README documents the 50K
 aggregate leaf budget, five three-plane cores per mature specimen, half-budget
 wood, source PBR rebaking, preserved baseline and review-only publication gate.
+
+# Shared 3D vegetation ramification
+
+`node tools/bake.mjs --target vegetation/ramification-3d` extends the current
+shared branching study into volumetric leafless specimens. Five species, three
+seeds, saved Blender/GLB sources, graph/mesh validation and EEVEE comparisons stay
+under prompt 650's ignored revision directory. See
+[`tools/bake_vegetation/ramification3d/README.md`](tools/bake_vegetation/ramification3d/README.md).
+
+The registered `phase=finish` adds continuous root collars and species PBR to
+authenticated neutral specimens, preserves shoot geometry, embeds maps in both
+model formats, and produces twenty-one EEVEE views per new specimen including
+root/bark details and three neutral trunk close-ups. Spatial stems use continuous
+support taper and seeded curvature; the planar study retains its prior geometry.
+It remains stage-only and uses the same shared configuration.
