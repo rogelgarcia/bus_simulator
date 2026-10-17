@@ -2,13 +2,15 @@
 # bradbury, replace the bradbury building with the terra & mar building").
 #
 #   blender -b --factory-startup -P build_city_scene.py -- [src=<bradbury scene .blend>] [out=<.blend>] [wear=on|off]
+#                                                  [neighbours=on|off]
 #
 # Opens the Bradbury's saved render scene (city_common.BRADBURY_SCENE: the sky, sun, haze, streets, kerbs, context,
 # neighbour, furniture and city, everything BradburyBlock/build_scene.py builds), and in memory:
 #   1. removes the BRADBURY_BLOCK collection (the linked worn block, its wear-only children) and the Bradbury's own
 #      cameras, then purges what nothing uses any more (the block's library);
 #   2. rebuilds the block's sidewalk and worn kerb in the Bradbury's own materials round a parking lot at the back
-#      (city_ground.py);
+#      (city_ground.py), and models the front-line neighbours' walls (city_neighbours.py; neighbours=off keeps the
+#      city's drawn-window boxes);
 #   3. LINKS the Terra & Mar part collections (city_common.PARTS) and stands each one as a collection instance in a
 #      TERRAMAR collection, turned and moved by the placement (city_common: the entrance on the Broadway / 3rd Street
 #      corner). Linking whole collections, not objects, means a part rebuilt with new objects shows up the next time
@@ -30,11 +32,13 @@ for p in (HERE, os.path.join(HERE, "..", "rebuild")):
         sys.path.insert(0, os.path.normpath(p))
 import city_common as C  # noqa: E402
 import city_ground  # noqa: E402
+import city_neighbours  # noqa: E402
 
 args, _ = C.parse_args(sys.argv)
 SRC = os.path.abspath(args.get("src", C.BRADBURY_SCENE))
 OUT = os.path.abspath(args.get("out", C.CITY_BLEND))
 WEAR = args.get("wear", "on").lower()
+NEIGHBOURS = args.get("neighbours", "on").lower()     # on | off: the front-line neighbours modelled (city_neighbours.py)
 assert os.path.isfile(SRC), f"no Bradbury scene at {SRC}: build it with BradburyBlock/build_scene.py"
 assert os.path.normcase(SRC) != os.path.normcase(OUT), "never write over the Bradbury's scene"
 
@@ -78,6 +82,8 @@ assert not any("bradbury_block" in p for p in left), f"the block's library is st
 
 # ---------------------------------------------------------------- 2. the block's sidewalk, kerb and parking lot
 LOT, KERB_RECT = city_ground.build(S, log=lambda m: print("CITY: " + m))
+if NEIGHBOURS == "on":
+    city_neighbours.build(S, city_neighbours.FRONT_LINE, C.to_world((0.0, 0.5))[:2], log=lambda m: print("CITY: " + m))
 
 # ---------------------------------------------------------------- 3. Terra & Mar in
 S.name = "TERRAMAR_CITY"

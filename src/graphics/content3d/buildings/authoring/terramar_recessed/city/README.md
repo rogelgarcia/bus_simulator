@@ -9,6 +9,8 @@ site. Nothing here writes a Bradbury file (copy-only rule): the scene is a copy,
 | --- | --- |
 | `city_common.py` | paths, the placement (`to_world`), the light scale |
 | `city_ground.py` | the block's sidewalk and worn kerb rebuilt in the Bradbury's materials round a rear parking lot |
+| `city_neighbours.py` | the front-line neighbours modelled: a use per building, doors, real windows, cornices and trims |
+| `front_line.py` | measures which buildings the stills and flyover see (each one's share of every frame) |
 | `build_city_scene.py` | opens `bradbury_scene.blend`, removes `BRADBURY_BLOCK`, its cameras and its library chain, rebuilds the block's ground (`city_ground.py`), links the Terra & Mar part collections as instances, sets the wear switch, rescales the light, saves `tests/artifacts/blender/terramar_recessed/city/terramar_city_scene.blend` |
 | `render_city_shots.py` | repeatable UHD stills from a table of views at the Bradbury's corner stands |
 | `render_flyover.py` | the portrait 1080 x 1920 flyover (frames + H.264 MP4) |
@@ -51,6 +53,28 @@ the kerb rectangle with a 24 x 33 m parking lot cut into its back (west) half at
 street through a 7 m driveway. The kerb (the Bradbury's profile, copied) runs round the lot and the driveway, and the
 lot's floor is the scene's own street asphalt (no wheel wear), with bays in the city's line paint. Terra & Mar's own
 forecourt paving (`RB_SITE_GROUND`, a rectangle for the unturned plan) is not used.
+
+## Neighbours
+
+The city's buildings are boxes whose windows are drawn by their material. The ones the cameras actually see,
+`city_neighbours.FRONT_LINE`, are modelled instead (`neighbours=off` keeps the boxes). That list is every building
+filling at least 0.4% of some still or flyover frame (`front_line.py`), plus the ones the user marked. Each box keeps its
+footprint, height and roof (plane, plant boxes, bulkhead); only its walls and parapet are rebuilt:
+
+- **Use.** The use the city gave the box (its recipe: flats, shops, offices, shed). The Bradbury's tower across Broadway
+  is offices and its wing is shops under offices. The storey heights stay the city's own, so the scale matches.
+- **Fronts.** The faces turned toward Terra & Mar get the entrances, shopfronts and signs; the other faces get the same
+  upper windows over a plainer ground floor with a service door.
+- **Doors.** Panelled entrance doors under a transom and canopy (flats), glazed doors in every shopfront, recessed
+  glazed lobbies under a canopy (offices, tower), roll-up doors and steel man doors (sheds).
+- **Windows.** Real openings: a reveal, glass set back (some with a blind), frames with mullions and transoms,
+  projecting sills. Flats and shops' upper floors in pairs on a narrow pier; offices in ribbons between pilasters;
+  sheds in a clerestory row.
+- **Features.** A grey render plinth, a string course, a stepped cornice under a coped parapet (flats, shops, wing) or
+  a metal coping (offices, sheds, tower), stone lintels and sills, some window surrounds, pilasters, a few Juliet
+  balconies, shop fascias with sign panels, and some awnings.
+- **Variation (subtle).** The ground storey a shade darker than the floors above, and a seeded per-building choice of
+  frame colour, cornice depth, pairing and sign/awning colours, on top of the city's own per-building tint.
 
 ## Cameras
 

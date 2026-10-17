@@ -33,8 +33,9 @@ G = C.Z_GROUND                          # the pavement's top: a standing eye sta
 E = G + C.EYE
 
 # name -> (eye, aim, lens[, shift_y]), in the WORLD: the Bradbury's own stands round the Broadway / 3rd Street corner
-# (build_scene.py's VIEWS), re-aimed at Terra & Mar's entrance face and its 32 m height. None looks from the back:
-# behind the block lie the city's open parking parcels (user 2026-10-16), which the Bradbury's stands never show.
+# (build_scene.py's VIEWS), re-aimed at Terra & Mar's entrance face and its 32 m height; behind the block lie the city's
+# open parking parcels (user 2026-10-16), which the Bradbury's stands never show, so only the two rear views (asked for
+# 2026-10-17) look from the back, over the block's own parking lot, with the neighbour tower behind the building.
 VIEWS = {
     # the Bradbury's reference stand (ref_3q: 14.4 m up, 44.5 m off the corner at azimuth -30), the whole building
     "ref_3q":         ((54.12, -38.71, G + 14.4), (2.75, -10.65, 14.5), 28),
@@ -52,6 +53,15 @@ VIEWS = {
     "roof":           ((36.0, -40.0, 50.0), (4.0, -5.0, 28.0), 30),
     # the building in its city: a high aerial from the south-east, over the crossing
     "aerial_city":    ((100.0, -125.0, 95.0), (2.0, -6.0, 8.0), 40),
+    # from behind (user 2026-10-17): an elevated rear three-quarter from the north-west, over the parking lot
+    "rear_3q":        ((-48.0, 42.0, 22.0), (3.0, -4.0, 13.5), 30),
+    # from behind at street level: standing on the parking lot's edge, looking up at the rear faces
+    "rear_street":    ((-30.0, 24.0, E), (3.5, -4.4, 15.0), 18),
+    # from behind, over the parking lot (user 2026-10-17, an arrow drawn on rear_3q): elevated over the lot's west bays,
+    # looking down the arrow's line straight at the lot's south-east corner, where the building's shadow falls on the
+    # lot and the 3rd Street sidewalk; then (user: "show the full building", "more to the right") moved south and back so
+    # the whole building stands over the shaded corner
+    "rear_lot_shadow": ((-52.0, -8.0, 16.0), (0.0, -9.0, 14.0), 20),
 }
 
 want = args.get("views", "all")
