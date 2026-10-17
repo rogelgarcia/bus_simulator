@@ -122,6 +122,13 @@ If using resources from downloads/ folder, always copy to the application.
 - If a request requires worktree removal, leave the checkout intact and explain this project restriction. A separate cleanup procedure must be validated to preserve shared targets before it can be proposed; do not experiment on this project's live worktrees or shared folders.
 - This prohibition remains in force until the user explicitly removes it after a fix has been verified. Do not assume that a newer app version or an archive snapshot makes the operation safe.
 
+### Backups
+
+- Every backup goes under `C:\Users\rogel\Projects\bus_simulator_backups\`, outside every checkout and worktree, in a folder named `<YYYY-MM-DD>_<topic>` (for example `2026-10-17_city_reuse`). Never back up into the repo, a worktree, `tests/artifacts/`, or a shared junction (`assets/`, `downloads/`, `docs/`, `blender_files/`, `blender_inputs/`).
+- Take the backup before any move, rename, relink, rebuild-in-place or deletion of data that is not tracked in git (generated `.blend` files, untracked textures, inputs), and copy what will be touched, not only what is expected to change.
+- Each backup folder has a `MANIFEST.md`: the date, the task (AI prompt id), the source paths, what was copied, the total size, and how to restore.
+- A backup is never modified or deleted by an agent. Restore from it by copying out; only the user removes backups.
+
 ### Blender
 
 - Prefer headed Blender controlled through MCP so the user can see progress. Before launching or attaching to Blender, check for an existing Blender process, render job, or unsaved interactive session. Use the headed/MCP workflow when Blender is free or when the user confirms that the open session belongs to the current task. Never interrupt, close, attach to, or repurpose an occupied session.

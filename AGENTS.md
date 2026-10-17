@@ -2,6 +2,8 @@
 
 - Worktree safety: NEVER use `mcp__codex_app__archive_worktree` (`archive_worktree`) for this project or its worktrees. A Windows junction traversal during archive cleanup caused shared-asset data loss. Do not bypass this prohibition through task/chat archival, UI actions, or shell commands that remove the checkout. Leave the checkout intact and follow `ai_rules/PROJECT_RULES.md` → "Worktree cleanup safety".
 
+- Backups: every backup goes under `C:\Users\rogel\Projects\bus_simulator_backups\<YYYY-MM-DD>_<topic>\` with a `MANIFEST.md`, taken before moving, renaming, relinking or deleting untracked data, and never modified or deleted by an agent. See `ai_rules/PROJECT_RULES.md` → "Backups".
+
 - Offline baking: use `node tools/bake.mjs` and the hierarchy documented in `tools/baking/README.md` and `specs/tools/bake_framework.md`. New bake processes must register a domain/leaf there, reuse the shared gitignored `tools/baking/blender.local.json` configuration, and preserve existing validation/publication gates. Do not add another standalone machine-specific bake command.
 
 - Follow `ai_rules/PROJECT_RULES.md` (and root-level `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
