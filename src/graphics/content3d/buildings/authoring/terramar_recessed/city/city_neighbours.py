@@ -7,30 +7,43 @@
 # The Bradbury's city fills the parcels with boxes whose windows are DRAWN by their material (build_scene.py's
 # facade_material: the bays, reveals and sills in the shader, from the box's fac_lo / fac_hi). For the buildings that
 # stand in the hero's frames (FRONT_LINE, picked by measuring each building's share of every still and flyover frame,
-# see the README) this module replaces the box's walls with modelled ones, in the copy only:
+# see the README) this module replaces the box's walls and rooftop boxes with modelled ones, in the copy only.
 #
 #   THE PLAN. Each building keeps the use the city gave it (its recipe, the suffix of its material: flats, shops,
-#   offices, shed) and the Bradbury's two Broadway neighbours get theirs (the tower: offices; the wing: shops under
-#   offices). A use sets the storeys (the city's own CITY_FACADES heights, so the scale matches the rest of the city),
-#   the ground floor (a residential entrance, shopfronts, an office lobby, a workshop's roll-up doors) and the window
-#   organisation above it. The faces turned toward the hero are the building's FRONTS (entrances, shopfronts, signs);
-#   the others get the same upper windows over a plainer ground floor with a service door.
-#   DOORS. Every building has at least one: panelled entrance doors under a transom and a canopy (flats), glazed shop
-#   doors inside each shopfront (shops), glazed double doors in a recessed lobby under a canopy (offices, tower),
-#   roll-up doors and a steel man door (shed), and a service door on the back faces.
-#   WINDOWS. Real openings: a reveal into the wall, the glass set back in it (dark glass, some with a blind down), a
-#   frame with mullions and a transom, a projecting sill. Organised by use: flats in PAIRS (two windows on a narrow
-#   pier, wider piers between the pairs), offices in RIBBONS between pilasters (a row of panes on mullions over a
-#   spandrel), sheds in a clerestory row, shops' upper floors paired over full-width shopfronts.
-#   FEATURES. A plinth in a darker render, a string course over the ground floor, a stepped cornice under a coped
-#   parapet (flats, shops, the wing) or a metal coping (offices, sheds, the tower), lintels and sills in a lighter
-#   stone, window surrounds on some flats, pilasters on offices and the tower, a few Juliet balconies, canopies,
-#   shop fascias with sign panels and the odd awning.
-#   VARIATION (subtle). The ground storey in a slightly different tone from the floors over it, the entrance bay in its
-#   own tone, a per-building choice of frame colour, cornice depth, pairing and pilaster rhythm from a seeded random
-#   generator, and the city's own per-building tint kept.
-# The roof (its plane, plant boxes, bulkhead) is the box's own, kept; only its walls (and parapet) are rebuilt, on the
-# same footprint and to the same height, so the city's layout, shadows and skyline are unchanged.
+#   offices, shed); the Bradbury's tower across Broadway is an APARTMENT tower and its wing shops under flats. A use
+#   sets the storeys (the city's own CITY_FACADES heights, so the scale matches the rest of the city) and the ground
+#   floor. Residential floors are laid out as APARTMENTS (second pass, user: "think about the apartment plan, probably 2
+#   apartments per floor ... use small windows for where a bathroom would be"): every face is divided into rooms --
+#   living room, bedroom, bathroom, kitchen, mirrored apartment by apartment, with the stair core in the middle of a
+#   front face -- and each room gets its own window: a pair for a living room or a bedroom (so the facade reads pair,
+#   space, pair, never an even grid), one kitchen window, a small high frosted window for a bathroom, the stair's
+#   narrow windows at the half landings. The faces turned toward the hero are the FRONTS (entrances, shopfronts,
+#   signs); the others get the same floors over a plainer ground floor with a service door.
+#   DOORS. A residential or office entrance is a real ENTRANCE HALL (user: "the door, must be a bigger door, with a hall.
+#   just like a real residential"): a wide glazed double door between sidelights under a transom, in clear glass, and
+#   behind it a lit hall with a stone floor, the lift doors and the letter boxes, under a canopy. Shops have glazed
+#   doors in every shopfront, sheds roll-up doors and a steel man door, back faces a service door.
+#   WINDOWS. Real openings: a reveal, the glass set back in it (some with a blind down), a frame with mullions and a
+#   transom, a projecting sill; offices in ribbons between pilasters, sheds in a clerestory row.
+#   STRUCTURE. The apartment tower is a CONCRETE FRAME (user: "reduce the depth of the vertical parts ... would it be
+#   possible for that to be contiguous in a single piece? only if it is concrete, otherwise there should be separation
+#   ... the windows are in the recessed part"): columns between the rooms and slab edges at every floor, only 4 cm proud,
+#   continuous because they are cast concrete, with the window pairs in the recessed rendered infill, which the slab
+#   edges divide floor by floor. The offices' rendered pilasters are cut at every floor (a joint), for the same reason.
+#   FEATURES. A plinth, a string course, a stepped cornice under a coped parapet (flats, shops, the wing) or a metal
+#   coping (offices, sheds), lintels and sills, a few small projecting balconies and Juliet rails, canopies, shop
+#   fascias with sign panels, some awnings. Every box-shaped piece has a small bevel; the walls' corners are chamfered.
+#   COLOUR (second pass, user: "some colors used are contrasting too much ... white with brick; strong window colors").
+#   Trims are the wall's own material a shade lighter (on brick, a buff stone, not white), frames, signs and awnings are
+#   muted, the glass a neutral dark.
+#   WEATHERING (cheap, in the wall material): dust rising from the base to a ragged 0.8-1.5 m, and runoff streaks hanging
+#   from the coping, both from world height (the object's `nb_top` is its coping), no surface mottle.
+#   ROOFS (user: "boxes at the top of the buildings, make them have a purpose with more detail"): the city's bulkhead
+#   becomes a stair bulkhead with a steel door, a louvre, a lamp and a coping; its plant boxes condensers with a top
+#   fan on rails, louvred air handlers or exhaust fans, with refrigerant pipes on supports; plus vent stacks and a hatch.
+#   VARIATION (subtle). The ground storey a shade darker than the floors over it, a per-building choice of frame
+#   colour, cornice depth and room mix from a seeded random generator, the city's own per-building tint kept.
+# Each box keeps its footprint, height and roof plane, so the city's layout, shadows and skyline are unchanged.
 import math
 import random
 
@@ -39,17 +52,16 @@ import bpy
 Z0 = 0.15                     # the boxes' wall foot (their UVs start there; the pavement top is 0.201)
 SEED = 1017
 
-# The city's storeys (build_scene.py CITY_FACADES: storey_h, bay_w, window_w, window_h, sill_h, ground storey) and the
-# Bradbury's neighbours (NEIGHBOUR_FACADE / NEIGHBOUR_WING_FACADE), so the floors keep the scale the rest of the city has
+# The city's storeys (build_scene.py CITY_FACADES: storey_h, bay_w, window_w, window_h, sill_h, ground storey)
 USES = {
     "flats":   dict(storey=4.0, bay=2.9, win_w=1.35, win_h=2.0, sill=1.0, ground=4.0),
     "offices": dict(storey=4.4, bay=3.3, win_w=2.0, win_h=2.4, sill=0.9, ground=4.4),
     "shops":   dict(storey=4.2, bay=3.0, win_w=1.4, win_h=2.0, sill=1.0, ground=4.8),
     "shed":    dict(storey=6.5, bay=4.0, win_w=1.6, win_h=1.2, sill=3.8, ground=6.5),
-    "tower":   dict(storey=3.15, bay=3.6, win_w=1.6, win_h=1.7, sill=0.8, ground=3.9),   # twelve storeys in its 39 m
+    "tower":   dict(storey=3.15, bay=3.6, win_w=1.3, win_h=1.7, sill=0.8, ground=3.9),   # twelve storeys in its 39 m
 }
 # the Bradbury's wing keeps its own storeys (NEIGHBOUR_WING_FACADE: a 3.6 m shop storey under a 3.3 m one)
-OVERRIDE = {"ctx_neighbour_wing": dict(storey=3.3, bay=3.6, win_w=1.6, win_h=1.5, sill=0.9, ground=3.6)}
+OVERRIDE = {"ctx_neighbour_wing": dict(storey=3.3, bay=3.6, win_w=1.3, win_h=1.5, sill=0.9, ground=3.6)}
 NEIGHBOUR_USE = {"ctx_neighbour_tower": "tower", "ctx_neighbour_wing": "shops", "ctx_shed_tan": "shed"}
 
 # THE FRONT LINE: every building that fills at least 0.4% of a still's or a flyover frame's picture (front_line.py
@@ -66,30 +78,55 @@ FRONT_LINE = [
     "city_bld_0960", "city_bld_0961", "city_bld_0964", "city_bld_0965", "city_bld_1005", "city_bld_1142", "city_bld_1143",
 ]
 
-PIER_END = 0.9                # a window keeps at least this much wall from a corner
-REVEAL = 0.18                 # a window's reveal depth (glass this far behind the wall face)
+# ---- the apartment plan
+ROOM_W = {"living": 4.4, "bedroom": 3.4, "bath": 2.0, "kitchen": 3.0}
+ROOM_SEQ = ["living", "bedroom", "bath", "kitchen", "bedroom", "bath", "bedroom"]   # from an apartment's outer end inward
+APT_W = 12.5                  # an apartment's share of a face, about
+CORE_W = 3.6                  # the stair core on a front face (the entrance hall under it)
+END_PIER = 0.7                # wall kept at a face's ends
+PAIR_GAP = 0.32               # the pier inside a window pair
+WIN_W = {"living": 1.3, "bedroom": 1.1, "kitchen": 1.3, "bath": 0.6, "core": 0.8}
+BATH_H = 0.75                 # a bathroom window's height (its head on the others' line)
+BALCONY_SHARE = 0.12          # living rooms over the ground floor of a front face opening onto a small balcony
+JULIET_SHARE = 0.05
+# ---- pieces
+REVEAL = 0.18
 REVEAL_SHOP = 0.25
-REVEAL_DOOR = 0.30
-REVEAL_LOBBY = 1.2            # an office lobby's doors stand this deep in a recess
-FRAME_W, FRAME_D = 0.06, 0.05 # window frame members: width, depth proud of the glass
-SILL = (0.10, 0.07, 0.06)     # a sill: overhang each side, height, projection
-LINTEL = (0.12, 0.20, 0.04)   # a lintel: overhang each side, height, projection
-PLINTH = (0.65, 0.03)         # plinth: height, projection
-STRING = (0.22, 0.06)         # string course: height, projection
-CORNICE = ((0.45, 0.03), (0.16, 0.22), (0.07, 0.30))   # (height, projection) bottom-up: frieze, corona, cap
-COPING = (0.10, 0.05)         # parapet coping: height, overhang
-PARAPET_T = 0.25              # the parapet's thickness
-PILASTER = (0.45, 0.08)       # width, projection
-CANOPY = (0.18, 1.4, 0.6)     # thickness, depth, overhang each side of the door
-TONE_GROUND = 0.92            # the ground storey's tone against the floors over it (variation, subtle)
-TONE_ENTRY = 1.05             # an entrance bay's own tone
-BLIND_SHARE = 0.25            # windows with a blind down
-JULIET_SHARE = 0.18           # flats' upper windows that open as French windows behind a Juliet rail
-AWNING_SHARE = 0.4            # shopfronts with an awning
-SIGN_COLOURS = [(0.035, 0.07, 0.05), (0.06, 0.03, 0.025), (0.03, 0.04, 0.07), (0.05, 0.05, 0.05), (0.32, 0.28, 0.22)]
-AWNING_COLOURS = [(0.09, 0.16, 0.10), (0.30, 0.10, 0.06), (0.06, 0.08, 0.16), (0.40, 0.34, 0.24), (0.12, 0.12, 0.12)]
-FRAME_COLOURS = {"bronze": ((0.030, 0.025, 0.020), 0.45, 0.5), "white": ((0.62, 0.62, 0.60), 0.5, 0.0),
-                 "green": ((0.025, 0.045, 0.035), 0.45, 0.3), "grey": ((0.09, 0.09, 0.095), 0.4, 0.6)}
+FRAME_W, FRAME_D = 0.06, 0.05
+SILL = (0.08, 0.07, 0.05)     # overhang each side, height, projection
+LINTEL = (0.10, 0.18, 0.03)
+PLINTH = (0.60, 0.025)
+STRING = (0.20, 0.05)
+CORNICE = ((0.40, 0.025), (0.15, 0.18), (0.06, 0.24))   # (height, projection) bottom-up: frieze, corona, cap
+COPING = (0.10, 0.05)
+PARAPET_T = 0.25
+PILASTER = (0.45, 0.04)       # width, projection (was 8 cm: user, "reduce the depth of the vertical parts")
+FRAME = (0.45, 0.04, 0.26)    # the tower's concrete frame: column width, projection, slab edge height
+CONCRETE_LIFT = (1.85, 1.75, 1.55)   # the concrete set's colour multiplied: close to the infill's tone, a little greyer
+JOINT = 0.02                  # a joint where a rendered piece is cut floor by floor
+CANOPY_T = 0.18
+BEVEL = 0.012                 # every box piece's edges; the walls' corners are chamfered this much
+HALL = dict(width=3.4, height=3.3, depth=3.0, door=1.8, door_h=2.5, set_back=0.25)
+HALL_LIGHT = 30.0             # the hall's ceiling panels (the scene's exposure is -4.29: a lit hall, not a glare)
+TONE_GROUND = 0.93
+TONE_TRIM = 1.07              # trims: the wall's own material a shade lighter
+BRICK_TRIM_TINT = (0.72, 0.64, 0.54)   # on brick: a buff stone (the plaster set tinted), not white
+TONE_PLINTH = 0.88
+# ---- weathering (wall material)
+DUST_H = (0.8, 1.5)          # the dust line's height over the wall foot, ragged over noise
+DUST_AMT = 1.0                # (a sunlit wall sits in the film's shoulder: 0.68 at the foot read as 5 levels; 0.4 reads)
+DUST_TINT = (0.34, 0.29, 0.23)
+RUN_L = (0.5, 1.8)            # the runoff's reach under the coping
+RUN_AMT = 0.55
+RUN_TINT = (0.50, 0.48, 0.46)
+# ---- palette (muted)
+BLIND_SHARE = 0.2
+SIGN_COLOURS = [(0.09, 0.09, 0.085), (0.11, 0.095, 0.08), (0.075, 0.08, 0.085), (0.16, 0.15, 0.13), (0.10, 0.105, 0.09)]
+AWNING_COLOURS = [(0.18, 0.17, 0.15), (0.13, 0.12, 0.11), (0.22, 0.19, 0.15), (0.11, 0.12, 0.12)]
+FRAME_COLOURS = {"bronze": ((0.035, 0.030, 0.026), 0.5, 0.4), "grey": ((0.07, 0.07, 0.072), 0.45, 0.5),
+                 "offwhite": ((0.36, 0.35, 0.33), 0.5, 0.0), "taupe": ((0.12, 0.105, 0.09), 0.5, 0.2)}
+DOOR_COLOURS = [(0.05, 0.05, 0.048), (0.07, 0.055, 0.045), (0.045, 0.05, 0.055)]
+AWNING_SHARE = 0.35
 
 
 # ---------------------------------------------------------------- materials
@@ -105,7 +142,7 @@ def _hazed(m):
     return m
 
 
-def _plain(name, colour, rough=0.6, metal=0.0, spec=0.5, bump=None):
+def _plain(name, colour, rough=0.6, metal=0.0, spec=0.5, bump=None, transmission=0.0, haze=True, emit=0.0):
     m = bpy.data.materials.get(name)
     if m is not None:
         return m
@@ -113,18 +150,86 @@ def _plain(name, colour, rough=0.6, metal=0.0, spec=0.5, bump=None):
     b = m.node_tree.nodes["Principled BSDF"]
     b.inputs["Base Color"].default_value = (*colour, 1.0); b.inputs["Roughness"].default_value = rough
     b.inputs["Metallic"].default_value = metal; b.inputs["Specular IOR Level"].default_value = spec
-    if bump == "corrugated":   # a roll-up door's slats: a horizontal wave in the normal
+    if transmission:
+        b.inputs["Transmission Weight"].default_value = transmission; b.inputs["IOR"].default_value = 1.45
+    if emit:
+        b.inputs["Emission Color"].default_value = (1.0, 0.86, 0.68, 1.0); b.inputs["Emission Strength"].default_value = emit
+    if bump in ("corrugated", "grille", "louvre"):
         nt = m.node_tree
         tc = nt.nodes.new('ShaderNodeTexCoord'); wv = nt.nodes.new('ShaderNodeTexWave'); bp = nt.nodes.new('ShaderNodeBump')
-        wv.wave_type = 'BANDS'; wv.bands_direction = 'Z'; wv.inputs["Scale"].default_value = 0.5   # object metres: 12 cm slats
+        wv.wave_type = 'BANDS'
+        wv.bands_direction = 'Z' if bump != "grille" else 'X'
+        wv.inputs["Scale"].default_value = {"corrugated": 0.5, "grille": 2.5, "louvre": 1.6}[bump]
         nt.links.new(tc.outputs["Object"], wv.inputs["Vector"]); nt.links.new(wv.outputs["Fac"], bp.inputs["Height"])
-        bp.inputs["Strength"].default_value = 0.35; bp.inputs["Distance"].default_value = 0.02
+        bp.inputs["Strength"].default_value = 0.4; bp.inputs["Distance"].default_value = 0.02
         nt.links.new(bp.outputs["Normal"], b.inputs["Normal"])
-    return _hazed(m)
+    return _hazed(m) if haze else m
+
+
+def weather_group():
+    """NB_weather: a colour in, the colour with the base dust and the coping runoff multiplied in, from world height and
+    the object's nb_top (its coping)."""
+    ng = bpy.data.node_groups.get("NB_weather")
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new("NB_weather", 'ShaderNodeTree')
+    ng.interface.new_socket(name="Color", in_out='INPUT', socket_type='NodeSocketColor')
+    ng.interface.new_socket(name="Color", in_out='OUTPUT', socket_type='NodeSocketColor')
+    N, L = ng.nodes, ng.links
+    gi = N.new('NodeGroupInput'); go = N.new('NodeGroupOutput')
+    geo = N.new('ShaderNodeNewGeometry'); sep = N.new('ShaderNodeSeparateXYZ'); L.new(geo.outputs["Position"], sep.inputs[0])
+    top = N.new('ShaderNodeAttribute'); top.attribute_type = 'OBJECT'; top.attribute_name = "nb_top"
+
+    def noise(vec, scale, detail=2.0):
+        n = N.new('ShaderNodeTexNoise'); n.inputs["Scale"].default_value = scale; n.inputs["Detail"].default_value = detail
+        L.new(vec, n.inputs["Vector"]); return n.outputs["Fac"]
+
+    def mr(val, fmin, fmax, tmin, tmax, smooth=False):
+        n = N.new('ShaderNodeMapRange'); n.clamp = True
+        if smooth:
+            n.interpolation_type = 'SMOOTHSTEP'
+        for sock, v in (("Value", val), ("From Min", fmin), ("From Max", fmax), ("To Min", tmin), ("To Max", tmax)):
+            if hasattr(v, "is_output"):
+                L.new(v, n.inputs[sock])
+            else:
+                n.inputs[sock].default_value = v
+        return n.outputs["Result"]
+
+    def math(op, a, b):
+        n = N.new('ShaderNodeMath'); n.operation = op
+        for i, v in enumerate((a, b)):
+            if hasattr(v, "is_output"):
+                L.new(v, n.inputs[i])
+            else:
+                n.inputs[i].default_value = v
+        return n.outputs["Value"]
+
+    def mul_mix(colour, fac, tint):
+        n = N.new('ShaderNodeMix'); n.data_type = 'RGBA'; n.blend_type = 'MULTIPLY'
+        L.new(fac, n.inputs["Factor"])
+        a = next(s for s in n.inputs if s.identifier == "A_Color"); b = next(s for s in n.inputs if s.identifier == "B_Color")
+        L.new(colour, a); b.default_value = (*tint, 1.0)
+        return next(s for s in n.outputs if s.identifier == "Result_Color")
+
+    pos = geo.outputs["Position"]
+    # the dust: full at the foot, gone by a height that wanders along the wall
+    h = mr(noise(pos, 0.45), 0.35, 0.65, DUST_H[0], DUST_H[1])
+    dust = mr(math('SUBTRACT', sep.outputs["Z"], Z0), 0.0, h, 1.0, 0.0)          # linear: it fades all the way up
+    c1 = mul_mix(gi.outputs["Color"], math('MULTIPLY', dust, DUST_AMT), DUST_TINT)
+    # the runoff: under the coping, its reach wandering, broken into vertical streaks (a noise stretched in z)
+    reach = mr(noise(pos, 0.35), 0.35, 0.65, RUN_L[0], RUN_L[1])
+    band = mr(math('SUBTRACT', top.outputs["Fac"], sep.outputs["Z"]), 0.0, reach, 1.0, 0.0, smooth=True)
+    vm = N.new('ShaderNodeVectorMath'); vm.operation = 'MULTIPLY'; vm.inputs[1].default_value = (5.0, 5.0, 0.25)
+    L.new(pos, vm.inputs[0])
+    streak = mr(noise(vm.outputs["Vector"], 1.0, 3.0), 0.47, 0.62, 0.0, 1.0)
+    run = math('MULTIPLY', math('MULTIPLY', band, streak), RUN_AMT)
+    L.new(mul_mix(c1, run, RUN_TINT), go.inputs["Color"])
+    return ng
 
 
 def wall_material(src):
-    """A copy of a city facade material with its drawn windows switched off: the plain set, its tint and its haze."""
+    """A copy of a city facade material with its drawn windows switched off (the plain set, its tint and its haze) and
+    the weathering multiplied into its colour."""
     name = src.name + "_plain"
     m = bpy.data.materials.get(name)
     if m is not None:
@@ -143,36 +248,78 @@ def wall_material(src):
             for l in list(n.inputs["Height"].links):
                 nt.links.remove(l)
             n.inputs["Strength"].default_value = 0.0
+    b = nt.nodes.get("Principled BSDF") or next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    g = nt.nodes.new('ShaderNodeGroup'); g.node_tree = weather_group()
+    bc = b.inputs["Base Color"]
+    if bc.is_linked:
+        src_sock = bc.links[0].from_socket; nt.links.remove(bc.links[0]); nt.links.new(src_sock, g.inputs["Color"])
+    else:
+        g.inputs["Color"].default_value = bc.default_value
+    nt.links.new(g.outputs["Color"], bc)
     return m
 
 
 class Mats:
-    def __init__(self, scene_mats):
-        self.wall_src = scene_mats
-        white = next((m for m in bpy.data.materials if m.name.startswith("CTX_city_white_") and m.library is None
-                      and not m.name.endswith("_plain")), None)
-        grey = next((m for m in bpy.data.materials if m.name.startswith("CTX_city_grey_") and m.library is None
-                     and not m.name.endswith("_plain")), None)
-        self.trim = wall_material(white)            # sills, lintels, cornices, string courses: a pale plaster / stone
-        self.base = wall_material(grey or white)    # the plinth: a grey render
-        self.glass = _plain("NB_glass", (0.020, 0.032, 0.050), rough=0.08, spec=0.6)
-        self.blind = _plain("NB_glass_blind", (0.16, 0.15, 0.135), rough=0.55, spec=0.3)
+    def __init__(self):
+        plaster = next(m for m in bpy.data.materials if m.library is None and m.name.startswith(("CTX_city_cream_", "CTX_city_white_"))
+                       and not m.name.endswith("_plain"))
+        self.plaster = wall_material(plaster)       # the buff stone on brick buildings (tinted per object)
+        self.glass = _plain("NB_glass", (0.030, 0.034, 0.038), rough=0.06, spec=0.5)
+        self.blind = _plain("NB_glass_blind", (0.20, 0.19, 0.17), rough=0.6, spec=0.3)
+        self.frosted = _plain("NB_glass_frosted", (0.30, 0.31, 0.31), rough=0.35, spec=0.4)
+        self.clear = _plain("NB_glass_clear", (0.92, 0.94, 0.94), rough=0.02, transmission=1.0)
         self.frames = {k: _plain(f"NB_frame_{k}", c, rough=r, metal=mt) for k, (c, r, mt) in FRAME_COLOURS.items()}
-        self.door_wood = _plain("NB_door_wood", (0.10, 0.055, 0.03), rough=0.55)
-        self.door_paint = [_plain(f"NB_door_paint_{i}", c, rough=0.45) for i, c in enumerate(
-            [(0.02, 0.05, 0.035), (0.06, 0.02, 0.018), (0.02, 0.025, 0.05), (0.03, 0.03, 0.03)])]
-        self.metal = _plain("NB_metal", (0.22, 0.22, 0.23), rough=0.4, metal=0.8)
-        self.rollup = _plain("NB_rollup", (0.40, 0.41, 0.42), rough=0.5, metal=0.6, bump="corrugated")
-        self.kick = _plain("NB_kick", (0.03, 0.03, 0.03), rough=0.5, metal=0.3)
+        self.doors = [_plain(f"NB_door_{i}", c, rough=0.45) for i, c in enumerate(DOOR_COLOURS)]
+        self.door_wood = _plain("NB_door_wood", (0.09, 0.055, 0.035), rough=0.55)
+        self.metal = _plain("NB_metal", (0.20, 0.20, 0.205), rough=0.4, metal=0.7)
+        self.galv = _plain("NB_galvanised", (0.42, 0.42, 0.42), rough=0.45, metal=0.8)
+        self.unit = _plain("NB_unit_casing", (0.45, 0.45, 0.44), rough=0.5, metal=0.3)
+        self.louvre = _plain("NB_louvre", (0.30, 0.30, 0.30), rough=0.5, metal=0.5, bump="louvre")
+        self.grille = _plain("NB_fan_grille", (0.03, 0.03, 0.03), rough=0.5, metal=0.4, bump="grille")
+        self.rollup = _plain("NB_rollup", (0.36, 0.36, 0.36), rough=0.5, metal=0.6, bump="corrugated")
+        self.kick = _plain("NB_kick", (0.04, 0.04, 0.04), rough=0.5, metal=0.3)
+        self.stone = _plain("NB_hall_floor", (0.32, 0.30, 0.27), rough=0.3)
+        self.light = _plain("NB_hall_light", (0.9, 0.9, 0.9), rough=0.5, haze=False, emit=HALL_LIGHT)
+        self.interior = _plain("NB_interior", (0.015, 0.015, 0.015), rough=0.9)
+        self.pipe = _plain("NB_pipe", (0.12, 0.12, 0.12), rough=0.6)
         self.signs = [_plain(f"NB_sign_{i}", c, rough=0.5) for i, c in enumerate(SIGN_COLOURS)]
         self.awnings = [_plain(f"NB_awning_{i}", c, rough=0.85) for i, c in enumerate(AWNING_COLOURS)]
-        self.interior = _plain("NB_interior", (0.012, 0.012, 0.012), rough=0.9)
+        self.concrete = None
+
+
+def concrete_material(tint_like):
+    """The tower's frame: the game's concrete set, its colour pulled toward the wall's tone (a subtle difference)."""
+    m = bpy.data.materials.get("NB_concrete")
+    if m is not None:
+        return m
+    import os
+    m = tint_like.copy(); m.name = "NB_concrete"
+    for n in m.node_tree.nodes:
+        if n.type == 'TEX_IMAGE' and n.image is not None:
+            fp = n.image.filepath
+            for key in ("basecolor", "arm", "normal_gl"):
+                if os.path.basename(fp).startswith(key):
+                    newp = fp.replace(os.path.basename(os.path.dirname(fp)), "concrete")
+                    try:
+                        img = bpy.data.images.load(bpy.path.abspath(newp), check_existing=True)
+                        img.colorspace_settings.name = n.image.colorspace_settings.name
+                        n.image = img
+                    except Exception:
+                        pass
+    # the set is a mid grey: lifted and warmed toward the rendered infill, so the frame reads as structure, not stripes
+    nt = m.node_tree
+    g = next(n for n in nt.nodes if n.type == 'GROUP' and n.node_tree and n.node_tree.name == "NB_weather")
+    if g.inputs["Color"].is_linked:
+        lk = g.inputs["Color"].links[0]; src = lk.from_socket; nt.links.remove(lk)
+        vm = nt.nodes.new('ShaderNodeVectorMath'); vm.operation = 'MULTIPLY'; vm.inputs[1].default_value = CONCRETE_LIFT
+        nt.links.new(src, vm.inputs[0]); nt.links.new(vm.outputs["Vector"], g.inputs["Color"])
+    return m
 
 
 # ---------------------------------------------------------------- geometry
 class Builder:
-    """One object's mesh: quads and boxes in a facade's own frame (u along it, z up, out away from the wall), each face
-    in a material slot, UVs in world metres as the city boxes have them."""
+    """One object's mesh: faces and closed pieces (boxes, rings, cylinders share their vertices so a Bevel modifier
+    rounds their edges), each face in a material slot, UVs in world metres as the city boxes have them."""
 
     def __init__(self):
         self.v, self.f, self.mi, self.mats = [], [], [], []
@@ -183,9 +330,8 @@ class Builder:
         return self.mats.index(m)
 
     def face(self, pts, m, inward_of=None):
-        """A polygon of world points; inward_of = a point the face must look away from (orientation fix)."""
         if inward_of is not None:
-            a, b, c = (pts[0], pts[1], pts[2])
+            a, b, c = pts[0], pts[1], pts[2]
             n = _cross(_sub(b, a), _sub(c, a))
             cen = tuple(sum(p[k] for p in pts) / len(pts) for k in range(3))
             if _dot(n, _sub(cen, inward_of)) < 0:
@@ -196,12 +342,40 @@ class Builder:
         x0, y0, z0 = lo; x1, y1, z1 = hi
         if x1 - x0 < 1e-4 or y1 - y0 < 1e-4 or z1 - z0 < 1e-4:
             return
-        c = ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)
-        P = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-        for q in ((0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
-            self.face([P[i] for i in q], m, inward_of=c)
+        k = len(self.v); s = self.slot(m)
+        self.v += [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+        for q in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+            self.f.append(tuple(k + i for i in q)); self.mi.append(s)
 
-    def build(self, name, col, tint=(1.0, 1.0, 1.0)):
+    def cylinder(self, cx, cy, z0, z1, r, m, n=12, bottom=False):
+        k = len(self.v); s = self.slot(m)
+        for z in (z0, z1):
+            self.v += [(cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n), z) for i in range(n)]
+        for i in range(n):
+            j = (i + 1) % n
+            self.f.append((k + i, k + j, k + n + j, k + n + i)); self.mi.append(s)
+        self.f.append(tuple(k + n + i for i in range(n))); self.mi.append(s)
+        if bottom:
+            self.f.append(tuple(k + i for i in reversed(range(n)))); self.mi.append(s)
+
+    def ring(self, x0, x1, y0, y1, z0, z1, out, m, inset=0.02):
+        """A closed band round a footprint: from just inside the wall line to `out` beyond it, z0..z1 (shared vertices:
+        outer sides, top and underside)."""
+        k = len(self.v); s = self.slot(m)
+        O = [(x0 - out, y0 - out), (x1 + out, y0 - out), (x1 + out, y1 + out), (x0 - out, y1 + out)]
+        I = [(x0 + inset, y0 + inset), (x1 - inset, y0 + inset), (x1 - inset, y1 - inset), (x0 + inset, y1 - inset)]
+        for z in (z0, z1):
+            self.v += [(p[0], p[1], z) for p in O]
+        for z in (z0, z1):
+            self.v += [(p[0], p[1], z) for p in I]
+        o0, o1, i0, i1 = k, k + 4, k + 8, k + 12
+        for a in range(4):
+            b = (a + 1) % 4
+            self.f.append((o0 + a, o0 + b, o1 + b, o1 + a)); self.mi.append(s)      # outer side
+            self.f.append((o1 + a, o1 + b, i1 + b, i1 + a)); self.mi.append(s)      # top
+            self.f.append((o0 + b, o0 + a, i0 + a, i0 + b)); self.mi.append(s)      # underside
+
+    def build(self, name, col, tint=(1.0, 1.0, 1.0), top=0.0, bevel=False):
         if not self.f:
             return None
         me = bpy.data.meshes.new(name); me.from_pydata(self.v, [], self.f); me.update()
@@ -222,6 +396,10 @@ class Builder:
         me.polygons.foreach_set("material_index", self.mi)
         ob = bpy.data.objects.new(name, me); col.objects.link(ob)
         ob["city_tint"] = tuple(tint)          # every city material reads it (a missing one reads black)
+        ob["nb_top"] = float(top)              # the weathering's coping height
+        if bevel:
+            md = ob.modifiers.new("bevel", 'BEVEL'); md.width = BEVEL; md.segments = 1
+            md.limit_method = 'ANGLE'; md.angle_limit = math.radians(40.0); md.use_clamp_overlap = True
         return ob
 
 
@@ -256,10 +434,9 @@ class Face:
         B.box((min(a[0], b[0]), min(a[1], b[1]), min(a[2], b[2])), (max(a[0], b[0]), max(a[1], b[1]), max(a[2], b[2])), m)
 
 
-def wall_with_holes(F, B, z0, z1, holes, m, u0=0.0, u1=None):
+def wall_with_holes(F, B, z0, z1, holes, m, u0, u1):
     """The wall plane from z0 to z1 over u0..u1, minus the holes (u0, u1, z0, z1): horizontal strips cut at every hole
     edge, each strip's covered spans left out."""
-    u1 = F.L if u1 is None else u1
     zs = sorted({z0, z1} | {h[2] for h in holes if z0 < h[2] < z1} | {h[3] for h in holes if z0 < h[3] < z1})
     for za, zb in zip(zs, zs[1:]):
         zm = (za + zb) / 2
@@ -273,142 +450,271 @@ def wall_with_holes(F, B, z0, z1, holes, m, u0=0.0, u1=None):
             F.quad(B, u, u1, za, zb, 0.0, m)
 
 
-def reveal(F, B, u0, u1, z0, z1, depth, m, bottom=True):
-    """The four sides of an opening from the wall face back to the depth, facing into the opening."""
-    c = F.P((u0 + u1) / 2, (z0 + z1) / 2, -depth / 2)
-    sides = [(F.P(u0, z0, 0), F.P(u0, z0, -depth), F.P(u0, z1, -depth), F.P(u0, z1, 0)),
-             (F.P(u1, z0, 0), F.P(u1, z1, 0), F.P(u1, z1, -depth), F.P(u1, z0, -depth)),
-             (F.P(u0, z1, 0), F.P(u0, z1, -depth), F.P(u1, z1, -depth), F.P(u1, z1, 0))]
+def corner_chamfers(B, x0, x1, y0, y1, z0, z1, m):
+    """The four corners cut by BEVEL: each face's wall stops BEVEL short of the corner and a narrow diagonal strip joins them."""
+    b = BEVEL; c = ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)
+    for (pa, pb) in (((x1 - b, y0), (x1, y0 + b)), ((x1, y1 - b), (x1 - b, y1)), ((x0 + b, y1), (x0, y1 - b)), ((x0, y0 + b), (x0 + b, y0))):
+        B.face([(pa[0], pa[1], z0), (pb[0], pb[1], z0), (pb[0], pb[1], z1), (pa[0], pa[1], z1)], m, inward_of=c)
+
+
+def reveal(F, B, u0, u1, z0, z1, depth, m, bottom=True, d0=0.0):
+    """The sides of an opening from d0 behind the wall face back to the depth, facing into the opening."""
+    c = F.P((u0 + u1) / 2, (z0 + z1) / 2, -(d0 + depth) / 2)
+    sides = [(F.P(u0, z0, -d0), F.P(u0, z0, -depth), F.P(u0, z1, -depth), F.P(u0, z1, -d0)),
+             (F.P(u1, z0, -d0), F.P(u1, z1, -d0), F.P(u1, z1, -depth), F.P(u1, z0, -depth)),
+             (F.P(u0, z1, -d0), F.P(u0, z1, -depth), F.P(u1, z1, -depth), F.P(u1, z1, -d0))]
     if bottom:
-        sides.append((F.P(u0, z0, 0), F.P(u1, z0, 0), F.P(u1, z0, -depth), F.P(u0, z0, -depth)))
+        sides.append((F.P(u0, z0, -d0), F.P(u1, z0, -d0), F.P(u1, z0, -depth), F.P(u0, z0, -depth)))
     for q in sides:
-        # each side faces the opening's centre line
         cen = tuple(sum(p[k] for p in q) / 4 for k in range(3))
-        away = tuple(2 * cen[k] - c[k] for k in range(3))
-        B.face(list(q), m, inward_of=away)
+        B.face(list(q), m, inward_of=tuple(2 * cen[k] - c[k] for k in range(3)))
 
 
-def window(F, B, M, u0, u1, z0, z1, frame_m, rng, depth=REVEAL, mullion=None, transom=None, sill=True, lintel=None,
-           surround=False, glass=None):
-    """A modelled window: reveal, glass at the reveal's depth (some with a blind), a frame ring with its mullions and
-    transom, a sill and an optional lintel or surround."""
-    reveal(F, B, u0, u1, z0, z1, depth, M.wall_cur)
-    g = glass or (M.blind if rng.random() < BLIND_SHARE else M.glass)
+class Ctx:
+    """What the pieces of one building share: its materials and builders."""
+    pass
+
+
+def window(X, F, u0, u1, z0, z1, depth=REVEAL, mullion=None, transom=None, sill=True, lintel=False, glass=None):
+    """A modelled window: reveal, glass at the reveal's depth (some with a blind), a frame with mullions and transom, a
+    sill and an optional lintel. Returns the hole."""
+    M, B = X.M, X.Bd
+    reveal(F, B, u0, u1, z0, z1, depth, X.wall)
+    g = glass or (M.blind if X.rng.random() < BLIND_SHARE else M.glass)
     F.quad(B, u0, u1, z0, z1, -depth, g)
     fo0, fo1 = -depth, -depth + FRAME_D
-    F.box(B, u0, u0 + FRAME_W, z0, z1, fo0, fo1, frame_m); F.box(B, u1 - FRAME_W, u1, z0, z1, fo0, fo1, frame_m)
-    F.box(B, u0 + FRAME_W, u1 - FRAME_W, z0, z0 + FRAME_W, fo0, fo1, frame_m)
-    F.box(B, u0 + FRAME_W, u1 - FRAME_W, z1 - FRAME_W, z1, fo0, fo1, frame_m)
+    fm = X.frame
+    F.box(B, u0, u0 + FRAME_W, z0, z1, fo0, fo1, fm); F.box(B, u1 - FRAME_W, u1, z0, z1, fo0, fo1, fm)
+    F.box(B, u0 + FRAME_W, u1 - FRAME_W, z0, z0 + FRAME_W, fo0, fo1, fm)
+    F.box(B, u0 + FRAME_W, u1 - FRAME_W, z1 - FRAME_W, z1, fo0, fo1, fm)
     w = u1 - u0
-    n_mul = mullion if mullion is not None else (1 if w > 1.1 else 0)
+    n_mul = mullion if mullion is not None else (1 if w > 1.15 else 0)
     for k in range(1, n_mul + 1):
         um = u0 + w * k / (n_mul + 1)
-        F.box(B, um - FRAME_W * 0.6, um + FRAME_W * 0.6, z0 + FRAME_W, z1 - FRAME_W, fo0, fo1, frame_m)
+        F.box(B, um - FRAME_W * 0.6, um + FRAME_W * 0.6, z0 + FRAME_W, z1 - FRAME_W, fo0, fo1, fm)
     if transom:
         zt = z0 + (z1 - z0) * transom
-        F.box(B, u0 + FRAME_W, u1 - FRAME_W, zt - FRAME_W * 0.6, zt + FRAME_W * 0.6, fo0, fo1, frame_m)
+        F.box(B, u0 + FRAME_W, u1 - FRAME_W, zt - FRAME_W * 0.6, zt + FRAME_W * 0.6, fo0, fo1, fm)
     if sill:
         ov, h, pr = SILL
-        F.box(B, u0 - ov, u1 + ov, z0 - h, z0, -0.02, pr, M.trim_cur)
+        F.box(X.Bt, u0 - ov, u1 + ov, z0 - h, z0, -0.02, pr, X.trim)
     if lintel:
         ov, h, pr = LINTEL
-        F.box(B, u0 - ov, u1 + ov, z1, z1 + h, -0.02, pr, M.trim_cur)
-    if surround:   # an architrave: a flat band round the opening
-        bw, pr = 0.12, 0.03
-        F.box(B, u0 - bw, u0, z0, z1 + bw, -0.02, pr, M.trim_cur); F.box(B, u1, u1 + bw, z0, z1 + bw, -0.02, pr, M.trim_cur)
-        F.box(B, u0, u1, z1, z1 + bw, -0.02, pr, M.trim_cur)
+        F.box(X.Bt, u0 - ov, u1 + ov, z1, z1 + h, -0.02, pr, X.trim)
+    X.stats["windows"] = X.stats.get("windows", 0) + 1
+    return (u0, u1, z0, z1)
 
 
-def door(F, B, M, u0, u1, z0, z1, kind, rng, depth=REVEAL_DOOR, frame_m=None, transom_h=0.0):
+def door(X, F, u0, u1, z0, z1, kind, depth=0.3, transom_h=0.0, own_reveal=True):
     """A door in its opening: 'panel' (painted or wood leaves), 'glass' (framed glazed leaves), 'steel' (a man door).
-    transom_h: a glazed transom of this height over the leaves."""
-    frame_m = frame_m or M.frames["bronze"]
-    reveal(F, B, u0, u1, z0, z1, depth, M.wall_cur, bottom=False)
+    own_reveal=False: the door stands inside another opening (a shopfront) that has the reveal already."""
+    M, B, fm = X.M, X.Bd, X.frame
+    if own_reveal:
+        reveal(F, B, u0, u1, z0, z1, depth, X.wall, bottom=False)
     zl = z1 - transom_h
     leaves = 2 if u1 - u0 > 1.4 else 1
     fo0, fo1 = -depth, -depth + 0.06
     if transom_h > 0:
         F.quad(B, u0, u1, zl, z1, -depth, M.glass)
-        F.box(B, u0, u1, zl - 0.05, zl + 0.03, fo0, fo1, frame_m)
+        F.box(B, u0, u1, zl - 0.05, zl + 0.03, fo0, fo1, fm)
     if kind == "glass":
         F.quad(B, u0, u1, z0, zl, -depth, M.glass)
     else:
-        leaf_m = M.door_wood if kind == "panel" and rng.random() < 0.5 else (rng.choice(M.door_paint) if kind == "panel" else M.metal)
-        F.quad(B, u0, u1, z0, zl, -depth, leaf_m)
-    F.box(B, u0, u0 + 0.07, z0, z1, fo0, fo1, frame_m); F.box(B, u1 - 0.07, u1, z0, z1, fo0, fo1, frame_m)
-    F.box(B, u0, u1, z1 - 0.07, z1, fo0, fo1, frame_m)
+        F.quad(B, u0, u1, z0, zl, -depth, M.door_wood if kind == "panel" and X.rng.random() < 0.5 else
+               (X.rng.choice(M.doors) if kind == "panel" else M.metal))
+    F.box(B, u0, u0 + 0.07, z0, z1, fo0, fo1, fm); F.box(B, u1 - 0.07, u1, z0, z1, fo0, fo1, fm)
+    F.box(B, u0, u1, z1 - 0.07, z1, fo0, fo1, fm)
     w = (u1 - u0) / leaves
     for k in range(leaves):
         a, b = u0 + k * w, u0 + (k + 1) * w
-        if kind == "glass":   # each leaf's frame and a push bar
-            F.box(B, a + 0.03, a + 0.11, z0, zl, fo0, fo1, frame_m); F.box(B, b - 0.11, b - 0.03, z0, zl, fo0, fo1, frame_m)
-            F.box(B, a + 0.03, b - 0.03, z0, z0 + 0.18, fo0, fo1, frame_m)
+        if kind == "glass":
+            F.box(B, a + 0.03, a + 0.11, z0, zl, fo0, fo1, fm); F.box(B, b - 0.11, b - 0.03, z0, zl, fo0, fo1, fm)
+            F.box(B, a + 0.03, b - 0.03, z0, z0 + 0.18, fo0, fo1, fm)
             F.box(B, a + 0.11, b - 0.11, z0 + 1.0, z0 + 1.06, fo1, fo1 + 0.05, M.metal)
-        elif kind == "panel":  # raised panels: two proud rectangles per leaf, and a handle
-            for zz0, zz1 in ((z0 + 0.15, z0 + (zl - z0) * 0.45), (z0 + (zl - z0) * 0.52, zl - 0.15)):
-                F.box(B, a + 0.12, b - 0.12, zz0, zz1, -depth, -depth + 0.025, M.door_wood)
-            hx = b - 0.12 if k == 0 else a + 0.12
-            F.box(B, hx - 0.02, hx + 0.02, z0 + 0.95, z0 + 1.15, -depth, -depth + 0.07, M.metal)
         else:
             F.box(B, b - 0.14, b - 0.08, z0 + 0.98, z0 + 1.04, -depth, -depth + 0.07, M.metal)
-    F.box(B, u0 - 0.05, u1 + 0.05, z0 - 0.02, z0 + 0.03, -depth, 0.05, M.base)   # a threshold step
+    F.box(B, u0 - 0.05, u1 + 0.05, z0 - 0.02, z0 + 0.03, -depth, 0.05, X.trim)   # a threshold
+    X.stats["doors"] = X.stats.get("doors", 0) + 1
 
 
-def canopy(F, B, M, uc, w, z, depth=CANOPY[1]):
-    t = CANOPY[0]
-    F.box(B, uc - w / 2, uc + w / 2, z, z + t, -0.02, depth, M.metal)
+def entrance_hall(X, F, uc, width, z0, height, depth):
+    """A residential (or office) entrance: a wide glazed double door between sidelights under a transom, in clear glass,
+    set back in its opening; behind it a lit hall -- stone floor, plastered walls and ceiling, lift doors and letter
+    boxes on the back wall, two ceiling panels -- and a canopy over the opening. Returns the hole."""
+    M, B, fm = X.M, X.Bd, X.frame
+    a, b = uc - width / 2, uc + width / 2
+    z1 = z0 + height
+    sb = HALL["set_back"]
+    reveal(F, B, a, b, z0, z1, sb, X.trim, bottom=False)                              # the opening's reveal, in the trim
+    # the hall: side walls, ceiling, floor, back wall
+    for u in (a, b):
+        B.face([F.P(u, z0, -sb), F.P(u, z0, -depth), F.P(u, z1, -depth), F.P(u, z1, -sb)], X.trim,
+               inward_of=F.P(a - 1.0 if u == a else b + 1.0, (z0 + z1) / 2, -depth / 2))
+    B.face([F.P(a, z1, -sb), F.P(b, z1, -sb), F.P(b, z1, -depth), F.P(a, z1, -depth)], X.trim, inward_of=F.P(uc, z1 + 1.0, -depth / 2))
+    B.face([F.P(a, z0 + 0.01, -sb), F.P(b, z0 + 0.01, -sb), F.P(b, z0 + 0.01, -depth), F.P(a, z0 + 0.01, -depth)], M.stone,
+           inward_of=F.P(uc, z0 - 1.0, -depth / 2))
+    F.quad(B, a, b, z0, z1, -depth, X.trim)
+    lw = 1.1                                                                           # the lift's doors
+    F.box(B, uc - lw / 2 - 0.12, uc + lw / 2 + 0.12, z0, z0 + 2.35, -depth, -depth + 0.04, M.metal)
+    F.box(B, uc - lw / 2, uc + lw / 2, z0, z0 + 2.2, -depth + 0.04, -depth + 0.05, M.galv)
+    F.box(B, uc - 0.01, uc + 0.01, z0, z0 + 2.2, -depth + 0.05, -depth + 0.06, M.metal)
+    mb = (a + 0.25, a + 1.05) if X.rng.random() < 0.5 else (b - 1.05, b - 0.25)      # the letter boxes
+    F.box(B, mb[0], mb[1], z0 + 1.0, z0 + 1.6, -depth, -depth + 0.18, M.metal)
+    for i in range(4):
+        for j in range(3):
+            u = mb[0] + 0.05 + i * 0.19; z = z0 + 1.05 + j * 0.18
+            F.box(B, u, u + 0.15, z, z + 0.14, -depth + 0.18, -depth + 0.19, M.galv)
+    for k in (0.33, 0.66):                                                             # the ceiling's light panels
+        F.box(B, uc - 0.3, uc + 0.3, z1 - 0.03, z1 - 0.005, -sb - (depth - sb) * k - 0.3, -sb - (depth - sb) * k + 0.3, M.light)
+    # the front: sidelights, double door, transom -- clear glass in the frame colour
+    dw, dh = HALL["door"], z0 + HALL["door_h"]
+    da, db = uc - dw / 2, uc + dw / 2
+    F.quad(B, a, b, z0, z1, -sb, M.clear)
+    fo = (-sb - 0.03, -sb + 0.05)
+    for u in (a, da, db, b):
+        F.box(B, u - 0.05, u + 0.05, z0, z1, *fo, fm)
+    F.box(B, a, b, dh - 0.05, dh + 0.05, *fo, fm); F.box(B, a, b, z1 - 0.08, z1, *fo, fm)
+    F.box(B, a, da, z0, z0 + 0.15, *fo, fm); F.box(B, db, b, z0, z0 + 0.15, *fo, fm)
+    for la, lb in ((da, uc), (uc, db)):                                               # the two leaves' stiles and pulls
+        F.box(B, la + 0.04, la + 0.1, z0, dh, *fo, fm); F.box(B, lb - 0.1, lb - 0.04, z0, dh, *fo, fm)
+        hx = lb - 0.18 if la == da else la + 0.18
+        F.box(B, hx - 0.015, hx + 0.015, z0 + 0.8, z0 + 1.6, fo[1], fo[1] + 0.06, M.galv)
+    F.box(B, a - 0.1, b + 0.1, z0 - 0.02, z0 + 0.02, -sb, 0.6, X.trim)               # the threshold
+    F.box(X.Bd, uc - width / 2 - 0.6, uc + width / 2 + 0.6, z1 + 0.25, z1 + 0.25 + CANOPY_T, -0.02, 1.7, M.metal)   # canopy
+    X.stats["halls"] = X.stats.get("halls", 0) + 1
+    X.stats["doors"] = X.stats.get("doors", 0) + 1
+    return (a, b, z0, z1)
 
 
-def awning(F, B, m, u0, u1, z_top, depth=1.1, drop=0.55, valance=0.22):
-    """A sloped fabric awning: its sheet from the wall down and out, a valance hanging at the front, closed ends."""
+def awning(X, F, m, u0, u1, z_top, depth=1.1, drop=0.55, valance=0.22):
+    B = X.Bd
     zf = z_top - drop
     pts = [F.P(u0, z_top, 0.02), F.P(u1, z_top, 0.02), F.P(u1, zf, depth), F.P(u0, zf, depth)]
-    B.face(pts, m, inward_of=F.P((u0 + u1) / 2, z_top - 2.0, 0.0))                 # the sheet, facing up and out
-    B.face(list(reversed(pts)), m)                                                   # its underside
+    B.face(pts, m, inward_of=F.P((u0 + u1) / 2, z_top - 2.0, 0.0))
+    B.face(list(reversed(pts)), m)
     F.quad(B, u0, u1, zf - valance, zf, depth, m)
     for u in (u0, u1):
         B.face([F.P(u, z_top, 0.02), F.P(u, zf, depth), F.P(u, zf - valance, depth), F.P(u, zf - valance * 0.5, 0.02)], m)
 
 
-def juliet(F, B, M, u0, u1, z0):
-    """A Juliet balcony rail in front of a French window: a top and a bottom rail and bars between."""
-    out0, out1 = 0.06, 0.10
-    F.box(B, u0 - 0.05, u1 + 0.05, z0 + 0.05, z0 + 0.10, out0, out1, M.metal)
-    F.box(B, u0 - 0.05, u1 + 0.05, z0 + 1.0, z0 + 1.05, out0 - 0.01, out1 + 0.01, M.metal)
-    n = max(3, int((u1 - u0) / 0.13))
+def rail(X, F, u0, u1, z0, out0, out1, sides=False):
+    """A metal railing: top and bottom rails and bars, along the front (and back to the wall on both sides)."""
+    B, M = X.Bd, X.M
+    F.box(B, u0, u1, z0 + 0.05, z0 + 0.09, out1 - 0.04, out1, M.metal)
+    F.box(B, u0, u1, z0 + 1.0, z0 + 1.05, out1 - 0.05, out1 + 0.01, M.metal)
+    n = max(3, int((u1 - u0) / 0.12))
     for k in range(n + 1):
-        u = u0 - 0.03 + (u1 - u0 + 0.06) * k / n
-        F.box(B, u - 0.012, u + 0.012, z0 + 0.10, z0 + 1.0, out0 + 0.01, out0 + 0.035, M.metal)
-    for u in (u0 - 0.05, u1 + 0.03):   # brackets back to the wall
-        F.box(B, u, u + 0.02, z0 + 0.05, z0 + 0.10, -0.02, out0, M.metal)
+        u = u0 + (u1 - u0) * k / n
+        F.box(B, u - 0.011, u + 0.011, z0 + 0.09, z0 + 1.0, out1 - 0.03, out1 - 0.01, M.metal)
+    if sides:
+        for u in (u0, u1 - 0.04):
+            F.box(B, u, u + 0.04, z0 + 1.0, z0 + 1.05, out0, out1, M.metal)
+            m = max(2, int((out1 - out0) / 0.12))
+            for k in range(m):
+                o = out0 + (out1 - out0) * (k + 0.5) / m
+                F.box(B, u + 0.01, u + 0.03, z0 + 0.05, z0 + 1.0, o - 0.011, o + 0.011, M.metal)
 
 
-def ring(B, x0, x1, y0, y1, z0, z1, out, m, inset=0.02):
-    """A closed band round the footprint: from just inside the wall line to `out` beyond it, z0..z1."""
-    xi0, xi1, yi0, yi1 = x0 + inset, x1 - inset, y0 + inset, y1 - inset
-    xo0, xo1, yo0, yo1 = x0 - out, x1 + out, y0 - out, y1 + out
-    c = ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)
-    O = [(xo0, yo0), (xo1, yo0), (xo1, yo1), (xo0, yo1)]
-    I = [(xi0, yi0), (xi1, yi0), (xi1, yi1), (xi0, yi1)]
-    for k in range(4):
-        a, b = O[k], O[(k + 1) % 4]
-        B.face([(a[0], a[1], z0), (b[0], b[1], z0), (b[0], b[1], z1), (a[0], a[1], z1)], m, inward_of=c)   # outer side
-        ia, ib = I[k], I[(k + 1) % 4]
-        B.face([(ia[0], ia[1], z1), (ib[0], ib[1], z1), (b[0], b[1], z1), (a[0], a[1], z1)], m,
-               inward_of=(c[0], c[1], z1 - 1.0))                                                          # top
-        B.face([(ia[0], ia[1], z0), (a[0], a[1], z0), (b[0], b[1], z0), (ib[0], ib[1], z0)], m,
-               inward_of=(c[0], c[1], z0 + 1.0))                                                          # underside
+def balcony(X, F, u0, u1, z_floor):
+    """A small projecting balcony: a slab in the trim's stone and a metal railing round it."""
+    d = 1.05
+    F.box(X.Bt, u0, u1, z_floor - 0.16, z_floor, -0.02, d, X.trim)
+    rail(X, F, u0 + 0.03, u1 - 0.03, z_floor, 0.0, d - 0.03, sides=True)
+    X.stats["balconies"] = X.stats.get("balconies", 0) + 1
 
 
-# ---------------------------------------------------------------- the buildings
+# ---------------------------------------------------------------- the apartment plan
+def compose(L, rng, core):
+    """A face's panels (u0, u1, kind): apartments of rooms from each apartment's outer end inward, mirrored apartment by
+    apartment, with the stair core in the middle when `core` (a front face)."""
+    def rooms(W):
+        seq, w = [], 0.0
+        for kind in ROOM_SEQ:
+            if w + ROOM_W[kind] > W * 1.12:
+                break
+            seq.append(kind); w += ROOM_W[kind]
+        if not seq:
+            seq, w = ["living"], ROOM_W["living"]
+        k = W / w
+        return [(kind, ROOM_W[kind] * k) for kind in seq]
+
+    usable = L - 2 * END_PIER
+    panels = []
+    if core and usable > CORE_W + 6.0:
+        half = (usable - CORE_W) / 2
+        u = END_PIER
+        for kind, w in rooms(half):
+            panels.append((u, u + w, kind)); u += w
+        panels.append((u, u + CORE_W, "core")); u += CORE_W
+        for kind, w in reversed(rooms(half)):
+            panels.append((u, u + w, kind)); u += w
+        return panels
+    n = max(1, int(round(usable / APT_W)))
+    W = usable / n
+    u = END_PIER
+    for i in range(n):
+        seq = rooms(W)
+        if i % 2 == 1:
+            seq = list(reversed(seq))
+        for kind, w in seq:
+            panels.append((u, u + w, kind)); u += w
+    return panels
+
+
+def residential_floor(X, F, panels, zs0, storey, p, ground, front, top):
+    """One residential floor's windows by room: pairs for living rooms and bedrooms, one kitchen window, a small high
+    frosted bathroom window, the stair core's narrow window at the half landing; a few balconies and Juliet rails."""
+    holes = []
+    head = zs0 + p["sill"] + p["win_h"]
+    lift = 0.15 if ground else 0.0
+    for (u0, u1, kind) in panels:
+        uc = (u0 + u1) / 2
+        room = u1 - u0 - (FRAME[0] if X.framed else 0.0)
+        if kind == "core":
+            if ground:
+                continue                                     # the entrance hall stands under the core
+            zc0 = zs0 + storey * 0.5 - 0.35
+            zc1 = min(zc0 + 1.5, top - 0.3)
+            if zc1 - zc0 > 0.6:
+                holes.append(window(X, F, uc - WIN_W["core"] / 2, uc + WIN_W["core"] / 2, zc0, zc1, sill=True, lintel=X.classical))
+            continue
+        w = WIN_W[kind]
+        if kind == "bath":
+            holes.append(window(X, F, uc - w / 2, uc + w / 2, head - BATH_H, head, glass=X.M.frosted, sill=True, lintel=X.classical))
+            continue
+        if kind == "kitchen":
+            holes.append(window(X, F, uc - w / 2, uc + w / 2, zs0 + p["sill"] + 0.25 + lift, head, lintel=X.classical))
+            continue
+        pair = room >= 2 * w + PAIR_GAP + 0.5
+        cols = [(uc - PAIR_GAP / 2 - w, uc - PAIR_GAP / 2), (uc + PAIR_GAP / 2, uc + PAIR_GAP / 2 + w)] if pair else [(uc - w / 2, uc + w / 2)]
+        z0 = zs0 + p["sill"] + lift - (0.25 if kind == "living" else 0.0)
+        # a small balcony: the first one likely (each apartment building gets one somewhere), the rest rare
+        bal = (not ground) and (front or X.framed) and kind == "living" and X.rng.random() < (
+            (0.02 if X.framed else BALCONY_SHARE) if X.balcony_done else (0.12 if X.framed else 0.45))
+        jul = (not ground) and (not bal) and front and X.rng.random() < JULIET_SHARE
+        if bal or jul:
+            z0 = zs0 + 0.12
+        for (a, b) in cols:
+            holes.append(window(X, F, a, b, z0, head, transom=0.78 if (bal or jul) else None, sill=not (bal or jul),
+                                lintel=X.classical))
+            if jul:
+                rail(X, F, a - 0.04, b + 0.04, z0, 0.0, 0.1); X.stats["juliets"] = X.stats.get("juliets", 0) + 1
+        if bal:
+            balcony(X, F, cols[0][0] - 0.3, cols[-1][1] + 0.3, zs0 + 0.12)
+            X.balcony_done = True
+    return holes
+
+
+# ---------------------------------------------------------------- the box's own mesh: walls and roof boxes out
 def _footprint(ob):
     vs = [ob.matrix_world @ v.co for v in ob.data.vertices]
     return min(v.x for v in vs), max(v.x for v in vs), min(v.y for v in vs), max(v.y for v in vs)
 
 
-def _strip_walls(ob, wall_slot, x0, x1, y0, y1):
-    """The box's own mesh, made local, without its walls and parapet (the wall-material faces at the footprint's
-    edge, and its underside): the roof plane, plant boxes and bulkhead stay. Returns (roof z, wall top z)."""
+def _strip(ob, wall_slot, x0, x1, y0, y1):
+    """The box's own mesh, made local, without its walls and parapet (the wall-material faces at the footprint's edge,
+    and its underside) and without its rooftop boxes, whose boxes are returned for the roof kit: the roof plane stays.
+    Returns (roof z, wall top z, [(x0, x1, y0, y1, z0, z1, kind)])."""
     import bmesh
     me = ob.data.copy(); me.name = ob.data.name + "_roof"; ob.data = me
     bm = bmesh.new(); bm.from_mesh(me)
@@ -420,13 +726,139 @@ def _strip_walls(ob, wall_slot, x0, x1, y0, y1):
         zs = [(mw @ v.co).z for v in f.verts]
         if f.material_index == wall_slot and (near or f.normal.z < -0.9):
             drop.append(f); top_z = max(top_z, max(zs))
-        elif f.normal.z > 0.9 and f.material_index != wall_slot and not near:
-            roof_z = min(z for z in zs) if roof_z is None else min(roof_z, min(zs))
-    bmesh.ops.delete(bm, geom=drop, context='FACES')
+        elif f.normal.z > 0.9 and not near:
+            roof_z = min(zs) if roof_z is None else min(roof_z, min(zs))
+    roof_z = roof_z if roof_z is not None else top_z - 0.9
+    # the rooftop boxes: every remaining face over the roof plane, grouped into boxes by touching extents
+    up = [f for f in bm.faces if f not in drop and max((mw @ v.co).z for v in f.verts) > roof_z + 0.05]
+    boxes = []
+    for f in up:
+        ps = [mw @ v.co for v in f.verts]
+        bb = [min(p.x for p in ps), max(p.x for p in ps), min(p.y for p in ps), max(p.y for p in ps), min(p.z for p in ps), max(p.z for p in ps)]
+        kind = "bulkhead" if f.material_index == wall_slot else "plant"
+        boxes.append((bb, kind))
+    merged = []
+    for bb, kind in boxes:
+        for m in merged:
+            mb = m[0]
+            if bb[0] <= mb[1] + 0.01 and bb[1] >= mb[0] - 0.01 and bb[2] <= mb[3] + 0.01 and bb[3] >= mb[2] - 0.01 and bb[4] <= mb[5] + 0.01 and bb[5] >= mb[4] - 0.01:
+                m[0] = [min(bb[0], mb[0]), max(bb[1], mb[1]), min(bb[2], mb[2]), max(bb[3], mb[3]), min(bb[4], mb[4]), max(bb[5], mb[5])]
+                if kind == "bulkhead":
+                    m[1] = "bulkhead"
+                break
+        else:
+            merged.append([list(bb), kind])
+    bmesh.ops.delete(bm, geom=drop + up, context='FACES')
     bm.to_mesh(me); bm.free()
-    return (roof_z if roof_z is not None else top_z - 0.9), top_z
+    return roof_z, top_z, [(b[0], b[1], b[2], b[3], max(b[4], roof_z), b[5], k) for b, k in merged]
 
 
+# ---------------------------------------------------------------- the roof kit
+def roof_kit(X, boxes, roof_z, x0, x1, y0, y1):
+    """The city's rooftop boxes given a purpose: a stair bulkhead (door, louvre, lamp, coping), condensers (casing on
+    rails, louvred sides, a top fan behind its grille), air handlers (louvred), exhaust fans (a cowl); refrigerant pipes on
+    supports, vent stacks and a hatch where there is no bulkhead."""
+    M, B, rng = X.M, X.Br, X.rng
+    bulk = None
+    units = []
+    for (bx0, bx1, by0, by1, bz0, bz1, kind) in boxes:
+        if kind == "bulkhead":
+            bulk = (bx0, bx1, by0, by1, bz0, bz1)
+            B.box((bx0, by0, roof_z - 0.02), (bx1, by1, bz1), X.wall)
+            B.ring(bx0, bx1, by0, by1, bz1, bz1 + 0.08, 0.04, M.metal, inset=0.1)
+            # the door on the bulkhead's longer side facing the roof's middle
+            cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+            if bx1 - bx0 >= by1 - by0:
+                side = "S" if cy > (y0 + y1) / 2 else "N"
+            else:
+                side = "W" if cx > (x0 + x1) / 2 else "E"
+            Fb = Face(side, bx0, bx1, by0, by1)
+            uc = Fb.L / 2
+            Fb.box(B, uc - 0.5, uc + 0.5, roof_z, roof_z + 2.15, -0.01, 0.03, M.metal)          # a steel door in its frame
+            Fb.box(B, uc - 0.42, uc + 0.42, roof_z + 0.05, roof_z + 2.08, 0.03, 0.04, M.doors[0])
+            Fb.box(B, uc + 0.25, uc + 0.32, roof_z + 1.0, roof_z + 1.06, 0.04, 0.09, M.galv)
+            Fb.box(B, uc - 0.12, uc + 0.12, roof_z + 2.3, roof_z + 2.42, -0.01, 0.12, M.metal)    # a lamp over it
+            Fb.box(B, uc - 0.6, uc + 0.6, roof_z + 2.18, roof_z + 2.24, -0.01, 0.45, M.metal)     # a drip canopy
+            Fl = Face({"S": "E", "N": "W", "E": "N", "W": "S"}[side], bx0, bx1, by0, by1)        # a louvre on a side face
+            Fl.box(B, Fl.L / 2 - 0.4, Fl.L / 2 + 0.4, bz1 - 1.0, bz1 - 0.4, -0.01, 0.03, M.louvre)
+            B.cylinder(cx + (bx1 - bx0) * 0.25, cy, bz1 + 0.08, bz1 + 0.6, 0.12, M.galv)          # the stair's vent
+            continue
+        units.append((bx0, bx1, by0, by1, bz0, bz1))
+    for (bx0, bx1, by0, by1, bz0, bz1) in units:
+        w, d = bx1 - bx0, by1 - by0
+        h = bz1 - bz0
+        cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+        kind = rng.choice(["condenser", "condenser", "handler", "exhaust"])
+        if kind == "exhaust" or min(w, d) < 0.6:
+            r = min(w, d) * 0.35
+            B.box((cx - r * 1.1, cy - r * 1.1, roof_z), (cx + r * 1.1, cy + r * 1.1, roof_z + 0.2), M.unit)   # the curb
+            B.cylinder(cx, cy, roof_z + 0.2, roof_z + 0.2 + h * 0.6, r * 0.8, M.galv, n=16)
+            B.cylinder(cx, cy, roof_z + 0.2 + h * 0.6, roof_z + 0.25 + h * 0.6, r * 1.15, M.galv, n=16, bottom=True)
+            B.cylinder(cx, cy, roof_z + 0.25 + h * 0.6, roof_z + 0.35 + h * 0.6, r * 0.5, M.metal, n=16)
+            continue
+        # rails, then the casing on them
+        for yy in (by0 + 0.1, by1 - 0.18):
+            B.box((bx0 - 0.1, yy, roof_z), (bx1 + 0.1, yy + 0.08, roof_z + 0.12), M.metal)
+        zc0, zc1 = roof_z + 0.12, roof_z + 0.12 + h
+        B.box((bx0, by0, zc0), (bx1, by1, zc1), M.unit)
+        long_x = w >= d
+        for s in (0, 1):                                                               # louvred side panels
+            if long_x:
+                y = by0 - 0.01 if s == 0 else by1 + 0.0
+                B.box((bx0 + 0.08, y, zc0 + 0.08), (bx1 - 0.08, y + 0.01, zc1 - 0.08), M.louvre)
+            else:
+                x = bx0 - 0.01 if s == 0 else bx1 + 0.0
+                B.box((x, by0 + 0.08, zc0 + 0.08), (x + 0.01, by1 - 0.08, zc1 - 0.08), M.louvre)
+        if kind == "condenser":
+            r = min(w, d) * 0.36
+            nf = 2 if max(w, d) > 2.2 * min(w, d) else 1
+            for i in range(nf):
+                fx = cx + ((i + 0.5) / nf - 0.5) * w if long_x else cx
+                fy = cy if long_x else cy + ((i + 0.5) / nf - 0.5) * d
+                B.cylinder(fx, fy, zc1, zc1 + 0.1, r, M.unit, n=20)
+                B.cylinder(fx, fy, zc1 + 0.1, zc1 + 0.11, r * 0.92, M.grille, n=20)
+                B.cylinder(fx, fy, zc1 + 0.11, zc1 + 0.14, r * 0.15, M.metal, n=10)
+        else:
+            B.box((bx0 + 0.1, by0 + 0.1, zc1), (bx1 - 0.1, by1 - 0.1, zc1 + 0.06), M.metal)
+        # refrigerant pipes from the unit toward the bulkhead (or a roof penetration), on small supports
+        tx, ty = ((bulk[0] + bulk[1]) / 2, (bulk[2] + bulk[3]) / 2) if bulk else (cx + 2.0, cy)
+        ex = bx1 + 0.05 if tx > cx else bx0 - 0.05
+        dist = min(abs(tx - cx) - (bx1 - bx0) / 2 - 0.2, 4.0) if bulk else 1.5
+        if dist > 0.4:
+            sgn = 1 if tx > cx else -1
+            xa, xb = sorted((ex, ex + sgn * dist))
+            for dy in (-0.08, 0.08):
+                B.box((xa, cy + dy - 0.025, roof_z + 0.22), (xb, cy + dy + 0.025, roof_z + 0.27), M.pipe)
+            n = max(1, int(dist / 1.2))
+            for k in range(n + 1):
+                x = xa + (xb - xa) * k / n
+                B.box((x - 0.06, cy - 0.15, roof_z), (x + 0.06, cy + 0.15, roof_z + 0.22), M.unit)
+            if not bulk:
+                B.cylinder(xb if sgn > 0 else xa, cy, roof_z, roof_z + 0.32, 0.14, M.metal)   # the penetration boot
+        X.stats["roof units"] = X.stats.get("roof units", 0) + 1
+    # vent stacks, and a hatch where nothing reaches the roof
+    taken = [(b[0] - 0.8, b[1] + 0.8, b[2] - 0.8, b[3] + 0.8) for b in boxes]
+    tries, stacks = 0, 0
+    want = rng.randint(2, 4)
+    while stacks < want and tries < 40:
+        tries += 1
+        x = rng.uniform(x0 + 1.5, x1 - 1.5); y = rng.uniform(y0 + 1.5, y1 - 1.5)
+        if any(t[0] < x < t[1] and t[2] < y < t[3] for t in taken):
+            continue
+        r = rng.uniform(0.04, 0.08); hgt = rng.uniform(0.5, 0.9)
+        B.cylinder(x, y, roof_z, roof_z + hgt, r, M.galv, n=10)
+        B.cylinder(x, y, roof_z + hgt, roof_z + hgt + 0.05, r * 1.6, M.galv, n=10, bottom=True)
+        taken.append((x - 0.5, x + 0.5, y - 0.5, y + 0.5)); stacks += 1
+    if bulk is None:
+        for _ in range(20):
+            x = rng.uniform(x0 + 2.0, x1 - 2.0); y = rng.uniform(y0 + 2.0, y1 - 2.0)
+            if not any(t[0] < x < t[1] and t[2] < y < t[3] for t in taken):
+                B.box((x - 0.45, y - 0.45, roof_z), (x + 0.45, y + 0.45, roof_z + 0.3), M.unit)
+                B.box((x - 0.5, y - 0.5, roof_z + 0.3), (x + 0.5, y + 0.5, roof_z + 0.36), M.metal)
+                break
+
+
+# ---------------------------------------------------------------- the buildings
 def _use_of(ob):
     if ob.name in NEIGHBOUR_USE:
         return NEIGHBOUR_USE[ob.name]
@@ -438,18 +870,27 @@ def _use_of(ob):
 
 
 def model(ob, M, col, hero_xy, log=print):
-    """Rebuild one box's walls as a modelled building of its use. Returns the new objects."""
-    rng = random.Random(f"{SEED}:{ob.name}")
+    """Rebuild one box's walls and roof boxes as a modelled building of its use. Returns the new objects."""
+    X = Ctx()
+    X.M, X.rng = M, random.Random(f"{SEED}:{ob.name}")
+    X.stats = {}
+    rng = X.rng
     use = _use_of(ob)
     p = OVERRIDE.get(ob.name, USES[use])
     x0, x1, y0, y1 = _footprint(ob)
     wall_src = ob.data.materials[0]
-    roof_z, top_z = _strip_walls(ob, 0, x0, x1, y0, y1)
+    roof_z, top_z, roof_boxes = _strip(ob, 0, x0, x1, y0, y1)
     tint = tuple(ob.get("city_tint", (1.0, 1.0, 1.0)))
-    classical = use in ("flats", "shops")
-    frame_m = M.frames[rng.choice(["white", "bronze", "green"] if classical else ["bronze", "grey"])]
-    M.wall_cur, M.trim_cur = wall_material(wall_src), M.trim
-    # the storeys: the ground storey, then whole storeys up to the roof; the rest above the last one is the attic band
+    brick = "brick" in wall_src.name or "wing" in wall_src.name
+    X.classical = use in ("flats", "shops")
+    X.framed = use == "tower"
+    residential = use in ("flats", "tower", "shops")
+    X.frame = M.frames[rng.choice(["offwhite", "taupe", "bronze"] if X.classical else ["bronze", "grey"])]
+    X.wall = wall_material(wall_src)
+    X.trim = M.plaster if brick else X.wall
+    trim_tint = BRICK_TRIM_TINT if brick else tuple(min(1.6, c * TONE_TRIM) for c in tint)
+    X.Bw, X.Bg, X.Bt, X.Bd, X.Bp, X.Br, X.Bf = (Builder() for _ in range(7))
+    X.balcony_done = False
     gh = min(p["ground"], roof_z - Z0)
     levels = [Z0]
     z = Z0 + gh
@@ -460,55 +901,51 @@ def model(ob, M, col, hero_xy, log=print):
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     hx, hy = hero_xy[0] - cx, hero_xy[1] - cy
     hl = math.hypot(hx, hy) or 1.0
-    Bw, Bg, Bt, Bd = Builder(), Builder(), Builder(), Builder()   # walls (upper), walls (ground storey), trims, details
-    stats = {"windows": 0, "doors": 0, "shopfronts": 0, "rollups": 0, "juliets": 0, "awnings": 0}
-    pil = use in ("offices", "tower") or (use == "shed")
-    pairing = rng.random() < 0.75
+    if X.framed:
+        M.concrete = M.concrete or concrete_material(X.wall)
+    b_ = BEVEL
     for side in ("S", "E", "N", "W"):
         F = Face(side, x0, x1, y0, y1)
         front = (F.N[0] * hx + F.N[1] * hy) / hl > 0.3
         L = F.L
         holes_g, holes_u = [], []
-        # -------- the bays: centres along the face, kept PIER_END from the corners
         bw = p["bay"]
-        n_bay = max(1, int((L - 2 * PIER_END) // bw))
-        span = n_bay * bw
-        ub = [(L - span) / 2 + (k + 0.5) * bw for k in range(n_bay)]
-        # -------- ground storey
+        n_bay = max(1, int((L - 2 * 0.9) // bw))
+        ub = [(L - n_bay * bw) / 2 + (k + 0.5) * bw for k in range(n_bay)]
+        panels = compose(L, rng, core=front) if residential else None
         zg0, zg1 = Z0, Z0 + gh
+        # -------- the ground storey
         if use == "shops" and front:
-            # shop units of two bays each (the last takes three if odd), a pier between them
             units, k = [], 0
             while k < n_bay:
                 take = 3 if n_bay - k == 3 else min(2, n_bay - k)
                 units.append((ub[k] - bw / 2 + 0.3, ub[k + take - 1] + bw / 2 - 0.3)); k += take
             for (a, b) in units:
-                zt = zg1 - 0.95                                                   # the glazing's head; the fascia over it
+                zt = zg1 - 0.95
                 holes_g.append((a, b, zg0, zt))
-                reveal(F, Bd, a, b, zg0, zt, REVEAL_SHOP, M.wall_cur, bottom=False)
+                reveal(F, X.Bd, a, b, zg0, zt, REVEAL_SHOP, X.wall, bottom=False)
                 d = REVEAL_SHOP
                 door_left = rng.random() < 0.5
                 dw = 1.1
                 da, db = (a + 0.15, a + 0.15 + dw) if door_left else (b - 0.15 - dw, b - 0.15)
                 ga, gb = (db + 0.1, b) if door_left else (a, da - 0.1)
-                F.quad(Bd, ga, gb, zg0 + 0.45, zt, -d, M.glass)                    # the display glazing over a kick panel
-                F.quad(Bd, ga, gb, zg0, zg0 + 0.45, -d, M.kick)
+                F.quad(X.Bd, ga, gb, zg0 + 0.45, zt, -d, M.glass)
+                F.quad(X.Bd, ga, gb, zg0, zg0 + 0.45, -d, M.kick)
                 fo = (-d, -d + 0.06)
                 for u in (a, b, ga, gb):
-                    F.box(Bd, u - 0.04, u + 0.04, zg0, zt, *fo, frame_m)
-                F.box(Bd, a, b, zg0 + 2.75, zg0 + 2.83, *fo, frame_m)               # the transom bar
-                F.box(Bd, ga, gb, zg0 + 0.42, zg0 + 0.48, *fo, frame_m)
+                    F.box(X.Bd, u - 0.04, u + 0.04, zg0, zt, *fo, X.frame)
+                F.box(X.Bd, a, b, zg0 + 2.75, zg0 + 2.83, *fo, X.frame)
+                F.box(X.Bd, ga, gb, zg0 + 0.42, zg0 + 0.48, *fo, X.frame)
                 nm = max(0, int((gb - ga) / 1.6))
                 for j in range(1, nm + 1):
                     um = ga + (gb - ga) * j / (nm + 1)
-                    F.box(Bd, um - 0.03, um + 0.03, zg0 + 0.45, zt, *fo, frame_m)
-                F.quad(Bd, da, db, zg0 + 2.83, zt, -d, M.glass)                     # over the door, transom glass
-                door(F, Bd, M, da, db, zg0, zg0 + 2.75, "glass", rng, depth=d, frame_m=frame_m)
-                sign = rng.choice(M.signs)                                           # the fascia's sign panel
-                F.box(Bd, a + 0.25, b - 0.25, zt + 0.22, zt + 0.72, -0.01, 0.05, sign)
+                    F.box(X.Bd, um - 0.03, um + 0.03, zg0 + 0.45, zt, *fo, X.frame)
+                F.quad(X.Bd, da, db, zg0 + 2.83, zt, -d, M.glass)
+                door(X, F, da, db, zg0, zg0 + 2.75, "glass", depth=d, own_reveal=False)
+                F.box(X.Bd, a + 0.25, b - 0.25, zt + 0.22, zt + 0.72, -0.01, 0.04, rng.choice(M.signs))
                 if rng.random() < AWNING_SHARE:
-                    awning(F, Bd, rng.choice(M.awnings), a + 0.05, b - 0.05, zt + 0.12); stats["awnings"] += 1
-                stats["shopfronts"] += 1; stats["doors"] += 1
+                    awning(X, F, rng.choice(M.awnings), a + 0.05, b - 0.05, zt + 0.12)
+                X.stats["shopfronts"] = X.stats.get("shopfronts", 0) + 1
         elif use == "shed":
             if front or rng.random() < 0.5:
                 n_roll = max(1, min(3, n_bay // 2))
@@ -517,179 +954,168 @@ def model(ob, M, col, hero_xy, log=print):
                     a, b = ub[k] - 1.8, ub[k] + 1.8
                     zt = zg0 + 4.4
                     holes_g.append((a, b, zg0, zt))
-                    reveal(F, Bd, a, b, zg0, zt, 0.2, M.wall_cur, bottom=False)
-                    F.quad(Bd, a, b, zg0, zt, -0.2, M.rollup)
-                    F.box(Bd, a - 0.15, a, zg0, zt + 0.15, -0.02, 0.10, M.metal); F.box(Bd, b, b + 0.15, zg0, zt + 0.15, -0.02, 0.10, M.metal)
-                    F.box(Bd, a - 0.15, b + 0.15, zt, zt + 0.15, -0.02, 0.10, M.metal)
-                    F.box(Bd, a, b, zt - 0.5, zt, -0.2, -0.05, M.metal)                # the roll housing
-                    stats["rollups"] += 1
+                    reveal(F, X.Bd, a, b, zg0, zt, 0.2, X.wall, bottom=False)
+                    F.quad(X.Bd, a, b, zg0, zt, -0.2, M.rollup)
+                    F.box(X.Bd, a - 0.15, a, zg0, zt + 0.15, -0.02, 0.10, M.metal); F.box(X.Bd, b, b + 0.15, zg0, zt + 0.15, -0.02, 0.10, M.metal)
+                    F.box(X.Bd, a - 0.15, b + 0.15, zt, zt + 0.15, -0.02, 0.10, M.metal)
+                    F.box(X.Bd, a, b, zt - 0.5, zt, -0.2, -0.05, M.metal)
+                    X.stats["rollups"] = X.stats.get("rollups", 0) + 1
                 free = [k for k in range(n_bay) if k not in picks]
                 if free:
                     k = free[len(free) // 2]
                     a, b = ub[k] - 0.5, ub[k] + 0.5
                     holes_g.append((a, b, zg0, zg0 + 2.2))
-                    door(F, Bd, M, a, b, zg0, zg0 + 2.2, "steel", rng, depth=0.12, frame_m=M.frames["grey"])
-                    canopy(F, Bd, M, ub[k], 1.8, zg0 + 2.45, depth=1.0); stats["doors"] += 1
-            # the clerestory: a row of lights high up in every bay
+                    door(X, F, a, b, zg0, zg0 + 2.2, "steel", depth=0.12)
+                    F.box(X.Bd, ub[k] - 0.9, ub[k] + 0.9, zg0 + 2.45, zg0 + 2.45 + CANOPY_T, -0.02, 1.0, M.metal)
             for k in range(n_bay):
                 a, b = ub[k] - p["win_w"] / 2, ub[k] + p["win_w"] / 2
                 za, zb = zg0 + p["sill"], zg0 + p["sill"] + p["win_h"]
                 if za < roof_z - 0.3 and not any(h[0] < b and h[1] > a and h[3] > za for h in holes_g):
-                    zb = min(zb, roof_z - 0.3)
-                    holes_g.append((a, b, za, zb))
-                    window(F, Bd, M, a, b, za, zb, M.frames["grey"], rng, mullion=1, sill=False); stats["windows"] += 1
+                    holes_g.append(window(X, F, a, b, za, min(zb, roof_z - 0.3), mullion=1, sill=False))
+        elif residential:
+            # the ground floor: the apartments' rooms, the entrance hall under the core of a front face, a service door
+            # on a back face
+            for (u0, u1, kind) in panels:
+                if kind == "core":
+                    hw = min(HALL["width"], u1 - u0 - 0.4 - (FRAME[0] if X.framed else 0.0))
+                    hh = min(HALL["height"], gh - 0.6)
+                    holes_g.append(entrance_hall(X, F, (u0 + u1) / 2, hw, zg0, hh, HALL["depth"] if X.framed else 2.2))
+            if not front and panels and rng.random() < 0.7:
+                u0, u1, kind = panels[0]
+                a, b = (u0 + u1) / 2 - 0.5, (u0 + u1) / 2 + 0.5
+                holes_g.append((a, b, zg0, zg0 + 2.3))
+                door(X, F, a, b, zg0, zg0 + 2.3, "steel", depth=0.15)
+                rest = [pn for pn in panels[1:]]
+            else:
+                rest = panels
+            holes_g += residential_floor(X, F, [pn for pn in rest if pn[2] != "core"], zg0, gh, p, True, front, roof_z)
         else:
-            # flats / offices / tower / shops' back faces: an entrance (fronts) or a service door, windows elsewhere
+            # offices: the entrance hall in the middle of a front face, windows elsewhere
             ent = n_bay // 2 if front else None
             for k in range(n_bay):
                 if k == ent:
-                    if use in ("offices", "tower"):
-                        a, b = ub[k] - 1.3, ub[k] + 1.3                               # a recessed glazed lobby
-                        zt = zg0 + 3.2
-                        holes_g.append((a, b, zg0, zt))
-                        reveal(F, Bd, a, b, zg0, zt, REVEAL_LOBBY, M.trim_cur, bottom=False)
-                        F.quad(Bd, a, b, zg0, zt, -REVEAL_LOBBY - 0.01, M.interior)  # (the lobby's back, behind the doors)
-                        door(F, Bd, M, a + 0.3, b - 0.3, zg0, zt, "glass", rng, depth=REVEAL_LOBBY - 0.2, frame_m=frame_m, transom_h=0.7)
-                        canopy(F, Bd, M, ub[k], b - a + 2 * CANOPY[2], zt + 0.15, depth=1.8)
-                    else:
-                        a, b = ub[k] - 0.75, ub[k] + 0.75                             # a residential entrance
-                        zt = zg0 + 3.1
-                        holes_g.append((a, b, zg0, zt))
-                        door(F, Bd, M, a, b, zg0, zt, "panel", rng, frame_m=frame_m, transom_h=0.55)
-                        F.box(Bd, a - 0.22, a, zg0, zt + 0.22, -0.02, 0.05, M.trim_cur)  # the door surround
-                        F.box(Bd, b, b + 0.22, zg0, zt + 0.22, -0.02, 0.05, M.trim_cur)
-                        F.box(Bd, a, b, zt, zt + 0.22, -0.02, 0.05, M.trim_cur)
-                        canopy(F, Bd, M, ub[k], b - a + 2 * CANOPY[2], zt + 0.32)
-                        F.box(Bd, a - 0.4, b + 0.4, Z0, Z0 + 0.16, -0.02, 0.6, M.base)   # a step
-                    stats["doors"] += 1
+                    holes_g.append(entrance_hall(X, F, ub[k], min(HALL["width"], 2 * bw - 0.6), zg0, min(HALL["height"], gh - 0.6), 2.4))
                     continue
                 if (not front) and k == 0 and rng.random() < 0.7:
-                    a, b = ub[k] - 0.5, ub[k] + 0.5                                    # a service door
+                    a, b = ub[k] - 0.5, ub[k] + 0.5
                     holes_g.append((a, b, zg0, zg0 + 2.3))
-                    door(F, Bd, M, a, b, zg0, zg0 + 2.3, "steel", rng, depth=0.15, frame_m=M.frames["grey"]); stats["doors"] += 1
+                    door(X, F, a, b, zg0, zg0 + 2.3, "steel", depth=0.15)
                     continue
-                w = p["win_w"] * (1.25 if use == "offices" else 1.0)
-                za = zg0 + max(1.1, p["sill"] + 0.2)
+                w = p["win_w"] * 1.25
+                za = zg0 + 1.1
                 zb = min(zg1 - 0.6, za + p["win_h"])
-                a, b = ub[k] - w / 2, ub[k] + w / 2
-                holes_g.append((a, b, za, zb))
-                window(F, Bd, M, a, b, za, zb, frame_m, rng, transom=0.72 if use != "flats" else None,
-                       lintel=classical); stats["windows"] += 1
+                holes_g.append(window(X, F, ub[k] - w / 2, ub[k] + w / 2, za, zb, transom=0.72))
         # -------- the upper storeys
         for s in range(n_up):
             zs0 = levels[s + 1]
+            if residential:
+                holes_u += residential_floor(X, F, panels, zs0, p["storey"], p, False, front, roof_z)
+                continue
             za, zb = zs0 + p["sill"], zs0 + p["sill"] + p["win_h"]
             if zb > levels[s + 2] - 0.25:
                 continue
-            if use in ("offices",):
-                # ribbons: the bays grouped in twos or threes between pilasters, panes on mullions
+            if use == "offices":
                 grp = 3 if n_bay % 3 == 0 and n_bay > 3 else 2
                 k = 0
                 while k < n_bay:
                     take = min(grp, n_bay - k)
                     a = ub[k] - bw / 2 + PILASTER[0] / 2 + 0.25
                     b = ub[k + take - 1] + bw / 2 - PILASTER[0] / 2 - 0.25
-                    holes_u.append((a, b, za, zb))
-                    window(F, Bw, M, a, b, za, zb, frame_m, rng, mullion=max(1, int((b - a) / 1.15)) - 1 or 1,
-                           transom=0.78, sill=True); stats["windows"] += 1
+                    holes_u.append(window(X, F, a, b, za, zb, mullion=max(1, int((b - a) / 1.15) - 1), transom=0.78))
                     k += take
-            elif use == "tower":
-                for k in range(n_bay):
-                    a, b = ub[k] - p["win_w"] / 2, ub[k] + p["win_w"] / 2
-                    holes_u.append((a, b, za, zb))
-                    window(F, Bw, M, a, b, za, zb, frame_m, rng, mullion=1, transom=0.7, sill=False); stats["windows"] += 1
-            elif use == "shed":
-                pass
-            else:
-                # flats and the floors over the shops: windows in PAIRS on a narrow pier (pairing), else singles
-                ww = p["win_w"]
-                groups = []
-                if pairing and n_bay >= 2:
-                    k = 0
-                    while k < n_bay:
-                        if n_bay - k >= 2:
-                            groups.append(("pair", (ub[k] + ub[k + 1]) / 2)); k += 2
-                        else:
-                            groups.append(("single", ub[k])); k += 1
-                else:
-                    groups = [("single", u) for u in ub]
-                for kind, uc in groups:
-                    cols = [(uc - 0.18 - ww, uc - 0.18), (uc + 0.18, uc + 0.18 + ww)] if kind == "pair" else [(uc - ww / 2, uc + ww / 2)]
-                    french = front and rng.random() < JULIET_SHARE
-                    for a, b in cols:
-                        zz0 = zs0 + 0.15 if french else za
-                        holes_u.append((a, b, zz0, zb))
-                        window(F, Bw, M, a, b, zz0, zb, frame_m, rng, transom=0.75 if french else None,
-                               lintel=classical and not (use == "flats" and s % 2 == 1 and rng.random() < 0.3),
-                               surround=(use == "flats" and rng.random() < 0.2), sill=not french)
-                        if french:
-                            juliet(F, Bd, M, a, b, zz0); stats["juliets"] += 1
-                        stats["windows"] += 1
-        # -------- the walls: the ground storey in its own tone, the floors over it
+        # -------- the walls (corners left for the chamfers): the ground storey in its own tone, the floors over it
         zsplit = Z0 + gh
-        wall_with_holes(F, Bg, Z0, zsplit, holes_g, M.wall_cur)
-        wall_with_holes(F, Bw, zsplit, top_z, [h for h in holes_u] + [h for h in holes_g if h[3] > zsplit], M.wall_cur)
-        # -------- the plinth, between the openings that reach the ground
+        wall_with_holes(F, X.Bg, Z0, zsplit, holes_g, X.wall, b_, L - b_)
+        wall_with_holes(F, X.Bw, zsplit, top_z, holes_u + [h for h in holes_g if h[3] > zsplit], X.wall, b_, L - b_)
+        # -------- the plinth between the openings that reach the ground
         ph, pp = PLINTH
         if use != "shed":
             cuts = sorted((h[0], h[1]) for h in holes_g if h[2] < Z0 + ph)
-            ext = pp if side in ("S", "N") else 0.0                             # S and N runs wrap the corners (no overlap)
+            ext = pp if side in ("S", "N") else 0.0
             u = -ext
-            for a, b in cuts + [(F.L + ext, F.L + ext)]:
+            for a, b in cuts + [(L + ext, L + ext)]:
                 if a > u + 0.05:
-                    F.box(Bt, u, a, Z0, Z0 + ph, -0.02, pp, M.base)
+                    F.box(X.Bp, u, a, Z0, Z0 + ph, -0.02, pp, X.trim if brick else X.wall)
                 u = max(u, b)
-        # -------- pilasters (offices, tower, shed): at the bay divisions and the corners
-        if pil:
+        # -------- structure: the tower's concrete frame, the offices' pilasters cut at every floor, the shed's piers
+        if X.framed:
+            cw, co, sh = FRAME
+            cols = sorted({0.0, L} | {pn[0] for pn in panels[1:]})
+            for c in cols:
+                a, b = (c, c + cw / 2) if c == 0.0 else ((c - cw / 2, c) if c == L else (c - cw / 2, c + cw / 2))
+                if side in ("S", "N") and c == 0.0:
+                    a -= co
+                if side in ("S", "N") and c == L:
+                    b += co
+                F.box(X.Bf, a, b, Z0, top_z, -0.02, co, M.concrete)
+            for lv in levels[1:-1]:
+                for ca, cb in zip(cols, cols[1:]):
+                    a = ca + cw / 2; b = cb - cw / 2
+                    if b - a > 0.2:
+                        F.box(X.Bf, a, b, lv - sh / 2, lv + sh / 2, -0.02, co, M.concrete)
+        elif use in ("offices", "shed"):
             pw, pp2 = PILASTER
             zp0 = Z0 + (ph if use != "shed" else 0.0)
-            zp1 = (levels[-1] - CORNICE[0][0]) if use != "shed" else top_z - COPING[0]
+            zp1 = roof_z - 0.45 if use != "shed" else top_z - COPING[0]
             divs = [ub[0] - bw / 2] + [ub[k] + bw / 2 for k in range(n_bay)]
             if use == "offices":
                 grp = 3 if n_bay % 3 == 0 and n_bay > 3 else 2
                 divs = [ub[0] - bw / 2] + [ub[min(n_bay - 1, k + grp - 1)] + bw / 2 for k in range(0, n_bay, grp)]
             for d in divs:
-                if not any(h[0] < d + pw / 2 and h[1] > d - pw / 2 and h[2] < zp1 and h[3] > zp0 for h in holes_g + holes_u):
-                    F.box(Bt, d - pw / 2, d + pw / 2, zp0, zp1, -0.02, pp2, M.trim_cur if use != "shed" else M.wall_cur)
-    # -------- the rings round the footprint: string course, cornice, parapet, coping
-    if use in ("flats", "shops", "tower") and n_up > 0:
+                if any(h[0] < d + pw / 2 and h[1] > d - pw / 2 and h[2] < zp1 and h[3] > zp0 for h in holes_g + holes_u):
+                    continue
+                if use == "offices":   # rendered: cut at every floor
+                    segs = [zp0] + [lv for lv in levels[1:-1] if zp0 < lv < zp1] + [zp1]
+                    for za, zb in zip(segs, segs[1:]):
+                        F.box(X.Bt, d - pw / 2, d + pw / 2, za + (JOINT / 2 if za > zp0 else 0.0), zb - JOINT / 2, -0.02, pp2, X.trim)
+                else:                  # the shed's piers: concrete, whole
+                    F.box(X.Bt, d - pw / 2, d + pw / 2, zp0, zp1, -0.02, pp2 + 0.02, X.wall)
+    # -------- the corners, the rings round the footprint: string course, cornice, parapet, coping
+    corner_chamfers(X.Bg, x0, x1, y0, y1, Z0, Z0 + gh, X.wall)
+    corner_chamfers(X.Bw, x0, x1, y0, y1, Z0 + gh, top_z, X.wall)
+    if use in ("flats", "shops") and n_up > 0:
         sh, sp = STRING
-        ring(Bt, x0, x1, y0, y1, Z0 + gh - 0.05, Z0 + gh - 0.05 + sh, sp, M.trim_cur)
-    deep = 0.8 + 0.4 * rng.random()             # each building's own cornice depth (variation)
-    if classical:
+        X.Bt.ring(x0, x1, y0, y1, Z0 + gh - 0.05, Z0 + gh - 0.05 + sh, sp, X.trim)
+    deep = 0.8 + 0.4 * rng.random()
+    if X.classical:
         z = roof_z - CORNICE[0][0] - 0.05
         for h, pr in CORNICE:
-            ring(Bt, x0, x1, y0, y1, z, z + h, pr * deep, M.trim_cur); z += h
+            X.Bt.ring(x0, x1, y0, y1, z, z + h, pr * deep, X.trim); z += h
     elif use == "tower":
-        ring(Bt, x0, x1, y0, y1, roof_z - 0.6, roof_z - 0.2, 0.12, M.trim_cur)   # the attic band
-    # the parapet: its inner face (the walls carry the outer one up to top_z) and the coping on it
+        X.Bf.ring(x0, x1, y0, y1, roof_z - 0.3, roof_z + 0.1, FRAME[1] + 0.03, M.concrete)
     if top_z > roof_z + 0.05:
         t = PARAPET_T
         for side in ("S", "E", "N", "W"):
             F = Face(side, x0 + t, x1 - t, y0 + t, y1 - t)
-            for (a, b) in ((0.0, F.L),):
-                pts = [F.P(a, roof_z), F.P(a, top_z), F.P(b, top_z), F.P(b, roof_z)]
-                Bt.face(pts, M.wall_cur, inward_of=F.P(F.L / 2, (roof_z + top_z) / 2, 1.0))
+            pts = [F.P(0.0, roof_z), F.P(0.0, top_z), F.P(F.L, top_z), F.P(F.L, roof_z)]
+            X.Bt.face(pts, X.wall, inward_of=F.P(F.L / 2, (roof_z + top_z) / 2, 1.0))
     ch, co = COPING
-    ring(Bt, x0, x1, y0, y1, top_z, top_z + ch, co, M.metal if not classical else M.trim_cur, inset=PARAPET_T + co)
+    X.Bt.ring(x0, x1, y0, y1, top_z, top_z + ch, co, M.metal if not X.classical else X.trim, inset=PARAPET_T + co)
+    # -------- the roof's boxes, given a purpose
+    roof_kit(X, roof_boxes, roof_z, x0, x1, y0, y1)
     # -------- the objects
     out = []
     t_ground = tuple(c * TONE_GROUND for c in tint)
-    for B, nm, tn in ((Bw, "walls", tint), (Bg, "ground", t_ground), (Bt, "trim", tint), (Bd, "details", tint)):
-        o = B.build(f"nb_{ob.name}_{nm}", col, tint=tn)
+    t_plinth = tuple(c * TONE_PLINTH for c in (BRICK_TRIM_TINT if brick else tint))
+    top_r = max([b[5] for b in roof_boxes] + [top_z]) + 0.1
+    for B, nm, tn, top, bev in ((X.Bw, "walls", tint, top_z, False), (X.Bg, "ground", t_ground, top_z, False),
+                                (X.Bt, "trim", trim_tint, top_z, True), (X.Bp, "plinth", t_plinth, top_z, True),
+                                (X.Bd, "details", tint, top_z, True), (X.Bf, "frame", tint, top_z + 0.2, True),
+                                (X.Br, "roof", tint, top_r, True)):
+        o = B.build(f"nb_{ob.name}_{nm}", col, tint=tn, top=top, bevel=bev)
         if o is not None:
             out.append(o)
     log(f"NEIGHBOUR {ob.name}: {use}, {x1 - x0:.1f} x {y1 - y0:.1f} m, roof {roof_z:.2f}, parapet {top_z:.2f}, "
-        f"{1 + n_up} storeys; " + ", ".join(f"{v} {k}" for k, v in stats.items() if v))
+        f"{1 + n_up} storeys; " + ", ".join(f"{v} {k}" for k, v in sorted(X.stats.items()) if v))
     return out
 
 
 def build(S, names, hero_xy, log=print):
-    """Model every named box in a NEIGHBOURS collection; the boxes keep their roofs."""
+    """Model every named box in a NEIGHBOURS collection; the boxes keep their roof planes."""
     col = bpy.data.collections.get("NEIGHBOURS") or bpy.data.collections.new("NEIGHBOURS")
     if col.name not in S.collection.children:
         S.collection.children.link(col)
-    M = Mats(None)
+    M = Mats()
     n = 0
     for name in names:
         ob = bpy.data.objects.get(name)

@@ -59,22 +59,33 @@ forecourt paving (`RB_SITE_GROUND`, a rectangle for the unturned plan) is not us
 The city's buildings are boxes whose windows are drawn by their material. The ones the cameras actually see,
 `city_neighbours.FRONT_LINE`, are modelled instead (`neighbours=off` keeps the boxes). That list is every building
 filling at least 0.4% of some still or flyover frame (`front_line.py`), plus the ones the user marked. Each box keeps its
-footprint, height and roof (plane, plant boxes, bulkhead); only its walls and parapet are rebuilt:
+footprint, height and roof plane; its walls, parapet and rooftop boxes are rebuilt:
 
-- **Use.** The use the city gave the box (its recipe: flats, shops, offices, shed). The Bradbury's tower across Broadway
-  is offices and its wing is shops under offices. The storey heights stay the city's own, so the scale matches.
-- **Fronts.** The faces turned toward Terra & Mar get the entrances, shopfronts and signs; the other faces get the same
-  upper windows over a plainer ground floor with a service door.
-- **Doors.** Panelled entrance doors under a transom and canopy (flats), glazed doors in every shopfront, recessed
-  glazed lobbies under a canopy (offices, tower), roll-up doors and steel man doors (sheds).
-- **Windows.** Real openings: a reveal, glass set back (some with a blind), frames with mullions and transoms,
-  projecting sills. Flats and shops' upper floors in pairs on a narrow pier; offices in ribbons between pilasters;
-  sheds in a clerestory row.
-- **Features.** A grey render plinth, a string course, a stepped cornice under a coped parapet (flats, shops, wing) or
-  a metal coping (offices, sheds, tower), stone lintels and sills, some window surrounds, pilasters, a few Juliet
-  balconies, shop fascias with sign panels, and some awnings.
+- **Use.** The use the city gave the box (its recipe: flats, shops, offices, shed), with the city's storey heights.
+  The Bradbury's tower across Broadway is an apartment tower; its wing is shops under flats.
+- **Apartment plan.** Residential floors are divided into apartments (about two per face) of rooms: living room,
+  bedroom, bathroom, kitchen, mirrored apartment by apartment, with the stair core in the middle of a front face. Each
+  room has its own window: a pair for a living room or bedroom (so the facade reads pair, space, pair), one kitchen
+  window, a small high frosted bathroom window, and the stair's narrow windows at the half landings. A few small
+  projecting balconies (at least one per building) and Juliet rails break the pattern.
+- **Entrances.** A residential or office entrance is a real hall: wide glazed double doors between sidelights under a
+  transom, in clear glass, and behind them a lit hall (stone floor, lift doors, letter boxes) under a canopy. Shops have
+  glazed doors in every shopfront, sheds roll-up and steel man doors, back faces a service door.
+- **Structure.** The tower is a concrete frame: columns between the rooms and slab edges at every floor, 4 cm proud and
+  continuous because they are cast concrete, with the window pairs in the recessed rendered infill, which the slab edges
+  divide floor by floor. The offices' rendered pilasters are cut at every floor.
+- **Features.** Plinth, string course, a stepped cornice under a coped parapet (flats, shops, wing) or a metal coping,
+  lintels and sills, canopies, shop fascias with sign panels, some awnings. Every box piece has a small bevel, and the
+  walls' corners are chamfered.
+- **Colour.** Trims are the wall's own material a shade lighter (on brick, a buff stone rather than white). Frames,
+  signs and awnings are muted, and the glass is a neutral dark.
+- **Weathering.** Done in the wall material, with no surface mottle: dust rising from the base to a ragged 0.8-1.5 m,
+  and runoff streaks hanging from the coping (the object's `nb_top`).
+- **Roofs.** The city's bulkhead becomes a stair bulkhead (steel door, louvre, lamp, coping). Its plant boxes become
+  condensers with a top fan on rails, louvred air handlers or exhaust fans, with refrigerant pipes on supports. Vent
+  stacks and a hatch are added.
 - **Variation (subtle).** The ground storey a shade darker than the floors above, and a seeded per-building choice of
-  frame colour, cornice depth, pairing and sign/awning colours, on top of the city's own per-building tint.
+  frame colour, cornice depth and room mix, on top of the city's per-building tint.
 
 ## Cameras
 
