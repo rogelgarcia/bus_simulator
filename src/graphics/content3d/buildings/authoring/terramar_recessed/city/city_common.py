@@ -41,7 +41,11 @@ PARTS = {   # collection name -> part file; RB_SITE's children one by one (its f
 OPTIONAL_PARTS = ("TM_WEAR",)
 
 CITY_DIR = os.path.join(ROOT, "tests", "artifacts", "blender", BUILDING_ID, "city")
-CITY_BLEND = os.path.join(CITY_DIR, "terramar_city_scene.blend")
+# AI 651: the scripts open the COMPOSITION (build_composition.py: the reusable city linked, the parts instanced);
+# LEGACY_CITY_BLEND is build_city_scene.py's copy of the Bradbury scene, kept until the user retires it
+COMPOSITION_BLEND = os.path.join(CITY_DIR, "terramar_city_composition.blend")
+LEGACY_CITY_BLEND = os.path.join(CITY_DIR, "terramar_city_scene.blend")
+CITY_BLEND = COMPOSITION_BLEND
 SCREENS = os.path.join(ROOT, "tests", "artifacts", "screens", "buildings", BUILDING_ID, "city")
 SHOTS_DIR = os.path.join(SCREENS, "shots")
 FLYOVER_DIR = os.path.join(SCREENS, "flyover")

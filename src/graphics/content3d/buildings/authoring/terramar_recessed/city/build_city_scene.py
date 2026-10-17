@@ -18,7 +18,7 @@
 #      lamps) is checked to stand on the sidewalk, clear of the kerb's top and of the lot;
 #   4. sets the Terra & Mar wear switch on the scene (rebuild/wear/controls.apply, every feature at its default);
 #   5. rescales the light (city_common's light scale): exposure -4.29 and every Bradbury light source x 2^4.29;
-#   6. saves the copy as city_common.CITY_BLEND (relative paths). The Bradbury's file is never saved.
+#   6. saves the copy as city_common.LEGACY_CITY_BLEND (relative paths). The Bradbury's file is never saved.
 # Rerun it after the Bradbury's build_scene.py rebuilds its scene; Terra & Mar part rebuilds need no rerun.
 import math
 import os
@@ -36,7 +36,7 @@ import city_neighbours  # noqa: E402
 
 args, _ = C.parse_args(sys.argv)
 SRC = os.path.abspath(args.get("src", C.BRADBURY_SCENE))
-OUT = os.path.abspath(args.get("out", C.CITY_BLEND))
+OUT = os.path.abspath(args.get("out", C.LEGACY_CITY_BLEND))   # AI 651: the legacy copy (the composition is build_composition.py)
 WEAR = args.get("wear", "on").lower()
 NEIGHBOURS = args.get("neighbours", "on").lower()     # on | off: the front-line neighbours modelled (city_neighbours.py)
 assert os.path.isfile(SRC), f"no Bradbury scene at {SRC}: build it with BradburyBlock/build_scene.py"

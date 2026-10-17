@@ -2,7 +2,7 @@
 # the video pass, just like the bradbury"). A copy of BradburyBlock/render_flyover.py (AI 574 items 30-36), adapted:
 # the same 1080 x 1920 frame, timing profile, per-shot exposure, optional depth-masked background blur (off, as the
 # Bradbury's ended), EEVEE preview, skip-if-exists frames and the sequencer H.264 encode -- only the scene, the shots
-# and the output paths are Terra & Mar's. It opens the city copy (build_city_scene.py -> city_common.CITY_BLEND),
+# and the output paths are Terra & Mar's. It opens the composition (build_composition.py -> city_common.CITY_BLEND),
 # adds its own camera, compositor and output settings in memory and never saves the scene.
 #
 #   blender -b -P render_flyover.py -- [shot=all|air,facade,...] [frames=all|first,mid,last|<a>-<b>] [pct=100]
@@ -160,7 +160,7 @@ MP4 = os.path.abspath(args.get("mp4", os.path.join(os.path.dirname(OUT), "terram
 
 # ---------------------------------------------------------------- the scene, in memory only
 scene_file = args.get("scene") or C.CITY_BLEND
-assert os.path.isfile(scene_file), f"no scene at {scene_file}: build it with build_city_scene.py"
+assert os.path.isfile(scene_file), f"no scene at {scene_file}: build it with build_composition.py"
 bpy.ops.wm.open_mainfile(filepath=os.path.abspath(scene_file))
 print(f"SCENE {scene_file} on {ENGINE}")
 S = bpy.context.scene
@@ -168,7 +168,8 @@ S = bpy.context.scene
 # is already hidden from the render, and the view layer excludes it here too
 shelf = bpy.data.collections.get("CONTEXT_LIBRARY")
 if shelf is not None:
-    shelf.hide_render = True
+    if shelf.library is None:          # a linked city's shelf is hidden in the city itself (read-only here)
+        shelf.hide_render = True
     def exclude(lc):
         if lc.name == "CONTEXT_LIBRARY": lc.exclude = True
         for c in lc.children: exclude(c)

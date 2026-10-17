@@ -8,6 +8,9 @@
 > or open the generated blend and rerun single pieces.
 > The whole building with this portal in place: `blender -b -P assemble_building.py` (see the last section).
 > Backups of earlier states remain under `tests/artifacts/blender/bradbury/portal_project_backups/`.
+> Render scene (2026-10-17, AI 651): the Bradbury now renders from its CITY COMPOSITION,
+> `blender -b --factory-startup -P build_composition.py --`, which links the reusable city (`../city/`). `build_scene.py`
+> and `bradbury_scene.blend` are the legacy path (see "The city composition" below).
 
 # Bradbury portal — standalone project (piece by piece)
 
@@ -1648,6 +1651,39 @@ blender -b -P render_wear.py -- cam=25.70,3.11,1.82:17.39,0.88,1.82:40 shift=0,0
 ```
 
 Both in `tests/artifacts/screens/bradbury_scene/portal_stills/`.
+
+## The city composition (AI 651, 2026-10-17)
+
+The city round the block is now one reusable file, built by `../city/build_city.py` (see `../city/README.md`), and the
+Bradbury renders from a COMPOSITION that links it:
+
+```
+blender -b --factory-startup -P ../city/build_city.py --                 # the city (once; every composition follows)
+blender -b --factory-startup -P build_composition.py -- [wear=on|off|debug] [wear_stale=ok] [view ...]
+blender -b -P render_composition.py -- [views=all|ref_3q,st_corner] [samples=128] [pct=100] [res=1920]
+blender -b -P render_composition_wear.py -- wear=debug view=st_up        # render_wear.py's switches, on the composition
+blender -b -P render_composition_flyover.py -- frames=first,mid,last pct=25
+```
+
+`build_composition.py` writes `portal_project/bradbury_city_composition.blend` in a few seconds. It does the following:
+
+- Links the city's `GROUND`, `CONTEXT`, `CITY` and `NEIGHBOURS` collections and its world `CITY_SKY`, plus
+  `SITE_FURNITURE` (the four vault covers and the black lantern post on the Bradbury's own sidewalk).
+- Lays the site's full kerb rectangle in the city's `GND_pavement` / `GND_kerb` (`../city/block_kit.full_block`).
+- Links the worn block by its collections onto an excluded shelf (`BRADBURY_SOURCE`). It then gathers the block's
+  objects into the local `BRADBURY_BLOCK`, where `wear.controls.organise()` sorts the wear-only ones exactly as
+  `build_scene.py` does.
+- Adds the sun at the Bradbury's light units (`city_light_scale` 1, exposure 0, sun 8), `build_scene.py`'s six
+  cameras, the film, and the wear controls (`wear`, `wear_<feature>`, `edge_*`, `wear_realism`; the stale-worn-block
+  check included).
+
+A block rebuild that adds objects needs `build_composition.py` rerun; `render_composition.py` warns when the shelf
+holds objects `BRADBURY_BLOCK` does not. Parity against `bradbury_scene.blend`, with the city built `neighbours=off`,
+is evidenced under `tests/artifacts/screens/city_reuse/parity_bradbury/`.
+
+Legacy, kept until the user retires them: `build_scene.py`, `bradbury_scene.blend` (and its `_wear_off` / `_wear_debug`
+variants), `render_wear.py`, `render_flyover.py`, and `portal_project/context_library.blend` (the city keeps its own
+copy).
 
 ## The render scene: `build_scene.py`
 

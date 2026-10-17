@@ -17,7 +17,8 @@
 #   living room, bedroom, bathroom, kitchen, mirrored apartment by apartment, with the stair core in the middle of a
 #   front face -- and each room gets its own window: a pair for a living room or a bedroom (so the facade reads pair,
 #   space, pair, never an even grid), one kitchen window, a small high frosted window for a bathroom, the stair's
-#   narrow windows at the half landings. The faces turned toward the hero are the FRONTS (entrances, shopfronts,
+#   narrow windows at the half landings. Balconies only where homes are: the odd one on ordinary flats, Juliet rails on
+#   the tower's long faces; none on shop and workshop buildings or the large blocks that read as works. The faces turned toward the hero are the FRONTS (entrances, shopfronts,
 #   signs); the others get the same floors over a plainer ground floor with a service door.
 #   DOORS. A residential or office entrance is a real ENTRANCE HALL (user: "the door, must be a bigger door, with a hall.
 #   just like a real residential"): a wide glazed double door between sidelights under a transom, in clear glass, and
@@ -25,17 +26,19 @@
 #   doors in every shopfront, sheds roll-up doors and a steel man door, back faces a service door.
 #   WINDOWS. Real openings: a reveal, the glass set back in it (some with a blind down), a frame with mullions and a
 #   transom, a projecting sill; offices in ribbons between pilasters, sheds in a clerestory row.
-#   STRUCTURE. The apartment tower is a CONCRETE FRAME (user: "reduce the depth of the vertical parts ... would it be
-#   possible for that to be contiguous in a single piece? only if it is concrete, otherwise there should be separation
-#   ... the windows are in the recessed part"): columns between the rooms and slab edges at every floor, only 4 cm proud,
-#   continuous because they are cast concrete, with the window pairs in the recessed rendered infill, which the slab
-#   edges divide floor by floor. The offices' rendered pilasters are cut at every floor (a joint), for the same reason.
+#   THE TOWER is plain rendered walls with its rooms' windows (third pass, user: "contrasting material in the tall
+#   building ... crossing every window also didn't work well; for the tall building simpler is better": the concrete
+#   frame of the second pass, columns and slab edges between every window, is gone). The offices' rendered pilasters
+#   are cut at every floor.
 #   FEATURES. A plinth, a string course, a stepped cornice under a coped parapet (flats, shops, the wing) or a metal
 #   coping (offices, sheds), lintels and sills, a few small projecting balconies and Juliet rails, canopies, shop
 #   fascias with sign panels, some awnings. Every box-shaped piece has a small bevel; the walls' corners are chamfered.
-#   COLOUR (second pass, user: "some colors used are contrasting too much ... white with brick; strong window colors").
-#   Trims are the wall's own material a shade lighter (on brick, a buff stone, not white), frames, signs and awnings are
-#   muted, the glass a neutral dark.
+#   COLOUR (second and third passes, user: "some colors used are contrasting too much ... white with brick; strong
+#   window colors", then "brick and beige is still contrasting. it can be the brick tinted in a slightly different
+#   color"). Trims are the wall's own material: a shade lighter on render, and on brick the same brick in a slightly
+#   deeper tone -- soldier-course lintels, brick sills and bands under a dark metal coping, sash windows, as the user's
+#   reference has it (tests/artifacts/screens/buildings/terramar_recessed/city/references/). Frames, signs and awnings
+#   are muted, the glass a neutral dark.
 #   WEATHERING (cheap, in the wall material): dust rising from the base to a ragged 0.8-1.5 m, and runoff streaks hanging
 #   from the coping, both from world height (the object's `nb_top` is its coping), no surface mottle.
 #   ROOFS (user: "boxes at the top of the buildings, make them have a purpose with more detail"): the city's bulkhead
@@ -87,8 +90,13 @@ END_PIER = 0.7                # wall kept at a face's ends
 PAIR_GAP = 0.32               # the pier inside a window pair
 WIN_W = {"living": 1.3, "bedroom": 1.1, "kitchen": 1.3, "bath": 0.6, "core": 0.8}
 BATH_H = 0.75                 # a bathroom window's height (its head on the others' line)
-BALCONY_SHARE = 0.12          # living rooms over the ground floor of a front face opening onto a small balcony
-JULIET_SHARE = 0.05
+BALCONY_SHARE = 0.06          # living rooms over the ground floor of a front face opening onto a small balcony (after the first)
+BALCONY_FIRST = 0.3           # the chance of a building's first balcony at each eligible living room (none guaranteed)
+JULIET_SHARE = 0.03
+BALCONY_MAX_DEPTH = 30.0      # a flats block deeper than this both ways reads as a works or a warehouse: no balconies
+# (user 2026-10-17: "some buildings were supposed to be factories it seems. but they have balconies ... reduce it": shop
+# and workshop buildings, the large blocks and the offices get none; only ordinary flats and the tower keep any)
+TOWER_JULIET_FROM = 4         # the tower's living rooms open behind Juliet rails from this storey up (ground = 1)
 # ---- pieces
 REVEAL = 0.18
 REVEAL_SHOP = 0.25
@@ -101,8 +109,6 @@ CORNICE = ((0.40, 0.025), (0.15, 0.18), (0.06, 0.24))   # (height, projection) b
 COPING = (0.10, 0.05)
 PARAPET_T = 0.25
 PILASTER = (0.45, 0.04)       # width, projection (was 8 cm: user, "reduce the depth of the vertical parts")
-FRAME = (0.45, 0.04, 0.26)    # the tower's concrete frame: column width, projection, slab edge height
-CONCRETE_LIFT = (1.85, 1.75, 1.55)   # the concrete set's colour multiplied: close to the infill's tone, a little greyer
 JOINT = 0.02                  # a joint where a rendered piece is cut floor by floor
 CANOPY_T = 0.18
 BEVEL = 0.012                 # every box piece's edges; the walls' corners are chamfered this much
@@ -110,7 +116,9 @@ HALL = dict(width=3.4, height=3.3, depth=3.0, door=1.8, door_h=2.5, set_back=0.2
 HALL_LIGHT = 30.0             # the hall's ceiling panels (the scene's exposure is -4.29: a lit hall, not a glare)
 TONE_GROUND = 0.93
 TONE_TRIM = 1.07              # trims: the wall's own material a shade lighter
-BRICK_TRIM_TINT = (0.72, 0.64, 0.54)   # on brick: a buff stone (the plaster set tinted), not white
+BRICK_TRIM_MUL = (0.86, 0.79, 0.76)    # on brick: the same brick, a slightly deeper and browner tone (was a buff stone)
+BRICK_BAND = (0.26, 0.03)     # a brick building's band under the coping: height, projection (its cornice)
+SASH = 0.6                    # a brick building's windows: a sash bar this far up
 TONE_PLINTH = 0.88
 # ---- weathering (wall material)
 DUST_H = (0.8, 1.5)          # the dust line's height over the wall foot, ragged over noise
@@ -261,9 +269,6 @@ def wall_material(src):
 
 class Mats:
     def __init__(self):
-        plaster = next(m for m in bpy.data.materials if m.library is None and m.name.startswith(("CTX_city_cream_", "CTX_city_white_"))
-                       and not m.name.endswith("_plain"))
-        self.plaster = wall_material(plaster)       # the buff stone on brick buildings (tinted per object)
         self.glass = _plain("NB_glass", (0.030, 0.034, 0.038), rough=0.06, spec=0.5)
         self.blind = _plain("NB_glass_blind", (0.20, 0.19, 0.17), rough=0.6, spec=0.3)
         self.frosted = _plain("NB_glass_frosted", (0.30, 0.31, 0.31), rough=0.35, spec=0.4)
@@ -284,35 +289,23 @@ class Mats:
         self.pipe = _plain("NB_pipe", (0.12, 0.12, 0.12), rough=0.6)
         self.signs = [_plain(f"NB_sign_{i}", c, rough=0.5) for i, c in enumerate(SIGN_COLOURS)]
         self.awnings = [_plain(f"NB_awning_{i}", c, rough=0.85) for i, c in enumerate(AWNING_COLOURS)]
-        self.concrete = None
 
 
-def concrete_material(tint_like):
-    """The tower's frame: the game's concrete set, its colour pulled toward the wall's tone (a subtle difference)."""
-    m = bpy.data.materials.get("NB_concrete")
+def tinted_material(src, mul, suffix):
+    """A copy of a (plain) wall material with its colour multiplied before the weathering: the same set in another tone,
+    for materials that do not read the city's per-object tint (the Bradbury's neighbours)."""
+    name = f"{src.name}_{suffix}"
+    m = bpy.data.materials.get(name)
     if m is not None:
         return m
-    import os
-    m = tint_like.copy(); m.name = "NB_concrete"
-    for n in m.node_tree.nodes:
-        if n.type == 'TEX_IMAGE' and n.image is not None:
-            fp = n.image.filepath
-            for key in ("basecolor", "arm", "normal_gl"):
-                if os.path.basename(fp).startswith(key):
-                    newp = fp.replace(os.path.basename(os.path.dirname(fp)), "concrete")
-                    try:
-                        img = bpy.data.images.load(bpy.path.abspath(newp), check_existing=True)
-                        img.colorspace_settings.name = n.image.colorspace_settings.name
-                        n.image = img
-                    except Exception:
-                        pass
-    # the set is a mid grey: lifted and warmed toward the rendered infill, so the frame reads as structure, not stripes
-    nt = m.node_tree
+    m = src.copy(); m.name = name; nt = m.node_tree
     g = next(n for n in nt.nodes if n.type == 'GROUP' and n.node_tree and n.node_tree.name == "NB_weather")
+    vm = nt.nodes.new('ShaderNodeVectorMath'); vm.operation = 'MULTIPLY'; vm.inputs[1].default_value = mul
     if g.inputs["Color"].is_linked:
-        lk = g.inputs["Color"].links[0]; src = lk.from_socket; nt.links.remove(lk)
-        vm = nt.nodes.new('ShaderNodeVectorMath'); vm.operation = 'MULTIPLY'; vm.inputs[1].default_value = CONCRETE_LIFT
-        nt.links.new(src, vm.inputs[0]); nt.links.new(vm.outputs["Vector"], g.inputs["Color"])
+        lk = g.inputs["Color"].links[0]; srcs = lk.from_socket; nt.links.remove(lk); nt.links.new(srcs, vm.inputs[0])
+    else:
+        vm.inputs[0].default_value = tuple(g.inputs["Color"].default_value)[:3]
+    nt.links.new(vm.outputs["Vector"], g.inputs["Color"])
     return m
 
 
@@ -488,6 +481,8 @@ def window(X, F, u0, u1, z0, z1, depth=REVEAL, mullion=None, transom=None, sill=
     F.box(B, u0 + FRAME_W, u1 - FRAME_W, z0, z0 + FRAME_W, fo0, fo1, fm)
     F.box(B, u0 + FRAME_W, u1 - FRAME_W, z1 - FRAME_W, z1, fo0, fo1, fm)
     w = u1 - u0
+    if transom is None and X.sash and glass is None and w >= 0.8:
+        transom = SASH
     n_mul = mullion if mullion is not None else (1 if w > 1.15 else 0)
     for k in range(1, n_mul + 1):
         um = u0 + w * k / (n_mul + 1)
@@ -661,7 +656,7 @@ def compose(L, rng, core):
     return panels
 
 
-def residential_floor(X, F, panels, zs0, storey, p, ground, front, top):
+def residential_floor(X, F, panels, zs0, storey, p, ground, front, top, floor_no=1, long_face=True):
     """One residential floor's windows by room: pairs for living rooms and bedrooms, one kitchen window, a small high
     frosted bathroom window, the stair core's narrow window at the half landing; a few balconies and Juliet rails."""
     holes = []
@@ -669,7 +664,7 @@ def residential_floor(X, F, panels, zs0, storey, p, ground, front, top):
     lift = 0.15 if ground else 0.0
     for (u0, u1, kind) in panels:
         uc = (u0 + u1) / 2
-        room = u1 - u0 - (FRAME[0] if X.framed else 0.0)
+        room = u1 - u0
         if kind == "core":
             if ground:
                 continue                                     # the entrance hall stands under the core
@@ -689,9 +684,18 @@ def residential_floor(X, F, panels, zs0, storey, p, ground, front, top):
         cols = [(uc - PAIR_GAP / 2 - w, uc - PAIR_GAP / 2), (uc + PAIR_GAP / 2, uc + PAIR_GAP / 2 + w)] if pair else [(uc - w / 2, uc + w / 2)]
         z0 = zs0 + p["sill"] + lift - (0.25 if kind == "living" else 0.0)
         # a small balcony: the first one likely (each apartment building gets one somewhere), the rest rare
-        bal = (not ground) and (front or X.framed) and kind == "living" and X.rng.random() < (
-            (0.02 if X.framed else BALCONY_SHARE) if X.balcony_done else (0.12 if X.framed else 0.45))
-        jul = (not ground) and (not bal) and front and X.rng.random() < JULIET_SHARE
+        if X.tower:
+            # the tower (user 2026-10-17: "balconies will be on every floor after the 3rd floor, and they must be
+            # symmetrical on both sides of the building. make the balcony a juliet balcony"): every living room from the
+            # 4th floor up opens behind a Juliet rail; then "install only on the side windows of the larger faces": the
+            # living rooms at both ends of the two long faces (the mirrored apartments' ends, so the rails stand
+            # symmetrically), none on the short faces
+            bal, jul = False, long_face and kind == "living" and floor_no >= TOWER_JULIET_FROM
+        elif not X.balconies:
+            bal = jul = False
+        else:
+            bal = (not ground) and front and kind == "living" and X.rng.random() < (BALCONY_SHARE if X.balcony_done else BALCONY_FIRST)
+            jul = (not ground) and (not bal) and front and X.rng.random() < JULIET_SHARE
         if bal or jul:
             z0 = zs0 + 0.12
         for (a, b) in cols:
@@ -883,13 +887,15 @@ def model(ob, M, col, hero_xy, log=print):
     tint = tuple(ob.get("city_tint", (1.0, 1.0, 1.0)))
     brick = "brick" in wall_src.name or "wing" in wall_src.name
     X.classical = use in ("flats", "shops")
-    X.framed = use == "tower"
+    X.tower = use == "tower"
+    X.sash = brick
+    X.balconies = use == "flats" and min(x1 - x0, y1 - y0) <= BALCONY_MAX_DEPTH
     residential = use in ("flats", "tower", "shops")
     X.frame = M.frames[rng.choice(["offwhite", "taupe", "bronze"] if X.classical else ["bronze", "grey"])]
     X.wall = wall_material(wall_src)
-    X.trim = M.plaster if brick else X.wall
-    trim_tint = BRICK_TRIM_TINT if brick else tuple(min(1.6, c * TONE_TRIM) for c in tint)
-    X.Bw, X.Bg, X.Bt, X.Bd, X.Bp, X.Br, X.Bf = (Builder() for _ in range(7))
+    X.trim = tinted_material(X.wall, BRICK_TRIM_MUL, "trim") if brick else X.wall
+    trim_tint = tint if brick else tuple(min(1.6, c * TONE_TRIM) for c in tint)
+    X.Bw, X.Bg, X.Bt, X.Bd, X.Bp, X.Br = (Builder() for _ in range(6))
     X.balcony_done = False
     gh = min(p["ground"], roof_z - Z0)
     levels = [Z0]
@@ -901,8 +907,6 @@ def model(ob, M, col, hero_xy, log=print):
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     hx, hy = hero_xy[0] - cx, hero_xy[1] - cy
     hl = math.hypot(hx, hy) or 1.0
-    if X.framed:
-        M.concrete = M.concrete or concrete_material(X.wall)
     b_ = BEVEL
     for side in ("S", "E", "N", "W"):
         F = Face(side, x0, x1, y0, y1)
@@ -942,7 +946,10 @@ def model(ob, M, col, hero_xy, log=print):
                     F.box(X.Bd, um - 0.03, um + 0.03, zg0 + 0.45, zt, *fo, X.frame)
                 F.quad(X.Bd, da, db, zg0 + 2.83, zt, -d, M.glass)
                 door(X, F, da, db, zg0, zg0 + 2.75, "glass", depth=d, own_reveal=False)
-                F.box(X.Bd, a + 0.25, b - 0.25, zt + 0.22, zt + 0.72, -0.01, 0.04, rng.choice(M.signs))
+                if brick:   # on brick, a soldier-course lintel over the shopfront (the user's reference), no sign panel
+                    F.box(X.Bt, a - 0.15, b + 0.15, zt, zt + 0.3, -0.02, 0.03, X.trim)
+                else:
+                    F.box(X.Bd, a + 0.25, b - 0.25, zt + 0.22, zt + 0.72, -0.01, 0.04, rng.choice(M.signs))
                 if rng.random() < AWNING_SHARE:
                     awning(X, F, rng.choice(M.awnings), a + 0.05, b - 0.05, zt + 0.12)
                 X.stats["shopfronts"] = X.stats.get("shopfronts", 0) + 1
@@ -977,9 +984,9 @@ def model(ob, M, col, hero_xy, log=print):
             # on a back face
             for (u0, u1, kind) in panels:
                 if kind == "core":
-                    hw = min(HALL["width"], u1 - u0 - 0.4 - (FRAME[0] if X.framed else 0.0))
+                    hw = min(HALL["width"], u1 - u0 - 0.4)
                     hh = min(HALL["height"], gh - 0.6)
-                    holes_g.append(entrance_hall(X, F, (u0 + u1) / 2, hw, zg0, hh, HALL["depth"] if X.framed else 2.2))
+                    holes_g.append(entrance_hall(X, F, (u0 + u1) / 2, hw, zg0, hh, HALL["depth"] if X.tower else 2.2))
             if not front and panels and rng.random() < 0.7:
                 u0, u1, kind = panels[0]
                 a, b = (u0 + u1) / 2 - 0.5, (u0 + u1) / 2 + 0.5
@@ -1009,7 +1016,8 @@ def model(ob, M, col, hero_xy, log=print):
         for s in range(n_up):
             zs0 = levels[s + 1]
             if residential:
-                holes_u += residential_floor(X, F, panels, zs0, p["storey"], p, False, front, roof_z)
+                holes_u += residential_floor(X, F, panels, zs0, p["storey"], p, False, front, roof_z, floor_no=s + 2,
+                                             long_face=L >= max(x1 - x0, y1 - y0) - 0.01)
                 continue
             za, zb = zs0 + p["sill"], zs0 + p["sill"] + p["win_h"]
             if zb > levels[s + 2] - 0.25:
@@ -1037,23 +1045,8 @@ def model(ob, M, col, hero_xy, log=print):
                 if a > u + 0.05:
                     F.box(X.Bp, u, a, Z0, Z0 + ph, -0.02, pp, X.trim if brick else X.wall)
                 u = max(u, b)
-        # -------- structure: the tower's concrete frame, the offices' pilasters cut at every floor, the shed's piers
-        if X.framed:
-            cw, co, sh = FRAME
-            cols = sorted({0.0, L} | {pn[0] for pn in panels[1:]})
-            for c in cols:
-                a, b = (c, c + cw / 2) if c == 0.0 else ((c - cw / 2, c) if c == L else (c - cw / 2, c + cw / 2))
-                if side in ("S", "N") and c == 0.0:
-                    a -= co
-                if side in ("S", "N") and c == L:
-                    b += co
-                F.box(X.Bf, a, b, Z0, top_z, -0.02, co, M.concrete)
-            for lv in levels[1:-1]:
-                for ca, cb in zip(cols, cols[1:]):
-                    a = ca + cw / 2; b = cb - cw / 2
-                    if b - a > 0.2:
-                        F.box(X.Bf, a, b, lv - sh / 2, lv + sh / 2, -0.02, co, M.concrete)
-        elif use in ("offices", "shed"):
+        # -------- structure: the offices' pilasters cut at every floor, the shed's piers
+        if use in ("offices", "shed"):
             pw, pp2 = PILASTER
             zp0 = Z0 + (ph if use != "shed" else 0.0)
             zp1 = roof_z - 0.45 if use != "shed" else top_z - COPING[0]
@@ -1077,12 +1070,15 @@ def model(ob, M, col, hero_xy, log=print):
         sh, sp = STRING
         X.Bt.ring(x0, x1, y0, y1, Z0 + gh - 0.05, Z0 + gh - 0.05 + sh, sp, X.trim)
     deep = 0.8 + 0.4 * rng.random()
-    if X.classical:
+    if brick:                     # a brick building: a soldier-course band under a metal coping, no cornice
+        bh, bp = BRICK_BAND
+        X.Bt.ring(x0, x1, y0, y1, roof_z - 0.45, roof_z - 0.45 + bh, bp, X.trim)
+    elif X.classical:
         z = roof_z - CORNICE[0][0] - 0.05
         for h, pr in CORNICE:
             X.Bt.ring(x0, x1, y0, y1, z, z + h, pr * deep, X.trim); z += h
-    elif use == "tower":
-        X.Bf.ring(x0, x1, y0, y1, roof_z - 0.3, roof_z + 0.1, FRAME[1] + 0.03, M.concrete)
+    elif use == "tower":          # a plain attic band in the render
+        X.Bt.ring(x0, x1, y0, y1, roof_z - 0.35, roof_z + 0.05, 0.04, X.trim)
     if top_z > roof_z + 0.05:
         t = PARAPET_T
         for side in ("S", "E", "N", "W"):
@@ -1090,17 +1086,17 @@ def model(ob, M, col, hero_xy, log=print):
             pts = [F.P(0.0, roof_z), F.P(0.0, top_z), F.P(F.L, top_z), F.P(F.L, roof_z)]
             X.Bt.face(pts, X.wall, inward_of=F.P(F.L / 2, (roof_z + top_z) / 2, 1.0))
     ch, co = COPING
-    X.Bt.ring(x0, x1, y0, y1, top_z, top_z + ch, co, M.metal if not X.classical else X.trim, inset=PARAPET_T + co)
+    X.Bt.ring(x0, x1, y0, y1, top_z, top_z + ch, co, X.trim if (X.classical and not brick) else M.metal, inset=PARAPET_T + co)
     # -------- the roof's boxes, given a purpose
     roof_kit(X, roof_boxes, roof_z, x0, x1, y0, y1)
     # -------- the objects
     out = []
     t_ground = tuple(c * TONE_GROUND for c in tint)
-    t_plinth = tuple(c * TONE_PLINTH for c in (BRICK_TRIM_TINT if brick else tint))
+    t_plinth = tuple(c * TONE_PLINTH for c in tint)
     top_r = max([b[5] for b in roof_boxes] + [top_z]) + 0.1
     for B, nm, tn, top, bev in ((X.Bw, "walls", tint, top_z, False), (X.Bg, "ground", t_ground, top_z, False),
                                 (X.Bt, "trim", trim_tint, top_z, True), (X.Bp, "plinth", t_plinth, top_z, True),
-                                (X.Bd, "details", tint, top_z, True), (X.Bf, "frame", tint, top_z + 0.2, True),
+                                (X.Bd, "details", tint, top_z, True),
                                 (X.Br, "roof", tint, top_r, True)):
         o = B.build(f"nb_{ob.name}_{nm}", col, tint=tn, top=top, bevel=bev)
         if o is not None:

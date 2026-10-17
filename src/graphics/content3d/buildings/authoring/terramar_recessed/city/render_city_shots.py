@@ -9,7 +9,7 @@
 #   blender -b -P render_city_shots.py -- pct=25 samples=32         a quick preview set
 #   blender -b -P render_city_shots.py --                           the full UHD set (3840 x 2160, 128 spp, OptiX denoised)
 #
-# Opens the city copy (build_city_scene.py -> city_common.CITY_BLEND) and never saves it. A view is (eye, aim, lens mm
+# Opens the composition (build_composition.py -> city_common.CITY_BLEND; scene=<legacy copy> for the old one) and never saves it. A view is (eye, aim, lens mm
 # [, shift_y]) in the world, at the Bradbury's own stands round the Broadway / 3rd Street corner, which Terra & Mar's
 # entrance faces. The lens is on the frame's long side (36 mm sensor). shift_y is Blender's lens shift (a fraction of the
 # long side): a level camera lifting its frame keeps the verticals vertical, as an architectural photograph does.
@@ -75,15 +75,14 @@ if args.get("list") == "1":
     raise SystemExit
 
 SCENE = os.path.abspath(args.get("scene", C.CITY_BLEND))
-assert os.path.isfile(SCENE), f"no city scene at {SCENE}: run build_city_scene.py first"
+assert os.path.isfile(SCENE), f"no city scene at {SCENE}: run build_composition.py first"
 bpy.ops.wm.open_mainfile(filepath=SCENE)
 S = bpy.context.scene
 if "wear" in args:
-    sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "rebuild")))
-    from wear import controls as wear_controls  # noqa: E402
-    wear_controls.apply(S, args["wear"]) if args["wear"] != "off" else wear_controls.clear(S)
+    import composition_wear  # noqa: E402   (the module's switch, and the composition's overlay instances)
+    composition_wear.switch(S, args["wear"], args.get("wear_strengths"))
 shelf = bpy.data.collections.get("CONTEXT_LIBRARY")   # the context library's prototypes stand at the origin: never rendered
-if shelf is not None:
+if shelf is not None and shelf.library is None:   # a linked city's shelf is hidden in the city itself
     shelf.hide_render = True
 
 w, h = (int(v) for v in args.get("res", "3840x2160").lower().split("x"))
