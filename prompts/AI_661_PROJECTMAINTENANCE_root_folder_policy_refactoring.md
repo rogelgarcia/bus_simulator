@@ -40,6 +40,13 @@ its Git and sharing policy. This is the execution task, following the completed 
 - [ ] Implement the audited Blender responsibility split if `blender_files/` mixes generated scenes with manual
   sources/imported baselines. Preserve unique authored work and update the canonical Blender contracts and all
   consumers together. Never reclassify manual or unreproducible files as disposable to fit the target layout.
+- [ ] Place manually edited Blender scenes in the dedicated authored-source root selected by AI 660, separate
+  from generated Blender outputs. Implement its explicitly chosen Git policy rather than assuming all source
+  must be tracked. If tracked and untracked Blender source are both needed, use separate root folders with uniform
+  policies; never nest an ignored source store inside a tracked source root. Document both as authored source,
+  preserve provenance and recovery arrangements, and ensure generators cannot overwrite authoritative manual
+  edits. Git inclusion of binary authoring files must follow the audited decision, not occur incidentally during
+  migration. This does not authorize Git LFS or tracking generated binary outputs.
 - [ ] Publish reproducibility and retention classifications independently of folder origin. Claim regenerability
   only with retained inputs/configuration, an identified producer/toolchain and recorded validation evidence.
   Preserve conditional, unknown and preserve-only data; do not run destructive regeneration experiments. This

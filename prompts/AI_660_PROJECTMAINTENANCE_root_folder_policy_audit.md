@@ -46,6 +46,16 @@ we acquire as input, or what our workflows produce. This task is audit and plann
   retained legacy scenes and mixed edited outputs. Do not label all `.blend` files regenerable merely because of
   their current directory. Plan root separation for different responsibilities where necessary, explicitly
   reconciling earlier Blender layout rules and preserving every authoritative/manual source.
+- [ ] Treat manually edited Blender files as authored asset source, with a dedicated Blender authoring root
+  separate from generated `blender_files/` output. Choose its Git policy explicitly from the actual assets and
+  preservation needs; authored source is not automatically Git-managed. If both tracked and untracked authoring
+  stores are needed, propose separate root-level source folders (illustrative names: `blender_source/` and
+  `blender_source_local/`), each with one uniform Git/sharing policy. Do not place an ignored source store beneath
+  a tracked `source/` parent. Source is the responsibility category, not a requirement for one physical parent.
+  Explain the chosen naming and policy, including durable preservation/recovery for authored files outside Git.
+  Moving a generated scene into manual authoring makes that edited derivative authoritative source; retain its
+  origin and prevent later generation from overwriting it. Do not automatically add large binary sources to Git
+  or introduce Git LFS; document the evidence-based storage decision for AI 661.
 - [ ] For each root, record primary origin/responsibility, domain owner, allowed/forbidden content, Git and sharing
   policy, authoritative inputs, producers, downstream consumers, reproducibility evidence and retention contract.
   Audit mixed responsibilities even when all contents share the same ignore policy. Identify infrastructure such
