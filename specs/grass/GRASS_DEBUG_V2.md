@@ -6,6 +6,19 @@ and Ultra quality buttons. High matches this lab's current Auto cutoffs at
 The lab retains its explicit handoff comparison URLs; historical prototype
 notes below describe the earlier acceptance stage.
 
+## Collapsible controls
+
+The left controls dock has a **Minimize controls** button at its top right.
+Minimizing hides the dock and expands the scene to the full viewport width;
+an **Expand controls** menu button remains at the top left. The same button
+supports keyboard activation and exposes its expanded state to assistive tools.
+Reopening retains control selections and benchmark results. The dock starts
+expanded. The toggle stays available during benchmark runs; minimizing or
+restoring resizes the scene without stopping the flight or scrolling the menu.
+Runs with menu resizing are labeled **resized** and record each changed render
+resolution in `viewportChanges`; their tooltip identifies mixed-resolution timings.
+Other viewport resizing retains the existing benchmark cancellation behavior.
+
 ## Fixed-patch field edges
 
 The fixed-patch path selects whole blades by root coverage, allowing eligible

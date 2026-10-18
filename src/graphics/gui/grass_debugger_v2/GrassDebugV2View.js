@@ -131,15 +131,19 @@ export class GrassDebugV2View {
         return true;
     }
 
-    resize() {
-        this.benchmark?.cancel('Viewport resized');
+    resize({ preserveBenchmark = false } = {}) {
         const width = Math.max(1, this.canvas.clientWidth);
         const height = Math.max(1, this.canvas.clientHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        if (this._viewportSize?.width === width && this._viewportSize.height === height && this._viewportSize.pixelRatio === pixelRatio) return;
+        if (!preserveBenchmark) this.benchmark?.cancel('Viewport resized');
+        this._viewportSize = { width, height, pixelRatio };
+        this.renderer.setPixelRatio(pixelRatio);
         this.renderer.setSize(width, height, false);
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.lighting.resize(width, height);
+        if (preserveBenchmark) this.benchmark?.recordViewportChange();
     }
 
     render(time) {

@@ -55,10 +55,15 @@ export class GrassDebugV2Benchmark {
         this._gpuSamples = [];
         this._lastProgress = -1;
         this._viewport = Object.freeze(this.getViewport());
+        this._viewportChanges = [];
         this._grass = this.getGrass();
         this._land = this.getLand();
         this.onChange(this.getSnapshot());
         return true;
+    }
+
+    recordViewportChange() {
+        if (this.active) this._viewportChanges.push(Object.freeze({ ...this.getViewport(), elapsedMs: this.elapsedMs, phase: this.phase }));
     }
 
     beforeFrame(nowMs) {
@@ -141,6 +146,7 @@ export class GrassDebugV2Benchmark {
             routeMeters: this.route.getLength(),
             route: this.getRouteSnapshot(),
             viewport: this._viewport,
+            viewportChanges: Object.freeze(this._viewportChanges.slice()),
             grass: this._grass,
             land: this._land
         });

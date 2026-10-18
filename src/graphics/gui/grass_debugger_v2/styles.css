@@ -1,5 +1,26 @@
 /* Sectioned control dock for the Grass Debug v2 baseline. */
 .grass-debug-v2 { --grass-v2-panel-width: min(240px, 40vw); }
+.grass-debug-v2.controls-collapsed { --grass-v2-panel-width: 0px; }
+.grass-v2-panel[hidden] { display: none; }
+.grass-v2-panel-toggle {
+    position: fixed;
+    top: calc(var(--global-top-bar-height, 0px) + 10px);
+    left: max(8px, calc(var(--grass-v2-panel-width) - 48px));
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #596b6e;
+    border-radius: 4px;
+    background: #10171e;
+    color: #e5eceb;
+    cursor: pointer;
+}
+.grass-v2-panel-toggle:hover { background: #35464b; }
+.grass-v2-panel-toggle:focus-visible { outline: 2px solid #bbdcae; outline-offset: 2px; }
+.grass-v2-panel-toggle:disabled { opacity: 0.45; cursor: wait; }
 body.grass-debug-v2 #game-canvas {
     left: var(--grass-v2-panel-width);
     width: calc(100% - var(--grass-v2-panel-width));
@@ -26,7 +47,7 @@ body.grass-debug-v2 #game-canvas {
     min-width: 0;
     max-width: none;
     overflow-y: auto;
-    padding: 18px 16px;
+    padding: 54px 16px 18px;
     border: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 0;

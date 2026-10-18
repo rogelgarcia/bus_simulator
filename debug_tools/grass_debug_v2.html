@@ -8,12 +8,15 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
     <link rel="stylesheet" href="../src/graphics/gui/perf_bar/styles.css" />
-    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/styles.css?v=roadside-flight-smooth-1" />
+    <link rel="stylesheet" href="../src/graphics/gui/grass_debugger_v2/styles.css?v=collapsible-menu-1" />
 </head>
 <body class="grass-debug-v2">
 <div id="game-viewport"><canvas id="game-canvas" aria-label="Grass Debug v2 scene"></canvas></div>
 <div id="scene-loading" class="grass-v2-loading" role="status">Loading...</div>
-<aside class="ui-panel is-interactive grass-v2-panel" aria-label="Grass controls">
+<button type="button" id="toggle-controls" class="grass-v2-panel-toggle" aria-controls="grass-controls" aria-expanded="true" aria-label="Minimize controls" title="Minimize controls">
+    <span class="ui-icon" aria-hidden="true">remove</span>
+</button>
+<aside id="grass-controls" class="ui-panel is-interactive grass-v2-panel" aria-label="Grass controls">
     <p id="scene-status" role="status" hidden></p>
     <section class="grass-v2-section" aria-labelledby="camera-heading">
         <h2 class="ui-section-label is-tight" id="camera-heading">Camera</h2>
@@ -95,9 +98,9 @@
         "../src/graphics/engine3d/grass/runtime/GrassPatchMaterials.js": "../src/graphics/engine3d/grass/runtime/GrassPatchMaterials.js?v=patch-edges-1",
         "../src/graphics/shaders/materials/grass/GrassPatchShaderLoader.js": "../src/graphics/shaders/materials/grass/GrassPatchShaderLoader.js?v=patch-edges-1",
         "../src/graphics/shaders/materials/grass/GrassBoundaryShaderLoader.js": "../src/graphics/shaders/materials/grass/GrassBoundaryShaderLoader.js?v=patch-edges-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js?v=roadside-flight-smooth-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Benchmark.js?v=collapsible-menu-2",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2BenchmarkRoute.js?v=roadside-flight-smooth-1",
-        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=horizontal-camera-1",
+        "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2View.js?v=collapsible-menu-2",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Scene.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2Land.js?v=curved-boundary-1",
         "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js": "../src/graphics/gui/grass_debugger_v2/GrassDebugV2TransitionCanopy.js?v=canopy-seam-2",
@@ -109,6 +112,6 @@
     }
 }
 </script>
-<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=shorten-calibration-1"></script>
+<script type="module" src="../src/graphics/gui/grass_debugger_v2/main.js?v=collapsible-menu-2"></script>
 </body>
 </html>

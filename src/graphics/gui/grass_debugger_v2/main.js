@@ -7,6 +7,17 @@ import { GrassDebugV2View } from './GrassDebugV2View.js';
 const canvas = document.getElementById('game-canvas');
 const status = document.getElementById('scene-status');
 const loading = document.getElementById('scene-loading');
+const controlsPanel = document.getElementById('grass-controls');
+const controlsToggle = document.getElementById('toggle-controls');
+controlsToggle.addEventListener('click', () => {
+    const collapsed = document.body.classList.toggle('controls-collapsed');
+    controlsPanel.hidden = collapsed;
+    controlsToggle.setAttribute('aria-expanded', String(!collapsed));
+    controlsToggle.setAttribute('aria-label', collapsed ? 'Expand controls' : 'Minimize controls');
+    controlsToggle.title = controlsToggle.getAttribute('aria-label');
+    controlsToggle.querySelector('.ui-icon').textContent = collapsed ? 'menu' : 'remove';
+    view.resize({ preserveBenchmark: true });
+});
 const perfBar = ensureGlobalPerfBar();
 const contextMenu = installViewportContextMenuBlocker(document.getElementById('game-viewport'));
 const busButton = document.getElementById('bus-view');
@@ -47,6 +58,7 @@ function updateBenchmarkPanel(state) {
         const primary = result.gpu ?? result.frame;
         const metric = result.gpu ? 'GPU' : 'Frame';
         row.textContent = `${result.grass.mode} · ${metric} ${primary.averageMs.toFixed(1)} avg · ${primary.p99Ms.toFixed(1)} p99 ms`;
+        if (result.viewportChanges.length) row.textContent += ' · resized';
         const timing = (name, stats) => stats ? `${name}: avg ${stats.averageMs.toFixed(2)} ms · P99 ${stats.p99Ms.toFixed(2)} ms (${stats.count} samples)` : `${name}: unavailable`;
         row.title = [
             result.grass ? `Grass ${result.grass.mode}: ${result.grass.triangles.toLocaleString('en-US')} triangles at the starting camera` : '',
@@ -55,6 +67,7 @@ function updateBenchmarkPanel(state) {
             `${(result.durationMs / 1000).toFixed(2)} s measured · ${(result.flightMs / 1000).toFixed(2)} s flight + ${(result.holdMs / 1000).toFixed(2)} s final stop`,
             `${result.routeMeters.toFixed(1)} m · ${result.renderedFrames} frames · grass at half speed · 4 s turn toward bus`,
             `${result.viewport.width} × ${result.viewport.height} · DPR ${result.viewport.pixelRatio} · ${result.warmupMs / 1000} s warmup`,
+            result.viewportChanges.length ? `Menu resized during run: ${result.viewportChanges.map(size => `${size.width} × ${size.height}`).join(' → ')}. Timings include multiple render resolutions.` : '',
             'P99: nearest rank, no hitch trimming. Timings cover the whole scene.', result.gpuNote
         ].filter(Boolean).join('\n');
         row.setAttribute('aria-label', row.title);
