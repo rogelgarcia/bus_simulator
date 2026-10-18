@@ -54,6 +54,28 @@ The ramification review additionally exports matched-frame branching stages and
 phase/tier metadata from the same graphs; it uses the existing browser and hash
 gates. See `tools/bake_vegetation/branching_study/README.md`.
 
+The registered enhanced-reference leaf accepts `foliage-layout=shoot-competition`
+for all five species. It subsets complete redundant shoots and their leaves from
+authenticated candidates, preserving surviving geometry and source files.
+`views=competition` adds the matched EEVEE/semantic-mask review; the existing
+gallery phase retains species geometry, source identity, material provenance and
+complete-view validation before publishing a review. No new machine command or
+model publication bypass is introduced.
+
+The enhanced-reference foliage phase also accepts `foliage-layout=spaced-sprays`
+for authenticated v4 silver lindens. It preserves the accepted trunk and checks
+the regenerated structural graph, then replaces crowded shoots and leaves in a
+separate ignored output. Existing source-stability, saved-mesh, complete gallery,
+shared Blender configuration and material-only publication gates remain required.
+
+`vegetation/layer-study` prepares four calibrated orthographic Eevee views of
+each of the fifteen reviewed enhanced models and a browser editor for three
+concentric canopy zones. It authenticates saved geometry provenance and source
+hashes, validates PNG dimensions/hashes and sample data, and preserves input
+stability. `render` and `page` use shared configuration and isolated ignored
+staging; publication is rejected. See the
+[canopy layer contract](../graphics/vegetation_canopy_layers.md).
+
 The enhanced-reference `leaf-wireframe` diagnostic accepts an authenticated saved
 candidate and a separate ignored output. It reuses the registered Blender backend,
 source stability checks and publication restrictions; it produces topology renders
@@ -862,3 +884,27 @@ For v13 references, `views=poses` adds fixed side/rear angles for each mature
 specimen and an in-canopy/isolated branchlet pair. The gallery verifies complete
 pose groups and matched cameras and lighting, then embeds them in the same page.
 This is a render-only extension; model files and reference hashes stay intact.
+
+The enhanced-reference foliage phase also supports `foliage-layout=coverage-cleanup`
+for conservative American elm leaf thinning. It requires an authenticated
+clustered-elm candidate and matching previous summary, preserves wood and leaf
+prototype geometry, and validates eight directional footprint budgets plus
+three actual before/after foliage-mask renders per form. It shares the existing
+Blender configuration, ignored staging and source-preservation gates.
+
+Enhanced reference `foliage-layout=cluster-balance` rebuilds elm leaf placements
+inside preserved branch-owned regions. It shares `vegetation/enhanced-reference`
+configuration and all existing preservation/publication gates. `detail-width`
+(default 2400, range 640–3840) controls region close-ups independently of the
+full-tree width. The balanced-elm gallery requires at least 2048 pixels for those
+clickable before/after details.
+# Single-specimen vegetation growth study
+
+The existing `vegetation/enhanced-reference` leaf accepts `phase=growth` and
+`views=growth` for the experimental elm core. It reuses the shared Blender
+configuration, requires an authenticated candidate/previous collection, and
+writes a fresh ignored enhanced-reference directory. The normal `render`,
+`inspect`, `gallery` and `validate` phases remain responsible for saved geometry,
+render/source identity and material checks. This study's explicit gallery contract
+allows one elm and requires twenty-two frames for the hierarchy revision; it
+does not relax other species collection contracts or allow model publication.

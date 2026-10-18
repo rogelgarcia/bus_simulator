@@ -15,6 +15,11 @@ import {validateSpatial,spatialContent} from './spatial_review.mjs';
 import {validateVolume,volumeContent} from './volume_review.mjs';
 import {photographicStudies} from './source_studies.mjs';
 import {validateShrub,shrubContent} from './shrub_review.mjs';
+import {validateLinden,lindenContent} from './linden_review.mjs';
+import {validateCleanup,cleanupContent} from './elm_cleanup_review.mjs';
+import {validateBalance,balanceContent} from './elm_balance_review.mjs';
+import {validateCompetition,galleryCompetition} from './competition_review.mjs';
+import {validateGrowth,galleryGrowth} from './growth_v2/review.mjs';
 
 const json=async f=>JSON.parse(await readFile(f,'utf8'));
 
@@ -45,6 +50,7 @@ export async function validate(o){
     for(const id of o.models){
 
         const dir=path.join(o.output,id),row=await json(path.join(dir,'model.json'));
+        if(row.revision==='enhanced-elm-filled-fans-v10'||row.shootCompetitionReview)row.canopyVisibility=await json(path.join(dir,'visibility.json'));
 
         if((await hashFile(path.join(dir,'enhanced.blend'))).sha256!==row.sha256)throw Error('Enhanced identity differs '+id);
 
@@ -56,7 +62,9 @@ export async function validate(o){
 
         const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
 
-        if(proof.renders.length!==expected+validateShrub(row,proof.renders,!!prior)+(['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'].includes(row.revision)&&id.endsWith('mature_01')?1:0)+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
+        if(row.growthCore)validateGrowth(row,proof.renders);
+        else if(row.shootCompetitionReview)validateCompetition(row,proof.renders);
+        else if(proof.renders.length!==expected+validateBalance(row,proof.renders)+validateCleanup(row,proof.renders)+validateLinden(row,proof.renders,!!prior)+validateShrub(row,proof.renders,!!prior)+(['enhanced-linden-spaced-sprays-v5','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(row.revision)&&id.endsWith('mature_01')?1:0)+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
 
         for(const image of proof.renders){
 
@@ -128,13 +136,17 @@ function panel(species,state,view,p){
 
 function group(species,view,p){return `<h2 class="viewlabel">${views[view]}</h2><div class="grid">${Object.keys(names).map(state=>panel(species,state,view,p)).join('')}</div>`;}
 
-function variantPanel(row){const groups=row.crowding?.branchletSpacing?.acceptedSprays??row.crownLobes;return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${groups} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
+function variantPanel(row){const groups=row.foliageBalance?.fanGrowth?.fans??row.crowding?.branchletSpacing?.acceptedSprays??row.crownLobes;return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${groups} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
 
 const page=(title,content,sheet=false)=>`<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title><link rel="stylesheet" href="review.css"></head><body><main class="${sheet?'sheet':''}">${content}</main></body></html>`;
 
 export async function gallery(o){
 
     const summary=await validate(o),profiles=Object.fromEntries(Object.entries(o.profiles).filter(([s])=>summary.models.some(r=>r.id.startsWith(s+'/'))));
+
+    if(summary.models.every(m=>m.growthCore))return galleryGrowth(o,summary);
+
+    if(summary.models.every(m=>m.shootCompetitionReview))return galleryCompetition(o,summary);
 
     for(const p of Object.values(profiles))p.reviewEngine=o.engine;
 
@@ -188,12 +200,27 @@ export async function gallery(o){
     for(const [s,p] of Object.entries(profiles)){
 
         const title=`${p.name} · ${p.botanical}`,all=Object.keys(views).map(v=>group(s,v,p)).join('');
+        const linden=lindenContent(summary,s,title);
+        const balance=balanceContent(summary,s,title);
+        if(balance){
+            const file=s+'_balance.html';await writeFile(path.join(o.output,file),page(title+' - canopy balance',balance,true));sheets.push({file,png:s+'_balance.png'});
+            index+=`<section id="${s}_balance">${balance}</section>`;
+        }
+        const cleanup=cleanupContent(summary,s,title);
+        if(cleanup){
+            const file=s+'_cleanup.html';await writeFile(path.join(o.output,file),page(title+' - conservative foliage cleanup',cleanup,true));sheets.push({file,png:s+'_cleanup.png'});
+            index+=`<section id="${s}_cleanup">${cleanup}</section>`;
+        }
+        if(linden){
+            const file=s+'_spacing.html';await writeFile(path.join(o.output,file),page(title+' - foliage spacing',linden,true));sheets.push({file,png:s+'_spacing.png'});
+            index+=`<section id="${s}_spacing">${linden}</section>`;
+        }
         if(s==='american_elm'&&o['crown-study']){
             const source=o['crown-study'],hash=await hashFile(source),file='references/american_elm_crown_photo.png';
             await copyFile(source,path.join(o.output,file));
             if((await hashFile(path.join(o.output,file))).sha256!==hash.sha256)throw Error('Crown photograph copy differs');
             sources.push({species:s,style:'user-supplied crown photograph',source,...hash});
-            const clustered=summary.models.some(m=>m.revision==='enhanced-elm-clustered-v5');
+            const clustered=summary.models.some(m=>['enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(m.revision));
             const description=clustered?'Separate branch-supported foliage clusters form the rounded crown. Side masses have recessed gaps; open branchlets use staggered laterals and spacing within each spray.':'Shorter outer sprays occupy an irregular rounded volume; fine ends arch downward.';
             const content=`<h1>${title} - ${clustered?'branch-supported crown clusters':'rounded crown'}</h1><p>${description} The photograph is the original user-supplied crown reference.</p><div class="variants">${panel(s,'previous','full',p)}${panel(s,'enhanced','full',p)}<div class="cell"><div class="caption"><h3>Supplied crown photograph</h3>Original user-supplied image · unchanged</div><img class="image" src="${file}"></div></div>`;
             const sheet=s+'_crown_photo.html';await writeFile(path.join(o.output,sheet),page(title+' - crown photograph',content,true));sheets.push({file:sheet,png:s+'_crown_photo.png'});
@@ -235,7 +262,7 @@ export async function gallery(o){
 
         }
 
-        if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5'].includes(r.revision))){
+        if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-linden-spaced-sprays-v5','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(r.revision))){
             const details=['leaves','shoot'].map(view=>summary.renders.find(r=>r.id===s+'/mature_01'&&r.state==='enhanced'&&r.view===view));
             if(details.some(r=>!r)||JSON.stringify(details[0].camera)!==JSON.stringify(details[1].camera))throw Error('Branchlet detail cameras differ');
             const content=`<h1>${title} - connected foliage</h1><p>The same saved branchlet appears inside the crown and isolated. Leaves alternate at spaced nodes, with curved blades, short petioles and bounded rotations.</p><div class="pair">${details.map((r,i)=>`<div class="cell"><div class="caption"><h3>${i?'Isolated branchlet':'Inside the crown'}</h3>Same saved geometry and camera</div><a href="${r.file}"><img class="image" src="${r.file}"></a></div>`).join('')}</div>`;

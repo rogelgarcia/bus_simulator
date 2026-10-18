@@ -22,6 +22,7 @@ import { naturalFoliageJob } from './natural_foliage/job.mjs';
 import { hybridLod0Job } from './hybrid_lod0/job.mjs';
 import { enhancedReferenceJob } from './enhanced_reference/job.mjs';
 import { referenceVideoJob } from './turntable/reference_video/job.mjs';
+import { layerStudyJob } from './layer_study/job.mjs';
 import { branchingStudyJob } from './branching_study/job.mjs';
 import { ramification3DJob } from './ramification3d/job.mjs';
 
@@ -113,7 +114,7 @@ const createJob = (species, prototype = false) => ({
 });
 const leaves = SPECIES.map(species => createJob(species));
 
-export const vegetationJobs = [...leaves, showcaseJob, surfacesJob, junctionsJob, growthJob, lod0Job, lod0LibraryJob, lod1Job, branchletsJob, branchletLibraryJob, distantJob, turntableJob, naturalFoliageJob, hybridLod0Job, enhancedReferenceJob, referenceVideoJob, branchingStudyJob, ramification3DJob, ...Object.keys(PROTOTYPES).map(species => createJob(species, true)), {
+export const vegetationJobs = [...leaves, showcaseJob, surfacesJob, junctionsJob, growthJob, lod0Job, lod0LibraryJob, lod1Job, branchletsJob, branchletLibraryJob, distantJob, turntableJob, naturalFoliageJob, hybridLod0Job, enhancedReferenceJob, referenceVideoJob, layerStudyJob, branchingStudyJob, ramification3DJob, ...Object.keys(PROTOTYPES).map(species => createJob(species, true)), {
     id: 'vegetation', description: 'Explicit original mature vegetation asset authoring, excluded from default production bakes',
     configurationPaths: ['executable'], children: leaves.map(job => job.id)
 }];

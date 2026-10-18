@@ -7,10 +7,10 @@ from common import array
 from junctions import flow_surfaces
 
 
-def isolate(directory,objects,outer=False):
+def isolate(directory,objects,outer=False,root_override=None):
     graph=json.loads((directory/'architecture.json').read_text());paths=graph['paths']
     for r in paths:r['points']=np.asarray(r['points']);r['radii']=np.asarray(r['radii'])
-    root=graph.get('studyRoot')
+    root=graph.get('studyRoot') if root_override is None else root_override
     if root is None:
         fan=any(r.get('shootRole')=='open-staggered-fan' for r in paths)
         candidates=[i for i,r in enumerate(paths) if r.get('shootDepth')==(0 if fan else 1)]
@@ -35,7 +35,8 @@ def isolate(directory,objects,outer=False):
         if i in selected:keep.extend(range(cursor,cursor+count))
         cursor+=count
     source=objects[2].data
-    if cursor!=len(source.polygons):raise RuntimeError('Branchlet mesh ranges do not match saved topology')
+    if 'source_path' in source.attributes:keep=np.flatnonzero(np.isin(array(source.attributes['source_path'].data,'value',dtype=np.int32),list(selected)))
+    elif cursor!=len(source.polygons):raise RuntimeError('Branchlet mesh ranges do not match saved topology')
     verts=array(source.vertices,'co',3);loop_ids=np.concatenate([np.arange(source.polygons[i].loop_start,source.polygons[i].loop_start+source.polygons[i].loop_total) for i in keep])
     faces=[tuple(source.polygons[i].vertices) for i in keep];used=np.unique(np.concatenate(faces));lookup={int(v):i for i,v in enumerate(used)}
     mesh=bpy.data.meshes.new('Isolated accepted branchlet');mesh.from_pydata(verts[used],[],[[lookup[v] for v in face] for face in faces])

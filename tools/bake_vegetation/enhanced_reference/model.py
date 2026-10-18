@@ -23,11 +23,12 @@ def build(o):
         print(f'[Enhanced] {model}: {len(paths)} connected paths, {len(leaves)} leaves',flush=True)
         oak=p.get('growth',{}).get('architecture')=='open-oak'
         elm=p.get('growth',{}).get('architecture')=='arching-elm'
+        linden=p.get('growth',{}).get('architecture')=='conical-linden'
         paired='pairedFoliage' in p
-        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak or elm or paired);foliage=instances(model,leaves,forms)
+        forms=templates(o,species,[front,back],leafmeta,detailed_petioles=oak or elm or paired or linden);foliage=instances(model,leaves,forms)
         wood,twigs=build_wood(model,paths,p,bark,barkmeta,rng)
         origins=np.asarray([l['origin'] for l in leaves]);centers=origins+np.asarray([l['matrix'][:,1] for l in leaves])*.52
-        if oak or elm or paired:centers=np.asarray([l['bladeCenter'] for l in leaves])
+        if oak or elm or paired or linden:centers=np.asarray([l['bladeCenter'] for l in leaves])
         if not np.isfinite(centers).all() or len(leaves)<3000:raise RuntimeError('Invalid canopy')
         parent_errors=[]
         for path in paths:
@@ -39,12 +40,12 @@ def build(o):
         template_counts=[triangles(m) for m in forms];expanded=sum(template_counts[l['form']] for l in leaves)
         bounds={'min':np.minimum(centers.min(axis=0)-p['leafLength'],[0,0,0]).tolist(),'max':(centers.max(axis=0)+p['leafLength']).tolist()}
         revision='enhanced-plane-branchlets-v8' if p.get('growth',{}).get('architecture')=='distributed-plane' else 'enhanced-shared-forks-v3' if 'growth' in p else 'enhanced-botanical-v1'
-        if p.get('growth',{}).get('architecture')=='conical-linden':revision='enhanced-linden-conical-v4'
+        if linden:revision='enhanced-linden-spaced-sprays-v5'
         if oak:revision='enhanced-oak-fork-shoulders-v8'
-        if elm:revision='enhanced-elm-clustered-v5'
+        if elm:revision='enhanced-elm-filled-fans-v10'
         if paired:revision='enhanced-arrowwood-spaced-pairs-v2'
         stats={'id':model,'revision':revision,'baselineSha256':next(r['sha256'] for r in o['sources'] if r['id']==model),'previousSha256':next((r['sha256'] for r in o['previousSources'] if r['id']==model),None),'codeIdentity':o['codeIdentity'],
-            'leafCount':len(leaves),'branchPaths':len(paths),'crownLobes':len(lobes),'woodTriangles':triangles(wood.data),'branchletTriangles':triangles(twigs.data),
+            'foliageCleanup':crowding.get('foliageCleanup'),'foliageBalance':crowding.get('foliageBalance'),'leafCount':len(leaves),'branchPaths':len(paths),'crownLobes':len(lobes),'woodTriangles':triangles(wood.data),'branchletTriangles':triangles(twigs.data),
             'leafTemplateTriangles':template_counts,'instancedLeafTriangles':expanded,'alphaCards':0,'bounds':bounds,'dimensions':dimensions,'crowding':crowding,
             'maximumBranchAnchorDistance':max(parent_errors),'sourceMaterials':'AI generated','frontBackMaterials':True,'barkTileMetres':p['barkTileMetres'],'files':['enhanced.blend','architecture.json'],
             'limitations':['Artist-authored growth model, not physiological simulation','Imported maps are AI generated, not scans','Local crowding proxy does not prove leaf nonintersection','Reference geometry is not a runtime LOD']}
@@ -55,7 +56,7 @@ def build(o):
             from oak_growth import crown_profile
             stats['crownProfile']=crown_profile(np.asarray([leaf['bladeCenter'] for leaf in leaves]))
             if stats['crownProfile']['widthAspect']<.70 or stats['crownProfile']['widthToHeight']<(.65 if elm else .85):raise RuntimeError('Crown is too narrow')
-        if revision=='enhanced-linden-conical-v4':
+        if linden:
             from linden_growth import crown_profile
             from wood_continuity import leader_sections,inspect_leader
             stats['crownProfile']=crown_profile(origins,dimensions)

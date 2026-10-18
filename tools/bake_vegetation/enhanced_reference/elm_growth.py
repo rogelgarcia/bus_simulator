@@ -50,7 +50,8 @@ def scaffold(p,variant):
             path['demand']+=radius**2/len(path['demand']);path['demand'][-1]+=.20*radius**2
             lobes.append({'center':end.copy(),'radius':radius,'parent':child,'parentNode':len(path['points'])-1,
                           'axis':unit(end-start),'side':unit(np.cross(guide,[0,0,1])),
-                          'cluster':cluster['id'],'clusterGuide':guide.tolist(),'clusterCenter':cluster['center'],'spray':True})
+                          'cluster':cluster['id'],'clusterGuide':guide.tolist(),'clusterCenter':cluster['center'],
+                          'clusterRegion':{k:cluster[k] for k in ['id','center','radii','basis']},'spray':True})
             return
         cloud=targets-destination
         _,_,basis=np.linalg.svd(cloud,full_matrices=False)

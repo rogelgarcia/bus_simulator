@@ -1,5 +1,154 @@
 # Enhanced reference collection
 
+## Experimental elm hierarchy revision
+
+### Planar architecture study
+
+Version 7 adds a separate root graph and basal collar in a 2D soil section.
+Lateral roots, staggered side roots, optional sinkers and a taproot have independent
+spread, depth, branching, thickness and shape settings. Roots remain attached at
+the trunk base when shoot lean changes; root settings never reshuffle the canopy.
+The collar follows the actual curved trunk. Exports retain all centerlines,
+attachments and radii, including the final fine-tip taper beyond side attachments.
+Both shoot and root audits gate bakes. The UI opens Root system and includes a
+root close-up with selectable descendants; title popups hold all explanations.
+The five starting root configurations are shared-rule size estimates, not
+species-calibrated predictions. See `tools/bake_vegetation/branching_study/README.md`
+for the export contract and US Forest Service, UF/IFAS and SpeedTree research.
+No soil mechanics, obstacle avoidance, absorbing-root network or 3D radial roots
+are simulated in this planar study.
+
+Version 6 of the graph adds independent curvature for the initial trunk axis:
+signed left/right bend, curved-zone position and length, tip recovery, and
+seeded strength variation. The former quarter-strength coupling to branch bend
+is removed. Its ground position and length remain fixed; branch attachments
+follow the new centerline and tangent. Later leader segments still use branch
+controls. Whole-tree lean is a separate rigid rotation of the shoots. Trunk shape
+has an actual centerline preview and keeps explanations in title popups.
+
+Version 5 adds five research-informed, editable numeric species presets with
+matching supplied study images when provided. Their source traits, numerical
+interpretations and current limitations are available in title popups. The shrub
+uses a low-fork approximation; no basal-stem generator is claimed. See
+`specs/graphics/vegetation_species_rules.md` for the species research and proposed
+per-feature function providers, disabled UI ownership and versioned exports.
+That function/plugin architecture is **documentation only**, not implemented.
+
+The isolated 2D study now uses a shoot graph with curved axes and interior
+attachment nodes. Version 4 adds continuous curved-zone controls and child-count
+ranges to the replacement for the endpoint-only binary grammar while
+retaining previous review pages as separate artifacts. It does not rebuild 3D assets.
+
+- Each axis has a smooth curved zone with adjustable strength, position, extent
+  and distal recovery. It permits a broad arch, a localized turn or one curvature
+  reversal without selecting letter-shaped templates. The previous monotonic
+  profile remains available. Seeded amplitude variation, directional bias and a
+  local tangent determine each attachment.
+  Whole-tree lean rotates the completed graph. These are geometric controls, not
+  a physical gravity or light simulation.
+- Growth habits include continuing axes with side shoots, terminal forks, and
+  primary trunk forks followed by side shoots (default elm study).
+- Automatic child counts use an inclusive 1–4 range per parent with a separate
+  ancestry-keyed stream (elm default 2–3); manual mode retains per-level counts.
+  Tree-type ranges are editable modeling presets, not measured species data.
+  A continuing axis counts as one.
+  Side nodes use first/last positions, stagger, jitter and alternate/paired
+  placement. Tip forks share an endpoint; side-shoot modes permit spacing.
+- Base diameter, loss at side forks, loss at continuations, along-axis taper and
+  taper profile are independent. A child's thickness derives from the parent
+  radius at its attachment. This manual sizing does not enforce pipe-area balance.
+- Minimum branch length and diameter, seeded lateral-bud survival and growth depth
+  stop fine growth. An explicit 4,000-branch cap reports omitted candidates; a
+  capped study is not a complete generated graph. Children remain shorter than
+  their parent, at most 96% of its length. Random streams are keyed by ancestry.
+- Crossing suppression defaults OFF in all presets and on reset. Its optional
+  planar centerline test rejects candidates without bending existing wood. It is
+  not a 3D collision test. Branch starting directions are limited to -35..215 degrees
+  in the upright local frame; this limit does not constrain the finished curve.
+
+The UI supports branch inspection, node marks, order colors, level replay and
+configuration/graph/SVG exports and a live isolated bend preview. Version 4 graphs
+retain `parentT`, points, radii, proposed counts, all settings and stop reasons.
+Unit checks cover reproducibility, local attachment,
+2/3/4-way counts, spaced and paired nodes, tangent inheritance, taper and losses,
+bounded bends and recovery, child-count ranges, bud-stream stability, preview
+budgets and optional crossings.
+
+Research mapping and implementation limits are included in the page and
+`tools/bake_vegetation/branching_study/README.md`: Palubicki et al. (2009) for axes,
+buds and control of growth; SpeedTree documentation for independent placement,
+spine and radius controls; Jirasek et al. (2000) for future biomechanics; US Forest
+Service American elm descriptions for the primary-limb and arching-crown target.
+Bastien et al. (2015) motivates distinct curved-zone and straightening controls;
+Coutand et al. (2007) documents woody curving and straightening. The page separates
+growth reorientation, active straightening, mechanical sag, reaction wood and
+contact, and identifies which are geometric analogues or future work.
+Light competition, resource flow, seasonal age, shedding, 3D azimuth/phyllotaxis,
+leaf/petiole development and a mechanics solver remain future work. The registered
+`vegetation/branching-study` leaf preserves existing publication gates.
+
+### Prior 3D experiment
+
+The isolated growth core bounds uninterrupted young axes to 2.4 m and consumes
+free-space targets within 0.38 m, avoiding long threadlike runs and redundant
+fine growth. Axillary buds produce single shoots; terminal shoots can add two
+laterals. Leaves occupy actual distal young wood directly as well as new shoots.
+Side limbs select space in their outward half-space, preventing axes from
+turning back through the trunk to follow distant targets across the crown.
+Targets are assigned to the nearest bud able to reach them within the growth
+constraints, rather than being blocked by a nearer but ineligible bud.
+Support radii satisfy downstream reach/diameter <= 95 while preserving parent
+support and monotone taper. These are procedural artistic constraints, not
+physiological or mechanical certification. Previous models remain preserved.
+The review contract has 22 authenticated EEVEE frames, including matched bare
+trees and wood close-ups, with the user-supplied branching example alongside.
+
+## Shared branchlet competition
+
+The elm competition rule applies to all five species through the registered
+`shoot-competition` foliage layout. A thinner terminal shoot is a candidate when
+its radius is at most 78% of a stronger shoot's, their directional dot product
+is at least 0.65, and 80% of its distal samples occupy the same projected and 3D
+leaf corridor. Divergent shoots and separated-depth shoots remain eligible growth.
+Legacy shrub shoots need no elm-specific depth field; opposite leaf pairs remain
+intact because pruning operates on whole shoots.
+
+A model-space footprint guard checks four horizontal azimuths and the top,
+retaining at least 99.75% sampled projected occupancy and 99% in substantial local
+cells. It defers candidates that still carry useful unique foliage. The revised
+guard also limits removed scaled blade area to 2.5% per pass, because occupied
+cells can conceal the contribution of partially overlapping leaves. This sampling
+proxy does not prove exact leaf coverage; the review independently requires
+98% depth-tested foliage retention and no local loss worse than five percentage
+points in matched front/side/rear EEVEE masks. Cameras do not affect generation.
+
+Existing references are subset without moving surviving geometry: major wood,
+leaf prototypes, retained twig vertices/UVs and retained leaf attributes remain
+unchanged. Stable path remapping preserves leaf attachments and source-path face
+attributes support exact branchlet extraction. Already-cleaned elm sources are
+retained, preventing repeated pruning of an accepted result. Fresh growth uses
+the same competition/coverage rules after leaf placement for the other species.
+Accepted source collections and layer-study hashes are preserved.
+
+The first shared oak trial failed rendered retention despite passing sampled
+occupancy. Its candidates must be rebuilt under the area guard. Previously
+render-validated candidates can retain their recorded policy and geometry; the
+review authenticates each saved model rather than implying one shared build hash.
+
+Verified collection: `tests/artifacts/screens/vegetation_enhanced_reference/20261016_all_species_competition_v2_final/`.
+It contains all 15 models and 215 EEVEE frames, with matched full-tree views and
+2400px isolated/in-crown branchlet comparisons. Plane, linden and the unchanged
+elm retain the render-validated first-pass results; oak and arrowwood use the
+revised area guard. Across 45 front/side/rear measurements, visible foliage
+retention is at least 98.3779%, with worst local change -1.5566 percentage points.
+All saved-source geometry audits pass, including exact surviving leaf/twig
+subsets, major wood, prototypes, opposite pairs and species-specific crown rules.
+The gallery authenticates ten supplied species examples. Its 85 image links
+decode and open their originals; HTTP review has no page errors or horizontal
+overflow at 1700px. The 21 focused fan-growth, spray-spacing, elm-balance and
+linden regressions pass. Validation receipt:
+`tests/artifacts/screens/ai556_bake_framework/run-1792193149343-23900-0c6d82d1/summary.json`.
+
 Reference showcase videos must use the selected collection's saved geometry and
 matching accepted mesh-audit hashes. Revision labels come from authenticated model
 metadata, including the v16 balanced crowns. Regeneration uses a fresh ignored
@@ -1479,3 +1628,430 @@ Review all three mature forms in Eevee. The primary specimen includes matched
 root-base cameras, isolated before/after branchlets, and identical in-tree and
 isolated cameras for each branchlet. Preserve prior references and require the
 normal saved-mesh, hash, source-study and render validation gates.
+
+# Silver linden spaced foliage
+
+The v5 foliage pass preserves the accepted v4 conical scaffold and trunk mesh,
+including its UVs. Eight potential staggered attachment positions replace the six dense
+fans and roughly seventy shoots formerly repeated at every foliage group.
+Each accepted spray contains one continuous shoot, four separated laterals and
+at most two short secondary shoots per lateral. All sprays, including their siblings, share
+a sampled clearance check. Crowded candidates are omitted; there is no fixed
+leaf-count target or camera-dependent arrangement.
+
+Alternate leaf nodes follow physical twig length. Curved blades and petioles
+retain coherent local normals with bounded organic rotation. The oriented blade
+spacing proxy rejects crowded positions across the entire tree. The reference
+continues to use actual leaf geometry and installed AI-generated front/back PBR.
+
+Use the registered enhanced-reference foliage phase with
+`foliage-layout=spaced-sprays`, an authenticated v4 `candidate` and matching
+`previous` summary, and a fresh ignored output. Review all three forms in Eevee,
+including front/side/rear/above views and actual branchlets inside and outside
+the crown. Preserve earlier references and the user's layer-study configuration;
+that configuration continues to identify the original model hashes until the
+new reference is accepted and the layer study is explicitly refreshed.
+
+The retained spacing candidate is
+`tests/artifacts/screens/vegetation_enhanced_reference/20261016_linden_spacing_v5c_review`.
+The two preliminary candidates remain preserved; the first was too sparse.
+
+| Form | Previous leaves | Revised leaves |
+| --- | ---: | ---: |
+| mature_01 | 195,682 | 46,761 |
+| mature_02 | 195,934 | 49,932 |
+| mature_03 | 196,245 | 46,502 |
+
+Growth receipt: `tests/artifacts/screens/ai556_bake_framework/run-1792130472712-22360-f464bc15/summary.json`.
+All three retain 345 authenticated structural/root paths and the original trunk
+mesh digest. Tests cover eighteen scaffold seed/form combinations, two spaced
+spray seeds, duplicate attachment rejection, alternate nodes, finite thickness,
+oriented leaf clearance and an off-centre petiole mask. The existing thirty
+growth/leaf-outline regression checks also pass.
+
+All three saved mesh audits pass. The gallery authenticates 29 Eevee frames at
+1200 square and 16 samples, with matched whole-tree and in/out branchlet cameras,
+four crown directions, and species-verified supplied examples. Render receipt:
+`tests/artifacts/screens/ai556_bake_framework/run-1792130961105-24824-2367f8a8/summary.json`.
+Gallery and independent saved-mesh audit receipt:
+`tests/artifacts/screens/ai556_bake_framework/run-1792131188390-28724-04eb05a0/summary.json`.
+
+## American elm conservative leaf cleanup (2026-10-16)
+
+The accepted 15-cluster crown and every structural/fine branch remain fixed.
+The cleanup removes redundant leaves within sprays, rather than thinning by a
+uniform random percentage. Leaf prototypes, retained placements and materials
+remain unchanged. Profile-driven limits apply to future generated elm seeds:
+
+- At most 18% of leaves may be removed overall, and 22% within any spray.
+- Preserve the six coordinate extrema of every spray and all occupied 0.5 m
+  crown cells. These protect reach and regional occupancy, not physical volume.
+- Retain at least 97.5% of approximate blade coverage in eight world-space
+  projections. These constraints use elliptical footprints on a 4 cm grid;
+  they do not prove exact blade nonintersection.
+- Independently compare actual foliage-only Eevee masks at matched front,
+  side and rear cameras for all three forms. Require at least 94% retained
+  rendered foliage coverage in each view before completing the gallery.
+
+The bake framework's `foliage-layout=coverage-cleanup` accepts authenticated
+`enhanced-elm-clustered-v5` inputs and writes `enhanced-elm-clean-foliage-v6`
+into a separate ignored candidate. Previous source blends and user layer-study
+configuration remain intact. Review the same outer branchlet in/out of the
+crown and all three whole trees beside their preserved versions and the correct
+American elm supplied studies.
+
+Retained candidate:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261016_elm_cleanup_v6_review`.
+
+| Form | Previous leaves | Revised leaves | Removed | Rendered foliage area retained, front / side / rear |
+| --- | ---: | ---: | ---: | --- |
+| mature_01 | 73,479 | 63,322 | 13.82% | 94.82% / 94.50% / 94.92% |
+| mature_02 | 76,248 | 65,859 | 13.63% | 94.95% / 94.98% / 94.98% |
+| mature_03 | 73,907 | 63,689 | 13.83% | 94.63% / 94.46% / 94.62% |
+
+The within-spray crowding proxy falls by 45.1–45.5%. All eight approximate
+coverage directions retain at least 97.5%, all occupied 0.5 m cells remain,
+and every spray retains its original coordinate extrema. These proxies differ
+from the independently rendered coverage percentages above. Fifty-five Eevee
+frames at 1200 square and 16 samples cover before/after forms, multiple views,
+foliage masks and the same isolated/in-tree branchlet. Mask passes use one sample.
+
+Baking receipts:
+- Foliage: `tests/artifacts/screens/ai556_bake_framework/run-1792132013191-31688-a59367af/summary.json`.
+- Renders: `tests/artifacts/screens/ai556_bake_framework/run-1792132105038-3124-616fde21/summary.json`.
+
+Validation includes the existing two elm tests (twelve seed/form scaffold cases
+and foliage/branchlet checks) and a deterministic cleanup regression that protects
+isolated blades, per-spray extents and occupied crown cells while removing duplicates.
+
+All three independent saved-mesh audits pass, including unchanged wood/branchlet
+mesh digests and preserved leaf prototype geometry. The gallery verifies every
+source/material hash, all 55 render identities and matched comparison cameras.
+Gallery/audit receipt:
+`tests/artifacts/screens/ai556_bake_framework/run-1792132428524-29000-34f583cb/summary.json`.
+
+## American elm cluster-body balance (2026-10-16)
+
+The user identified sparse upper/side crown regions and an overly diffuse fringe
+in the conservative cleanup. The next foliage pass keeps all accepted wood and
+leaf prototypes, but regenerates connected leaf placements using each branch's
+own crown region. Candidate density is highest through the cluster body and
+falls gradually at distant tips; it is not a hard spherical trim. Spray normals
+blend the tree's outward radial direction with the local cluster and upward light.
+The same oriented exclusion proxy rejects collisions across neighbouring sprays.
+These profile rules also apply to newly generated elm seeds.
+
+Use `foliage-layout=cluster-balance` with authenticated v6 candidate/previous
+sources and separate ignored staging. This writes v7 references. Compare full
+front/side/rear Eevee views with matching foliage-only masks. The first form also
+requires matched before/after close-ups of the left shoulder, upper crown, right
+shoulder and outer fringe. These render at 2400 pixels by default using the shared
+`detail-width` option; each thumbnail links to its original PNG for zooming.
+
+Review collection:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261016_elm_balance_v7_review`.
+
+| Form | Previous leaves | Rebalanced leaves | Rendered foliage area gain, front / side / rear |
+| --- | ---: | ---: | --- |
+| mature_01 | 63,322 | 90,047 | 25.68% / 25.54% / 24.93% |
+| mature_02 | 65,859 | 93,615 | 26.03% / 25.83% / 26.13% |
+| mature_03 | 63,689 | 90,846 | 29.06% / 28.29% / 28.16% |
+
+For the first form, 95.5% of the net additional leaves lie within its branch-owned
+cluster bodies (normalised region distance at most 1.35). The fringe share falls,
+but its absolute leaf count increases; this is a density redistribution rather
+than trimming all leaves outside a single envelope. Visible openings between
+unsupported branches remain. The counts and area gains describe this reference
+pass, not a runtime performance benchmark or physical canopy volume measurement.
+
+All 63 frames use Eevee: whole-tree and branchlet views at 1200 square, four
+matched regional before/after pairs at 2400 square, and matched foliage masks.
+The two new layout tests check rotation-consistent cluster density and spray
+orientation, connected attachments, spacing rejection and reduced fringe density.
+The existing elm tests also pass, covering twelve seed/form scaffold cases.
+
+Baking receipts:
+- First form: `tests/artifacts/screens/ai556_bake_framework/run-1792136810389-29400-6589ab22/summary.json`.
+- Remaining forms: `tests/artifacts/screens/ai556_bake_framework/run-1792137473220-5396-9c4ca529/summary.json`.
+- Renders: `tests/artifacts/screens/ai556_bake_framework/run-1792138237425-22808-4676b2a7/summary.json`.
+
+All three independent saved-mesh audits pass: wood/branchlet mesh hashes and
+leaf prototype geometry are preserved. Gallery validation verifies source hashes,
+matching cameras, regional image resolution and foliage coverage gains.
+Gallery/audit receipt:
+`tests/artifacts/screens/ai556_bake_framework/run-1792138670286-29356-984383e2/summary.json`.
+
+## American elm projected spray spacing (2026-10-16)
+
+The v7 branchlet close-up exposed a limitation in the volumetric exclusion:
+leaves separated slightly in depth could still stack over one another when
+viewed from the shared fan face. The v8 placement rule also compares projected
+blade ellipses across every twig in a fan. `sprayMinimumClearance` controls their
+support-distance threshold (0.94), independently of any showcase camera. Leaves
+remain attached to actual twig nodes; curved prototypes and accepted wood remain
+unchanged. Separate fans may still overlap naturally in projection.
+
+Before rejection, candidates may shift at most 0.85 leaf lengths along the
+existing twig and change direction within the fan. Their final attachment
+positions are stored as leaf origins. The rule offers 48 candidates per leaf; it does not
+translate detached blades or orient leaves toward a particular review camera.
+
+The registered `cluster-balance` foliage pass accepts authenticated v7 inputs and
+preserves them in a separate collection. It records before/after projected fan
+spacing, and saved-mesh audits recompute that spacing from leaf transforms.
+Matched Eevee canopy masks require at least 92% retained visible foliage area
+in each of three directions. Close-ups include the isolated fan before/after
+and the same fan within the tree, rendered at the configured detail width.
+
+### Elm branch-local leaf domes (v9)
+
+The leaf orientation field belongs to each of the fifteen branch-owned crown
+regions, not to the tree origin or a review camera. For region centre `c`, basis
+`B`, radii `r` and the centroid `p` of an attached fan, use the ellipsoid gradient
+`g = B ((Bᵀ (p-c)) / r²)`. Preserve its horizontal components and replace the
+vertical component with `0.18 |g.xy| + 0.48 max(g.z, 0)`. Normalising this vector
+guides the whole fan. Side fans therefore expose the local cluster perimeter in
+all azimuths, upper fans turn toward the sky, and lower fans avoid pointing down.
+The constants are species profile controls, not camera parameters. Existing
+blade curvature and bounded per-leaf rotations remain.
+
+This is an artistic adaptation informed by research, not an elm-specific growth
+simulation. Pałubicki et al., [Self-organizing tree models for image synthesis
+(2009)](https://www.algorithmicbotany.org/papers/selforg.sig2009.small.pdf), model
+local branching together with competition for space/light. Thomas and Winner,
+[A rotated ellipsoidal angle density function (2000)](https://doi.org/10.1016/S0168-1923(99)00089-1),
+discuss ellipsoidal descriptions of measured leaf-angle distributions; they do
+not prescribe a dome around every branch. Planchais and Sinoquet,
+[Foliage determinants of light interception (1998)](https://doi.org/10.1016/S0168-1923(97)00079-8),
+study leaf inclination, within-shoot shading and shoot dispersion at branch and
+shoot scales in beech, supporting separate controls at both scales. The chosen
+side emphasis follows the user's visual requirement and must be reviewed from
+multiple azimuths.
+
+The v8 connected-node relocation and projected fan-clearance checks remain
+active. All wood, branchlets and leaf prototypes are preserved when refilling
+an accepted model. Saved-source audits reconstruct the normal field from the
+architecture, compare it to recorded fan planes and actual leaf transforms,
+and require side-facing fans in all eight azimuth sectors of every region.
+Eevee comparisons retain the matched full-tree, side/rear, branchlet and 2400px
+regional views. Publication still requires at least 92% of v7 foliage coverage
+in each of the three measured views; this measures visible area, not leaf count
+or physical canopy volume.
+
+Reviewed output:
+`tests/artifacts/screens/vegetation_enhanced_reference/20261016_elm_domes_v9_review/index.html#american_elm_balance`.
+All 63 Eevee frames and all three independent saved-mesh audits passed. Wood,
+branchlets and leaf prototypes retain their previous hashes. Every region in
+every model has side-facing fans in all eight azimuth sectors; 87.5–90.6% of
+saved leaf normals have `abs(normal.z) < 0.65`. Within-fan projected spacing has
+zero pairs below the configured proxy threshold, without claiming zero exact
+mesh overlap or zero occlusion between separate fans.
+
+| Form | v7 leaves | v9 leaves | Retained visible foliage, front / side / rear |
+| --- | ---: | ---: | --- |
+| mature_01 | 90,047 | 55,274 | 95.71% / 95.81% / 96.09% |
+| mature_02 | 93,615 | 58,252 | 94.74% / 94.12% / 94.34% |
+| mature_03 | 90,846 | 55,060 | 93.78% / 95.13% / 94.28% |
+
+Fixed diagnostic rectangles in mature_01's matched side-view alpha masks show
+12.79% and 11.85% more foliage in the left/right shoulders, and 12.35% less in
+the crowded centre. Those rectangles do not influence generation. Bounds and
+method are retained in `american_elm/mature_01/side-region-check.json`.
+The browser check returned HTTP 200, no page errors and a working 2400×2400
+branchlet image popup. Seven focused tests cover connected placement, projected
+overlap, rotation/translation invariance, all-side/top directions and sibling
+order independence.
+
+Bake receipts under `tests/artifacts/screens/ai556_bake_framework/`:
+- Build: `run-1792172969786-22132-0881e433`, `run-1792173726175-30384-c470f58b`.
+- Render: `run-1792173436154-28700-6762aca1`, `run-1792174545226-23548-15b7fd6a`;
+  the latter crashed in Blender's tangent calculation after mature_02 and was
+  resumed for mature_03 by `run-1792174675496-22040-31787f18`.
+- Final gallery and saved-model audit: `run-1792174808343-27060-705956ac`.
+
+### Elm fan alignment, competition and fullness correction (v10)
+
+The v9 percentages above measured total alpha area of foliage with wood hidden;
+they must not be interpreted as retained visible crown fullness. A depth-tested
+audit of mature_01 finds side-view visible foliage declining from 60.11% to
+55.75% of the fixed v7 crown envelope, exposed wood increasing from 11.79% to
+15.67%, and the worst of nine crown regions losing 17.76 percentage points.
+The 92% total-area gate did not protect local fullness. This is a correction to
+the earlier interpretation, not a change to the historical observations.
+
+The supporting fan plane in the reviewed isolated branchlet differed from its
+new leaf-normal plane by approximately 80 degrees. v10 therefore turns complete
+twig fans toward their branch-owned dome before placing leaves. A smooth basal
+transition preserves the root attachment and incoming tangent. The accepted
+trunk, structural growth paths and curved leaf prototypes remain unchanged;
+fine-shoot geometry is explicitly revised. No camera enters the growth rule.
+The fan long axis follows a near-horizontal tangent around its local dome.
+A smooth displacement preserves the sampled centre across the fan while allowing
+movement along its growing axis. Both the attachment-only rotation (`v10`) and
+full centroid constraint (`v10b`) were rejected: the first moved foliage down
+and lost 20.6 percentage points locally; the second folded the main shoot back
+and still lost 8.7 points locally. These experiments remain preserved separately.
+The revised rule allows tangential growth rather than forcing the stem to return
+to its old centre. Tests check shared attachments and forward distal progression.
+The intermediate `v10c` restored overall visibility but still lost 6.3 points in
+the lower central cell. A subsequent bounded longitudinal correction (`v10d`)
+compressed usable leaf space, reducing the count to 73,747 and worsening the
+local loss to 11.1 points; that correction was rejected. The next revision keeps
+the forward-growing axis and expands lateral shoot spread by the species profile's
+`fanWidthScale` (1.35), retaining the across-fan centre and all attachments.
+Both rejected experiments remain preserved in their own staging directories.
+
+`v10e` restores visible foliage in all three forms, but mature_02 retains one
+front-view cell at -5.30 percentage points. The `v10f` fill continues the same
+gap-site search for two more passes (four total), retaining every existing
+instance attribute and origin bit-for-bit. It does not move or replace the wood,
+fan normals, existing leaves or prototypes. The registered `cluster-balance`
+foliage phase accepts a verified v10 candidate for this continuation, checking
+its mesh hash and original v7 provenance before writing a fresh collection.
+Future generation uses the same four-pass policy. No review camera influences
+the site search, and the existing projected/3D exclusion thresholds still apply.
+That continuation improved the remaining mature_02 cell to -5.22 points, still
+outside the unchanged five-point limit. `v10g` rebuilds that form with the same
+generic fan-width parameter increased from 1.35 to 1.50, also the new generation
+default. The other two forms retain their verified `v10f` geometry at 1.35.
+The collection therefore records two parameter values, not an identical-profile
+three-seed test. No camera or model identifier enters the growth algorithm.
+
+Subordinate terminal shoots compete with stronger shoots in their own fan.
+Prune a thin shoot only when its direction agrees, its radius is smaller, and
+at least 80% of its sampled distal length duplicates the stronger shoot's
+leaf corridor in both projection and 3D. Keep shoots that reach distinct space.
+After normal spacing, offer attached leaf sites in the largest unoccupied
+intervals of each shoot's two ranks. Bounded smaller leaves can fit remaining
+gaps; the same projected and global 3D clearance checks still apply.
+
+The registered render option `views=visibility` supplies matched front, side
+and rear semantic masks: green foliage, red wood and transparent gaps, with
+normal depth testing and the configured Eevee sample count. Each pair uses the
+fixed convex hull of the previous foliage mask; natural spaces between clusters
+are included explicitly. Report all three fractions and a fixed 3×3 local grid.
+v10 gallery validation requires at least 98% retained visible foliage and no
+local cell losing over five percentage points. This is projected-image evidence,
+not biological leaf area, physiological simulation or an exact overlap proof.
+All historical models remain preserved; the revision is staging only.
+
+The final review collection is
+`tests/artifacts/screens/vegetation_enhanced_reference/20261016_elm_fans_v10g_review/`.
+All nine matched EEVEE views pass the unchanged fullness thresholds. Values below
+are relative visible-foliage gains versus v7, with ordinary wood occlusion; the
+last column is the worst absolute percentage-point change among local cells.
+
+| Form | Leaves | Competing thin shoots pruned | Front / side / rear gain | Worst local change |
+| --- | ---: | ---: | --- | ---: |
+| mature_01 | 96,660 | 2,396 | +19.93% / +18.53% / +19.00% | -2.32 pp |
+| mature_02 | 105,698 | 2,377 | +16.42% / +18.22% / +18.01% | -4.16 pp |
+| mature_03 | 96,559 | 2,384 | +16.17% / +16.70% / +17.70% | -4.11 pp |
+
+The marked mature_01 thin shoot (original path 7279) is pruned against stronger
+path 7278 with a competing fraction of 1.0. The revision retains connected shoots
+that reach distinct space. Fourteen focused tests cover this distinction, shared
+attachments, forward growth, unchanged continuation instances, gap filling and
+the semantic visibility measurement. Full trees render at 1200 pixels; branchlet
+and regional close-ups render at 2400 pixels and link to the original PNGs.
+
+Bake receipts under `tests/artifacts/screens/ai556_bake_framework/`:
+- Initial 1.35 builds: `run-1792180094341-17088-01099609` and
+  `run-1792180888745-21356-ea6efe11`.
+- Four-pass continuation preserving mature_01/mature_03 geometry and existing
+  leaves: `run-1792182522588-2892-d44e954f`.
+- Final mature_02 1.50 build: `run-1792183465357-26164-8e171b06`.
+- Final three-form EEVEE renders: `run-1792184281272-31456-03d27457`.
+- Final saved-model audit and gallery: `run-1792184682259-13016-b5b99de9`;
+  all three geometry audits and 81 render identities pass. The served page
+  returns HTTP 200 and includes linked full-resolution close-ups.
+# Experimental elm growth core v2
+
+The `vegetation/enhanced-reference` leaf exposes `phase=growth` for a single
+`american_elm/mature_01` study. `candidate` and `previous` must authenticate the
+same preserved source. This experiment does not change the default species
+generators or publish reference meshes. It retains the existing lower scaffold
+coordinates, root paths, bark resources, and leaf topology/material assignment/UVs.
+Wood surfaces are regenerated to connect the new hierarchy; exact old wood mesh
+preservation is not claimed.
+
+`growth_v2/` separates the free-space skeleton, finite leafy shoots, leaf placement,
+Blender adapter, saved-geometry audit, and review. The versioned policy controls a
+shared volumetric attraction field, incremental heading changes and forks. There
+are no branch-owned ellipsoid normals, shell projection, post-growth fan rotations,
+or camera-dependent leaf directions. The field is a soft artistic guide with
+competition for space, not a ray-traced light or physiological simulation.
+
+Short shoots inherit their parent tangent and bend gradually. Crowded buds are
+suppressed before their geometry is retained. Alternate leaf nodes carry the
+existing detailed petiole/blade geometry. Coherent local leaf orientation allows
+limited variation; a direction library approximates world-gravity deformation
+while keeping the petiole root fixed. No minimum fixed leaf count is a fullness
+criterion. Spacing proxies do not prove exact mesh nonintersection.
+
+`render` with `views=growth`, `engine=eevee` produces twenty-two authenticated
+frames for the hierarchy revision (nineteen in the initial study): six matched
+old/new views including bare wood, a rear view, an attached branch close-up,
+and the same isolated branch leafy/bare from front, side, above and underneath.
+The gallery permits exactly one specimen only for this explicit study revision.
+It still requires saved-mesh audits, unchanged source hashes, render identities,
+matching comparison cameras and material provenance. It reports the experimental
+status and keeps numerical validity separate from visual acceptance. All images
+are clickable at their original resolution. Other review contracts remain intact.
+
+Tests in `tests/python/test_vegetation_growth_v2.py` exercise bounded heading
+changes, bounded uninterrupted growth, single axillary shoots, thickness for
+downstream reach, attached alternate leaves, taper and gravity deformation with
+a stationary attachment. These do not replace inspecting the full crown and
+individual branches in EEVEE.
+
+
+## Prompt 649: shared V2 architecture in the 2D study
+
+The next architecture review builds on accepted 2D page v8 / graph v7 in
+`tools/bake_vegetation/branching_study/`, now page 9 / graph 8. It covers all five
+species through ordinary numeric presets and shared role/order/height profiles,
+length-based attachment intervals, unequal forks and separate basal canes with
+common root-crown ownership. Downstream-reach sizing from `growth_v2/support.py`
+is retained as a shared principle in `branching_study/support.mjs`. The older
+incremental elm attraction-field experiment is not substituted for the accepted
+whole-axis curves.
+
+The registered `vegetation/branching-study` leaf produces authenticated reference
+comparisons and three seeds per species under
+`tests/artifacts/screens/vegetation_branching_study/649_v2_species_reference_review/final_v3/`.
+See `specs/graphics/vegetation_species_rules.md` → "Prompt 649 implementation and
+visual review" for reference use, source rechecks, validation and observed visual
+mismatches. This remains a schematic 2D branch/root review. It does not change
+approved 3D assets, bark resources, leaf/petiole requirements, saved-mesh gates or
+EEVEE review contracts. Continuous 3D junctions, radial roots, terrain exposure
+and foliage must be established in a later 3D pass; no publication occurred.
+
+## Prompt 650: shared current ramification in 3D
+
+The explicit `vegetation/ramification-3d` leaf now consumes the current all-species
+`branching_study/` generation loop, not the older elm-only `growth_v2` skeleton.
+It reuses `junctions.py::flow_surfaces`, `wood.py::mesh_paths` and the framework's
+isolated Blender/browser runners. Shared local frames, deterministic azimuth,
+actual parent attachments, support sizing and radial roots provide the geometry.
+Its saved-file audit adapts the existing audit approach to the new graph format;
+the enhanced-reference species/policy contracts are not assumed interchangeable.
+
+The stage-only workflow saves fifteen leafless neutral `.blend`/GLB specimens,
+reopens the saved sources, checks graph-to-mesh fidelity and major attachments,
+and renders front, side, opposite obliques, levels, progressive subdivisions,
+subtrees, junctions and below-/above-grade root views with EEVEE. Diagnostic
+meshes remain hidden in the saved source and are excluded from GLB export.
+The leaf rejects publication and overwriting an existing revision. It uses the
+shared Blender configuration and authenticates code, references and outputs.
+
+See `tools/bake_vegetation/ramification3d/README.md` and the prompt-650 section of
+`specs/graphics/vegetation_species_rules.md` for controls, review evidence and
+remaining visual limitations. Existing installed assets, historical experiments,
+leaf/petiole meshes, UVs, bark sources and materials are preserved.
+
+The subsequent `phase=finish` consumes an authenticated neutral shared-grammar
+review. It develops the existing root graph into connected coarse root/collar
+surfaces, retains fine roots and all saved shoot geometry, and embeds retained
+species bark PBR in new Blender/GLB outputs. Its eighteen-view EEVEE review adds
+root side/top views and collar/bark close-ups. This uses existing material assets;
+it does not publish or replace the installed vegetation library.

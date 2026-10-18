@@ -21,14 +21,20 @@ class LeafSpace:
         self.half_axes=np.asarray(half_axes)
 
     def neighbors(self,anchor):
-        key=np.floor(anchor/self.cell).astype(int)
-        return [i for offset in OFFSETS for i in self.grid.get(tuple(key+offset),())]
+        x,y,z=(int(v) for v in np.floor(anchor/self.cell))
+        return [i for dx,dy,dz in OFFSETS for i in self.grid.get((x+dx,y+dy,z+dz),())]
 
     def score(self,anchor,centers,frames,sizes):
         ids=self.neighbors(anchor)
         if not ids:return np.zeros(len(centers)),np.full(len(centers),10.)
-        separation=clearance(centers,frames,sizes,np.asarray([self.centers[i] for i in ids]),np.asarray([self.frames[i] for i in ids]),np.asarray([self.sizes[i] for i in ids]),self.half_axes)
-        return np.sum(np.maximum(0,1.4-separation)**2,axis=1),np.min(separation,axis=1)
+        other_centers=np.asarray([self.centers[i] for i in ids]);other_sizes=np.asarray([self.sizes[i] for i in ids])
+        # Beyond this conservative support bound, every candidate's crowding penalty is exactly zero.
+        reach=np.linalg.norm(centers-anchor,axis=1).max()+1.4*(self.half_axes.max()*(sizes.max()+other_sizes)+.020)
+        keep=np.linalg.norm(other_centers-anchor,axis=1)<=reach
+        if not keep.any():return np.zeros(len(centers)),np.full(len(centers),1.4)
+        other_frames=np.asarray([self.frames[i] for i,k in zip(ids,keep) if k])
+        separation=clearance(centers,frames,sizes,other_centers[keep],other_frames,other_sizes[keep],self.half_axes)
+        return np.sum(np.maximum(0,1.4-separation)**2,axis=1),np.minimum(1.4,np.min(separation,axis=1))
 
     def add(self,center,frame,size):
         self.grid[tuple(np.floor(center/self.cell).astype(int))].append(len(self.centers))

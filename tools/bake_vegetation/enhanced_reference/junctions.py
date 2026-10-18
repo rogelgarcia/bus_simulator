@@ -21,7 +21,7 @@ def flow_surfaces(paths):
     for i,path in enumerate(paths):
         if 'growthRole' not in path and 'shootRole' not in path:result.append(path);continue
         points=path['points'].copy();radii=path['radii'].copy();surface={**path}
-        if i in children:
+        if i in children or path.get('retainedTipExtension'):
             axis=unit(points[-1]-points[-2]);radius=float(radii[-1]);extra=points[-1]+np.array([.20,.45,.70])[:,None]*radius*axis
             points=np.vstack([points,extra]);radii=np.r_[radii,radius*np.array([.86,.55,.08])]
         if path['parent']>=0:
