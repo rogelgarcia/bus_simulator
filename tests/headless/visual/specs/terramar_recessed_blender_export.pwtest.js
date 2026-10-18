@@ -31,7 +31,7 @@ import { bootHarness } from './_harness_visual_helpers.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = String(process.env.EXPORT_TAG ?? 'before').replace(/[^a-z0-9_-]+/gi, '_');
 const BUILDING_ID = 'terramar_recessed';
-const OUT_DIR = path.resolve(__dirname, '../../../artifacts/blender', BUILDING_ID, TAG);
+const OUT_DIR = path.resolve(__dirname, '../../../../blender_inputs/terramar', TAG === 'before' ? 'baseline' : TAG);
 
 async function waitForShowcaseReady(page) {
     await page.waitForFunction(() => {

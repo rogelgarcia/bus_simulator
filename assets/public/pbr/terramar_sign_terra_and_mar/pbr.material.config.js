@@ -16,6 +16,7 @@ export default Object.freeze({
         normal: 'assets/public/pbr/terramar_sign_terra_and_mar/normal_gl.png',
         orm: 'assets/public/pbr/terramar_sign_terra_and_mar/arm.png',
         height: 'assets/public/pbr/terramar_sign_terra_and_mar/height.png',
+        opacity: 'assets/public/pbr/terramar_sign_terra_and_mar/opacity.png',
         variants: Object.freeze({})
     }),
     provenance: Object.freeze({
@@ -38,7 +39,7 @@ export default Object.freeze({
         importedOn: '2026-10-13'
     }),
     normalization: Object.freeze({
-        notes: 'Installed by src/graphics/content3d/buildings/authoring/terramar_recessed/make_terramar_kit_pbr.py as byte-exact copies of the kit (normal_opengl.png -> normal_gl.png, orm.png -> arm.png, height_16bit.png -> height.png). Normal map OpenGL +Y at strength 1. A SINGLE SIGN LINE, not a repeat: clamp the edges and cut out on the base colour alpha at 0.5 (alphaTest 0.5, transparent false). Card 4096x512 px, glyphs x 135..3959, y 43..468. tileMeters is the kit\'s suggested card width (3.2 x 0.4 m, inferred visually, not surveyed; the Terra & Mar rebuild sizes the letters from b8 instead, authoring/terramar_recessed/rebuild). The normal map holds a shallow face bevel (relief range 2.0 mm), not extruded edges: for close views use letter geometry (rebuild/trace_sign.py) with these maps sampled onto it. Not registered in the game catalog (_catalog_index.js) yet.',
+        notes: 'Installed by blender/scripts/terramar/building/make_terramar_kit_pbr.py as byte-exact copies of the kit (normal_opengl.png -> normal_gl.png, orm.png -> arm.png, height_16bit.png -> height.png). Normal map OpenGL +Y at strength 1. A SINGLE SIGN LINE, not a repeat: clamp the edges and cut out on the base colour alpha at 0.5 (alphaTest 0.5, transparent false). Card 4096x512 px, glyphs x 135..3959, y 43..468. tileMeters is the kit\'s suggested card width (3.2 x 0.4 m, inferred visually, not surveyed; the Terra & Mar rebuild sizes the letters from b8 instead, authoring/terramar_recessed/rebuild). The normal map holds a shallow face bevel (relief range 2.0 mm), not extruded edges: for close views use letter geometry (rebuild/trace_sign.py) with these maps sampled onto it. Registered in the game catalog by AI 652 Phase 3; original map bytes preserved.',
         albedoNotes: 'Dark patinated metal as delivered, alpha kept (PNG): glyph mean RGB (69, 57, 44).',
         roughnessIntent: 'arm.png is the kit\'s ORM unchanged: R AO (restrained micro-occlusion only), G roughness (mean 0.52), B metallic (mean 0.82). Factors stay 1: they multiply the maps.'
     })

@@ -1,3 +1,7 @@
+import ai652Material0 from './terramar_continuous_limestone/pbr.material.config.js';
+import ai652Material1 from './terramar_sign_coastal_kitchen/pbr.material.config.js';
+import ai652Material2 from './terramar_sign_terra_and_mar/pbr.material.config.js';
+import ai652Material3 from './bradbury_lettering/pbr.material.config.js';
 import enhancedTreeMaterial14 from './tree_ai_arrowwood_viburnum_leaf_back/pbr.material.config.js';
 import enhancedTreeMaterial13 from './tree_ai_arrowwood_viburnum_leaf_front/pbr.material.config.js';
 import enhancedTreeMaterial12 from './tree_ai_arrowwood_viburnum_bark/pbr.material.config.js';
@@ -90,6 +94,10 @@ import whitewashedBrick from './whitewashed_brick/pbr.material.config.js';
 import wornMossyPlasterwall from './worn_mossy_plasterwall/pbr.material.config.js';
 
 export const PBR_MATERIAL_CATALOG = Object.freeze([
+    ai652Material0,
+    ai652Material1,
+    ai652Material2,
+    ai652Material3,
     enhancedTreeMaterial14,
     enhancedTreeMaterial13,
     enhancedTreeMaterial12,

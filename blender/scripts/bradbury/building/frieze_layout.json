@@ -1,0 +1,14 @@
+{
+  "lettering_span_m": 2.637562331390381,
+  "provenance": {
+    "measured_on": "2026-10-18",
+    "scene": "blender_files/bradbury/parts/bradbury_part_portal.blend",
+    "scene_sha256": "10f740e7b5f59abf32bf2e9d82c44900d10a0f5324f374e5477a27ceb408b7d8",
+    "objects": ["frieze_letters", "frieze_flowers_L", "frieze_flowers_R"],
+    "method": "Recovered the saved texel scale from vertex positions and UV coordinates. The original half-gap formula implies the float32 capital inner edge below.",
+    "inferred_original_capital_inner_x_m": 1.4841811656951904,
+    "original_gap_m": 0.1654,
+    "current_capital_inner_x_m": 1.4417378902435303,
+    "note": "Preserve the existing frieze layout independently of subsequent capital geometry. The generator reads this dimension, never the retained blend. Flower height and placement continue to derive from the lettering span."
+  }
+}

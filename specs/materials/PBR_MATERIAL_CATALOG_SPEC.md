@@ -17,6 +17,15 @@ Canonical files:
 - Catalog collector/index: `assets/public/pbr/_catalog_index.js`
 - Runtime adapter (URL resolution + helpers): `src/graphics/content3d/catalogs/PbrMaterialCatalog.js`
 
+Blender building authoring uses the same index through `blender/scripts/common/material_catalog.py` and its Node
+bridge. Resolve `mapFiles` first, then explicitly declared auxiliary/`allMapFiles` slots; reject unregistered IDs,
+missing maps and paths outside the installed set. Installation through `tools/pbr_material_importer/` precedes
+authoring and preserves source/license metadata. No downloaded-kit or guessed-filename fallback is permitted.
+AI 652 registers the existing Terra & Mar limestone/two signs and Bradbury lettering without re-encoding their
+maps. Both Terra & Mar signs retain an `opacity` slot in `allMapFiles` for geometry tracing; it matches base-color
+alpha exactly. Their existing PNG base colors are retained for byte parity; ordinary format policy still applies
+to new imports. Unknown source URLs/authors/licenses stay explicitly unknown.
+
 Notes:
 - `assets/public/pbr/_manifest.json` is **not** the runtime source of truth. It may still exist for download/probe/asset tooling.
 - Where a branch tracks the catalog (`_catalog_index.js` and the per-material `pbr.material.config.js`, `pbr.material.correction.config.js` and `pbr.landscape.config.json` files), they are ordinary Git content, never Git LFS pointers: `.gitattributes` lifts the `assets/public/**` LFS rule for exactly these paths and keeps their bytes unconverted (`-text`), because landscape appearance provenance records each config by SHA-256. Texture images stay out of Git. `tests/node/unit/pbr_config_storage.test.js` guards this.

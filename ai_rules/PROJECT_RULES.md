@@ -116,9 +116,19 @@ If using resources from downloads/ folder, always copy to the application.
 
 ### Worktree cleanup safety
 
+- New junctions are root-only: never nest them inside a tracked folder, and never put tracked files inside them.
+  The real folder belongs to the main checkout; other worktrees link to it. Existing shared assets with tracked
+  metadata are not migrated by this rule; reorganizing those requires a separate task and backup.
+- `blender_files` and `blender_inputs` join the shared-folder list. Both are ignored real folders in main and root
+  junctions elsewhere. `blender` contains tracked sources and documentation and must contain no junctions.
+  Setup: `node tools/worktree_setup/run.mjs --apply`. One writer per file: a branch rebuild is visible in every
+  worktree. Use scratch `out=` paths or `BLENDER_FILES_ROOT` when a build must not change the shared files.
+
 - NEVER invoke `mcp__codex_app__archive_worktree` (`archive_worktree`) for this project or any of its worktrees. The October 11, 2026 incident deleted shared assets outside the requested checkout during managed-worktree archival. Related report: https://github.com/openai/codex/issues/34702.
 - Do not bypass this prohibition through task/chat archival or UI actions that can delete the checkout, or otherwise trigger managed-worktree deletion. Do not substitute `git worktree remove` (with or without `--force`) or recursive filesystem deletion for the prohibited tool.
 - Worktree junctions/symlinks such as `assets`, `downloads`, `docs`, and `node_modules` refer to shared data. Never traverse these links during cleanup or delete their targets. Being Git-ignored does not make the data disposable or ensure that an archive snapshot preserves it.
+- The same cleanup prohibition applies to `blender_files` and `blender_inputs`; no archival, checkout removal or
+  recursive cleanup may traverse them or remove their real targets.
 - If a request requires worktree removal, leave the checkout intact and explain this project restriction. A separate cleanup procedure must be validated to preserve shared targets before it can be proposed; do not experiment on this project's live worktrees or shared folders.
 - This prohibition remains in force until the user explicitly removes it after a fix has been verified. Do not assume that a newer app version or an archive snapshot makes the operation safe.
 
@@ -131,7 +141,28 @@ If using resources from downloads/ folder, always copy to the application.
 
 ### Blender
 
+- Layout: authoring scripts and script-owned configuration are tracked under `blender/scripts/`, with the overview
+  in `blender/README.md`. `blender/scripts/common/paths.py` defines the Python authoring roots. Generated `.blend`
+  files and their derived caches belong in ignored `blender_files/`; non-game inputs belong in ignored
+  `blender_inputs/`. Screenshots and render evidence remain under `tests/artifacts/screens/`.
+  Never generate new Blender files or non-game inputs under `tests/artifacts/blender/`.
+- Use hero IDs `bradbury` and `terramar` for these folders. Game configuration IDs are mapped in `blender/README.md`.
+  Read game-shipped textures, vegetation and HDRIs from the installed game assets. Catalog installation and
+  provenance must precede use of every building PBR set. Install through `tools/pbr_material_importer/`, retain the
+  source/license record, track `assets/public/pbr/<set>/pbr.material.config.js`, and list it in `_catalog_index.js`.
+  Blender uses `blender/scripts/common/material_catalog.py` for installed map lookup; an absent set or map is an
+  error. Never fall back to a downloaded kit or an extracted folder. Keep any required opacity/mask in the install.
+
 - Prefer headed Blender controlled through MCP so the user can see progress. Before launching or attaching to Blender, check for an existing Blender process, render job, or unsaved interactive session. Use the headed/MCP workflow when Blender is free or when the user confirms that the open session belongs to the current task. Never interrupt, close, attach to, or repurpose an occupied session.
 - Only when the headed Blender session is occupied, fall back to a separate Blender CLI process in background/headless mode (`blender --background ...`) if the work supports non-interactive execution. A headless process does not require Blender MCP or GUI control, but it is safe only when it uses task-specific temporary/output paths, does not overwrite or mutate files open in another instance, and will not materially interfere with an active render through GPU, CPU, memory, or disk contention.
 - Prefer reading a copy of any `.blend` input and writing to new task-specific outputs. Never assume that headless mode is conflict-free merely because it has no visible window.
 - If Blender is occupied and a headless run cannot be isolated safely, do not use Blender. Complete any independent work, then clearly report the blocked Blender-dependent portion, its intended purpose, and what the user must free or finish before the task can be completed.
+
+### Download provenance
+
+- Every downloaded source, including texture kits, models, HDRIs and photos, must have a `source.json` beside it.
+  Record its origin URL or source, author, license, acquisition date and MD5 whenever available. Mark unavailable
+  information as unknown/null with an explanation; never guess authorship or license. This extends the existing
+  CC0 `source.json` practice to all downloads, including non-game sources under `blender_inputs/`.
+- Preserve original provenance while relocating files. A migration receipt must distinguish the original source
+  from the migration date and must not claim an unverified generation commit or license.

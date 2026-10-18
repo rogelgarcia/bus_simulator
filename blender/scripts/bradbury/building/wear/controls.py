@@ -1,0 +1,168 @@
+# The wear layer's controls, as the render scene holds them. One switch, `wear`: off | on | debug, and one strength per
+# feature, `wear_<name>` (1.0 = the feature's calibrated look, 0 = that feature off, anything else scales it), plus any
+# extra control a feature declares in its CONTROLS, `wear_<name>_<control>` (off by default when so declared). apply()
+# sets them all at once on a scene: the scene's custom properties, which every worn material reads (see nodes.py), and
+# the visibility of the scene's wear-only collections:
+#   WEAR_SOURCES        the debug view's source markers, rendered in debug only, one child WEAR_SRC_<name> per
+#                       feature, rendered while that feature is on (a feature at 0 shows neither marks nor sources)
+#   WEAR_GEO_<name>     objects a geometry feature adds or substitutes (chips, worn copies), rendered when that
+#                       feature is on
+#   WEAR_ORIG_<name>    the originals those substitutes replace, rendered when that feature is off
+# build_scene.py calls it when it builds the scene; render_wear.py calls it on a saved scene before a render.
+import json, os
+from . import paths
+
+MODES = {"off": 0.0, "on": 1.0, "debug": 2.0}
+# The weathering-realism group's one switch (AI 605-610): every step of the group reads it in its shader and does
+# nothing at 0. Absent reads 0 too, so a scene built before the group renders exactly as it did; build_scene.py sets it
+# on (1) by default, and render_wear.py realism=off renders any saved scene as it was before AI 605.
+REALISM = "wear_realism"
+
+
+def parse_realism(args, scene=None, default=1.0):
+    """realism=on|off|<0..1> from the args; else the scene's own value (absent: 0, the group off); else `default`."""
+    v = args.get("realism")
+    if v is None:
+        return float(scene.get(REALISM, 0.0)) if scene is not None else float(default)
+    v = v.lower()
+    return 1.0 if v == "on" else 0.0 if v == "off" else float(v)
+
+
+# the group's features that add geometry (worn copies in WEAR_GEO_<name>, originals in WEAR_ORIG_<name>): with the group
+# off their copies hide and the originals show, whatever their strength
+REALISM_GEO = ("upper_chips", "hand_set")
+
+
+def _feature_on(scene, f):
+    on = float(scene.get("wear", 0.0)) > 0.0 and float(scene.get("wear_" + f, 0.0)) > 0.0
+    if f in REALISM_GEO: on = on and float(scene.get(REALISM, 0.0)) > 0.0
+    return on
+
+
+def apply_combos(scene):
+    import bpy
+    for c in bpy.data.collections:
+        if c.library is not None or not c.name.startswith(COMBO): continue
+        want = dict(kv.split("=") for kv in c.name[len(COMBO):].split(","))
+        c.hide_render = not all(_feature_on(scene, f) == (v == "1") for f, v in want.items())
+
+
+def apply_realism(scene, value, log=print):
+    import bpy
+    scene[REALISM] = float(value)
+    for f in REALISM_GEO:
+        on = float(scene.get("wear", 0.0)) > 0.0 and float(scene.get("wear_" + f, 0.0)) > 0.0 and float(value) > 0.0
+        for c in bpy.data.collections:
+            if c.library is not None: continue
+            if c.name == GEO + f: c.hide_render = not on
+            elif c.name == ORIG + f: c.hide_render = on
+    apply_combos(scene)
+    log(f"weathering group (AI 605-610): {'on' if value >= 1.0 else 'off' if value <= 0.0 else value}")
+SOURCES = "WEAR_SOURCES"
+SRC, GEO, ORIG = "WEAR_SRC_", "WEAR_GEO_", "WEAR_ORIG_"
+# An object two geometry features both replace (AI 610's uneven copy of a piece AI 609 also chipped) exists in every
+# combination of their states; each carries wear_combo, e.g. "upper_chips=1,hand_set=0", and is rendered only while
+# every feature it names is on (1) or off (0) as it says. organise() puts each combination in WEAR_COMBO_<combo>.
+COMBO = "WEAR_COMBO_"
+
+
+def read_manifest(path=paths.MANIFEST):
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def defaults(manifest):
+    # every control the built layer has, by its scene property's name less the `wear_`: each feature's strength and
+    # each feature's extra controls (<feature>_<control>)
+    out = {}
+    for f in manifest["features"]:
+        out[f["name"]] = float(f["default_strength"])
+        for k, v in f.get("controls", {}).items(): out[f"{f['name']}_{k}"] = float(v)
+    return out
+
+
+def parse(args, manifest, base=None, mode_default="on"):
+    """(mode, strengths) from key=value args: wear=off|on|debug and wear_<name>=<strength>. Strengths not given keep
+    `base` (a saved scene's own) where it has them, else the manifest's defaults."""
+    mode = args.get("wear", mode_default).lower()
+    assert mode in MODES, f"wear: off | on | debug, not {mode}"
+    st = defaults(manifest)
+    for k in st:
+        if base and k in base: st[k] = float(base[k])
+    for k, v in args.items():
+        if k.startswith("wear_") and k != "wear_stale":
+            name = k[5:]
+            assert name in st, f"no wear control called wear_{name} (have {', '.join('wear_' + k for k in st)})"
+            st[name] = float(v)
+    return mode, st
+
+
+def organise(parent, log=print):
+    """Sort the wear-only objects the scene linked from the worn block into their own child collections of `parent`:
+    source markers (custom property wear_marker), geometry features' objects (wear_geometry) and the originals they
+    replace (named by wear_replaces). Returns the counts."""
+    import bpy
+    objs = list(parent.objects)
+    by_name = {o.name: o for o in objs}
+    def child(name, under=parent):
+        c = next((c for c in bpy.data.collections if c.name == name and c.library is None), None)
+        if c is None:
+            c = bpy.data.collections.new(name); under.children.link(c)
+        return c
+    n_src = n_geo = n_orig = n_combo = 0
+    for o in objs:
+        c = o.get("wear_combo")
+        if c:
+            child(COMBO + c).objects.link(o); parent.objects.unlink(o); n_combo += 1
+    for o in objs:
+        f = o.get("wear_marker")
+        if f:
+            child(SRC + f, under=child(SOURCES)).objects.link(o); parent.objects.unlink(o); n_src += 1
+    for o in objs:
+        f = o.get("wear_geometry")
+        if not f or o.get("wear_combo"): continue
+        child(GEO + f).objects.link(o); parent.objects.unlink(o); n_geo += 1
+        rep = o.get("wear_replaces")
+        if rep and rep in by_name and by_name[rep].name in parent.objects:
+            child(ORIG + f).objects.link(by_name[rep]); parent.objects.unlink(by_name[rep]); n_orig += 1
+    log(f"wear-only objects: {n_src} source marker(s) in {SOURCES}, {n_geo} geometry object(s), {n_orig} original(s) "
+        f"they replace, {n_combo} in combinations of two features")
+    return n_src, n_geo, n_orig
+
+
+def current(scene, manifest):
+    """(mode, strengths) a saved scene holds."""
+    inv = {v: k for k, v in MODES.items()}
+    mode = inv.get(float(scene.get("wear", 0.0)), "off")
+    return mode, {k: float(scene.get("wear_" + k, v)) for k, v in defaults(manifest).items()}
+
+
+def stale(manifest, art=paths.ART):
+    """The source files that changed since the worn block was built from them."""
+    from .geometry import sha256_file
+    out = list(manifest.get("stale_before_layout", []))
+    for k, v in manifest["source"].items():
+        p = os.path.normpath(os.path.join(os.path.dirname(paths.MANIFEST), v["file"]))
+        if not os.path.isfile(p) or sha256_file(p) != v["sha256"]: out.append(k)
+    return out
+
+
+def apply(scene, mode, strengths, log=print):
+    import bpy
+    assert mode in MODES, mode
+    scene["wear"] = MODES[mode]
+    for name, v in strengths.items(): scene["wear_" + name] = float(v)
+    for c in bpy.data.collections:
+        if c.library is not None: continue
+        if c.name == SOURCES:
+            c.hide_render = mode != "debug"
+        elif c.name.startswith(SRC):
+            c.hide_render = not strengths.get(c.name[len(SRC):], 0.0) > 0.0
+        elif c.name.startswith(GEO):
+            f = c.name[len(GEO):]
+            c.hide_render = not (mode != "off" and strengths.get(f, 0.0) > 0.0)
+        elif c.name.startswith(ORIG):
+            f = c.name[len(ORIG):]
+            c.hide_render = mode != "off" and strengths.get(f, 0.0) > 0.0
+    apply_combos(scene)
+    log(f"wear {mode}: " + (", ".join(f"{k} {v:g}" for k, v in strengths.items()) or "no features"))

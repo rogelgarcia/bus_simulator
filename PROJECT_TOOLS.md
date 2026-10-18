@@ -1,5 +1,8 @@
 # Project Tools
 
+- Shared Blender worktree junctions: `node tools/worktree_setup/run.mjs` (plan) or add `--apply` to create missing
+  root junctions. Existing paths are preserved; [workflow](tools/worktree_setup/README.md).
+
 - `vegetation/reference-video`: enhanced reference orbits and moving detail shots through `node tools/bake.mjs`; [workflow](tools/bake_vegetation/turntable/reference_video/README.md).
 
 - Gameplay grass runtime: `node tools/bake.mjs --target materials/grass/gameplay-runtime --publish`.
@@ -49,6 +52,8 @@ individual leaf commands, scoped parameters and recovery, and
 | cityInputs | `tools/bake_lighting/city_inputs/` | Precompute exact slab and receiver ownership plans, validate fresh-game geometry/source parity, optionally publish the reusable CPU cache | `node tools/bake.mjs --target lighting/city-inputs --publish`; see its README |
 | gameplayRecording | `tools/gameplay_recording/` | Decode compressed debug frame recordings, extract replay poses, and analyze repeated hardware replays for frame hitches | `node tools/gameplay_recording/decode.mjs capture.busrec`; `analyze_replay.mjs <artifact-output> <frames.json> [...]`; see its README |
 | bakeFramework | `tools/bake.mjs`, `tools/baking/` | Parameter-free master, shared local Blender configuration, dependency planning, verified checkpoints and progress | `node tools/bake.mjs`; `node tools/bake.mjs --dry-run` |
+| bakeBuildings | `tools/bake_buildings/` | Full hero/city regeneration, Bradbury baseline import and Terra & Mar catalog validation | `node tools/bake.mjs --target buildings/rebuild-all` or `buildings/{bradbury,terramar}/rebuild`; baseline/catalog leaves remain available; fresh candidates, no publication; [workflow](tools/bake_buildings/README.md) |
+| bakeCity | `tools/bake_city/` | Independent context, city and site build from installed game assets | `node tools/bake.mjs --target city/rebuild-all` or `city/standalone-check`; fresh empty root, dependency/reopen validation, no publication; [workflow](tools/bake_city/README.md) |
 | receiverReprocess | `tools/bake_lighting/illumination/reprocess/` | Refilter authenticated sky/bounce samples, including coplanar UV seam correction, through the shared bake framework | See its README for original publication/layout parameters; unchanged source and raw-pass proof required |
 | bakeLighting | `tools/bake_lighting/` | Owns source preparation, shadow/cutout, separate sky occlusion, direct/indirect illumination and consolidation entry points | `node tools/bake_lighting/run.mjs`; see framework README for leaves |
 | streamedShadowDetail | `tools/bake_lighting/shadows/streamed/` | Authenticated native 3x detail pages, bounded city-wide generation, shared guards, recorded-route comparisons and gated publication | `node tools/bake.mjs --target lighting/shadows/streamed/city`; `/prototype` limits coverage; `/review` validates images, cold/warm timings and corruption fallback; `/publish --publish` installs reviewed full-city detail; `/filter-review`, `/parent-control`, `/toggle-review` isolate regressions; `/five-pose-review` captures 15 images and repeated GPU/CPU p1/p99, counters and allocation estimates; see README |
@@ -71,7 +76,7 @@ individual leaf commands, scoped parameters and recovery, and
 | downloadRapierDocs | `tools/download_rapier_docs.sh` | Download Rapier.js 3D API docs into `docs/rapier/` | `bash tools/download_rapier_docs.sh` |
 | start | `tools/start` | Start the mesh fabrication live server on the project-standard port | `./tools/start` |
 | redirectExportDetector | `tools/redirect_export_detector/` | Detect redirect re-export shim modules | `node tools/redirect_export_detector/run.mjs` |
-| pbrMaterialImporter | `tools/pbr_material_importer/` | Import and normalize PBR materials from `downloads/` into local-only `assets/public/pbr/` | `python3 tools/pbr_material_importer/run.py` |
+| pbrMaterialImporter | `tools/pbr_material_importer/` | Import/normalize PBR materials; validate and register provenance for preserved building sets | `python3 tools/pbr_material_importer/run.py`; `building_sets.py` for AI 652 preserved maps/opacity; [workflow](tools/pbr_material_importer/README.md) |
 | assetSync | `tools/asset_sync/` | Replace this worktree `assets/`, `downloads/`, and `docs/` with symlinks to sibling root repo folders under `../../bus_simulator/` | `node tools/asset_sync/run.mjs` |
 | citySpecExporter | `tools/city_spec_exporter/` | Export authoritative JS city specs to JSON under `tests/artifacts/` | `node tools/city_spec_exporter/run.mjs` |
 | staticVisibilityBaker | `tools/static_visibility_baker/` | Bake and validate the `bigcity2` static potential-visibility set | `node tools/static_visibility_baker/run.mjs` |

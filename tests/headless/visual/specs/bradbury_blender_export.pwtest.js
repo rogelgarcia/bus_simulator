@@ -9,16 +9,17 @@
 //
 // Usage:
 //   EXPORT_TAG=before node node_modules/@playwright/test/cli.js test -c tests/headless/visual/visual.config.mjs bradbury_blender_export
-// Output: tests/artifacts/blender/bradbury/<tag>/bradbury_<tag>.glb (+ .json parts manifest)
+// Output: blender_inputs/bradbury/<tag>/ (before uses baseline/). Existing exports are never overwritten.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { expect } from '@playwright/test';
 import { bootHarness } from './_harness_visual_helpers.js';
+import { saveExportSource } from '../../../../blender/scripts/bradbury/building/export_source.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = String(process.env.EXPORT_TAG ?? 'before').replace(/[^a-z0-9_-]+/gi, '_');
-const OUT_DIR = path.resolve(__dirname, '../../../artifacts/blender/bradbury', TAG);
+const OUT_DIR = path.resolve(__dirname, '../../../../blender_inputs/bradbury', TAG === 'before' ? 'baseline' : TAG);
 const BUILDING_ID = String(process.env.BUILDING_ID ?? 'bradbury_block');
 
 async function waitForShowcaseReady(page) {
@@ -34,11 +35,17 @@ async function waitForShowcaseReady(page) {
 
 test('Export: Bradbury Block GLB for Blender', async ({ page }) => {
     test.setTimeout(420_000);
-    await bootHarness(page, { query: '' });
     await fs.mkdir(OUT_DIR, { recursive: true });
-
     const glbPath = path.join(OUT_DIR, `${BUILDING_ID}_${TAG}.glb`);
-    const handle = await fs.open(glbPath, 'w');
+    const manifestPath = path.join(OUT_DIR, `${BUILDING_ID}_${TAG}.json`);
+    for (const file of [glbPath, manifestPath, path.join(OUT_DIR, 'source.json')]) {
+        const exists = await fs.stat(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+        if (exists) throw new Error(`Export already exists; use a new EXPORT_TAG and preserve the old inputs: ${file}`);
+    }
+    const urls = new Set();
+    page.on('requestfinished', request => { if (/^https?:/.test(request.url())) urls.add(request.url()); });
+    await bootHarness(page, { query: '' });
+    const handle = await fs.open(glbPath, 'wx');
     let written = 0;
     await page.exposeFunction('__writeGlbChunk', async (base64) => {
         const buf = Buffer.from(base64, 'base64');
@@ -201,7 +208,10 @@ test('Export: Bradbury Block GLB for Blender', async ({ page }) => {
 
     await handle.close();
     expect(written).toBe(manifest.bytes);
-    await fs.writeFile(path.join(OUT_DIR, `${BUILDING_ID}_${TAG}.json`), JSON.stringify(manifest, null, 2));
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), { flag: 'wx' });
+    await saveExportSource({ root: path.resolve(__dirname, '../../../..'), output: OUT_DIR, urls,
+        origin: new URL(page.url()).origin, files: [glbPath, manifestPath], tag: TAG,
+        buildingId: BUILDING_ID, maxTextureSize: Number(process.env.EXPORT_MAX_TEXTURE ?? 1024) });
     console.log(`GLB: ${glbPath} (${(written / 1e6).toFixed(1)} MB, ${manifest.meshCount} meshes, ${manifest.triangles} tris)`);
     console.log('ROLES: ' + JSON.stringify(manifest.roleCounts));
 });

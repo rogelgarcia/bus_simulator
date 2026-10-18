@@ -334,6 +334,28 @@ inventory, commands and recovery are documented in
 
 ## Ownership
 
+`tools/bake_city` registers `city/standalone-check` and the explicit `city` parent, outside production `all`.
+It hashes city/common source and installed game inputs, builds context/city/site in a fresh root, rejects hero
+dependencies and reopens both blends. Receipts authenticate all three outputs. Existing destinations and
+`--publish` fail; active city/compositions are untouched. Six-view AI 651 render parity remains a separate gate.
+It reuses shared configuration/lifecycle without claiming lighting compiler certification. See
+[`tools/bake_city/README.md`](../../tools/bake_city/README.md).
+
+`tools/bake_buildings` registers the explicit `buildings/bradbury/baseline` authoring leaf and `buildings` parent,
+outside production `all`. It uses the shared `executable` and isolated Blender lifecycle, without claiming lighting
+compiler certification. Its scripts, recipe, expected scene contract, original/fresh GLB and installed texture
+bytes are declared inputs. It saves a new candidate only after structural parity, reopens and validates it, and
+rejects `--publish` and existing destinations. No active baseline, asset store or downstream build is changed.
+See [the building authoring workflow](../../tools/bake_buildings/README.md).
+
+Full authoring regeneration registers explicit `buildings/rebuild-all`, `buildings/bradbury/rebuild`,
+`buildings/terramar/rebuild` and `city/rebuild-all` leaves outside the production/default parent trees. They use
+shared Blender/Python configuration and sequential per-family entrypoints, build in an empty candidate root,
+declare source/export/installed-asset inputs and authenticate every output after reopening all blends. No old
+blend is a build input. City-only regeneration declares no hero inputs. Existing destinations and publication
+are rejected. Structural generation receipts do not grant visual acceptance: the separate AI 651 fixed-view
+comparison remains mandatory. See the layout specification's full-regeneration contract.
+
 `tools/baking` owns configuration, option resolution, graph validation, process
 lifecycle, checkpoints, logs and publication primitives. It does not own lighting
 or material algorithms. `tools/bake_lighting`, `tools/bake_visibility` and

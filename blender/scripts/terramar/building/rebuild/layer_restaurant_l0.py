@@ -1,0 +1,277 @@
+# layer_restaurant_l0.py -- AI 635: the ground-floor restaurant, from plan["interior"]["restaurant_l0"].
+#
+# Run through build.py (layers=restaurant_l0; needs the podium and interior_base layers). Builds
+# RB_INTERIOR/RB_RESTAURANT_L0 under its part root:
+#   RB_RESTAURANT_L0_FURNITURE/rb_restaurant_furn_<n>_<kind>  the tables, slat-back dining chairs and banquettes, one
+#                            object per item: the detailed furniture of furniture_chairs.py and
+#                            furniture_tables_seating.py, placed by layer_roof_furniture.furnish (identical pieces share
+#                            one mesh); and the six bar stools (rb_restaurant_stool_<n>_bar_stool, seat 0.76)
+#   rb_restaurant_bar        the bar against the core's front: a teak counter with a stone top, the back bar (cabinet,
+#                            three shelves with LED strips under them) before the core's teak-panelled front
+#   rb_restaurant_wood_ceiling  the slatted teak ceiling hung over the entrance zone (slats, carrier battens, hangers)
+#   rb_restaurant_pendants   a pendant over every table: cord, dark bronze drum shade, warm glowing diffuser
+#   rb_restaurant_plant_<n>  potted plants (AI 627's pot, the game's viburnum) at the dining bands' ends and by the bar
+#   rb_restaurant_fill_<n>   warm area lights under the ceiling over every zone (dining bands, entrance, bar, banquettes):
+#                            the ambient light, out of camera and reflection rays; the bar's shelves have LED strips
+# The layer checks every footprint against every other and against the core.
+import sys
+from pathlib import Path
+_SCRIPTS = next(p for p in Path(__file__).resolve().parents if (p / "common" / "paths.py").is_file())
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from common import paths as BP
+BP.add_import_paths(__file__)
+import importlib
+import math
+import os
+import sys
+
+import bmesh
+import bpy
+from mathutils import Matrix
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import rb_lib as L  # noqa: E402
+import layer_balcony_plants as BP  # noqa: E402  (pots, prototypes, plain materials)
+import layer_roof_furniture as RF  # noqa: E402  (the detailed furniture's placement and materials, frames)
+import layer_roof_planters as RP  # noqa: E402  (prototypes, instances)
+import soil as S  # noqa: E402  (user fix 23: the pots' soil mound)
+
+for mod in (L, BP, RF, RP, S):
+    importlib.reload(mod)
+
+PARENT = "RB_INTERIOR"
+COLLECTION = "RB_RESTAURANT_L0"
+LAYER = "restaurant_l0"
+LOOKS = {"TM_RB_pendant_metal": ((0.12, 0.085, 0.05), 0.35, 0.8), "TM_RB_bar_top": ((0.70, 0.67, 0.62), 0.30, 0.0)}
+GLOW = ("TM_RB_pendant_glow", (1.0, 0.74, 0.48), 400.0)
+BAR_GLOW = ("TM_RB_bar_glow", (1.0, 0.78, 0.52), 60.0)                 # the LED strips under the back bar's shelves
+PLANT = {"model": "arrowwood_viburnum/mature_02", "height": 1.4, "radius": 0.45, "pot": (0.26, 0.55)}
+CHAIR = "slat"                                                          # the room's dining chairs: slat-back teak
+STOOL = {"size": [0.40, 0.40], "seat_h": 0.76, "cushion": "ecru", "out": 0.35}   # bar stools, 0.35 m before the counter
+
+
+def tags(element, name):
+    return {"rb_layer": LAYER, "rb_element": element, "tm_element": COLLECTION, "tm_role": element, "rb_name": name}
+
+
+def materials():
+    for name, (rgb, rough, metal) in LOOKS.items():
+        mat = BP.plain_material(name, rgb, rough)
+        next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED").inputs["Metallic"].default_value = metal
+    RF.materials()                                                    # the furniture's (and the plain teak / charcoal)
+    for name, rgb, strength in (GLOW, BAR_GLOW):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        nt = mat.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        b = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        b.inputs["Base Color"].default_value = (*rgb, 1.0)
+        b.inputs["Emission Color"].default_value = (*rgb, 1.0)
+        b.inputs["Emission Strength"].default_value = strength
+        nt.links.new(out.inputs["Surface"], b.outputs["BSDF"])
+        mat.diffuse_color = (*rgb, 1.0)
+
+
+def disc(c, r, n=16):
+    return [(c[0] + r * math.cos(2 * math.pi * k / n), c[1] + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
+
+
+def rect(x0, x1, y0, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def back_pieces(bar, z, core, ceiling):
+    """The core's teak-panelled front, and before it a cabinet and three shelves with LED strips under them."""
+    (x0, x1), (b0, b1) = bar["x"], bar["back_y"]
+    out = [L.piece(rect(core["x"][0], core["x"][1], b1, core["y"][0]), [(z, ceiling)], RF.TEAK),      # teak-panelled wall
+           L.piece(rect(x0, x1, b0, b1), [(z, z + 0.9)], RF.TEAK)]                                     # back cabinet
+    for h in (1.3, 1.65, 2.0):                                                                          # back shelves,
+        out.append(L.piece(rect(x0 + 0.2, x1 - 0.2, b0 + 0.1, b1), [(z + h, z + h + 0.03)], RF.TEAK))
+        out.append(L.piece(rect(x0 + 0.25, x1 - 0.25, b0 + 0.12, b0 + 0.15), [(z + h - 0.009, z + h - 0.001)],
+                           BAR_GLOW[0]))                                                               # a strip under each
+    for sx in (x0 + 0.2, (x0 + x1) / 2, x1 - 0.2):                                                    # shelf uprights
+        out.append(L.piece(rect(sx - 0.02, sx + 0.02, b0 + 0.1, b1), [(z + 0.9, z + bar["back_h"])], RF.TEAK))
+    return out
+
+
+def bar_pieces(bar, z, core, ceiling):
+    """The back bar and the counter before it (teak body, stone top)."""
+    (x0, x1), (c0, c1) = bar["x"], bar["counter_y"]
+    out = back_pieces(bar, z, core, ceiling)
+    out += [L.piece(rect(x0, x1, c0 + 0.03, c1), [(z, z + bar["counter_h"] - 0.05)], RF.TEAK),          # counter body
+            L.piece(rect(x0 - 0.03, x1 + 0.03, c0, c1), [(z + bar["counter_h"] - 0.05, z + bar["counter_h"])], "TM_RB_bar_top")]
+    return out
+
+
+def stools(bar):
+    """The bar stools (furniture_chairs.py's bar_stool) before the counter, facing it (+y)."""
+    c0 = bar["counter_y"][0]
+    return [{"group": "bar", "kind": "bar_stool", "at": [sx, round(c0 - STOOL["out"], 4)], "face": [0.0, 1.0],
+             "size": STOOL["size"], "seat_h": STOOL["seat_h"], "cushion": STOOL["cushion"]} for sx in bar["stool_x"]]
+
+
+def wood_ceiling_pieces(wc, ceiling):
+    (x0, x1), (y0, y1) = wc["x"], wc["y"]
+    zb = wc["z"]
+    sw, st = wc["slat"]
+    out = []
+    n = int((x1 - x0 - sw) // wc["pitch"]) + 1
+    off = (x1 - x0 - sw - (n - 1) * wc["pitch"]) / 2
+    for k in range(n):                                                                                  # slats along y
+        xs = x0 + off + k * wc["pitch"]
+        out.append(L.piece(rect(xs, xs + sw, y0, y1), [(zb - st, zb)], RF.TEAK))
+    battens = [y0 + 0.3, (y0 + y1) / 2, y1 - 0.3]
+    for yb in battens:                                                                                  # carrier battens over them
+        out.append(L.piece(rect(x0, x1, yb - 0.025, yb + 0.025), [(zb, zb + 0.05)], RF.TEAK))
+        for xh in (x0 + 0.3, (x0 + x1) / 2, x1 - 0.3):                                                  # hangers to the ceiling
+            out.append(L.piece(disc((xh, yb), 0.006, 6), [(zb + 0.05, ceiling)], RF.METAL))
+    return out, [x0 + off + k * wc["pitch"] + sw / 2 for k in range(n)]
+
+
+def pendant_pieces(p, cfg, z_floor, slat_x=None):
+    c = list(p["at"])
+    if slat_x is not None and p["top"] < 5.0:                                                           # under the wood ceiling:
+        c[0] = min(slat_x, key=lambda x: abs(x - c[0]))                                                 # hang from a slat
+    zs = z_floor + cfg["drop_to"]
+    sh, sr = cfg["shade_h"], cfg["shade_r"]
+    return [L.piece(disc(c, cfg["cord_r"], 6), [(zs + sh, p["top"])], "TM_RB_pendant_metal"),
+            L.piece(disc(c, sr, 20), [(zs, zs + sh)], "TM_RB_pendant_metal"),
+            L.piece(disc(c, sr - 0.02, 20), [(zs - 0.012, zs)], GLOW[0])]
+
+
+def fill_lights(coll, rl, prefix, tagger):
+    """Warm area lights under the ceiling over every zone (rl["fills"]): the room's ambient light. They face down (and, with
+    up_w_per_m2, a second set faces up to wash the ceiling) and stay out of camera and reflection rays, so only their
+    light shows (the pendants are the visible sources)."""
+    f = rl["config"]["fill"]
+    made = []
+    for i, r in enumerate(rl["fills"]):
+        name = f"{prefix}_{i + 1}"
+        data = bpy.data.lights.get(name) or bpy.data.lights.new(name, "AREA")
+        data.shape, data.size, data.size_y = "RECTANGLE", r["w"], r["d"]
+        data.color, data.energy = f["rgb"], f["w_per_m2"] * r["w"] * r["d"]
+        ob = bpy.data.objects.new(name, data)
+        coll.objects.link(ob)
+        ob.location = (r["c"][0], r["c"][1], r["top"] - f["below"])
+        ob.rotation_euler = (0.0, 0.0, r["angle"])
+        ob.visible_camera = ob.visible_glossy = ob.visible_transmission = False
+        for k, v in tagger("light", name).items():
+            ob[k] = v
+        made.append(ob)
+        if f.get("up_w_per_m2"):                                      # a ceiling wash: the same rectangle facing up
+            name = f"{prefix}_up_{i + 1}"
+            data = bpy.data.lights.get(name) or bpy.data.lights.new(name, "AREA")
+            data.shape, data.size, data.size_y = "RECTANGLE", r["w"], r["d"]
+            data.color, data.energy = f["rgb"], f["up_w_per_m2"] * r["w"] * r["d"]
+            ob = bpy.data.objects.new(name, data)
+            coll.objects.link(ob)
+            ob.location = (r["c"][0], r["c"][1], r["top"] - f["up_below"])
+            ob.rotation_euler = (math.pi, 0.0, r["angle"])
+            ob.visible_camera = ob.visible_glossy = ob.visible_transmission = False
+            for k, v in tagger("light", name).items():
+                ob[k] = v
+            made.append(ob)
+    return made
+
+
+def potted_plants(coll, rl, prefix, tagger):
+    """AI 627's charcoal pots (one object; their soil a mound since user fix 23) with the game's viburnum in each, on
+    the mound (layer_roof_planters.instances)."""
+    bm = bmesh.new()
+    slots = [f"TM_RB_pot_{c}" for c in BP.POT_RGB] + ["TM_RB_soil"]
+    r_pot, h_pot = PLANT["pot"]
+    for p in rl["plants"]:
+        BP.pot(bm, slots, p["at"], p["z"], r_pot, h_pot, "charcoal")
+    made = [L.finish(f"{prefix}_pots", coll, bm, slots, tagger("pot", f"{prefix}_pots"), smooth_deg=40.0)]
+    S.mound_pots(made[0])                                              # user fix 23: the soil's mound (RP re-seats)
+    protos = {PLANT["model"]: RP.prototype(PLANT["model"])}
+    BP.exclude(BP.PROTOTYPES)
+    for i, p in enumerate(rl["plants"]):
+        spec = {"model": PLANT["model"], "at": p["at"], "z": p["z"] + h_pot - 0.05, "height": PLANT["height"],
+                "radius": PLANT["radius"], "rot_deg": (i * 137.5) % 360.0, "kind": "shrub"}
+        for ob, _, _ in RP.instances(coll, spec, protos, f"{prefix}_plant_{i + 1}"):
+            for k, v in tagger("plant", ob.name).items():
+                ob[k] = v
+            made.append(ob)
+    return made
+
+
+def furniture(coll, rl, prefix, tagger, chair):
+    """Every item as its own object (layer_roof_furniture.furnish), each on its own floor (terrace items carry their own
+    z); the room's dining chairs all of the `chair` variant. Returns (objects, stats)."""
+    items = [dict(it, variant=chair) if it["kind"] == "dining_chair" else it for it in rl["items"]]
+    return RF.furnish(coll, items, prefix, tagger, rl["z"])
+
+
+def report(rl, made, fills, problems, collection, furn):
+    kinds = {}
+    for it in rl["items"]:
+        kinds[it["kind"]] = kinds.get(it["kind"], 0) + 1
+    return {"collection": collection, "objects": len(made), "kinds": kinds, "furniture_objects": furn["objects"],
+            "furniture_meshes": furn["meshes"], "tris_placed": furn["tris_placed"], "tris_stored": furn["tris_stored"],
+            "pendants": len(rl["pendants"]),
+            "plants": len(rl["plants"]), "skipped_sets": len(rl["skipped_sets"]), "fill_lights": len(fills),
+            "fill_watts": round(sum(o.data.energy for o in fills)), "footprint_problems": len(problems),
+            "problems": problems[:10], "names": [o.name for o in made]}
+
+
+def poly_overlap(a, b):
+    for shape in (a, b):
+        for i in range(len(shape)):
+            (ax, ay), (bx, by) = shape[i], shape[(i + 1) % len(shape)]
+            nx, ny = by - ay, ax - bx
+            pa = [nx * x + ny * y for x, y in a]
+            pb = [nx * x + ny * y for x, y in b]
+            if max(pa) <= min(pb) + 1e-6 or max(pb) <= min(pa) + 1e-6:
+                return False
+    return True
+
+
+def checks(rl):
+    polys = [(f"{it['group']}:{it['kind']}#{i}", RF.corners(it)) for i, it in enumerate(rl["items"])]
+    problems = []
+    for i in range(len(polys)):
+        for j in range(i + 1, len(polys)):
+            if poly_overlap(polys[i][1], polys[j][1]):
+                problems.append(f"{polys[i][0]} overlaps {polys[j][0]}")
+    c = rl["core"]
+    m = rl["config"]["core_clear"]
+    core = rect(c["x"][0], c["x"][1], c["y"][0], c["y"][1])
+    for name, poly in polys:
+        if "banquettes" in name:
+            continue                                                  # the banquettes stand against the core
+        grown = rect(c["x"][0] - m, c["x"][1] + m, c["y"][0] - m, c["y"][1] + m)
+        if poly_overlap(poly, grown):
+            problems.append(f"{name} within {m} m of the core")
+    del core
+    return problems
+
+
+def build(plan):
+    root = L.ensure_collection(L.ROOT)
+    coll = L.ensure_collection(COLLECTION, L.ensure_collection(PARENT, root))
+    RF.clear(coll)
+    materials()
+    BP.prop_materials()
+    rl = plan["interior"]["restaurant_l0"]
+    z = rl["z"]
+    furn = L.ensure_collection(f"{COLLECTION}_FURNITURE", coll)
+    made, st = furniture(furn, rl, "rb_restaurant_furn", tags, CHAIR)
+    obs, st_stools = RF.furnish(furn, stools(rl["bar"]), "rb_restaurant_stool", tags, z)
+    made += obs
+    st = {k: st[k] + st_stools[k] for k in ("objects", "meshes", "tris_placed", "tris_stored")}
+    made.append(L.pieces("rb_restaurant_bar", coll, bar_pieces(rl["bar"], z, rl["core"], rl["ceiling"]), tags("bar", "bar")))
+    wood, slat_x = wood_ceiling_pieces(rl["config"]["wood_ceiling"], rl["ceiling"])
+    made.append(L.pieces("rb_restaurant_wood_ceiling", coll, wood, tags("ceiling", "wood_ceiling")))
+    pend = [q for p in rl["pendants"] for q in pendant_pieces(p, rl["config"]["pendant"], z, slat_x)]
+    made.append(L.pieces("rb_restaurant_pendants", coll, pend, tags("light", "pendants")))
+    fills = fill_lights(coll, rl, "rb_restaurant_fill", tags)
+    made += potted_plants(coll, rl, "rb_restaurant", tags)
+    problems = checks(rl)
+    for p in problems[:20]:
+        print("WARNING restaurant:", p)
+    return report(rl, made, fills, problems, COLLECTION, st)

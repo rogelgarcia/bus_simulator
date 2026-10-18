@@ -4,7 +4,20 @@
 
 - Backups: every backup goes under `C:\Users\rogel\Projects\bus_simulator_backups\<YYYY-MM-DD>_<topic>\` with a `MANIFEST.md`, taken before moving, renaming, relinking or deleting untracked data, and never modified or deleted by an agent. See `ai_rules/PROJECT_RULES.md` → "Backups".
 
+- Blender layout: tracked authoring sources and their configuration live in `blender/scripts/`; see `blender/README.md`.
+  Generated Blender files belong in `blender_files/`, non-game inputs in `blender_inputs/`, and rendered evidence in
+  `tests/artifacts/screens/`. Never generate new files under `tests/artifacts/blender/`.
+- New shared junctions stand only at the repository root, contain no tracked files, and point to real folders in
+  the main checkout. `blender_files/` and `blender_inputs/` are shared and gitignored; `blender/` has no junctions.
+  Use `tools/worktree_setup/run.mjs` for setup. One writer per shared file; branch experiments use scratch outputs.
+- Download provenance: record origin/source URL, author, license, date and MD5 whenever available in a `source.json`
+  beside every downloaded texture kit, model, HDRI, photo or other source. Record unknown fields explicitly;
+  never infer a license. See `ai_rules/PROJECT_RULES.md` → "Download provenance".
+
 - Offline baking: use `node tools/bake.mjs` and the hierarchy documented in `tools/baking/README.md` and `specs/tools/bake_framework.md`. New bake processes must register a domain/leaf there, reuse the shared gitignored `tools/baking/blender.local.json` configuration, and preserve existing validation/publication gates. Do not add another standalone machine-specific bake command.
+- Building PBR: install each set through `tools/pbr_material_importer/`, retain provenance, and register its tracked
+  `pbr.material.config.js` in `assets/public/pbr/_catalog_index.js` before use. Blender consumers resolve maps through
+  `blender/scripts/common/material_catalog.py`; missing catalog entries/maps fail instead of reading kit folders.
 
 - Follow `ai_rules/PROJECT_RULES.md` (and root-level `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
 - Generated screenshots and debug captures go under `tests/artifacts/screens/<topic>/` (gitignored). Never save them into `screens/` or next to source code (see `ai_rules/TESTING_RULES.md`, "Artifacts and baselines").

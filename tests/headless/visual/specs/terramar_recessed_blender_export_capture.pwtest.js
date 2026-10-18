@@ -22,7 +22,7 @@ import { bootHarness } from './_harness_visual_helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../../../..');
-const RIG_PATH = path.join(ROOT, 'src/graphics/content3d/buildings/authoring/terramar_recessed/rig_cameras.json');
+const RIG_PATH = path.join(ROOT, 'blender/scripts/terramar/building/rig_cameras.json');
 const OUT_DIR = path.join(ROOT, 'tests/artifacts/screens/buildings/terramar_recessed/blender_export/game');
 const BUILDING_ID = 'terramar_recessed';
 const COMMON_OPTIONS = Object.freeze({

@@ -17,6 +17,8 @@
 /tools/baking/blender.local.json
 /downloads
 /docs
+/blender_files/
+/blender_inputs/
 
 *.zip
 
