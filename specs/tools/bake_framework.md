@@ -1,5 +1,81 @@
 # Offline bake framework
 
+The explicit `vegetation/ramification-3d` leaf extends the current shared 2D
+grammar through spatial geometry hooks. It uses the shared Blender/browser
+configuration and isolated runtime, stages under prompt 650, and prohibits
+publication. Fresh revision directories retain partial as well as completed
+runs. Reference hashes, graph audits, reopened saved-mesh checks, complete view
+sets, output hashes and input stability gate completion. Species/seed subsets
+are pilots; only all five species with seeds 1/31/92 constitute a complete review.
+Its `phase=review` can refresh junction diagnostics from an authenticated prior
+revision into a fresh directory. Current graphs and render settings must match;
+saved visible geometry, GLB and unaffected renders must retain their identities.
+It repeats saved-mesh audits and all output gates. `phase=preview` remains a
+graph-only incomplete diagnostic and never substitutes for the EEVEE collection.
+See `tools/bake_vegetation/ramification3d/README.md`.
+
+Its `phase=finish` authenticates a neutral source revision, preserves the exact
+saved shoot geometry and shared graph, develops continuous root collars and
+buttresses, and applies the retained species bark PBR. Inputs include the species
+maps and metadata; copies and packed/embedded images are authenticated. The
+EEVEE set adds root side/top, collar and bark details. New builds also require
+neutral front/side/oblique trunk close-ups: seventeen views before finishing,
+twenty-one after. Historical fourteen/eighteen-view receipts retain their
+original contract. Saved UVs,
+material connections, fine-root fidelity, root/cane overlap, and embedded GLB
+PBR textures/tangents gate completion. Export triangulation is applied only to
+temporary evaluated geometry. Existing neutral outputs and installed assets
+remain untouched; this phase cannot publish.
+
+Root-integration finishes set `rootIntegrationReview` and require 26 views,
+including matched PBR and neutral front/side/oblique collars. Historical finishes
+retain their previous view contracts. Root geometry blends and the shared basal
+bark field preserve shoot geometry, complete fine-root paths and original PBR
+map bytes. The saved receipt records collar fitting and UV coverage.
+
+`phase=export` authenticates a complete finished source and copies it into a fresh
+revision, repairing only GLB tangent directions. It checks all final tangent
+frames and independently compares every unrelated GLB byte, including handedness,
+with the source. Blender files, render pixels, graphs, material files and other
+receipts retain their identities. Only tangent receipts and manifest provenance
+are updated. No Blender process or repeated render is required. Both finishing
+and export repair now record and validate complete tangent-frame audits; earlier
+receipts remain readable with their historical contract.
+
+The explicit `vegetation/branching-study` leaf stages a standalone 2D architecture
+experiment under `tests/artifacts/screens/vegetation_branching_study/`. It uses
+Node and Chromium through the shared `browserExecutable`, validates three seeds
+for each species, reference/graph/output hashes and image decoding, and refuses
+publication. PNG/JPEG collections retain their original bytes, extensions, source
+paths and hashes; `complete-studies` adds the second matching reference set.
+Completed output directories are preserved. It is excluded from production
+parents and does not modify 3D models.
+The ramification review additionally exports matched-frame branching stages and
+phase/tier metadata from the same graphs; it uses the existing browser and hash
+gates. See `tools/bake_vegetation/branching_study/README.md`.
+
+The registered enhanced-reference leaf accepts `foliage-layout=shoot-competition`
+for all five species. It subsets complete redundant shoots and their leaves from
+authenticated candidates, preserving surviving geometry and source files.
+`views=competition` adds the matched EEVEE/semantic-mask review; the existing
+gallery phase retains species geometry, source identity, material provenance and
+complete-view validation before publishing a review. No new machine command or
+model publication bypass is introduced.
+
+The enhanced-reference foliage phase also accepts `foliage-layout=spaced-sprays`
+for authenticated v4 silver lindens. It preserves the accepted trunk and checks
+the regenerated structural graph, then replaces crowded shoots and leaves in a
+separate ignored output. Existing source-stability, saved-mesh, complete gallery,
+shared Blender configuration and material-only publication gates remain required.
+
+`vegetation/layer-study` prepares four calibrated orthographic Eevee views of
+each of the fifteen reviewed enhanced models and a browser editor for three
+concentric canopy zones. It authenticates saved geometry provenance and source
+hashes, validates PNG dimensions/hashes and sample data, and preserves input
+stability. `render` and `page` use shared configuration and isolated ignored
+staging; publication is rejected. See the
+[canopy layer contract](../graphics/vegetation_canopy_layers.md).
+
 The enhanced-reference `leaf-wireframe` diagnostic accepts an authenticated saved
 candidate and a separate ignored output. It reuses the registered Blender backend,
 source stability checks and publication restrictions; it produces topology renders
@@ -22,11 +98,14 @@ Only the existing materials phase can publish. The review adds matched side/rear
 views, foliage-hidden structure and individual leaf geometry comparisons.
 
 `vegetation/reference-video` is an artifact-only presentation leaf for the three
-enhanced London plane references. It authenticates source model hashes and leaf
+enhanced references of a selected species. It authenticates source model hashes and leaf
 counts, retains instanced geometry/PBR, and renders full orbits followed by trunk
 and matched in-tree/isolated branchlet camera arcs. Its prepare/proof/render/assemble
 phases use the shared headless backend. Output identities prevent stale clip reuse;
 assembly validates source identities, SHA256, resolution and frame counts.
+Labels use the species recipe. When no saved branchlet pose exists, the renderer
+selects an outward-facing mid-crown fan from the authenticated shoot graph and
+frames the same original wood faces and leaf instances in both detail views.
 See [the reference video workflow](../../tools/bake_vegetation/turntable/reference_video/README.md).
 
 `vegetation/enhanced-reference` includes a staging-only `posture` phase for
@@ -827,3 +906,27 @@ For v13 references, `views=poses` adds fixed side/rear angles for each mature
 specimen and an in-canopy/isolated branchlet pair. The gallery verifies complete
 pose groups and matched cameras and lighting, then embeds them in the same page.
 This is a render-only extension; model files and reference hashes stay intact.
+
+The enhanced-reference foliage phase also supports `foliage-layout=coverage-cleanup`
+for conservative American elm leaf thinning. It requires an authenticated
+clustered-elm candidate and matching previous summary, preserves wood and leaf
+prototype geometry, and validates eight directional footprint budgets plus
+three actual before/after foliage-mask renders per form. It shares the existing
+Blender configuration, ignored staging and source-preservation gates.
+
+Enhanced reference `foliage-layout=cluster-balance` rebuilds elm leaf placements
+inside preserved branch-owned regions. It shares `vegetation/enhanced-reference`
+configuration and all existing preservation/publication gates. `detail-width`
+(default 2400, range 640–3840) controls region close-ups independently of the
+full-tree width. The balanced-elm gallery requires at least 2048 pixels for those
+clickable before/after details.
+# Single-specimen vegetation growth study
+
+The existing `vegetation/enhanced-reference` leaf accepts `phase=growth` and
+`views=growth` for the experimental elm core. It reuses the shared Blender
+configuration, requires an authenticated candidate/previous collection, and
+writes a fresh ignored enhanced-reference directory. The normal `render`,
+`inspect`, `gallery` and `validate` phases remain responsible for saved geometry,
+render/source identity and material checks. This study's explicit gallery contract
+allows one elm and requires twenty-two frames for the hierarchy revision; it
+does not relax other species collection contracts or allow model publication.

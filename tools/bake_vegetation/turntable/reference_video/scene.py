@@ -22,8 +22,8 @@ def prepare(options,model,shot):
             fork=Vector(model['metadata']['dimensions']['growth']['firstFork'])
             pose={'target':[fork.x,fork.y,fork.z*.85],'offset':[9,-16,3.5],'span':fork.z*2.25}
         else:
-            pair,_=isolate(Path(model['file']).parent,objects)
-            pose=model['metadata']['sprayStudyPose']
+            pair,derived_pose=isolate(Path(model['file']).parent,objects)
+            pose=model['metadata'].get('sprayStudyPose',derived_pose)
             for obj in pair:
                 obj.parent=root
                 obj.hide_render=shot!='branch_out'
@@ -54,8 +54,8 @@ def prepare(options,model,shot):
         obj=bpy.data.objects.new(name,mesh);scene.collection.objects.link(obj);obj.parent=camera;obj.visible_shadow=False;mesh.materials.append(panel)
     ink=material('Presentation ivory',(.70,.78,.65),emission=True)
     muted=material('Presentation sage',(.42,.55,.44),emission=True)
-    title(camera,'London plane',(-horizontal*.455,vertical*.442,-.5),vertical*.055,ink)
-    title(camera,'Platanus × acerifolia',(-horizontal*.455,vertical*.372,-.5),vertical*.031,muted)
+    title(camera,model['commonName'],(-horizontal*.455,vertical*.442,-.5),vertical*.055,ink)
+    title(camera,model['scientific'],(-horizontal*.455,vertical*.372,-.5),vertical*.031,muted)
     title(camera,f'MATURE {variant[-2:]} / 03',(horizontal*.275,vertical*.442,-.5),vertical*.030,ink)
     title(camera,SHOTS[shot],(-horizontal*.455,-vertical*.435,-.5),vertical*.025,ink)
     revision=model['revision'].rsplit('-',1)[-1]

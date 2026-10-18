@@ -41,6 +41,15 @@ def demand_radii(paths,base,exponent):
 
 
 def scaffold(p,variant):
+    if p['growth'].get('architecture')=='arching-elm':
+        from elm_growth import scaffold as elm_scaffold
+        return elm_scaffold(p,variant)
+    if p['growth'].get('architecture')=='open-oak':
+        from oak_growth import scaffold as oak_scaffold
+        return oak_scaffold(p,variant)
+    if p['growth'].get('architecture')=='conical-linden':
+        from linden_growth import scaffold as linden_scaffold
+        return linden_scaffold(p,variant)
     if p['growth'].get('architecture')=='distributed-plane':
         from plane_growth import scaffold as plane_scaffold
         return plane_scaffold(p,variant)

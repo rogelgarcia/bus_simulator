@@ -35,4 +35,8 @@ def transfer(obj,source,voxel):
     if not np.isfinite(result).all():raise RuntimeError('Non-finite bark coordinates')
     target.uv_layers.active.data.foreach_set('uv',result.astype(np.float32).ravel())
     obj['barkProjectionMaximumDistance']=float(distances.max());obj['barkProjectionMethod']='Nearest source triangle per face; affine UV projection'
+    if 'forkChartNeighbours' in source:
+        from fork_charts import alternate_chart
+        alternate_chart(obj,source,valid,face_triangles,distances,centers,loop_points,counts,corners,chart,voxel)
+        obj['barkProjectionMethod']='Adjacent branch-aligned charts; local surface-distance blend'
     print('[Enhanced] Projected bark charts: '+str(len(centers))+' faces, maximum distance '+str(float(distances.max())),flush=True)

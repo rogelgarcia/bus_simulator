@@ -11,6 +11,9 @@ if o['phase']=='materials':
 elif o['phase']=='build':
     from model import build
     build(o)
+elif o['phase']=='growth':
+    from growth_v2.model import build
+    build(o)
 elif o['phase']=='render':
     from render import render
     render(o)
@@ -25,7 +28,19 @@ elif o['phase']=='inspect':
     inspect(o)
 
 elif o['phase']=='foliage':
-    if o['foliage-layout']=='open':
+    if o['foliage-layout']=='shoot-competition':
+        from competition_reference import rebuild
+        rebuild(o)
+    elif o['foliage-layout']=='cluster-balance':
+        from elm_balance_reference import rebuild
+        rebuild(o)
+    elif o['foliage-layout']=='coverage-cleanup':
+        from elm_cleanup_reference import rebuild
+        rebuild(o)
+    elif o['foliage-layout']=='spaced-sprays':
+        from linden_reference import rebuild
+        rebuild(o)
+    elif o['foliage-layout']=='open':
         from open_leaf_reference import open_leaf_reference
         open_leaf_reference(o)
     elif o['foliage-layout']=='organic':

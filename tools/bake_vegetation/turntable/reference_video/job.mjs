@@ -21,7 +21,7 @@ export const referenceVideoJob={
     blender:true,always:true,configurationPaths:['executable'],codePaths:[TOOL],
     defaults:{phase:'proof',source:'',species:'london_plane',width:1920,fps:24,seconds:8,'detail-seconds':4,samples:16,threads:2,
         output:'tests/artifacts/screens/vegetation_reference_video/review'},
-    options:{phase:bakeOption.choice(['prepare','proof','render','assemble']),source:String,species:bakeOption.choice(['london_plane']),
+    options:{phase:bakeOption.choice(['prepare','proof','render','assemble']),source:String,species:bakeOption.choice(['london_plane','silver_linden','northern_red_oak','american_elm','arrowwood_viburnum']),
         width:integer(640,3840),fps:integer(12,60),seconds:integer(4,30),'detail-seconds':integer(3,20),samples:bakeOption.samples,threads:integer(1,8),output:String},
     async inputs(ctx){
         const {index,models}=await sources(ctx);
@@ -46,9 +46,9 @@ export const referenceVideoJob={
             const file=path.resolve(source,row.file),metadata=await json(path.join(path.dirname(file),'model.json'));
             if((await hashFile(file)).sha256!==row.sha256||metadata.sha256!==row.sha256||metadata.id!==row.id||metadata.leafCount!==row.leafCount)throw new Error('Model identity mismatch: '+row.id);
             const audit=manifest.geometryAudit?.models.find(r=>r.id===row.id);
-            if(!metadata.sprayStudyPose||metadata.revision!==row.revision||!manifest.geometryAudit?.passed||!audit?.passed||audit.sha256!==row.sha256)throw new Error('Missing matching accepted geometry/branchlet provenance');
+            if(metadata.revision!==row.revision||!manifest.geometryAudit?.passed||!audit?.passed||audit.sha256!==row.sha256)throw new Error('Missing matching accepted geometry provenance');
             if(!/-v\d+$/.test(row.revision))throw new Error('Missing enhanced reference revision label');
-            prepared.push({...row,file,metadata,species:ctx.options.species,scientific:recipe.species,enhanced:true});
+            prepared.push({...row,file,metadata,species:ctx.options.species,scientific:recipe.species,commonName:recipe.commonName,enhanced:true});
         }
         const code=await Promise.all((await this.inputs(ctx)).map(async file=>({file:path.relative(ctx.root,file),...await hashFile(file)})));
         const settings={...ctx.options};delete settings.phase;delete settings.output;
@@ -63,7 +63,7 @@ export const referenceVideoJob={
         if(options.phase==='assemble'){
             const video=await json(path.join(output,'video.json'));
             const revisions=[...new Set(prepared.map(r=>r.revision.split('-').at(-1)))].join(', ');
-            await writeFile(path.join(output,'index.html'),`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>London plane — reference showcase</title><style>body{background:#182c26;color:#edf2e5;font:18px system-ui;margin:32px auto;max-width:1400px;padding:0 24px}video{width:100%;background:#000}a{color:#cedecc}li{margin:8px 0}</style><h1>London plane · three mature references</h1><p>Full rotations, then trunk and branchlet close-ups. Saved ${revisions} geometry and PBR materials. Eevee · ${video.width}×${video.height} · ${video.fps} fps · ${video.durationSeconds} seconds.</p><video controls preload="metadata" poster="mature_01/full/proof_0001.png" src="showcase.mp4"></video><ol>${video.chapters.map(r=>`<li><a href="showcase.mp4#t=${r.startSeconds}">${r.variant.replace('_',' ')} · ${r.shot.replaceAll('_',' ')} · ${r.startSeconds}s</a></li>`).join('')}</ol></html>`);
+            await writeFile(path.join(output,'index.html'),`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${recipe.commonName} — reference showcase</title><style>body{background:#182c26;color:#edf2e5;font:18px system-ui;margin:32px auto;max-width:1400px;padding:0 24px}video{width:100%;background:#000}a{color:#cedecc}li{margin:8px 0}</style><h1>${recipe.commonName} · three mature references</h1><p>Full rotations, then trunk and branchlet close-ups. Saved ${revisions} geometry and PBR materials. Eevee · ${video.width}×${video.height} · ${video.fps} fps · ${video.durationSeconds} seconds.</p><video controls preload="metadata" poster="mature_01/full/proof_0001.png" src="showcase.mp4"></video><ol>${video.chapters.map(r=>`<li><a href="showcase.mp4#t=${r.startSeconds}">${r.variant.replace('_',' ')} · ${r.shot.replaceAll('_',' ')} · ${r.startSeconds}s</a></li>`).join('')}</ol></html>`);
         }
         await ctx.assertInputsStable();
         return {state:'validated',directory:output,files:await listFiles(output)};

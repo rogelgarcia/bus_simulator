@@ -63,9 +63,12 @@ def material(o,species,role):
     if role=='bark':
         height=texture(nodes,folder,'height_16bit.png');bump=nodes.new('ShaderNodeBump');bump.inputs['Distance'].default_value=meta['displacement']['scale_m'];bump.inputs['Strength'].default_value=.32
         links.new(height.outputs['Color'],bump.inputs['Height']);links.new(normalmap.outputs['Normal'],bump.inputs['Normal']);links.new(bump.outputs[0],bsdf.inputs['Normal'])
-        if 'growth' in p:
+        if 'growth' in p and not p.get('forkShoulders',False):
             from bark_flow import fork_material
             fork_material(mat,p['barkTileMetres'])
+        if p.get('forkShoulders',False):
+            from fork_charts import material_charts
+            material_charts(mat)
     else:
         attribute=nodes.new('ShaderNodeAttribute');attribute.attribute_name='leaf_tint';attribute.attribute_type='INSTANCER';multiply=nodes.new('ShaderNodeMixRGB');multiply.blend_type='MULTIPLY';multiply.inputs[0].default_value=1
         links.new(color.outputs['Color'],multiply.inputs[1]);links.new(attribute.outputs['Color'],multiply.inputs[2]);links.new(multiply.outputs[0],bsdf.inputs['Base Color'])

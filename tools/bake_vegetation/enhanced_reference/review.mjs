@@ -12,6 +12,14 @@ import {hashFile,writeJson} from '../../baking/Files.mjs';
 
 import {validatePresentation,presentationContent} from './presentation_review.mjs';
 import {validateSpatial,spatialContent} from './spatial_review.mjs';
+import {validateVolume,volumeContent} from './volume_review.mjs';
+import {photographicStudies} from './source_studies.mjs';
+import {validateShrub,shrubContent} from './shrub_review.mjs';
+import {validateLinden,lindenContent} from './linden_review.mjs';
+import {validateCleanup,cleanupContent} from './elm_cleanup_review.mjs';
+import {validateBalance,balanceContent} from './elm_balance_review.mjs';
+import {validateCompetition,galleryCompetition} from './competition_review.mjs';
+import {validateGrowth,galleryGrowth} from './growth_v2/review.mjs';
 
 const json=async f=>JSON.parse(await readFile(f,'utf8'));
 
@@ -42,6 +50,7 @@ export async function validate(o){
     for(const id of o.models){
 
         const dir=path.join(o.output,id),row=await json(path.join(dir,'model.json'));
+        if(row.revision==='enhanced-elm-filled-fans-v10'||row.shootCompetitionReview)row.canopyVisibility=await json(path.join(dir,'visibility.json'));
 
         if((await hashFile(path.join(dir,'enhanced.blend'))).sha256!==row.sha256)throw Error('Enhanced identity differs '+id);
 
@@ -53,9 +62,13 @@ export async function validate(o){
 
         const prior=o.previousSources.find(r=>r.id===id),proof=await json(path.join(dir,'renders.json')),expected=id.endsWith('mature_01')?((prior?11:6)+(row.dimensions.growth?.architecture==='distributed-plane'?2:0)+(prior&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?2:0)+(['enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?(prior?2:1):0)+(row.revision==='enhanced-plane-foliage-v9'?1:row.revision==='enhanced-plane-spaced-foliage-v11'?2:['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(row.revision)?16:0)):row.revision==='enhanced-plane-posture-v10'?(prior?4:2):1;
 
-        if(proof.renders.length!==expected+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
+        if(row.growthCore)validateGrowth(row,proof.renders);
+        else if(row.shootCompetitionReview)validateCompetition(row,proof.renders);
+        else if(proof.renders.length!==expected+validateBalance(row,proof.renders)+validateCleanup(row,proof.renders)+validateLinden(row,proof.renders,!!prior)+validateShrub(row,proof.renders,!!prior)+(['enhanced-linden-spaced-sprays-v5','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(row.revision)&&id.endsWith('mature_01')?1:0)+validatePresentation(proof.renders,id.endsWith('mature_01'))+validateSpatial(proof.renders,id.endsWith('mature_01'),row.revision)+validateVolume(proof.renders,id.endsWith('mature_01'),row.revision))throw Error('Incomplete views '+id);
 
         for(const image of proof.renders){
+
+            if((image.engine??'CYCLES')!==(o.engine==='eevee'?'BLENDER_EEVEE':'CYCLES'))throw Error('Wrong render engine '+image.file);
 
             if(image.sourceSha256!==(image.state==='current'?source.sha256:image.state==='previous'?prior?.sha256:row.sha256))throw Error('Stale render '+id);
 
@@ -113,21 +126,29 @@ function panel(species,state,view,p){
 
     const image=['current','previous','enhanced'].includes(state)?`<a href="${species}/mature_01/${state}_${view}.png"><img class="image" src="${species}/mature_01/${state}_${view}.png"></a>`:sourceImage(species,state,view,p);
 
-    const note=view.startsWith('wood_')?'Actual revised model · foliage hidden · neutral clay':['current','previous','enhanced'].includes(state)?(view==='leaves'?'CPU Cycles · outer shoots with soft fill':'Headless Blender · CPU Cycles'):view==='full'?'Original supplied AI image':'Crop of supplied AI image · original detail resolution';
+    const renderer=p.reviewEngine==='eevee'?'Eevee':'CPU Cycles';
+    const note=view.startsWith('wood_')?'Actual revised model · foliage hidden · neutral clay':['current','previous','enhanced'].includes(state)?(view==='leaves'?`${renderer} · outer shoots with soft fill`:`Headless Blender · ${renderer}`):view==='full'?'Original supplied AI image':'Crop of supplied AI image · original detail resolution';
 
-    return `<div class="cell"><div class="caption"><h3>${view.startsWith('wood_')?'Revised wood structure':state==='previous'?'Previous enhanced reference':names[state]}</h3><div class="muted">${note}</div></div>${image}</div>`;
+    const identity=state==='photographic'?`<br>${escape(p.name)} · ${escape(p.botanical)}<br>Source: ${species}_01.png`:'';
+    return `<div class="cell"><div class="caption"><h3>${view.startsWith('wood_')?'Revised wood structure':state==='previous'?'Previous enhanced reference':names[state]}</h3><div class="muted">${note}${identity}</div></div>${image}</div>`;
 
 }
 
 function group(species,view,p){return `<h2 class="viewlabel">${views[view]}</h2><div class="grid">${Object.keys(names).map(state=>panel(species,state,view,p)).join('')}</div>`;}
 
-function variantPanel(row){return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${row.crownLobes} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
+function variantPanel(row){const groups=row.foliageBalance?.fanGrowth?.fans??row.crowding?.branchletSpacing?.acceptedSprays??row.crownLobes;return `<div class="cell"><div class="caption"><a href="${row.file}">${row.id.split('/')[1]} · Blender source</a><br>${row.leafCount.toLocaleString()} leaves · ${groups} crown groups</div><img class="image" src="${row.id}/enhanced_full.png"></div>`;}
 
 const page=(title,content,sheet=false)=>`<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title><link rel="stylesheet" href="review.css"></head><body><main class="${sheet?'sheet':''}">${content}</main></body></html>`;
 
 export async function gallery(o){
 
     const summary=await validate(o),profiles=Object.fromEntries(Object.entries(o.profiles).filter(([s])=>summary.models.some(r=>r.id.startsWith(s+'/'))));
+
+    if(summary.models.every(m=>m.growthCore))return galleryGrowth(o,summary);
+
+    if(summary.models.every(m=>m.shootCompetitionReview))return galleryCompetition(o,summary);
+
+    for(const p of Object.values(profiles))p.reviewEngine=o.engine;
 
     for(const s of Object.keys(profiles))if([1,2,3].some(v=>!summary.models.some(r=>r.id===`${s}/mature_0${v}`)))throw Error('Gallery requires three mature forms per selected species');
 
@@ -153,13 +174,16 @@ export async function gallery(o){
 
     }
 
+    const verifiedStudies=await photographicStudies(o.source,o.profiles);
+    await writeJson(path.join(o.output,'study-species-audit.json'),{passed:true,records:verifiedStudies});
     for(const [s,p] of Object.entries(profiles))for(const style of ['illustrative','photographic']){
 
-        const source=style==='illustrative'?path.join(o.source,p.study):path.join(o.source,'mature_trees_showroom/mature_trees_showroom',s,s+'_01.png');
+        const verified=verifiedStudies.find(r=>r.species===s&&r.variant===1);
+        const source=style==='illustrative'?path.join(o.source,p.study):verified.source;
 
         const target=path.join(o.output,'references',`${s}_${style}.${style==='illustrative'?'jpg':'png'}`);await copyFile(source,target);
 
-        const hash=await hashFile(source);if((await hashFile(target)).sha256!==hash.sha256)throw Error('Reference copy differs');sources.push({species:s,style,source,...hash});
+        const hash=await hashFile(source);if((await hashFile(target)).sha256!==hash.sha256)throw Error('Reference copy differs');sources.push({...(style==='photographic'?verified:{}),species:s,style,source,...hash});
 
     }
 
@@ -176,12 +200,55 @@ export async function gallery(o){
     for(const [s,p] of Object.entries(profiles)){
 
         const title=`${p.name} · ${p.botanical}`,all=Object.keys(views).map(v=>group(s,v,p)).join('');
+        const linden=lindenContent(summary,s,title);
+        const balance=balanceContent(summary,s,title);
+        if(balance){
+            const file=s+'_balance.html';await writeFile(path.join(o.output,file),page(title+' - canopy balance',balance,true));sheets.push({file,png:s+'_balance.png'});
+            index+=`<section id="${s}_balance">${balance}</section>`;
+        }
+        const cleanup=cleanupContent(summary,s,title);
+        if(cleanup){
+            const file=s+'_cleanup.html';await writeFile(path.join(o.output,file),page(title+' - conservative foliage cleanup',cleanup,true));sheets.push({file,png:s+'_cleanup.png'});
+            index+=`<section id="${s}_cleanup">${cleanup}</section>`;
+        }
+        if(linden){
+            const file=s+'_spacing.html';await writeFile(path.join(o.output,file),page(title+' - foliage spacing',linden,true));sheets.push({file,png:s+'_spacing.png'});
+            index+=`<section id="${s}_spacing">${linden}</section>`;
+        }
+        if(s==='american_elm'&&o['crown-study']){
+            const source=o['crown-study'],hash=await hashFile(source),file='references/american_elm_crown_photo.png';
+            await copyFile(source,path.join(o.output,file));
+            if((await hashFile(path.join(o.output,file))).sha256!==hash.sha256)throw Error('Crown photograph copy differs');
+            sources.push({species:s,style:'user-supplied crown photograph',source,...hash});
+            const clustered=summary.models.some(m=>['enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(m.revision));
+            const description=clustered?'Separate branch-supported foliage clusters form the rounded crown. Side masses have recessed gaps; open branchlets use staggered laterals and spacing within each spray.':'Shorter outer sprays occupy an irregular rounded volume; fine ends arch downward.';
+            const content=`<h1>${title} - ${clustered?'branch-supported crown clusters':'rounded crown'}</h1><p>${description} The photograph is the original user-supplied crown reference.</p><div class="variants">${panel(s,'previous','full',p)}${panel(s,'enhanced','full',p)}<div class="cell"><div class="caption"><h3>Supplied crown photograph</h3>Original user-supplied image · unchanged</div><img class="image" src="${file}"></div></div>`;
+            const sheet=s+'_crown_photo.html';await writeFile(path.join(o.output,sheet),page(title+' - crown photograph',content,true));sheets.push({file:sheet,png:s+'_crown_photo.png'});
+            index+=`<section id="${s}_crown_photo">${content}</section>`;
+        }
+        const second=verifiedStudies.find(r=>r.species===s&&r.variant===2),secondFile=`references/${s}_photographic_02.png`;
+        await copyFile(second.source,path.join(o.output,secondFile));
+        if((await hashFile(path.join(o.output,secondFile))).sha256!==second.sha256)throw Error('Second study copy differs');
+        sources.push(second);
+        const studies=`<h1>${title} - supplied examples</h1><p>Species metadata and image hashes verified for both photorealistic specimens. These are original supplied AI images.</p><div class="variants">${panel(s,'illustrative','full',p)}${panel(s,'photographic','full',p)}<div class="cell"><div class="caption"><h3>Supplied photorealistic study 2</h3>${escape(p.name)} · ${escape(p.botanical)}<br>Source: ${s}_02.png</div><img class="image" src="${secondFile}"></div></div>`;
+        const studiesFile=s+'_examples.html';await writeFile(path.join(o.output,studiesFile),page(title+' - supplied examples',studies,true));sheets.push({file:studiesFile,png:s+'_examples.png'});
+        index+=`<section id="${s}_examples">${studies}</section>`;
 
         const filename=s+'_comparison.html';await writeFile(path.join(o.output,filename),page(title,`<h1>${title}</h1>${all}`,true));sheets.push({file:filename,png:s+'_comparison.png'});
 
         for(const v of Object.keys(views)){const file=`${s}_${v}.html`;await writeFile(path.join(o.output,file),page(title,`<h1>${title} — ${views[v]}</h1>${group(s,v,p)}`,true));sheets.push({file,png:`${s}_${v}.png`});}
 
         const presentation=presentationContent(summary,s,title);
+        const shrub=shrubContent(summary,s,title);
+        if(shrub){
+            const file=s+'_spacing.html';await writeFile(path.join(o.output,file),page(title+' - leaf spacing and roots',shrub,true));sheets.push({file,png:s+'_spacing.png'});
+            index+=`<section id="${s}_spacing">${shrub}</section>`;
+        }
+        const volume=volumeContent(summary,s,title);
+        if(volume){
+            const file=s+'_volume.html';await writeFile(path.join(o.output,file),page(title+' — crown depth',volume,true));sheets.push({file,png:s+'_volume.png'});
+            index+=`<section id="${s}_volume"><p><a href="${file}">Front, side, rear and elevated crown views</a></p>${volume}</section>`;
+        }
         const spatial=spatialContent(summary,s);
         if(spatial){
             const file=s+'_spatial.html';await writeFile(path.join(o.output,file),page(title+' — spatial growth',spatial,true));sheets.push({file,png:s+'_spatial.png'});
@@ -195,7 +262,21 @@ export async function gallery(o){
 
         }
 
+        if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-linden-spaced-sprays-v5','enhanced-elm-arching-growth-v2','enhanced-elm-spreading-v3','enhanced-elm-rounded-v4','enhanced-elm-clustered-v5','enhanced-elm-clean-foliage-v6','enhanced-elm-balanced-foliage-v7','enhanced-elm-spaced-fans-v8','enhanced-elm-branch-domes-v9','enhanced-elm-filled-fans-v10'].includes(r.revision))){
+            const details=['leaves','shoot'].map(view=>summary.renders.find(r=>r.id===s+'/mature_01'&&r.state==='enhanced'&&r.view===view));
+            if(details.some(r=>!r)||JSON.stringify(details[0].camera)!==JSON.stringify(details[1].camera))throw Error('Branchlet detail cameras differ');
+            const content=`<h1>${title} - connected foliage</h1><p>The same saved branchlet appears inside the crown and isolated. Leaves alternate at spaced nodes, with curved blades, short petioles and bounded rotations.</p><div class="pair">${details.map((r,i)=>`<div class="cell"><div class="caption"><h3>${i?'Isolated branchlet':'Inside the crown'}</h3>Same saved geometry and camera</div><a href="${r.file}"><img class="image" src="${r.file}"></a></div>`).join('')}</div>`;
+            const file=s+'_branchlet.html';await writeFile(path.join(o.output,file),page(title+' - branchlet detail',content,true));sheets.push({file,png:s+'_branchlet.png'});
+            index+=`<section id="${s}_branchlet">${content}</section>`;
+        }
+
         let changes='';
+
+        if(summary.models.some(r=>r.id===s+'/mature_01'&&r.revision==='enhanced-oak-fork-shoulders-v8')){
+            const content=`<h1>${title} — fork shoulders</h1><p>Parent/child size and opening angle shape each connection. Bark follows the limbs and blends across the union. Saved-file checks confirm unchanged growth, fine branches and leaves.</p><div class="grid">${panel(s,'previous','trunk',p)}${panel(s,'enhanced','trunk',p)}${panel(s,'enhanced','wood_fork',p)}${panel(s,'photographic','trunk',p)}</div>`;
+            const file=s+'_forks.html';await writeFile(path.join(o.output,file),page(title+' — fork shoulders',content,true));sheets.push({file,png:s+'_forks.png'});
+            index+=`<section id="${s}_forks"><p><a href="${file}">Fork comparison</a></p>${content}</section>`;
+        }
 
         if(summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))){
 
@@ -273,9 +354,9 @@ export async function gallery(o){
 
             const hierarchy=summary.models.some(r=>r.id===s+'/mature_01'&&['enhanced-plane-hierarchical-v6','enhanced-plane-apical-v7','enhanced-plane-branchlets-v8','enhanced-plane-foliage-v9','enhanced-plane-spaced-foliage-v11','enhanced-plane-dome-foliage-v12','enhanced-plane-organic-foliage-v13','enhanced-plane-spatial-growth-v14','enhanced-plane-open-leaves-v15','enhanced-plane-balanced-crown-v16'].includes(r.revision))&&o.previous;
 
-            const old=view=>hierarchy?`<div class="cell"><div class="caption"><h3>Previous enhanced reference</h3>${view==='bare'?'Foliage hidden':'Root crown'} · CPU Cycles</div><img class="image" src="${s}/mature_01/previous_${view}.png"></div>`:'';
+            const old=view=>hierarchy?`<div class="cell"><div class="caption"><h3>Previous enhanced reference</h3>${view==='bare'?'Foliage hidden':'Root crown'} · ${o.engine==='eevee'?'Eevee':'CPU Cycles'}</div><img class="image" src="${s}/mature_01/previous_${view}.png"></div>`:'';
 
-            const study=`<div class="${hierarchy?'variants':'pair'}">${old('bare')}<div class="cell"><div class="caption"><h3>Revised reference — foliage hidden</h3>Actual wood and fine branchlets · CPU Cycles</div><img class="image" src="${s}/mature_01/enhanced_bare.png"></div><div class="cell"><div class="caption"><h3>Supplied leafless study</h3>Original user-supplied image</div><img class="image" src="references/london_plane_leafless.png"></div>${old('roots')}<div class="cell"><div class="caption"><h3>Revised root crown</h3>Continuous basal flutes and grounded roots</div><img class="image" src="${s}/mature_01/enhanced_roots.png"></div><div class="cell"><div class="caption"><h3>Supplied root detail</h3>Crop of the same original image</div><svg class="image" viewBox="240 835 780 400" preserveAspectRatio="xMidYMid meet"><image href="references/london_plane_leafless.png" width="1254" height="1254"/></svg></div></div>`;
+            const study=`<div class="${hierarchy?'variants':'pair'}">${old('bare')}<div class="cell"><div class="caption"><h3>Revised reference — foliage hidden</h3>Actual wood and fine branchlets · ${o.engine==='eevee'?'Eevee':'CPU Cycles'}</div><img class="image" src="${s}/mature_01/enhanced_bare.png"></div><div class="cell"><div class="caption"><h3>Supplied leafless study</h3>Original user-supplied image</div><img class="image" src="references/london_plane_leafless.png"></div>${old('roots')}<div class="cell"><div class="caption"><h3>Revised root crown</h3>Continuous basal flutes and grounded roots</div><img class="image" src="${s}/mature_01/enhanced_roots.png"></div><div class="cell"><div class="caption"><h3>Supplied root detail</h3>Crop of the same original image</div><svg class="image" viewBox="240 835 780 400" preserveAspectRatio="xMidYMid meet"><image href="references/london_plane_leafless.png" width="1254" height="1254"/></svg></div></div>`;
 
             const file=s+'_wood_study.html';await writeFile(path.join(o.output,file),page(title+' — wood and roots',`<h1>${title} — wood and roots</h1>${study}`,true));sheets.push({file,png:s+'_wood_study.png'});
 

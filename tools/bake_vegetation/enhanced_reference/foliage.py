@@ -22,7 +22,7 @@ def legacy_branchlets(p,paths,lobes,rng):
             end=center+axis*radius*rng.uniform(.65,1.25);attachment=rng.uniform(.35,.98);anchor=point(support,attachment)
             if lobe.get('spray'):
                 across=unit(np.cross(lobe['axis'],lobe['side']));side=lobe['side']*math.cos(angle)+across*math.sin(angle)
-                end=center+lobe['axis']*radius*rng.uniform(.45,1.15)+side*radius*rng.uniform(.24,.65)
+                end=center+lobe['axis']*radius*rng.uniform(.45,1.15)+side*radius*rng.uniform(.24,.65)*p.get('foliageFanSpread',1.)
             parent_radius=float(np.interp(attachment,np.linspace(0,1,len(support['radii'])),support['radii']))
             fan=curve(anchor,end,min(parent_radius*.64,radius*.024),rng,lobe['parent'],steps=7,tip=.0015)
             paths.append(fan);fans.append(len(paths)-1)
@@ -32,7 +32,7 @@ def legacy_branchlets(p,paths,lobes,rng):
             angle=rng.uniform(0,math.tau);out=unit(np.array([math.cos(angle),math.sin(angle),rng.uniform(-.28,.8)]))
             away=unit(start-center);direction=unit(out*.50+away*.42+lobe['axis']*.12+[0,0,.18])
             if lobe.get('spray'):
-                direction=unit(unit(fan['points'][-1]-fan['points'][0])*.75+lobe['axis']*.35+out*.25+[0,0,.06])
+                direction=unit(unit(fan['points'][-1]-fan['points'][0])*.75+lobe['axis']*.35+out*p.get('foliageShootSpread',.25)+[0,0,.06])
             stations=max(4,round(p['stations']*rng.uniform(.70,1.25)));length=p['leafLength']*stations*rng.uniform(.39,.66)
             length=min(length,radius*1.3);end=start+direction*length;end[2]-=p['droop']*length*.48
             parent_radius=float(np.interp(t,np.linspace(0,1,len(fan['radii'])),fan['radii']))
@@ -42,6 +42,56 @@ def legacy_branchlets(p,paths,lobes,rng):
 
 
 def grow(p,paths,lobes,rng):
+    leaves,shoots,crowding=grow_foliage(p,paths,lobes,rng)
+    if 'competitionPruned' in crowding.get('branchletSpacing',{}):return leaves,shoots,crowding
+    from shoot_competition import clean_growth
+    return clean_growth(p,paths,shoots,leaves,crowding)
+
+
+def grow_foliage(p,paths,lobes,rng):
+    if p.get('growth',{}).get('architecture')=='conical-linden':
+        from linden_shoots import branchlets
+        from spray_foliage import place_leaves
+        shoots,spacing=branchlets(p,paths,lobes,rng)
+        leaves,crowding=place_leaves(p,paths,shoots,rng)
+        crowding['branchletSpacing']=spacing
+        return leaves,shoots,crowding
+    if 'pairedFoliage' in p:
+        from shrub_foliage import place_leaves
+        shoots=list(legacy_branchlets(p,paths,lobes,rng))
+        leaves,crowding=place_leaves(p,paths,shoots,rng)
+        return leaves,shoots,crowding
+    if p.get('growth',{}).get('architecture')=='arching-elm':
+        from spray_foliage import place_leaves
+        from shoot_growth import spaced_branchlets
+        shoots,spacing=spaced_branchlets(p,paths,lobes,rng)
+        layout=None
+        if 'foliageBalance' in p:
+            from elm_leaf_distribution import ClusterLeafLayout
+            layout=ClusterLeafLayout(list({l['cluster']:l['clusterRegion'] for l in lobes}.values()),p['foliageBalance'])
+            if 'shootCompetition' in p:
+                from elm_fan_growth import orient_fans
+                from shoot_competition import redundant_shoots,compact_graph
+                fan_growth=orient_fans(paths,shoots,layout)
+                removed,proof=redundant_shoots(paths,shoots,p['leafLength'],p['shootCompetition'])
+                graph=compact_graph({'paths':paths,'shoots':shoots},removed);paths[:]=graph['paths'];shoots=graph['shoots']
+                spacing={'sourceLayout':spacing,'fanGrowth':fan_growth,'competitionPruned':len(removed),'fineShootPaths':len(shoots),
+                         'measurementScope':'Source clearance predates fan rotation; not a post-rotation twig collision guarantee'}
+        leaves,crowding=place_leaves(p,paths,shoots,rng,layout)
+        if layout:crowding['foliageBalance']={'policy':p['foliageBalance'],'after':layout.distribution([l['bladeCenter'] for l in leaves],[paths[l['shoot']]['crownCluster'] for l in leaves]),'clusters':len(layout.regions)}
+        if 'foliageCleanup' in p and not layout:
+            from foliage_cleanup import clean_foliage
+            keep,proof=clean_foliage([l['bladeCenter'] for l in leaves],[l['matrix'] for l in leaves],[l['group'] for l in leaves],p['foliageCleanup'])
+            leaves=[l for l,k in zip(leaves,keep) if k];crowding['foliageCleanup']=proof
+        crowding['branchletSpacing']=spacing
+        return leaves,shoots,crowding
+    if p.get('growth',{}).get('architecture')=='open-oak':
+        from oak_foliage import place_leaves
+        from oak_branchlets import oak_branchlets
+        shoots,branchlet_spacing=oak_branchlets(p,paths,lobes,rng)
+        leaves,crowding=place_leaves(p,paths,shoots,rng)
+        crowding['branchletSpacing']=branchlet_spacing
+        return leaves,shoots,crowding
     leaves=[];grid=defaultdict(list);cell=p['leafLength']*.46;rejected=0;shoots=[]
     def nearby(center):
         key=np.floor(center/cell).astype(int)
@@ -91,7 +141,7 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
     rowwidth=np.sum(valid,axis=1);blade_rows=np.flatnonzero(rowwidth>np.max(rowwidth)*.17);bladebase=blade_rows.min()/1023
     contour[:,1]=np.maximum(contour[:,1],bladebase);bottom=int(np.argmin(contour[:,1]));contour[bottom]=[base[0],bladebase]
     if detailed_petioles:
-        center,contour,junction,stem_uv=blade_profile(mask,sectors)
+        center,contour,junction,stem_uv=blade_profile(mask,sectors,follow_stem=species=='silver_linden')
         base[0]=junction[0];bladebase=junction[1];bottom=int(np.argmin(contour[:,1]))
     uv=np.vstack([center,*[center+(contour-center)*r/rings for r in range(1,rings+1)]])
     faces=[]
@@ -106,7 +156,11 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
         z=curl*xy[:,1]**2+twist*xy[:,0]*xy[:,1]+rng.uniform(.11,.24)*abs(xy[:,0])
         z+=np.interp(np.clip(xy[:,1],0,1),np.linspace(0,1,7),rng.normal(0,.0035,7))
         if detailed_petioles:
-            shape=form_parameters(form,spread_petioles,flat_blades);xy=(uv-[base[0],bladebase])/(tip-bladebase);xy[:,0]*=shape['width']
+            shape=form_parameters(form,spread_petioles,flat_blades)
+            if species in ['northern_red_oak','american_elm','arrowwood_viburnum','silver_linden']:
+                from spray_foliage import leaf_shape
+                shape=leaf_shape(form,o['profiles'][species].get('bladeShape'))
+            xy=(uv-[base[0],bladebase])/(tip-bladebase);xy[:,0]*=shape['width']
             z=shape['curl']*xy[:,1]**2+shape['twist']*xy[:,0]*xy[:,1]+shape['fold']*abs(xy[:,0])
             if sculpted_blades:z=blade_height(xy,form)
             xy[:,1]+=shape['petiole']
@@ -147,7 +201,8 @@ def templates(o,species,materials,meta,detailed_petioles=False,spread_petioles=F
 
 def instances(model,leaves,forms):
     collection=bpy.data.collections.new(model+' leaf prototypes')
-    for i,mesh in enumerate(forms):collection.objects.link(bpy.data.objects.new(f'{model}_form_{i:02}',mesh))
+    digits=max(2,len(str(len(forms)-1)))
+    for i,mesh in enumerate(forms):collection.objects.link(bpy.data.objects.new(f'{model}_form_{i:0{digits}d}',mesh))
     mesh=bpy.data.meshes.new(model+' leaf origins');mesh.vertices.add(len(leaves));mesh.vertices.foreach_set('co',np.asarray([l['origin'] for l in leaves],np.float32).ravel())
     matrices=np.asarray([l['matrix'] for l in leaves]);scales=np.linalg.norm(matrices,axis=1);rotations=matrices/scales[:,None,:]
     data=[('leaf_form','INT','value',[l['form'] for l in leaves]),('leaf_scale','FLOAT_VECTOR','vector',scales),('leaf_rotation','FLOAT_VECTOR','vector',[tuple(Matrix(m.tolist()).to_euler()) for m in rotations]),('leaf_tint','FLOAT_COLOR','color',[list(l['tint'])+[1] for l in leaves]),('spray_id','INT','value',[l['group'] for l in leaves]),('shoot_id','INT','value',[l['shoot'] for l in leaves]),('node_id','INT','value',[l['node'] for l in leaves])]

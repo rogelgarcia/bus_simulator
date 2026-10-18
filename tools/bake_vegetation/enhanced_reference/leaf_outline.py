@@ -3,15 +3,23 @@ import math
 import numpy as np
 
 
-def blade_profile(mask,sectors=256):
+def blade_profile(mask,sectors=256,follow_stem=False):
     valid=mask>.98;height,width=mask.shape;scale=np.array([width-1,height-1])
-    ys,xs=np.where(valid);axis=int(np.median(xs));rows=[]
+    ys,xs=np.where(valid);axis=int(np.median(xs[ys<ys.min()+6] if follow_stem else xs));rows=[]
+    narrow=follow_stem;threshold=np.max(np.sum(valid,axis=1))*.10
     for y in range(int(ys.min()),int(ys.max())+1):
+        if narrow:
+            columns=np.flatnonzero(valid[y])
+            if not len(columns):raise ValueError('Disconnected petiole mask')
+            axis=int(columns[np.argmin(abs(columns-axis))])
         if not valid[y,axis]:continue
         left=axis;right=axis
         while left>0 and valid[y,left-1]:left-=1
         while right<width-1 and valid[y,right+1]:right+=1
         rows.append((y,left,right))
+        if narrow:
+            narrow=right-left<threshold
+            if narrow:axis=round((left+right)*.5)
     rows=np.asarray(rows);wide=rows[:,2]-rows[:,1]>np.max(np.sum(valid,axis=1))*.10
     junction_y=int(rows[np.flatnonzero(wide)[0],0]);stem=rows[rows[:,0]<junction_y]
     junction=np.array([np.mean(stem[-3:,1:]),junction_y])/scale
