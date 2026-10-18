@@ -50,20 +50,6 @@ import bradburyWallTerracottaBrickTileable from './bradbury_wall_terracotta_bric
 import brickCrosswalk from './brick_crosswalk/pbr.material.config.js';
 import brickWall11 from './brick_wall_11/pbr.material.config.js';
 import brickWall13 from './brick_wall_13/pbr.material.config.js';
-import landscapeLayer0 from './landscape_sandstone_v1/pbr.material.config.js';
-import landscapeLayer1 from './landscape_caprock_v1/pbr.material.config.js';
-import landscapeLayer2 from './landscape_scree_v1/pbr.material.config.js';
-import landscapeLayer3 from './landscape_mud_v1/pbr.material.config.js';
-import landscapeLayer4 from './landscape_dune_sand_v1/pbr.material.config.js';
-import landscapeLayer5 from './landscape_cobble_v1/pbr.material.config.js';
-import landscapeLayer6 from './landscape_shell_grit_v1/pbr.material.config.js';
-import landscapeLayer7 from './landscape_turf_v1/pbr.material.config.js';
-import landscapeLayer8 from './landscape_dry_grass_v1/pbr.material.config.js';
-import landscapeLayer9 from './landscape_moss_v1/pbr.material.config.js';
-import landscapeLayer10 from './landscape_broadleaf_litter_v1/pbr.material.config.js';
-import landscapeLayer11 from './landscape_needle_litter_v1/pbr.material.config.js';
-import landscapeLayer12 from './landscape_lichen_rock_v1/pbr.material.config.js';
-import landscapeLayer13 from './landscape_algae_rock_v1/pbr.material.config.js';
 import bronzeAnodizedPanel from './bronze_anodized_panel/pbr.material.config.js';
 import brownMud from './brown_mud/pbr.material.config.js';
 import brownstone from './brownstone/pbr.material.config.js';
@@ -189,20 +175,6 @@ export const PBR_MATERIAL_CATALOG = Object.freeze([
     dryLitter,
     exteriorWallCladding,
     floorTiles04,
-    landscapeLayer0,
-    landscapeLayer1,
-    landscapeLayer2,
-    landscapeLayer3,
-    landscapeLayer4,
-    landscapeLayer5,
-    landscapeLayer6,
-    landscapeLayer7,
-    landscapeLayer8,
-    landscapeLayer9,
-    landscapeLayer10,
-    landscapeLayer11,
-    landscapeLayer12,
-    landscapeLayer13,
     forestGround06,
     forrestGround01,
     grass001,
