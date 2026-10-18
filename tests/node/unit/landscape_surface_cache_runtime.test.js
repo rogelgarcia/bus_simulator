@@ -7,7 +7,7 @@ import { LANDSCAPE_SURFACE_CACHE_CONTROLLER, fitLandscapeSurfaceCacheCost, lands
     nextLandscapeSurfaceCacheQuota } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheController.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR, landscapeSurfaceCacheNearBand, landscapeSurfaceCacheNearRanges, landscapeSurfaceCacheNearReach, landscapeSurfaceCacheNearWeight,
     selectLandscapeSurfaceCacheNearTiles } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheNearField.js';
-import { indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheInputChange, landscapeSurfaceCachePageInputs, landscapeSurfaceCacheSoilTiers,
+import { indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheInputChange, landscapeSurfaceCachePageInputs, landscapeSurfaceCacheMaterialTiers,
     landscapeSurfaceCacheTierRank } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheInputs.js';
 import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCacheGeometry, landscapeSurfaceCachePageKey, landscapeSurfaceCacheWindowOrigin } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_DEMAND, chooseLandscapeSurfaceCacheCenter, createLandscapeSurfaceCacheTerrainEnvelope, planLandscapeSurfaceCacheDemand } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheDemand.js';
@@ -181,7 +181,7 @@ test('Surface cache invalidation: inputs that only coarsened keep a page, finer 
     assert.ok(landscapeSurfaceCacheTierRank('resolved') > landscapeSurfaceCacheTierRank('2048'));
     assert.ok(landscapeSurfaceCacheTierRank('512') > landscapeSurfaceCacheTierRank('128'));
     assert.ok(landscapeSurfaceCacheTierRank('128') > landscapeSurfaceCacheTierRank('none'));
-    assert.deepEqual(landscapeSurfaceCacheSoilTiers({ tileMeters: 4, resolution: 128, microTileMeters: 0, microResolution: 128 }, .015625), ['128', 'none']);
+    assert.deepEqual(landscapeSurfaceCacheMaterialTiers({ tileMeters: 4, resolution: 128, microTileMeters: 0, microResolution: 128 }, .015625), ['128', 'none']);
     const base = { global: 'g', masks: ['m1', 'm2', 'm3'], soils: [[2, '512', '512'], [3, 'resolved', 'none']], tiles: ['l4/c8/r7'] };
     assert.equal(landscapeSurfaceCacheInputChange(base, { ...base }), null);
     assert.equal(landscapeSurfaceCacheInputChange(base, { ...base, global: 'h' }), 'global');

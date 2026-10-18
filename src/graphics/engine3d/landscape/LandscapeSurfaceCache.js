@@ -32,7 +32,7 @@ import { LANDSCAPE_SURFACE_CACHE, fitLandscapeSurfaceCache, landscapeSurfaceCach
 import { LANDSCAPE_SURFACE_CACHE_DEMAND, chooseLandscapeSurfaceCacheCenter, createLandscapeSurfaceCacheTerrainEnvelope, mergeLandscapeSurfaceCacheFeedback, planLandscapeSurfaceCacheDemand } from './LandscapeSurfaceCacheDemand.js';
 import { LandscapeSurfaceCacheIndirection, LandscapeSurfaceCacheResidency } from './LandscapeSurfaceCacheResidency.js';
 import { LANDSCAPE_SURFACE_CACHE_INPUTS, indexLandscapeSurfaceCacheInputs, landscapeSurfaceCacheGlobalKey, landscapeSurfaceCacheInputChange, landscapeSurfaceCachePageInputs,
-    landscapeSurfaceCacheSoilTiers, landscapeSurfaceCacheTierRank } from './LandscapeSurfaceCacheInputs.js';
+    landscapeSurfaceCacheMaterialTiers, landscapeSurfaceCacheTierRank } from './LandscapeSurfaceCacheInputs.js';
 import { LANDSCAPE_SURFACE_CACHE_CONTROLLER, fitLandscapeSurfaceCacheCost, landscapeSurfaceCacheBatchCost, landscapeSurfaceCacheGenerationTarget,
     nextLandscapeSurfaceCacheQuota } from './LandscapeSurfaceCacheController.js';
 import { landscapeCameraSnapshot } from './LandscapeStreamer.js';
@@ -643,7 +643,7 @@ export class LandscapeSurfaceCache {
         return structural;
     }
 
-    // a soil whose bound material (or micro) tier became finer marks the resident pages that hold it at the mips where its tier key improved
+    // a soil whose material's array tier (or micro) became finer marks the resident pages that hold it at the mips where its tier key improved
     #diffSoils(soils) {
         const previous = this.soilTiers;
         this.soilTiers = new Map(soils.map(soil => [soil.index, { tileMeters: soil.tileMeters, resolution: soil.resolution, microTileMeters: soil.microTileMeters, microResolution: soil.microResolution }]));
@@ -653,7 +653,7 @@ export class LandscapeSurfaceCache {
             if (!old || (old.tileMeters === soil.tileMeters && old.resolution === soil.resolution && old.microTileMeters === soil.microTileMeters && old.microResolution === soil.microResolution)) continue;
             const improved = new Set();
             for (let mip = 0; mip <= this.geometry.rootMip; mip++) {
-                const texel = landscapeSurfaceCacheTexelMeters(this.geometry, mip), [a, b] = landscapeSurfaceCacheSoilTiers(old, texel), [c, d] = landscapeSurfaceCacheSoilTiers(soil, texel);
+                const texel = landscapeSurfaceCacheTexelMeters(this.geometry, mip), [a, b] = landscapeSurfaceCacheMaterialTiers(old, texel), [c, d] = landscapeSurfaceCacheMaterialTiers(soil, texel);
                 if (landscapeSurfaceCacheTierRank(c) > landscapeSurfaceCacheTierRank(a) || landscapeSurfaceCacheTierRank(d) > landscapeSurfaceCacheTierRank(b)) improved.add(mip);
             }
             if (!improved.size) continue;

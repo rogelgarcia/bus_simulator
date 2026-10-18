@@ -32,6 +32,7 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
         await page.route('**/tests/headless/e2e/fixtures/landscape_surface_probe.html', async route => route.fulfill({
             contentType: 'text/html', body: await readFile('tests/headless/e2e/fixtures/landscape_surface_probe.html', 'utf8')
         }));
+        await page.route('**/tests/headless/e2e/fixtures/landscape_material_probe.js', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile('tests/headless/e2e/fixtures/landscape_material_probe.js', 'utf8') }));
         await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
         const result = await page.evaluate(async () => {
             const T = await import('three');
@@ -55,18 +56,19 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
                     uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) }, ...createLandscapeReferenceProbeLightingUniforms() } });
             const scene = new T.Scene(), mesh = new T.Mesh(geometry, material), camera = new T.OrthographicCamera(-4, 4, 4, -4, .1, 200);
             mesh.frustumCulled = false; scene.add(mesh); camera.up.set(0, 0, -1);
+            // AI 598 D3a: the probe's linear colours in a linear coarse material array (the former NoColorSpace textures, the former 32 px state) over a flat surface at the full relief height
+            const { createLandscapeMaterialBinder } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const resources = [], colors = [[30, 30, 30], [30, 30, 30], [107, 8, 5], [5, 102, 10], [6, 8, 112], [30, 30, 30]];
-            const bases = colors.map(rgb => {
-                const texture = new T.DataTexture(new Uint8Array([...rgb, 255]), 1, 1, T.RGBAFormat);
-                texture.colorSpace = T.NoColorSpace; texture.needsUpdate = true; resources.push(texture); return texture;
-            });
-            const surface = new T.DataArrayTexture(new Uint8Array([128, 128, 255, 255, 255, 255, 0, 255]), 1, 1, 2);
-            surface.colorSpace = T.NoColorSpace; surface.needsUpdate = true; resources.push(surface);
-            for (let soil = 0; soil < 6; soil++) {
-                appearance[`uSoilBase${soil}`].value = bases[soil]; appearance[`uSoilSurface${soil}`].value = surface;
-                appearance.uSoilScale.value[soil].set(4, 0, 1, 0);
-            }
-            appearance.uBlendBase.value = bases[0]; appearance.uBlendSurface.value = surface;
+            const binder = createLandscapeMaterialBinder({ renderer, uniforms: appearance, fineSlots: 1, midSlots: 1, linearBaseColor: true }), surface = new Uint8Array([128, 128, 255, 255, 255, 255, 0, 255]);
+            resources.push(binder);
+            const bases = colors.map(rgb => new Uint8Array([...rgb, 255]));
+            let boundReference;
+            const bindBases = (referenceSoil = null) => {
+                if (referenceSoil === boundReference) return;
+                for (let soil = 0; soil < 6; soil++) { binder.bindMaterial(soil, { baseColor: bases[referenceSoil ?? soil], surface, size: 1, resolution: 32 }); binder.setParameters(soil, { scale: [4, 0, 1, 0] }); }
+                boundReference = referenceSoil;
+            };
+            bindBases();
             appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
             const pixels = new Uint8Array(width * width * 4 * capacity);
             for (let slot = 0; slot < capacity; slot++) {
@@ -84,7 +86,7 @@ test('Landscape surface: actual shader preserves mixed-LOD corners and unequal a
             const buffer = new Uint8Array(size * size * 4), snapshots = [];
             const difference = (a, b) => Math.max(...a.map((value, channel) => Math.abs(value - b[channel])));
             const draw = (specifications, { center = [0, 0], span = 8, capture = null, referenceSoil = null } = {}) => {
-                for (let soil = 0; soil < 6; soil++) appearance[`uSoilBase${soil}`].value = bases[referenceSoil ?? soil];
+                bindBases(referenceSoil);
                 const current = records(specifications);
                 LandscapeMaskPages.prototype.updateUniforms.call({ records: current, capacity, uniforms: appearance });
                 camera.left = camera.bottom = -span / 2; camera.right = camera.top = span / 2;
@@ -190,6 +192,7 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
         await page.route('**/tests/headless/e2e/fixtures/landscape_surface_probe.html', async route => route.fulfill({
             contentType: 'text/html', body: await readFile('tests/headless/e2e/fixtures/landscape_surface_probe.html', 'utf8')
         }));
+        await page.route('**/tests/headless/e2e/fixtures/landscape_material_probe.js', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile('tests/headless/e2e/fixtures/landscape_material_probe.js', 'utf8') }));
         await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
         const result = await page.evaluate(async () => {
             const T = await import('three');
@@ -217,18 +220,19 @@ test('Landscape surface: generated fine slots and the native surface warp keep p
                     uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new T.Vector3(0, 1, 0) }, ...createLandscapeReferenceProbeLightingUniforms() } });
             const scene = new T.Scene(), mesh = new T.Mesh(geometry, material), camera = new T.OrthographicCamera(-4, 4, 4, -4, .1, 200);
             mesh.frustumCulled = false; scene.add(mesh); camera.up.set(0, 0, -1);
+            // AI 598 D3a: the probe's linear colours in a linear coarse material array (the former NoColorSpace textures, the former 32 px state) over a flat surface at the full relief height
+            const { createLandscapeMaterialBinder } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const resources = [], colors = [[30, 30, 30], [30, 30, 30], [107, 8, 5], [5, 102, 10], [6, 8, 112], [30, 30, 30]];
-            const bases = colors.map(rgb => {
-                const texture = new T.DataTexture(new Uint8Array([...rgb, 255]), 1, 1, T.RGBAFormat);
-                texture.colorSpace = T.NoColorSpace; texture.needsUpdate = true; resources.push(texture); return texture;
-            });
-            const surface = new T.DataArrayTexture(new Uint8Array([128, 128, 255, 255, 255, 255, 0, 255]), 1, 1, 2);
-            surface.colorSpace = T.NoColorSpace; surface.needsUpdate = true; resources.push(surface);
-            for (let soil = 0; soil < 6; soil++) {
-                appearance[`uSoilBase${soil}`].value = bases[soil]; appearance[`uSoilSurface${soil}`].value = surface;
-                appearance.uSoilScale.value[soil].set(4, 0, 1, 0);
-            }
-            appearance.uBlendBase.value = bases[0]; appearance.uBlendSurface.value = surface;
+            const binder = createLandscapeMaterialBinder({ renderer, uniforms: appearance, fineSlots: 1, midSlots: 1, linearBaseColor: true }), surface = new Uint8Array([128, 128, 255, 255, 255, 255, 0, 255]);
+            resources.push(binder);
+            const bases = colors.map(rgb => new Uint8Array([...rgb, 255]));
+            let boundReference;
+            const bindBases = (referenceSoil = null) => {
+                if (referenceSoil === boundReference) return;
+                for (let soil = 0; soil < 6; soil++) { binder.bindMaterial(soil, { baseColor: bases[referenceSoil ?? soil], surface, size: 1, resolution: 32 }); binder.setParameters(soil, { scale: [4, 0, 1, 0] }); }
+                boundReference = referenceSoil;
+            };
+            bindBases();
             appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
             const pixels = new Uint8Array(width * width * 4 * capacity);
             const masks = new T.DataArrayTexture(pixels, width, width, capacity);

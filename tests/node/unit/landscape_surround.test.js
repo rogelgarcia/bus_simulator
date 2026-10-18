@@ -258,7 +258,7 @@ test('Soil palette mode: the tiles carry display soil indices, the catalog palet
     assert.throws(() => createLandscapeSoilPalette(sevenSoils), /holds 6 soils/);
 });
 
-test('Soil palette derivation: the mean linear albedo of the coarse page under the shader albedo correction, ready once every material has its page', () => {
+test('Soil palette derivation: the mean linear albedo of the palette page under the shader albedo correction, ready once every material has its page', () => {
     const page = (r, g, b) => { const bytes = new Uint8Array(32 * 32 * 4); for (let i = 0; i < bytes.length; i += 4) bytes.set([r, g, b, 255], i); return bytes; };
     const linear = byte => { const s = byte / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; };
     const mean = landscapeMeanLinearAlbedo(page(128, 64, 200));
@@ -286,22 +286,22 @@ test('Soil palette derivation: the mean linear albedo of the coarse page under t
     near(landscapeMeanSurface(orm(0, 64), { roughness: [0, 1, 1, 0], range: [.25, .75, 1, 0], aoIntensity: 1 })[0], Math.max(.05, (64 / 255 - .25) / .5), 1e-6);
     assert.deepEqual(landscapeMeanSurface(orm(0, 0), { roughness: [0, 1, 1, 0], range: [0, 1, 1, 0], aoIntensity: 1 }), [.05, 0]);
     assert.throws(() => landscapeMeanSurface(orm(0, 0), { roughness: [0, 1, 1, 0], range: [0, 1, 1, 0], aoIntensity: NaN }), /finite/);
-    // a palette is ready only with every coarse page; the page means are cached on the record and outlive its released bytes; the surface follows the ORM layer of the record
+    // a palette is ready only with every palette page; the page means are cached on the record and outlive its released bytes; the surface follows the ORM layer of the record
     const tier = { pages: [{ role: 'baseColor' }, { role: 'normal' }, { role: 'orm' }] };
     const surfaceLayers = new Uint8Array(32 * 32 * 4 * 2); surfaceLayers.set(orm(128, 128), 32 * 32 * 4);
-    const materials = [{ definition: { soilId: 'sand' }, index: 0, coarse: { baseColor: page(217, 197, 143), surface: surfaceLayers, tier, maps: 3 } }, { definition: { soilId: 'loam' }, index: 1, coarse: null }];
+    const materials = [{ definition: { soilId: 'sand' }, index: 0, palette: { baseColor: page(217, 197, 143), surface: surfaceLayers, tier, maps: 3 } }, { definition: { soilId: 'loam' }, index: 1, palette: null }];
     const corrections = [[.5, 0, 0, 0], [1, 0, 0, 0]];
     const shading = { albedo: corrections, roughness: [[0, 1, 1, 0], [0, 1, 1, 0]], range: [[0, 1, 1, 0], [0, 1, 1, 0]], scale: [[1, 1, .5, 0], [1, 1, 1, 0]] };
     const partial = landscapeAppearanceSoilPalette(materials, shading);
     assert.equal(partial.ready, false); assert.deepEqual(Object.keys(partial.soils), ['sand']);
     near(partial.surface.sand[0], 128 / 255, 1e-6); near(partial.surface.sand[1], 1 - (1 - 128 / 255) * .5, 1e-6);
     for (const [k, byte] of [217, 197, 143].entries()) near(partial.soils.sand[k], linear(byte) * .5, 1e-6);
-    materials[1].coarse = { baseColor: page(10, 20, 30) };
+    materials[1].palette = { baseColor: page(10, 20, 30) };
     const full = landscapeAppearanceSoilPalette(materials, shading);
     assert.equal(full.ready, true); assert.deepEqual(Object.keys(full.soils).sort(), ['loam', 'sand']);
     assert.deepEqual(Object.keys(full.surface), ['sand'], 'a record without an ORM page has no surface; the cells keep the plain fallback for it');
     for (const [k, byte] of [10, 20, 30].entries()) near(full.soils.loam[k], linear(byte), 1e-6);
-    materials[0].coarse.baseColor = materials[0].coarse.surface = null;
+    materials[0].palette.baseColor = materials[0].palette.surface = null;
     const released = landscapeAppearanceSoilPalette(materials, corrections);
     assert.equal(released.ready, true, 'the cached page means serve after the bytes are released'); near(released.surface.sand[0], 128 / 255, 1e-6);
     assert.deepEqual([...LANDSCAPE_SOIL_PALETTE.sources], ['catalog', 'appearance']);

@@ -1,6 +1,7 @@
 // Fetches and validates raw material pages and rasterizes semantic masks away from the render thread.
 // Material requests list their pages in surface order (base color, normals, ORM, then the paired micro layer when present); each page
-// resolves against the sidecar that declared it, the schema-1 appearance sidecar or the companion multiscale sidecar. Terrain-field pages
+// resolves against the sidecar that declared it, the schema-1 appearance sidecar or the companion multiscale sidecar, and returns as its complete
+// mip chain (AI 598 D3a, LandscapeMaterialMips: the material arrays are uploaded level by level instead of mipmapped on the GPU). Terrain-field pages
 // (AI577 D5) are fetched and authenticated here as well, so hashing never runs on the render thread, and the landscape-scale appearance layer
 // (landscape-appearance-layer-v1) is derived here from the root field page, heights and land cover the request carries. AI 598 D1: the geology
 // field and categorical pages of a native are fetched, authenticated and packed into the three geology layers here, and the surface override layer
@@ -14,6 +15,7 @@ import { createLandscapeNaturalPresentation } from './LandscapeNaturalPresentati
 import { createLandscapeCoverageMask } from './LandscapeCoverageMask.js';
 import { buildLandscapeAppearanceLayer } from './LandscapeTerrainAppearance.js';
 import { packLandscapeSurfaceGeologyPage } from './LandscapeSurfaceModel.js';
+import { buildLandscapeMaterialMipChain } from './LandscapeMaterialMips.js';
 
 let context = null;
 let presentation = null;
@@ -46,16 +48,14 @@ self.onmessage = async ({ data }) => {
                 natural: data.natural ?? null, loadNatural });
             self.postMessage({ id, ...result }, [result.pixels.buffer]);
         } else if (data.type === 'material') {
-            const [base, ...layers] = data.pages;
-            const baseColor = await loadPage(base);
-            if (baseColor.length !== data.resolution * data.resolution * 4) throw new Error(`Material base color does not match its ${data.resolution} tier`);
-            const surface = new Uint8Array(baseColor.length * layers.length);
-            for (const [layer, page] of layers.entries()) {
+            // every map as its complete mip chain, the base colour filtered in linear light (sRGB) and the surface layers on their bytes
+            const maps = [];
+            for (const [index, page] of data.pages.entries()) {
                 const bytes = await loadPage(page);
-                if (bytes.length !== baseColor.length) throw new Error(`Material ${page.role} page does not match its ${data.resolution} tier`);
-                surface.set(bytes, layer * baseColor.length);
+                if (bytes.length !== data.resolution * data.resolution * 4) throw new Error(`Material ${page.role} page does not match its ${data.resolution} tier`);
+                maps.push(buildLandscapeMaterialMipChain(bytes, data.resolution, { srgb: index === 0 }));
             }
-            self.postMessage({ id, baseColor, surface }, [baseColor.buffer, surface.buffer]);
+            self.postMessage({ id, resolution: data.resolution, maps }, maps.map(chain => chain.buffer));
         } else if (data.type === 'field') {
             if (!context.fieldsUrl) throw new Error('Terrain field pages are not available to the appearance worker');
             const bytes = await loadLandscapeTerrainFieldPage(data.page, { manifestUrl: context.fieldsUrl });

@@ -48,33 +48,29 @@ test('Landscape layers: every companion material renders homogeneous repeats wit
             const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const { LandscapeMaterialPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialPages.js');
             const { landscapeSurfaceMaterialDefinition } = await import('/src/graphics/engine3d/landscape/LandscapeSurfaceMaterials.js');
-            const probe = createLandscapeMaterialProbe({ toneMapping: true }), images = [], records = [];
+            const probe = createLandscapeMaterialProbe({ toneMapping: true, linearBaseColor: false }), images = [], records = [];
             try {
                 for (const material of materials) {
                     // one stand-in soil slot per material: the pages owner resolves the catalog calibration and the landscape calibration of the material id itself
                     const appearance = { materials: [{ ...material, soilId: 'loam', tiers: material.tiers.filter(tier => tier.resolution <= 512) }] };
-                    const owner = new LandscapeMaterialPages({ appearance, renderer: probe.renderer, uniforms: probe.uniforms, prefix: 'layers-audit' });
+                    const owner = new LandscapeMaterialPages({ appearance, uniforms: probe.uniforms, prefix: 'layers-audit' });
                     await owner.initialize();
                     const definition = landscapeSurfaceMaterialDefinition(material.materialId), slot = owner.materials[0];
-                    probe.uniforms.uSoilResponse.value[0].set(definition.response.diffuseRoughness, definition.response.specularShadowing, ...slot.calibration.meanNormalSlope);
-                    probe.uniforms.uSoilState.value[0].w = definition.response.opposition;
+                    probe.setParameters(0, { response: [definition.response.diffuseRoughness, definition.response.specularShadowing, ...slot.calibration.meanNormalSlope] });
+                    probe.setParameter(0, 'state', 3, definition.response.opposition);
                     records.push({ classId: material.classId, materialId: material.materialId, calibration: slot.pipeline.overrides.effective, landscapeCalibration: slot.calibration,
-                        response: definition.response, albedoBrightness: probe.uniforms.uSoilAlbedo.value[0].x });
+                        response: definition.response, albedoBrightness: probe.parameters(0, 'albedo')[0] });
                     for (const tier of tiers) {
                         const loaded = await Promise.all(['baseColor', 'normal', 'orm'].map(async name => new Uint8Array(await (await fetch(`/__landscape-layers-audit/${material.classId}/${tier}/${name}`)).arrayBuffer())));
                         const surface = new Uint8Array(tier * tier * 8); surface.set(loaded[1]); surface.set(loaded[2], loaded[1].length);
-                        const baseTexture = probe.texture(loaded[0], tier, 1, true), surfaceTexture = probe.texture(surface, tier, 2);
-                        owner.configure(baseTexture, true); owner.configure(surfaceTexture, false);
-                        probe.uniforms.uSoilBase0.value = baseTexture; probe.uniforms.uSoilSurface0.value = surfaceTexture;
-                        probe.uniforms.uSoilState.value[0].y = tier;
+                        probe.bindMaterial(0, { baseColor: loaded[0], surface, size: tier, resolution: tier });
                         probe.setCoverage([1, 0, 0, 0, 0, 0]);
-                        const period = probe.uniforms.uSoilTiling.value[0].x;
+                        const period = probe.parameters(0, 'tiling')[0];
                         for (const repeats of [1, 4]) {
                             const span = period * repeats; probe.setCenter([span / 2, span / 2]); probe.draw({ span });
                             images.push({ id: `${material.materialId}${tier === 512 ? '' : `-${tier}`}-${repeats}x`, classId: material.classId, kind: material.kind, materialId: material.materialId, tier, repeats,
                                 periodMeters: period, spanMeters: span, dataUrl: probe.snapshot() });
                         }
-                        baseTexture.dispose(); surfaceTexture.dispose();
                     }
                 }
                 return { renderer: probe.rendererName, images, records };

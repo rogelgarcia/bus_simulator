@@ -26,8 +26,11 @@ export const REVIEW_CAPTURE_DEFAULTS = Object.freeze({
     chromiumArgs: Object.freeze(['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']),
     readyTimeoutMs: 180000, settleTimeoutMs: 120000, settlePollMs: 250, tailMs: 1500, sizeTimeoutMs: 10000,
     // AI 598 D1: the terrain inspection view selected after the settle (its program variant links before the tail) and the surface model switch
-    diagnostic: 'none', surfaceModel: LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode, diagnosticTimeoutMs: 120000
+    diagnostic: 'none', surfaceModel: LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode, diagnosticTimeoutMs: 120000,
+    // AI 598 D3a: the runtime surface cache mode of the capture (landscapeSurfaceCache); 'default' leaves the viewer's own default
+    surfaceCache: 'default'
 });
+const SURFACE_CACHE_OPTIONS = Object.freeze(['default', 'on', 'off']);
 /** The one appearance error a landscape saved without an appearance sidecar produces (the viewer then draws its fallback soil colors). */
 export const MISSING_APPEARANCE_ERROR = '[Landscape] appearance manifest HTTP 404';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -37,9 +40,9 @@ const USAGE = `Usage: node tools/landscape_review/capture.mjs --landscape <saved
        [--poses <pose file>] [--select NW-01,NW-04] [--label <text>] [--water on|off] [--planning on|off] [--width 1920 --height 1080]
        [--allow-missing-appearance on|off] [--surround auto|off|<manifest url>] [--ocean animated|flat] [--sea-state calm|moderate|rough] [--ocean-time <seconds>]
        [--ocean-debug <0-14>] [--ecosystem auto|off|<sidecar manifest url>] [--ecosystem-diagnostic none|lod|layer|rank|fade]
-       [--diagnostic <terrain inspection view>] [--surface-model on|off]`;
+       [--diagnostic <terrain inspection view>] [--surface-model on|off] [--surface-cache default|on|off] [--cpu-mib <MiB>] [--gpu-mib <MiB>]`;
 
-/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number,oceanDebug?:number,ecosystem?:string,ecosystemDiagnostic?:string,diagnostic?:string,surfaceModel?:string}} CaptureOptions */
+/** @typedef {{landscapeDirectory:string,outputDirectory:string,posesFile:string,select:readonly string[]|null,label:string,water:boolean,planning:boolean,width:number,height:number,allowMissingAppearance:boolean,surround:string,ocean:string,seaState:string,oceanTime:number,oceanDebug?:number,ecosystem?:string,ecosystemDiagnostic?:string,diagnostic?:string,surfaceModel?:string,surfaceCache?:string,cpuMiB?:number|null,gpuMiB?:number|null}} CaptureOptions */
 
 /** @param {string} message @returns {never} */
 function fail(message) { throw new Error(`[LandscapeReview] ${message}`); }
@@ -72,7 +75,8 @@ export function parseCaptureOptions(args) {
         'allow-missing-appearance': { type: 'string', default: 'off' }, surround: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surround },
         ocean: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.ocean }, 'sea-state': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.seaState }, 'ocean-time': { type: 'string', default: String(REVIEW_CAPTURE_DEFAULTS.oceanTime) },
         'ocean-debug': { type: 'string', default: '0' }, ecosystem: { type: 'string', default: 'auto' }, 'ecosystem-diagnostic': { type: 'string', default: 'none' },
-        diagnostic: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.diagnostic }, 'surface-model': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surfaceModel } } });
+        diagnostic: { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.diagnostic }, 'surface-model': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surfaceModel },
+        'surface-cache': { type: 'string', default: REVIEW_CAPTURE_DEFAULTS.surfaceCache }, 'cpu-mib': { type: 'string' }, 'gpu-mib': { type: 'string' } } });
     if (!values.landscape || !values.output) fail(`--landscape and --output are required\n${USAGE}`);
     const select = values.select === undefined ? null : values.select.split(',').map(id => id.trim()).filter(Boolean);
     if (select && !select.length) fail('--select needs at least one pose id');
@@ -95,11 +99,16 @@ export function parseCaptureOptions(args) {
     if (!LANDSCAPE_DIAGNOSTICS.includes(diagnostic)) fail(`--diagnostic must be one of ${LANDSCAPE_DIAGNOSTICS.join(', ')}; received ${diagnostic}`);
     let surfaceModel;
     try { surfaceModel = landscapeSurfaceModelMode(/** @type {string} */ (values['surface-model'])); } catch (error) { fail(/** @type {Error} */ (error).message.replace('[LandscapeSurface] landscapeSurfaceModel', '--surface-model')); }
+    const surfaceCache = /** @type {string} */ (values['surface-cache']);
+    if (!SURFACE_CACHE_OPTIONS.includes(surfaceCache)) fail(`--surface-cache must be one of ${SURFACE_CACHE_OPTIONS.join(', ')}; received ${surfaceCache}`);
+    // AI 598 D3a: an explicit residency profile (landscapeCpuMiB / landscapeGpuMiB) for budget evidence; absent, the viewer's shipped profile
+    const mib = (value, name) => { if (value === undefined) return null; const size = Number(value); if (!Number.isInteger(size) || size < 1) fail(`--${name} must be a positive integer MiB value; received ${value}`); return size; };
+    const cpuMiB = mib(values['cpu-mib'], 'cpu-mib'), gpuMiB = mib(values['gpu-mib'], 'gpu-mib');
     return Object.freeze({ landscapeDirectory, outputDirectory: path.resolve(values.output), posesFile: path.resolve(/** @type {string} */ (values.poses)), select: select && Object.freeze(select),
         label: values.label ?? path.basename(landscapeDirectory), water: parseSwitch(/** @type {string} */ (values.water), 'water'), planning: parseSwitch(/** @type {string} */ (values.planning), 'planning'),
         width: parseSize(/** @type {string} */ (values.width), 'width'), height: parseSize(/** @type {string} */ (values.height), 'height'),
         allowMissingAppearance: parseSwitch(/** @type {string} */ (values['allow-missing-appearance']), 'allow-missing-appearance'), surround, ocean: /** @type {string} */ (ocean), seaState: /** @type {string} */ (seaState), oceanTime, oceanDebug,
-        ecosystem: ecosystem.mode === 'url' ? /** @type {string} */ (ecosystem.url) : ecosystem.mode, ecosystemDiagnostic, diagnostic, surfaceModel: /** @type {string} */ (surfaceModel) });
+        ecosystem: ecosystem.mode === 'url' ? /** @type {string} */ (ecosystem.url) : ecosystem.mode, ecosystemDiagnostic, diagnostic, surfaceModel: /** @type {string} */ (surfaceModel), surfaceCache, cpuMiB, gpuMiB });
 }
 
 /**
@@ -210,9 +219,10 @@ function selectPoses(poses, select) {
 export async function captureReviewPoses(options) {
     const { landscapeDirectory, outputDirectory, posesFile, select, label, water, planning, width, height, allowMissingAppearance, surround = REVIEW_CAPTURE_DEFAULTS.surround,
         ocean = REVIEW_CAPTURE_DEFAULTS.ocean, seaState = REVIEW_CAPTURE_DEFAULTS.seaState, oceanTime = REVIEW_CAPTURE_DEFAULTS.oceanTime, oceanDebug = 0, ecosystem = 'auto', ecosystemDiagnostic = 'none',
-        diagnostic = REVIEW_CAPTURE_DEFAULTS.diagnostic, surfaceModel = REVIEW_CAPTURE_DEFAULTS.surfaceModel } = options;
+        diagnostic = REVIEW_CAPTURE_DEFAULTS.diagnostic, surfaceModel = REVIEW_CAPTURE_DEFAULTS.surfaceModel, surfaceCache = REVIEW_CAPTURE_DEFAULTS.surfaceCache, cpuMiB = null, gpuMiB = null } = options;
     if (!LANDSCAPE_DIAGNOSTICS.includes(diagnostic)) fail(`diagnostic must be one of ${LANDSCAPE_DIAGNOSTICS.join(', ')}; received ${diagnostic}`);
     landscapeSurfaceModelMode(surfaceModel);
+    if (!SURFACE_CACHE_OPTIONS.includes(surfaceCache)) fail(`surfaceCache must be one of ${SURFACE_CACHE_OPTIONS.join(', ')}; received ${surfaceCache}`);
     const poses = await loadReviewPoses(posesFile), selected = selectPoses(poses, select);
     const sampleGround = await createNativeGroundSampler(landscapeDirectory);
     const cameras = [];
@@ -237,7 +247,8 @@ export async function captureReviewPoses(options) {
         // the ocean clock is fixed at the capture time before the first frame, so every pose renders the same sea state and phase (AI 597)
         const query = new URLSearchParams({ landscapeOcean: ocean, landscapeSeaState: seaState, landscapeOceanTime: String(oceanTime), ...(surround === 'auto' ? {} : { landscapeSurround: surround }),
             ...(ecosystem === 'auto' ? {} : { landscapeEcosystem: ecosystem }), ...(ecosystemDiagnostic === 'none' ? {} : { landscapeEcosystemDiagnostic: ecosystemDiagnostic }),
-            ...(surfaceModel === LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode ? {} : { landscapeSurfaceModel: surfaceModel }) });
+            ...(surfaceModel === LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode ? {} : { landscapeSurfaceModel: surfaceModel }), ...(surfaceCache === 'default' ? {} : { landscapeSurfaceCache: surfaceCache }),
+            ...(cpuMiB === null ? {} : { landscapeCpuMiB: String(cpuMiB) }), ...(gpuMiB === null ? {} : { landscapeGpuMiB: String(gpuMiB) }) });
         await page.goto(`${origin}/screens/landscape_fabrication.html?${query}`);
         await page.waitForFunction(() => { const view = window.__landscapeTestHooks?.snapshot(); return !!view && (view.ready || !!view.lastError); }, null, { timeout: REVIEW_CAPTURE_DEFAULTS.readyTimeoutMs });
         // the surround is decided in the background after the landscape is ready (AI 596 D5): wait for its status before judging it
@@ -275,7 +286,8 @@ export async function captureReviewPoses(options) {
             const receipt = { format: REVIEW_CAPTURE_FORMAT, schemaVersion: 1, poseId: pose.id, label, landscapeDirectory: posix(landscapeDirectory), revision: loaded.revision,
                 poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) }, pose, camera, groundHeight: camera.groundHeight, file: fileName, settled: settle.settled, waitedMs: settle.waitedMs,
                 canvas: { width, height }, clip, snapshotSummary: summarize(view), timing: { settleMs: settle.waitedMs, diagnosticMs: inspection.waitedMs, tailMs: REVIEW_CAPTURE_DEFAULTS.tailMs, screenshotMs, totalMs },
-                viewer: { water, planning, width, height, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug, ecosystem, ecosystemDiagnostic, diagnostic, surfaceModel }, appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
+                viewer: { water, planning, width, height, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug, ecosystem, ecosystemDiagnostic, diagnostic, surfaceModel, surfaceCache, cpuMiB, gpuMiB },
+                appearanceErrors: settle.appearanceErrors, ...(settle.settled ? {} : { unsettledState: settle.state }) };
             await writeFile(path.join(outputDirectory, `${pose.id}.json`), `${JSON.stringify(receipt, null, 2)}\n`);
             captures.push({ poseId: pose.id, file: fileName, receipt: `${pose.id}.json`, settled: settle.settled, groundHeight: camera.groundHeight, totalMs, appearanceErrors: settle.appearanceErrors });
             log(`${pose.id} ${settle.settled ? 'settled' : 'NOT settled'} in ${(settle.waitedMs / 1000).toFixed(1)} s, total ${(totalMs / 1000).toFixed(1)} s, ground ${camera.groundHeight === null ? 'outside' : `${camera.groundHeight.toFixed(2)} m`} -> ${shown(file)}`);
@@ -288,7 +300,8 @@ export async function captureReviewPoses(options) {
         await new Promise(resolve => server.close(() => resolve(undefined)));
     }
     const index = { format: REVIEW_CAPTURES_FORMAT, schemaVersion: 1, label, landscapeDirectory: posix(landscapeDirectory), revision: sampleGround.revision, poseFile: { id: poses.id, path: posix(path.relative(ROOT, posesFile)) },
-        viewer: { width, height, water, planning, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug, ecosystem, ecosystemDiagnostic, diagnostic, surfaceModel, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' }, captures, pageErrors, totalMs: Date.now() - started };
+        viewer: { width, height, water, planning, allowMissingAppearance, surround, ocean, seaState, oceanTime, oceanDebug, ecosystem, ecosystemDiagnostic, diagnostic, surfaceModel, surfaceCache, cpuMiB, gpuMiB, chromium: executablePath, args, url: '/screens/landscape_fabrication.html' },
+        captures, pageErrors, totalMs: Date.now() - started };
     await writeFile(path.join(outputDirectory, 'captures.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;
 }

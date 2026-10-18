@@ -215,19 +215,23 @@ test('Material sampling: the GLSL chunk mirrors the JavaScript constants and the
     for (const mix of [...model.projectionSaltMixes.slice(1), LANDSCAPE_MICRO_DETAIL.saltMix]) assert.ok(layers.includes(`0x${mix.toString(16)}u`), `surface layers mirror salt mix ${mix.toString(16)}`);
     assert.ok(!chunk.includes('macroLattice') && !terrain.includes('macroLattice'), 'the magnifying macro lattice is gone');
     assert.match(chunk, /#ifndef LANDSCAPE_MATERIAL_SAMPLING\s+#error /);
-    assert.match(chunk, /uniform vec4 uSoilStochastic\[6\];\s+uniform ivec4 uSoilStochasticSalts\[2\];\s+uniform vec4 uStochasticSettings;/);
-    assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/);
+    // AI 598 D3a: the per-soil lattice rows and salts are parameter texels (material_parameters.glsl); only the shared settings stay a uniform
+    assert.match(chunk, /uniform vec4 uStochasticSettings;/);
+    assert.doesNotMatch(chunk, /uSoilStochastic/);
+    assert.match(chunk, /uint landscapeStochasticSalt\(int material\) \{\s+return landscapeMaterialStochasticSalt\(material\);/);
+    assert.match(terrain, /vec4 stochastic = landscapeMaterialStochastic\(material\);/);
+    assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_parameters>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>/);
     assert.match(terrain, /int samples = hex \? min\(int\(uStochasticSettings\.w\), 3\) : 1;/, 'a uniform sample count keeps one loop body per soil');
-    assert.match(terrain, /latticeTexel\(soil, micro, sampleUv, turn \* dx, turn \* dy, sampleAlbedo, encodedNormal, sampleOrm\);/, 'gradients rotate with each sample');
+    assert.match(terrain, /latticeTexel\(material, micro, sampleUv, turn \* dx, turn \* dy, sampleAlbedo, encodedNormal, sampleOrm\);/, 'gradients rotate with each sample');
     assert.match(terrain, /vec3 decoded = encodedNormal \* 2\.0 - 1\.0;[\s\S]*?slope \+= weight \* landscapeHexSlope\(decoded, rotation, meanSlope\);/, 'normals blend as de-leaned, inverse-rotated slopes with the shared weights');
     assert.match(chunk, /vec2 slope = normal\.xy \/ depth - meanSlope;/, 'the page mean slope is removed in the texture frame before the inverse rotation (AI577 D5c)');
-    assert.match(terrain, /microLayer \? vec2\(0\.0\) : uSoilResponse\[soil\]\.zw\);/, 'the mean-neutral micro layer is never de-leaned');
+    assert.match(terrain, /microLayer \? vec2\(0\.0\) : response\.zw\);/, 'the mean-neutral micro layer is never de-leaned');
     assert.match(terrain, /encodedNormal = microNormal\(texel\) \* 0\.5 \+ 0\.5;/, 'micro normals run through the same lattice body and blend as inverse-rotated slopes');
     assert.match(terrain, /if \(micro && hex\) stochastic = uMicroSampling;/, 'micro lattices use their own catalog parameters');
     assert.match(terrain, /if \(bound < uStochasticSettings\.y\) continue;\s+weight \*= smoothstep\(uStochasticSettings\.y, 2\.0 \* uStochasticSettings\.y, bound\);/, 'skipped samples fade in continuously');
     // AI577 D6: the cached frame program (LANDSCAPE_SURFACE_CACHE, which compiles out soilSurface) has its own single micro lattice call
     const cacheMicroStart = terrain.indexOf('void landscapeSurfaceCacheMicro('), cacheMicro = terrain.slice(cacheMicroStart, terrain.indexOf('\n}\n', cacheMicroStart));
     const uncached = terrain.replace(cacheMicro, '');
-    assert.equal((uncached.match(/soilLattice\(soil, /g) ?? []).length, 1, 'one inlined lattice call per soil surface serves every projection and the micro layer');
-    assert.equal((cacheMicro.match(/soilLattice\(soil, true, /g) ?? []).length, 1, 'the cached frame evaluates one micro lattice');
+    assert.equal((uncached.match(/soilLattice\(material, /g) ?? []).length, 1, 'one inlined lattice call per soil surface serves every projection and the micro layer');
+    assert.equal((cacheMicro.match(/soilLattice\(material, true, /g) ?? []).length, 1, 'the cached frame evaluates one micro lattice');
 });

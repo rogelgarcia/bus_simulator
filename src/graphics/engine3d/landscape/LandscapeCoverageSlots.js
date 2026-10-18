@@ -9,7 +9,7 @@
 // the variants are admitted only where shared + variant vectors fit.
 
 export const LANDSCAPE_VARIANT_ONLY_DEFINES = Object.freeze(['LANDSCAPE_SURFACE_CACHE', 'LANDSCAPE_SURFACE_CACHE_NEAR']);
-/** Soil bindings of the terrain program: the appearance material slots (uSoilBase0–5, uSoilAlbedo[6]) and the soil palette cells (uSoilPalette[6], AI 596 D5) are sized by it. */
+/** Soil bindings of the terrain program: the catalog soils whose material parameter rows and coarse array layers the appearance binds (AI 598 D3a; formerly uSoilBase0–5 and uSoilAlbedo[6]) and the soil palette cells (uSoilPalette[6], AI 596 D5) are sized by it. */
 export const LANDSCAPE_SOIL_SLOTS = 6;
 
 export const LANDSCAPE_MASK_SLOTS = 17;

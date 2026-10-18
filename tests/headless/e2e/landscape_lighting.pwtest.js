@@ -256,6 +256,7 @@ test('Landscape lighting: the production terrain shader reproduces the JavaScrip
     const errors = observeErrors(page);
     try {
         await page.route('**/tests/headless/e2e/fixtures/landscape_surface_probe.html', async route => route.fulfill({ contentType: 'text/html', body: await readFile('tests/headless/e2e/fixtures/landscape_surface_probe.html', 'utf8') }));
+        await page.route('**/tests/headless/e2e/fixtures/landscape_material_probe.js', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile('tests/headless/e2e/fixtures/landscape_material_probe.js', 'utf8') }));
         await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
         const rendered = await page.evaluate(async ({ cases, uniforms, albedo }) => {
             const T = await import('three');
@@ -266,10 +267,12 @@ test('Landscape lighting: the production terrain shader reproduces the JavaScrip
             renderer.setPixelRatio(1); renderer.setSize(63, 63, false);
             const target = new T.WebGLRenderTarget(63, 63, { type: T.FloatType }), coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
             const appearance = createLandscapeAppearanceUniforms(coverageSlots), columns = 17, width = 21, capacity = 17, resources = [target];
-            const base = new T.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, T.RGBAFormat), surface = new T.DataArrayTexture(new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]), 1, 1, 2);
-            for (const texture of [base, surface]) { texture.colorSpace = T.NoColorSpace; texture.needsUpdate = true; resources.push(texture); }
-            for (let soil = 0; soil < 6; soil++) { appearance[`uSoilBase${soil}`].value = base; appearance[`uSoilSurface${soil}`].value = surface; appearance.uSoilScale.value[soil].set(4, 0, 1, 0); }
-            appearance.uBlendBase.value = base; appearance.uBlendSurface.value = surface; appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
+            // AI 598 D3a: the mid-gray linear base bytes in a linear coarse material array (the former NoColorSpace texture), a flat surface, the former 32 px state
+            const { createLandscapeMaterialBinder } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+            const binder = createLandscapeMaterialBinder({ renderer, uniforms: appearance, fineSlots: 1, midSlots: 1, linearBaseColor: true }), surface = new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]);
+            resources.push(binder);
+            for (let soil = 0; soil < 6; soil++) { binder.bindMaterial(soil, { baseColor: new Uint8Array([128, 128, 128, 255]), surface, size: 1, resolution: 32 }); binder.setParameters(soil, { scale: [4, 0, 1, 0] }); }
+            appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
             const pixels = new Uint8Array(width * width * 4 * capacity);
             for (let index = 0; index < width * width * capacity; index++) pixels.set([2 * 17, 2, 1, 240], index * 4);
             const masks = new T.DataArrayTexture(pixels, width, width, capacity);
@@ -347,6 +350,7 @@ test('Landscape lighting: the production terrain shader reproduces the D5c mater
     const errors = observeErrors(page), warnings = observeShaderWarnings(page);
     try {
         await page.route('**/tests/headless/e2e/fixtures/landscape_surface_probe.html', async route => route.fulfill({ contentType: 'text/html', body: await readFile('tests/headless/e2e/fixtures/landscape_surface_probe.html', 'utf8') }));
+        await page.route('**/tests/headless/e2e/fixtures/landscape_material_probe.js', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile('tests/headless/e2e/fixtures/landscape_material_probe.js', 'utf8') }));
         await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
         const rendered = await page.evaluate(async ({ cases, uniformsByCase, material }) => {
             const T = await import('three');
@@ -358,13 +362,15 @@ test('Landscape lighting: the production terrain shader reproduces the D5c mater
             renderer.setPixelRatio(1); renderer.setSize(63, 63, false);
             const target = new T.WebGLRenderTarget(63, 63, { type: T.FloatType }), coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
             const appearance = createLandscapeAppearanceUniforms(coverageSlots), columns = 17, width = 21, capacity = 17, resources = [target];
-            const base = new T.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, T.RGBAFormat), surface = new T.DataArrayTexture(new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]), 1, 1, 2);
-            for (const texture of [base, surface]) { texture.colorSpace = T.NoColorSpace; texture.needsUpdate = true; resources.push(texture); }
+            const { createLandscapeMaterialBinder } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+            const binder = createLandscapeMaterialBinder({ renderer, uniforms: appearance, fineSlots: 1, midSlots: 1, linearBaseColor: true }), surface = new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]);
+            resources.push(binder);
             for (let soil = 0; soil < 6; soil++) {
-                appearance[`uSoilBase${soil}`].value = base; appearance[`uSoilSurface${soil}`].value = surface; appearance.uSoilScale.value[soil].set(4, 0, 1, 0);
-                appearance.uSoilResponse.value[soil].set(material.response[0], material.response[1], 0, 0); appearance.uSoilState.value[soil].w = material.response[2];
+                binder.bindMaterial(soil, { baseColor: new Uint8Array([128, 128, 128, 255]), surface, size: 1, resolution: 32 });
+                binder.setParameters(soil, { scale: [4, 0, 1, 0], response: [material.response[0], material.response[1], 0, 0] });
+                binder.setComponent(soil, 'state', 3, material.response[2]);
             }
-            appearance.uBlendBase.value = base; appearance.uBlendSurface.value = surface; appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
+            appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
             const pixels = new Uint8Array(width * width * 4 * capacity);
             for (let index = 0; index < width * width * capacity; index++) pixels.set([2 * 17, 2, 1, 240], index * 4);
             const masks = new T.DataArrayTexture(pixels, width, width, capacity);

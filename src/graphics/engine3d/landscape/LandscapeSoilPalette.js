@@ -83,11 +83,11 @@ export function landscapeMeanSurface(bytes, { roughness, range, aoIntensity }) {
 }
 
 /**
- * The appearance palette of streamed material pages: each soil's mean linear albedo of its coarse (32 px) base-colour page under its albedo
- * correction, and the mean roughness and occlusion of its coarse ORM page. The page means are kept on the record. Ready once every material
- * has its coarse page.
- * @param {Array<{definition:{soilId:string},index:number,coarse:any}>} materials LandscapeMaterialPages records
- * @param {{albedo:any[],roughness?:any[],range?:any[],scale?:any[]}} shading the uSoilAlbedo, uSoilRoughness, uSoilRange and uSoilScale cells by material index
+ * The appearance palette of streamed material pages: each soil's mean linear albedo of its palette (32 px) base-colour page under its albedo
+ * correction, and the mean roughness and occlusion of its palette ORM page. The page means are kept on the palette record. Ready once every
+ * material has its palette page (AI 598 D3a: the 32 px page is decoded for this palette alone; the materials draw from the 128 px floor).
+ * @param {Array<{definition:{soilId:string},index:number,palette:any}>} materials LandscapeMaterialPages materials with their palette records
+ * @param {{albedo:any[],roughness?:any[],range?:any[],scale?:any[]}} shading the albedo, roughness, range and scale parameter rows by material index
  * @returns {{ready:boolean,soils:Record<string, number[]>,surface:Record<string, number[]>}}
  */
 export function landscapeAppearanceSoilPalette(materials, shading) {
@@ -95,7 +95,7 @@ export function landscapeAppearanceSoilPalette(materials, shading) {
     const soils = {}, surface = {};
     let ready = true;
     for (const material of materials) {
-        const record = material.coarse;
+        const record = material.palette;
         if (record && !record.meanLinearAlbedo && record.baseColor) record.meanLinearAlbedo = landscapeMeanLinearAlbedo(record.baseColor);
         if (!record?.meanLinearAlbedo) { ready = false; continue; }
         soils[material.definition.soilId] = landscapeCorrectedAlbedo(record.meanLinearAlbedo, cells.albedo[material.index]);

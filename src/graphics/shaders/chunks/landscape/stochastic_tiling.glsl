@@ -1,10 +1,10 @@
 // World-anchored stochastic hex tiling of landscape material lattices, mirroring LandscapeMaterialSampling.js (landscape-hex-tiling-v1).
-// Include through the shaderlib directive for landscape/stochastic_tiling after landscape/surface_warp, whose integer hash it reuses.
-// Values come from landscapeMaterialSamplingUniforms(seed, soils):
+// Include through the shaderlib directive for landscape/stochastic_tiling after landscape/surface_warp, whose integer hash it reuses, and
+// landscape/material_parameters, whose per-material rows it reads. Values come from landscapeMaterialSamplingUniforms(seed, soils):
 //   LANDSCAPE_MATERIAL_SAMPLING  compile-time mode: 0 single lattice sample, 1 hex linear, 2 hex contrast, 3 hex variance
-//   uSoilStochastic[soil]        vec4(lattice cells per texture period, rotation range in radians, V offset spread, contrast exponent);
-//                                zero cells keep one unrotated lattice sample at runtime
-//   uSoilStochasticSalts[2]      ivec4 top-projection uint32 salts of soils 0-3 and 4-5, stored as two's-complement integers
+//   stochastic row (landscapeMaterialStochastic) vec4(lattice cells per texture period, rotation range in radians, V offset spread, contrast
+//                                exponent) per material; zero cells keep one unrotated lattice sample at runtime
+//   stochastic salt (landscapeMaterialStochasticSalt) the top-projection uint32 salt per material
 //   uStochasticSettings          vec4(contrast falloff, weight cutoff, variance-preserving exponent, samples per lattice = 3)
 // landscapeHexLattice(uv, salt, cells, exponent) locates the grid triangle containing uv and its normalized barycentric^exponent
 // pre-weights; landscapeHexVertex gives one vertex's sample coordinate (rotated about the vertex center plus a hashed offset,
@@ -14,8 +14,6 @@
 #endif
 #define LANDSCAPE_HEX_SLOPE_LIMIT 128.0
 
-uniform vec4 uSoilStochastic[6];
-uniform ivec4 uSoilStochasticSalts[2];
 uniform vec4 uStochasticSettings;
 
 struct LandscapeHexLattice {
@@ -26,10 +24,8 @@ struct LandscapeHexLattice {
     vec3 weights;
 };
 
-uint landscapeStochasticSalt(int soil) {
-    ivec4 salts = uSoilStochasticSalts[soil / 4];
-    int lane = soil - soil / 4 * 4;
-    return uint(lane == 0 ? salts.x : lane == 1 ? salts.y : lane == 2 ? salts.z : salts.w);
+uint landscapeStochasticSalt(int material) {
+    return landscapeMaterialStochasticSalt(material);
 }
 
 LandscapeHexLattice landscapeHexLattice(vec2 uv, uint salt, float cells, float exponent) {

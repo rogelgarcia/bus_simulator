@@ -1,17 +1,19 @@
-// Verifies per-material texel demand from the pages where each soil occurs and that material streaming converges on the fitted composition.
+// Verifies per-material texel demand from the pages where each soil occurs and that material streaming converges on the slot-fitted composition.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { registerHooks } from 'node:module';
 import { validateLandscapeManifest, createLandscapeAppearancePlanner, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailRecipeHash, LandscapeResidencyBudget } from '../../../src/app/landscape/index.js';
 import { LandscapeAppearanceBudget } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js';
-import { landscapeMaterialTierBytes, planLandscapeAppearanceDemand } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceDemand.js';
+import { planLandscapeAppearanceDemand } from '../../../src/graphics/engine3d/landscape/LandscapeAppearanceDemand.js';
 import { landscapeCoverageMaskLayout } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCoverage.js';
 import { LANDSCAPE_SURFACE_DETAIL_RECIPE, landscapeSurfaceDetailSeed } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailRecipe.js';
 import { LandscapeSurfaceDetailPages } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceDetailPages.js';
+import { LANDSCAPE_MATERIAL_PARAMETER_ROW, LandscapeMaterialParameterTable } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialParameters.js';
+import { landscapeMaterialMipOffsets } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialMips.js';
 import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
-// the page classes import three and the PBR pipeline for texture objects only; their demand and streaming decisions run on stubs
+// the mask pages import three for texture objects only and the material pages the PBR pipeline for their calibration; their demand and streaming decisions run on stubs
 const stub = source => `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`;
 const stubs = {
     three: stub(`export const RGBAFormat = 1023, RepeatWrapping = 1000, LinearFilter = 1006, LinearMipmapLinearFilter = 1008, NearestFilter = 1003, NoColorSpace = '';
@@ -19,8 +21,10 @@ const stubs = {
             addLayerUpdate(layer) { this.layers.push(layer); } clearLayerUpdates() { this.layers = []; } dispose() { this.disposed = true; } }
         export class DataTexture extends Texture { constructor(data, width, height) { super(data, width, height); } }
         export class DataArrayTexture extends Texture {}`),
-    '../../content3d/materials/PbrTexturePipeline.js': stub('export function applyTextureColorSpace() {} export function resolvePbrMaterialPipeline() { throw new Error("unused"); }'),
-    '../../content3d/materials/PbrTextureCalibrationResolver.js': stub('export function getPbrTextureCalibrationResolver() { throw new Error("unused"); }')
+    '../../content3d/materials/PbrTexturePipeline.js': stub(`export function applyTextureColorSpace() {}
+        export function resolvePbrMaterialPipeline(materialId) { return { materialId, overrides: { effective: { tileMeters: 4, normalStrength: 1, aoIntensity: 1, metalness: 0, albedoBrightness: 1, albedoHueDegrees: 0,
+            albedoSaturation: 1, albedoTintStrength: 0, roughness: 1, roughnessRemap: null } }, meta: { calibration: { uvRotationDegrees: 0 } }, diagnostics: null }; }`),
+    '../../content3d/materials/PbrTextureCalibrationResolver.js': stub('export function getPbrTextureCalibrationResolver() { return { preloadOverrides: async () => {}, getCachedOverrides: () => null }; }')
 };
 const mocked = ['LandscapeMaterialPages', 'LandscapeMaskPages'].map(name => new URL(`../../../src/graphics/engine3d/landscape/${name}.js?material-demand-mock`, import.meta.url));
 const hooks = registerHooks({ resolve(specifier, context, nextResolve) {
@@ -30,7 +34,7 @@ const hooks = registerHooks({ resolve(specifier, context, nextResolve) {
 const [{ LandscapeMaterialPages }, { LandscapeMaskPages }] = await Promise.all(mocked.map(url => import(url.href)));
 hooks.deregister();
 
-const MIB = 1024 * 1024;
+const MIB = 1024 * 1024, ROW = LANDSCAPE_MATERIAL_PARAMETER_ROW;
 const cacheSkip = landscapeCacheSkip(['manifest.json', 'appearance/manifest.json']);
 const coastalUrl = new URL('../../../assets/public/landscape/coastal-city/manifest.json', import.meta.url);
 const coastal = cacheSkip ? null : validateLandscapeManifest(JSON.parse(await readFile(coastalUrl, 'utf8')));
@@ -123,29 +127,55 @@ test('Material demand: a native page split into visible fine leaves lends no den
     assert.deepEqual([...ancestor.interests.get(4)], ['l3/c1/r6']);
 });
 
-const soils = ['a', 'b', 'c'];
+const soils = ['loam', 'forest', 'rock'], TIERS = [128, 512, 1024];
 const flush = () => new Promise(resolve => setImmediate(resolve));
-function streamingFixture({ gpuCeiling = 42 * MIB } = {}) {
+
+// the material arrays without a GPU: physical slots per array (one spare beyond the fitted count), the residency rows and the transition the pages owner drives
+function fakeSlots({ fineSlots, midSlots, materialCapacity = soils.length }) {
+    const tiers = [materialCapacity, midSlots, fineSlots].map((slots, tier) => ({ tier, resolution: TIERS[tier], slots, layout: landscapeMaterialMipOffsets(TIERS[tier]), contents: Array.from({ length: slots }, () => null) }));
+    return { tiers, residency: [], transition: null, uploads: 0, onRestore: null, peak: [0, 0, 0],
+        demandCapacity() { return { fine: fineSlots - 1, mid: midSlots - 1, gpuBytes: 0 }; },
+        used(tier) { return tiers[tier].contents.filter(Boolean).length; },
+        acquire(tier, material) {
+            const entry = tiers[tier];
+            if (tier === 0) { entry.contents[material] = { material }; return material; }
+            const slot = entry.contents.findIndex(content => content === null);
+            if (slot >= 0) { entry.contents[slot] = { material }; this.peak[tier] = Math.max(this.peak[tier], this.used(tier)); }
+            return slot;
+        },
+        release(tier, slot) { tiers[tier].contents[slot] = null; },
+        upload(tier, slot, map, chain) {
+            assert.ok(tiers[tier].contents[slot], `slot ${slot} of tier ${tier} holds a material`);
+            assert.equal(chain.length, tiers[tier].layout.bytes, 'a complete chain');
+            this.uploads++;
+            return tiers[tier].layout.bytes;
+        },
+        setResidency(material, tier, slot, arrivingTier, arrivingSlot) { this.residency[material] = { tier, slot, arrivingTier, arrivingSlot }; },
+        setTransition(material, progress, fromTier, fromSlot) { this.transition = material >= 0 ? { material, progress, fromTier, fromSlot } : null; },
+        restore() { for (const entry of tiers) entry.contents.fill(null); this.transition = null; this.onRestore?.(); },
+        snapshot() { return { tiers: tiers.map(entry => ({ resolution: entry.resolution, slots: entry.slots, used: this.used(entry.tier) })) }; } };
+}
+
+async function streamingFixture({ fineSlots = 3, midSlots = 3 } = {}) {
     const page = (resolution, role) => ({ url: `pages/${role}-${resolution}.rgba8`, width: resolution, height: resolution, sha256: `${role}${resolution}`.padEnd(64, '0') });
     const tier = resolution => ({ id: String(resolution), resolution, pages: ['baseColor', 'normal', 'orm'].map(role => ({ role, source: 'appearance', page: page(resolution, role) })) });
     const appearance = { materials: soils.map(soilId => ({ soilId, materialId: `pbr.${soilId}`, tileMeters: 4, roughnessInputRange: { min: 0, max: 1 }, tiers: [] })) };
     const multiscale = { status: 'active', reason: null, active: true, maxResolution: 1024, materials: soils.map(soilId => ({ soilId, materialId: `pbr.${soilId}`, maps: 3, micro: null, tiers: [32, 128, 512, 1024].map(tier) })) };
-    // by default two 1024 tiers, one 512 tier and one 512 transition source fit the appearance GPU ceiling, three 1024 tiers do not
-    const shared = new LandscapeResidencyBudget({ cpuBytes: 256 * MIB, gpuBytes: 2 * gpuCeiling }), budget = new LandscapeAppearanceBudget(shared, 'streaming');
-    const vector = () => ({ x: 0, y: 0, z: 0, w: 0, set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; } });
-    const uniforms = { uSoilState: { value: soils.map(vector) }, uSoilTiling: { value: soils.map(vector) }, uSurfaceBlendEnabled: { value: 0 }, uMaterialBlendIndex: { value: -1 }, uMaterialBlend: { value: 0 },
-        uBlendBase: { value: null }, uBlendSurface: { value: null }, uBlendResolution: { value: 32 } };
-    soils.forEach((_, index) => { uniforms[`uSoilBase${index}`] = { value: null }; uniforms[`uSoilSurface${index}`] = { value: null }; });
+    const shared = new LandscapeResidencyBudget({ cpuBytes: 256 * MIB, gpuBytes: 128 * MIB }), budget = new LandscapeAppearanceBudget(shared, 'streaming');
+    const table = new LandscapeMaterialParameterTable(soils.length);
+    const uniforms = { uMaterialParameters: { value: null, table }, uMaterialTransition: { value: { set() {} } }, uSurfaceBlendEnabled: { value: 0 } };
     const requests = [];
-    const pool = { request: async ({ resolution, pages }) => { requests.push(resolution); return { baseColor: new Uint8Array(resolution * resolution * 4), surface: new Uint8Array(resolution * resolution * 4 * (pages.length - 1)) }; } };
-    const pages = new LandscapeMaterialPages({ appearance, multiscale, budget, pool, renderer: { initTexture() {}, capabilities: { getMaxAnisotropy: () => 4 } }, uniforms, prefix: 'streaming' });
-    pages.initialized = true;
+    // the worker's answer: one complete mip chain per page
+    const pool = { request: async ({ resolution, pages }) => { requests.push(resolution); return { maps: pages.map(() => new Uint8Array(landscapeMaterialMipOffsets(resolution).bytes)) }; } };
+    const slots = fakeSlots({ fineSlots, midSlots });
+    const pages = new LandscapeMaterialPages({ appearance, multiscale, budget, pool, uniforms, prefix: 'streaming', slots });
+    await pages.initialize();
     const log = [];
-    // one frame: per-material demand → water-filled composition → protected credit → interests → material update
+    // one frame: per-material demand → slot-fitted composition → protected credit → interests → material update
     async function frame(view) {
         const interests = new Map(soils.map((soilId, index) => [index, new Set(view.density[soilId] ? [`page-${soilId}`] : [])]).filter(([, ids]) => ids.size));
         const desiredTiers = Object.fromEntries(soils.map(soilId => [soilId, view.density[soilId] ? '1024' : '32']));
-        const composition = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: budget.limits, materials: pages.materials.map(material => ({
+        const composition = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: budget.limits, slots: slots.demandCapacity(), materials: pages.materials.map(material => ({
             soilId: material.definition.soilId, index: material.index, density: view.density[material.definition.soilId] ?? 0, pages: interests.get(material.index)?.size ?? 0,
             desiredResolution: Number(desiredTiers[material.definition.soilId]), heldResolution: pages.heldResolution(material), resolutions: pages.streamableResolutions(material), maps: material.maps })) });
         assert.equal(budget.protectDemand(composition).admitted, true);
@@ -158,60 +188,86 @@ function streamingFixture({ gpuCeiling = 42 * MIB } = {}) {
         return snapshot;
     }
     async function run(view, frames) { const start = log.length; for (let i = 0; i < frames; i++) await frame(view); return log.slice(start); }
-    return { pages, budget, shared, requests, gpuCeiling, run };
+    return { pages, budget, shared, requests, slots, table, run };
 }
 
 test('Material streaming: a closer material rises to its fitted 1024 after the material it displaces coarsens directly to 512, and ties never alternate', async () => {
-    const { pages, budget, shared, requests, gpuCeiling, run } = streamingFixture();
-    assert.equal(budget.limits.gpuBytes, gpuCeiling);
+    const { pages, budget, shared, requests, slots, table, run } = await streamingFixture();
     const settled = frames => frames.at(-1).settled;
-    const first = await run({ density: { a: 100, b: 90 } }, 80);
+    const first = await run({ density: { loam: 100, forest: 90 } }, 80);
     assert.ok(settled(first));
-    assert.deepEqual(first.at(-1).bound, { a: 1024, b: 1024, c: 32 }, 'two visible materials hold 1024; the uninterested one keeps its fallback');
+    assert.deepEqual(first.at(-1).bound, { loam: 1024, forest: 1024, rock: 128 }, 'two visible materials hold 1024; the uninterested one keeps its 128 floor (the former 32 fallback)');
     assert.equal(first.at(-1).degradation, null, 'nothing is denied when the composition meets every demand');
-    // c becomes the closest material: the composition keeps a (incumbent, closer than b) and moves b's level to c
-    const second = await run({ density: { a: 100, b: 90, c: 200 } }, 120);
-    assert.deepEqual(second[0].fitted, { a: '1024', b: '512', c: '1024' });
-    assert.equal(second[0].degradation, 'appearance-gpu-budget', 'b is held below its demand by the appearance GPU ceiling');
-    assert.deepEqual(second.at(-1).bound, { a: 1024, b: 512, c: 1024 });
+    assert.ok(first.some(frame => frame.bound.loam === 128), 'the floor binds before any streamed tier');
+    assert.ok(pages.materials.every(material => material.palette?.baseColor.length === 32 * 32 * 4), 'the 32 px palette pages are decoded for the far-field palette');
+    assert.deepEqual([slots.used(2), slots.used(1)], [2, 0]);
+    assert.deepEqual(slots.residency[0], { tier: 2, slot: 0, arrivingTier: -1, arrivingSlot: 0 });
+    assert.deepEqual(Array.from(table.row(0, ROW.state)).slice(0, 2), [0, 1024], 'the state row carries the bound resolution');
+    // rock becomes the closest material: the composition keeps loam (incumbent, closer than forest) and moves forest one array down
+    const second = await run({ density: { loam: 100, forest: 90, rock: 200 } }, 120);
+    assert.deepEqual(second[0].fitted, { loam: '1024', forest: '512', rock: '1024' });
+    assert.equal(second[0].degradation, 'appearance-material-slots', 'forest is held below its demand by the fine slots (v1 named the appearance GPU ceiling)');
+    assert.deepEqual(second.at(-1).bound, { loam: 1024, forest: 512, rock: 1024 });
     assert.ok(settled(second));
-    const coarsened = second.findIndex(frame => frame.bound.b === 512), requested = second.findIndex(frame => frame.pending === 'c:1024');
-    assert.ok(coarsened >= 0 && requested > coarsened, `b coarsens (${coarsened}) before c requests 1024 (${requested})`);
-    assert.ok(second.every(frame => frame.bound.b >= 512), 'b blends directly from 1024 to 512 without the 32 fallback');
-    assert.ok(second.every(frame => frame.bound.a === 1024), 'the incumbent keeps its tier throughout');
-    assert.ok(budget.peakGpuBytes <= gpuCeiling && shared.snapshot().peakGpuBytes <= shared.snapshot().limits.gpuBytes);
+    const coarsened = second.findIndex(frame => frame.bound.forest === 512), requested = second.findIndex(frame => frame.pending === 'rock:1024');
+    assert.ok(coarsened >= 0 && requested > coarsened, `forest coarsens (${coarsened}) before rock requests 1024 (${requested})`);
+    assert.ok(second.every(frame => frame.bound.forest >= 512), 'forest mixes directly from 1024 to 512 without the floor');
+    assert.ok(second.every(frame => frame.bound.loam === 1024), 'the incumbent keeps its tier throughout');
+    assert.deepEqual([slots.used(2), slots.used(1), slots.peak[2], slots.peak[1]], [2, 1, 2, 1], 'the spare slots stayed free');
+    assert.ok(budget.peakGpuBytes <= budget.limits.gpuBytes && shared.snapshot().peakGpuBytes <= shared.snapshot().limits.gpuBytes);
     // a held pose and an exact three-way tie: the incumbents keep their tiers and nothing is requested or uploaded again
     const before = { requests: requests.length, uploads: second.at(-1).uploads, evicted: pages.evicted };
-    const held = [...await run({ density: { a: 100, b: 90, c: 200 } }, 40), ...await run({ density: { a: 100, b: 100, c: 100 } }, 40)];
-    assert.ok(held.every(frame => frame.settled && frame.bound.a === 1024 && frame.bound.b === 512 && frame.bound.c === 1024));
+    const held = [...await run({ density: { loam: 100, forest: 90, rock: 200 } }, 40), ...await run({ density: { loam: 100, forest: 100, rock: 100 } }, 40)];
+    assert.ok(held.every(frame => frame.settled && frame.bound.loam === 1024 && frame.bound.forest === 512 && frame.bound.rock === 1024));
     assert.deepEqual({ requests: requests.length, uploads: held.at(-1).uploads, evicted: pages.evicted }, before);
-    // c leaves the view: it falls back to 32 and b, no longer starved, rises again from its resident 512
-    const third = await run({ density: { a: 100, b: 90 } }, 120);
-    assert.deepEqual(third.at(-1).bound, { a: 1024, b: 1024, c: 32 });
+    // rock leaves the view: it falls to the floor and forest, no longer displaced, rises again from its resident 512
+    const third = await run({ density: { loam: 100, forest: 90 } }, 120);
+    assert.deepEqual(third.at(-1).bound, { loam: 1024, forest: 1024, rock: 128 });
     assert.ok(third.at(-1).settled && third.at(-1).degradation === null);
+    assert.deepEqual(slots.residency[2], { tier: 0, slot: 2, arrivingTier: -1, arrivingSlot: 0 });
     pages.dispose(); budget.dispose();
     assert.deepEqual([shared.snapshot().cpuBytes, shared.snapshot().gpuBytes, shared.snapshot().leaseCount], [0, 0, 0]);
 });
 
-test('Material streaming: uncapped streaming locks a late material out of every tier, while the fitted composition shares the levels', async () => {
-    // two 1024 tiers and the fallbacks leave less than one 128 tier of room, as the D4 rock close-up did at 384/192
-    const gpuCeiling = 2 * landscapeMaterialTierBytes(1024).gpuBytes + 3 * landscapeMaterialTierBytes(32).gpuBytes + 200000;
-    const interests = new Map([[0, new Set(['p'])], [1, new Set(['p'])], [2, new Set(['p'])]]), tiers = { a: '1024', b: '1024', c: '1024' };
-    const greedy = streamingFixture({ gpuCeiling });
-    for (let i = 0; i < 160; i++) { greedy.pages.interest(interests, tiers); await flush(); greedy.pages.update(.05, 8 * MIB); }
-    const locked = Object.fromEntries(greedy.pages.snapshot().materials.map(material => [material.soilId, material.resolution]));
-    assert.deepEqual(locked, { a: 1024, b: 1024, c: 32 }, 'without a composition the late material keeps its 32 fallback');
-    greedy.pages.dispose(); greedy.budget.dispose();
-    const fitted = streamingFixture({ gpuCeiling }), frames = await fitted.run({ density: { a: 100, b: 100, c: 100 } }, 160);
-    assert.deepEqual(frames.at(-1).bound, { a: 1024, b: 512, c: 512 }, 'water filling raises every visible material to 512 before any rises to 1024');
-    assert.ok(frames.at(-1).settled);
-    assert.equal(frames.at(-1).degradation, 'appearance-gpu-budget');
-    fitted.pages.dispose(); fitted.budget.dispose();
-    assert.deepEqual([fitted.shared.snapshot().cpuBytes, fitted.shared.snapshot().gpuBytes, greedy.shared.snapshot().gpuBytes], [0, 0, 0]);
+test('Material streaming: two materials swap arrays through the spare slots without either falling to the floor, and a late material settles one array down', async () => {
+    // one fitted fine slot and one fitted mid slot, each with its spare
+    const { pages, budget, shared, slots, run } = await streamingFixture({ fineSlots: 2, midSlots: 2 });
+    const first = await run({ density: { loam: 100, forest: 50 } }, 80);
+    assert.deepEqual(first.at(-1).bound, { loam: 1024, forest: 512, rock: 128 }, 'the second material settles in the mid array instead of the floor');
+    assert.equal(first.at(-1).degradation, 'appearance-material-slots');
+    const swap = await run({ density: { loam: 50, forest: 100 } }, 120);
+    assert.deepEqual(swap[0].fitted, { loam: '512', forest: '1024', rock: '128' }, 'forest is more than 1/0.65 times closer than the incumbent');
+    assert.deepEqual(swap.at(-1).bound, { loam: 512, forest: 1024, rock: 128 });
+    assert.ok(swap.at(-1).settled);
+    assert.ok(swap.every(frame => frame.bound.loam >= 512 && frame.bound.forest >= 512), 'loam coarsens into the mid spare while forest still holds its mid slot; forest then rises into the freed fine array');
+    assert.deepEqual([slots.used(2), slots.used(1), slots.peak[2], slots.peak[1]], [1, 1, 1, 2], 'the swap used the mid spare once and returned it');
+    pages.dispose(); budget.dispose();
+    assert.deepEqual([shared.snapshot().cpuBytes, shared.snapshot().gpuBytes], [0, 0]);
 });
 
-test('Material streaming: tiers whose bounded retries are exhausted leave the composition and held tiers include arrivals', () => {
-    const { pages, budget } = streamingFixture(), [a] = pages.materials;
+test('Material streaming: a reload returns every material to its floor and frees the streamed slots; a restored context streams the floors again', async () => {
+    const { pages, budget, slots, run } = await streamingFixture();
+    await run({ density: { loam: 100, forest: 90 } }, 80);
+    pages.coarsen();
+    const snapshot = pages.snapshot();
+    assert.ok(snapshot.materials.every(material => material.resolution === 128 && material.tier === 128 && material.slot === material.index));
+    assert.deepEqual([slots.used(2), slots.used(1), slots.transition, snapshot.transition, snapshot.floorResolution, snapshot.paletteResolution], [0, 0, null, null, 128, 32]);
+    assert.ok([...pages.records.values()].every(record => record.kind === 'floor'));
+    const again = await run({ density: { loam: 100, forest: 90 } }, 80);
+    assert.deepEqual(again.at(-1).bound, { loam: 1024, forest: 1024, rock: 128 }, 'streaming resumes toward the composition');
+    slots.restore();
+    assert.equal(pages.ready, false);
+    assert.equal(pages.records.size, 0);
+    assert.equal(budget.entries.size, 0, 'every record released its reservation');
+    assert.ok(pages.materials.every(material => material.palette), 'palettes are CPU data and survive the context');
+    const restored = await run({ density: { loam: 100, forest: 90 } }, 80);
+    assert.ok(restored.some(frame => frame.bound.loam === 128), 'the floors stream first');
+    assert.deepEqual(restored.at(-1).bound, { loam: 1024, forest: 1024, rock: 128 });
+    pages.dispose(); budget.dispose();
+});
+
+test('Material streaming: tiers whose bounded retries are exhausted leave the composition and held tiers include arrivals', async () => {
+    const { pages, budget } = await streamingFixture(), [a] = pages.materials;
     assert.deepEqual(pages.streamableResolutions(a), [32, 128, 512, 1024]);
     pages.failures.set('0/1024', { attempts: 2, retryAt: 0 });
     pages.failures.set('0/512', { attempts: 1, retryAt: Infinity });

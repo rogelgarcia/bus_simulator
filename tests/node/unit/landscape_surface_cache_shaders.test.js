@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { landscapeFragmentUniformVectors, landscapeFragmentVariantUniformVectors } from '../../../src/graphics/engine3d/landscape/LandscapeCoverageSlots.js';
 import { LANDSCAPE_SURFACE_CACHE, landscapeSurfaceCacheDefines } from '../../../src/graphics/engine3d/landscape/LandscapeSurfaceCacheLayout.js';
+import { landscapeMaterialParameterDefines } from '../../../src/graphics/engine3d/landscape/LandscapeMaterialParameters.js';
 
 const shaderRoot = new URL('../../../src/graphics/shaders/', import.meta.url);
 async function expandShader(relative, seen = new Set()) {
@@ -51,7 +52,7 @@ function preprocess(source, initial) {
 const terrainSource = await expandShader('materials/landscape/terrain.frag.glsl');
 const vertexSource = await expandShader('materials/landscape/terrain.vert.glsl');
 const baseDefines = { LANDSCAPE_COVERAGE_SLOTS: '81', LANDSCAPE_SURFACE_WARP_OCTAVES: '4', LANDSCAPE_MATERIAL_SAMPLING: '(2)', LANDSCAPE_LIGHTING_TIER: '(1)', LANDSCAPE_TERRAIN_APPEARANCE: '1',
-    LANDSCAPE_SURFACE_LEVEL_COLOR_LIST: 'x', ...landscapeSurfaceCacheDefines() };
+    LANDSCAPE_SURFACE_LEVEL_COLOR_LIST: 'x', ...landscapeSurfaceCacheDefines(), ...landscapeMaterialParameterDefines() };
 const code = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 // samplers referenced outside their declarations: a conservative bound of the active ones, since compiled-out functions are already gone
 function referencedSamplers(source) {
@@ -62,25 +63,27 @@ const mainOf = source => source.slice(source.lastIndexOf('void main() {'));
 
 test('Surface cache shaders: the cached frame program compiles out coverage and materials and keeps the micro lattice and the lighting', () => {
     const frame = preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE: '1' }), standard = preprocess(terrainSource, baseDefines);
-    assert.equal(referencedSamplers(standard).length, 16, 'the default program keeps its sixteen samplers');
-    assert.deepEqual(referencedSamplers(frame), ['uBlendSurface', 'uSoilSurface0', 'uSoilSurface1', 'uSoilSurface2', 'uSoilSurface3', 'uSoilSurface4', 'uSoilSurface5', 'uSurfaceCacheAlbedo',
-        'uSurfaceCacheIndirection', 'uSurfaceCacheMaterial', 'uSurfaceCacheResponse', 'uTerrainFields'], 'micro surface arrays, the field array and the four cache textures: twelve of sixteen');
+    // AI 598 D3a: the six soil sampler pairs and the blend pair became three resolution-grouped array pairs and the parameter texture (nine samplers, ten allowed uncached)
+    assert.deepEqual(referencedSamplers(standard), ['uMaskPages', 'uMaterialBaseCoarse', 'uMaterialBaseFine', 'uMaterialBaseMid', 'uMaterialParameters', 'uMaterialSurfaceCoarse', 'uMaterialSurfaceFine', 'uMaterialSurfaceMid', 'uTerrainFields'],
+        'the default program samples the mask array, the parameter texture, the three material array pairs and the field array: nine of sixteen');
+    assert.deepEqual(referencedSamplers(frame), ['uMaterialParameters', 'uMaterialSurfaceCoarse', 'uMaterialSurfaceFine', 'uMaterialSurfaceMid', 'uSurfaceCacheAlbedo',
+        'uSurfaceCacheIndirection', 'uSurfaceCacheMaterial', 'uSurfaceCacheResponse', 'uTerrainFields'], 'the micro surface arrays, the parameters, the field array and the four cache textures: nine of sixteen');
     const frameCode = code(frame);
-    for (const name of ['hierarchyCoverage', 'appearanceSurface', 'soilSurface', 'maskCoverage', 'soilTextures', 'materialClumpRelief', 'uMaskPages', 'uSoilBase']) {
+    for (const name of ['hierarchyCoverage', 'appearanceSurface', 'soilSurface', 'maskCoverage', 'materialTextures', 'materialClumpRelief', 'uMaskPages', 'uMaterialBase']) {
         assert.doesNotMatch(frameCode.replace(/\buniform\b[^;]*;/g, ''), new RegExp(`\\b${name}`), `${name} is compiled out of the cached frame`);
     }
     assert.doesNotMatch(code(mainOf(frame)), /landscapeSurfaceWarp/, 'the per-pixel surface warp is not evaluated');
     assert.match(frameCode, /vec3 color = landscapeSurfaceCacheRadiance\(world, dx, dy, normal, positionDx, positionDy\);/);
     assert.match(frameCode, /terrainVisibility\(world, dx, dy, normal\);\s+return terrainRadiance\(albedo, surfaceNormal, normal, roughness, 0\.0, ao, response, groundAlbedo, reach\);/,
         'the cached surface takes the unchanged lighting path');
-    assert.match(frameCode, /soilLattice\(soil, true,/, 'the micro lattice stays per pixel');
+    assert.match(frameCode, /soilLattice\(material, true,/, 'the micro lattice stays per pixel');
     assert.match(frameCode, /uvec4 entry = texelFetch\(uSurfaceCacheIndirection,/, 'one indirection fetch');
     assert.equal((frameCode.match(/textureGrad\(uSurfaceCache\w+, uv, dx \* scale, dy \* scale\)/g) ?? []).length, 3, 'three filtered page fetches with the fragment gradients');
 });
 
 test('Surface cache shaders: cache uniforms are counted apart from the shared coverage slot sizing', () => {
     const sizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
-    assert.deepEqual(landscapeFragmentUniformVectors(terrainSource, sizes), { fixedVectors: 156, slotVectors: 4 }, 'the shared coverage slot sizing is unchanged (155 + the AI 597 ocean switch vector)');
+    assert.deepEqual(landscapeFragmentUniformVectors(terrainSource, sizes), { fixedVectors: 79, slotVectors: 4 }, 'the shared coverage slot sizing after AI 598 D3a moved the 85 per-soil vectors to the parameter texture (156 before)');
     assert.deepEqual(landscapeFragmentVariantUniformVectors(terrainSource, sizes), { variantVectors: 7 },
         'four cache samplers and two state vectors of the cached frame, and the near band of the near pass');
     assert.throws(() => landscapeFragmentVariantUniformVectors('#ifdef LANDSCAPE_SURFACE_CACHE\nuniform vec4 a[LANDSCAPE_COVERAGE_SLOTS];\n#endif\n'), /coverage slot define/);
@@ -100,7 +103,7 @@ test('Surface cache shaders: the single-output generation program packs the cach
     const write = generation.slice(generation.indexOf('void landscapeSurfaceCacheWrite('));
     assert.match(write, /gl_FragColor = vec4\(landscapeSurfaceCachePack\(landscapeSurfaceCacheSrgb\(surface\.albedo\)\), landscapeSurfaceCachePack\(vec3\(surface\.ao, octahedral\)\),\s+landscapeSurfaceCachePack\(vec3\(surface\.roughness, microWeight, reach \/ LANDSCAPE_SURFACE_CACHE_REACH_SCALE\)\), landscapeSurfaceCachePack\(response\)\);/);
     assert.match(generation, /return bytes\.x \+ bytes\.y \* 256\.0 \+ bytes\.z \* 65536\.0;/, 'three bytes per float, exact below 2^24');
-    assert.match(generation, /landscapeSurfaceCacheMicroCoverage = 0\.0;\s+for \(int soil = 0; soil < 6; soil\+\+\) if \(uSoilTiling\[soil\]\.y > 0\.0\) landscapeSurfaceCacheMicroCoverage \+= coverageWeight\(coverage, soil\);/);
+    assert.match(generation, /landscapeSurfaceCacheMicroCoverage = 0\.0;\s+for \(int soil = 0; soil < 6; soil\+\+\) if \(landscapeMaterialTiling\(landscapeMaterialOfSoil\(soil\)\)\.y > 0\.0\) landscapeSurfaceCacheMicroCoverage \+= coverageWeight\(coverage, soil\);/);
     // the generation vertex program draws each tile's own surface
     const vertex = code(preprocess(vertexSource, { LANDSCAPE_SURFACE_CACHE_GENERATION: '1' }));
     assert.match(vertex, /vec3 transformed = position;\s+vLandscapeNormal = normalize\(normal\);/);
@@ -120,7 +123,7 @@ test('Surface cache shaders: the near program is the uncached program plus the n
     const stripped = near.replace(/\s*float nearWeight = landscapeSurfaceCacheNearWeight\(dx, dy\);\s+if \(nearWeight <= 0\.0\) discard;\s+if \(uSurfaceCacheNear\.w > 0\.5\) \{[^}]*\}/, '')
         .replace('gl_FragColor = vec4(color, nearWeight);', 'gl_FragColor = vec4(color, 1.0);');
     assert.equal(stripped.replace(/\s+/g, ' '), standard.replace(/\s+/g, ' '));
-    assert.equal(referencedSamplers(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE_NEAR: '1' })).length, 16, 'the uncached samplers, no cache texture');
+    assert.equal(referencedSamplers(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE_NEAR: '1' })).length, 9, 'the uncached samplers, no cache texture');
     // the cached frame shades every fragment it draws (no discard); the near pass replaces its color where it owns the fragment (alpha 1)
     const frame = code(preprocess(terrainSource, { ...baseDefines, LANDSCAPE_SURFACE_CACHE: '1' }));
     assert.doesNotMatch(frame, /discard|uSurfaceCacheNear/);

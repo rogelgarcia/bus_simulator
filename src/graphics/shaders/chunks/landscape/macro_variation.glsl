@@ -1,17 +1,16 @@
 // World-anchored landscape-scale variation of natural materials, mirroring LandscapeMacroVariation.js (landscape-macro-variation-v1).
-// Include through the shaderlib directive for landscape/macro_variation after landscape/surface_warp, whose integer hash it reuses.
-// Values come from landscapeMacroVariationUniforms(seed, soils):
+// Include through the shaderlib directive for landscape/macro_variation after landscape/surface_warp, whose integer hash it reuses, and
+// landscape/material_parameters, whose per-material rows it reads. Values come from landscapeMacroVariationUniforms(seed, soils):
 //   uMacroOctaves[k]   vec4(1 / wavelength, amplitude, cos, sin) of octave k, longest first
 //   uMacroSalts        ivec4 octave salts (uint32 stored as two's-complement integers); each drives both fields of its octave
 //   uMacroSettings     vec4(enabled, fade start and end in wavelengths per pixel, reciprocal unfaded field deviation)
-//   uSoilMacro[soil]   vec4(log2 value, saturation, hue radians, roughness) per unit field deviation
+//   macro row (landscapeMaterialMacro) vec4(log2 value, saturation, hue radians, roughness) per unit field deviation, per material
 // landscapeMacroField(world, footprint) returns the footprint-filtered unit (tone, chroma) fields. AI577 D5 adds the terrain-driven inputs of
 // landscape-terrain-appearance-v1 to this field vector before landscapeMacroAlbedo and landscapeMacroRoughness apply the per-material responses,
 // so uMacroSettings.x gates the noise octaves only and a zero field keeps every material's albedo and roughness exactly.
 uniform vec4 uMacroOctaves[4];
 uniform ivec4 uMacroSalts;
 uniform vec4 uMacroSettings;
-uniform vec4 uSoilMacro[6];
 
 // both fields of one lattice corner: the low and high 16 bits of its hash
 vec2 landscapeMacroCorner(ivec2 index, uint salt) {
@@ -44,10 +43,10 @@ vec2 landscapeMacroField(vec2 world, float footprint) {
 }
 
 // hue rotates about the gray axis and saturation about Rec.709 luminance with chroma; the log2 value follows tone
-vec3 landscapeMacroAlbedo(int soil, vec2 field, vec3 albedo) {
+vec3 landscapeMacroAlbedo(int material, vec2 field, vec3 albedo) {
     if (field.x == 0.0 && field.y == 0.0) return albedo;
     const vec3 axis = vec3(0.57735026919);
-    vec4 response = uSoilMacro[soil];
+    vec4 response = landscapeMaterialMacro(material);
     float angle = response.z * field.y, cosine = cos(angle), sine = sin(angle);
     vec3 color = albedo * cosine + cross(axis, albedo) * sine + axis * dot(axis, albedo) * (1.0 - cosine);
     float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -55,6 +54,6 @@ vec3 landscapeMacroAlbedo(int soil, vec2 field, vec3 albedo) {
     return max(vec3(0.0), color * exp2(response.x * field.x));
 }
 
-float landscapeMacroRoughness(int soil, vec2 field, float roughness) {
-    return field.x == 0.0 ? roughness : clamp(roughness + uSoilMacro[soil].w * field.x, 0.05, 1.0);
+float landscapeMacroRoughness(int material, vec2 field, float roughness) {
+    return field.x == 0.0 ? roughness : clamp(roughness + landscapeMaterialMacro(material).w * field.x, 0.05, 1.0);
 }
