@@ -7,6 +7,7 @@ import { withLandscapeMorphedPositions } from './LandscapeTileEdges.js';
 import { createLandscapeAppearanceUniforms } from './LandscapeAppearanceUniforms.js';
 import { createLandscapeDiagnosticUniforms } from './LandscapeTerrainDiagnostics.js';
 import { createLandscapeLightingUniforms } from './LandscapeLightingModel.js';
+import { createLandscapeSoilPaletteUniforms } from './LandscapeSoilPalette.js';
 import { landscapeProgramVariant, sameLandscapeProgramVariant } from './LandscapeTerrainProgramVariant.js';
 
 const LOD_COLORS = [0x687dba, 0x46b89b, 0xe4b76c, 0xd279a8, 0x92ba5e, 0x7cadd9];
@@ -14,10 +15,11 @@ export const OVERVIEW_MEMORY_CAP = 32 * 1024 * 1024;
 
 /**
  * @param {any} buffers @param {Float32Array} sourceHeights
- * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string,diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} options view-wide compile-time
+ * @param {{coverageSlots:number,materialSampling?:string,lightingTier?:string,diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean,depthBehind?:boolean}} options view-wide compile-time
  *   coverage slot count, material sampling mode, lighting tier and (AI577 D6) program variant: diagnostics compiles the inspection views, terrainAppearance
  *   (default true) the terrain-driven natural appearance, surfaceCache the cached frame program; a tile renders with the calibrated sun and no sky light
- *   until setLighting binds the view lighting
+ *   until setLighting binds the view lighting. depthBehind (AI 596 D5, the render-only surround) draws the tile after the authoritative tiles, one
+ *   polygon-offset unit farther and losing depth ties, so a surround surface coincident with the authoritative one never shows through it
  * @returns {any}
  */
 export function createLandscapeMesh(buffers, sourceHeights, options) {
@@ -36,12 +38,14 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
     // the tile's own appearance cells until the appearance binds its shared ones; the surface cache indirection placeholder among them is the tile's
     // to release (a cached frame drawn before the binding uploads it)
     const ownAppearance = createLandscapeAppearanceUniforms(coverageSlots), ownPlaceholder = ownAppearance.uSurfaceCacheIndirection.value;
+    const depthBehind = options?.depthBehind === true;
     const material = new THREE.ShaderMaterial({
         vertexShader: terrainPayload.vertexSource,
         fragmentShader: terrainPayload.fragmentSource,
         vertexColors: true,
         uniforms: { ...sharedUniforms, ...ownAppearance, uTint: { value: new THREE.Color(LOD_COLORS[descriptor.level % LOD_COLORS.length]) }, uLodColor: { value: 0 },
-            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms(), ...createLandscapeLightingUniforms() }
+            uDiagnostic: { value: 0 }, uDiagnosticRange: { value: new THREE.Vector3(0, 100, 0) }, ...createLandscapeDiagnosticUniforms(), ...createLandscapeLightingUniforms(), ...createLandscapeSoilPaletteUniforms() },
+        ...(depthBehind ? { depthFunc: THREE.LessDepth, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 } : {})
     });
     const recompile = () => {
         const payload = createLandscapeShaderPayload('terrain', { coverageSlots, ...variant });
@@ -61,6 +65,7 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `Landscape:${descriptor.id}`;
     mesh.userData.landscapeChunkId = descriptor.id;
+    if (depthBehind) mesh.renderOrder = 1;
     const originalRaycast = mesh.raycast;
     mesh.raycast = function(raycaster, intersections) {
         const coarser = sharedUniforms.uEdges.value.toArray(), edgeMorph = sharedUniforms.uEdgeMorph.value.toArray();
@@ -104,6 +109,8 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
         setPlanning(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
         /** @param {{uLandscapeSky:any,uLandscapeSun:any,uLandscapeSunIrradiance:any}} uniforms the view lighting's shared uniform cells */
         setLighting(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
+        /** @param {{uSoilPalette:any,uSoilPaletteMode:any}} uniforms the stream's shared soil palette cells (AI 596 D5; the tile's buffers carry soil indices) */
+        setPalette(uniforms) { Object.assign(material.uniforms, uniforms); material.uniformsNeedUpdate = true; },
         /** @param {string} materialSampling compile-time material sampling mode; the program recompiles on the next draw */
         setMaterialSampling(materialSampling) { variant.materialSampling = materialSampling; recompile(); },
         /** @param {string} lightingTier compile-time lighting tier; the program recompiles on the next draw */
@@ -157,7 +164,8 @@ export function createLandscapeMesh(buffers, sourceHeights, options) {
             const wireCpuBytes = wire ? buffers.positions.byteLength + buffers.parentHeights.byteLength : 0;
             const wireGpuBytes = wire ? wireCpuBytes + buffers.wireIndices.byteLength : 0;
             const boundaryBytes = boundary ? buffers.boundaryPositions.byteLength + buffers.boundaryParents.byteLength : 0;
-            return { vertices: buffers.positions.length / 3, triangles: buffers.indices.length / 3, surfaceTriangles: buffers.surfaceTriangles, geometryBytes: buffers.geometryBytes, overlayBytes: wireGpuBytes + boundaryBytes, overlayCpuBytes: wireCpuBytes, estimatedGpuBytes: buffers.geometryBytes + wireGpuBytes + boundaryBytes, mode };
+            return { vertices: buffers.positions.length / 3, triangles: buffers.indices.length / 3, surfaceTriangles: buffers.surfaceTriangles, geometryBytes: buffers.geometryBytes, overlayBytes: wireGpuBytes + boundaryBytes, overlayCpuBytes: wireCpuBytes, estimatedGpuBytes: buffers.geometryBytes + wireGpuBytes + boundaryBytes, mode,
+                depthBehind, exclusion: buffers.exclusion ?? null };
         },
         dispose() { removeLine(wire); removeLine(boundary); wire = null; boundary = null; geometry.dispose(); material.dispose(); ownPlaceholder.dispose(); mesh.removeFromParent(); }
     });

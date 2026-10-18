@@ -1,10 +1,11 @@
 // Resolves the identity and stability of a surface cache page from the resident appearance inputs it depends on.
 // @ts-check
 // AI577 D6 (landscape-surface-cache-v1). A page depends on the global generation key (recipe, compiled program, every generation uniform that is
-// not per mask slot or per transition, sea level, appearance revision and soil bindings), on the mask pages at the levels its texel can still
-// resolve (with a margin covering the warp, the reconstruction kernels and the availability bands), and on the tier keys of the soils those
-// pages hold plus the exposed-rock soil, and on the geometry tiles the page is drawn from (a level change under a page changes its heights and
-// normals). Mask pages that are fading in or out, a material tier transition that changes a soil's key at this mip and geometry transitions
+// not per mask slot or per transition, sea level, appearance revision and soil bindings; since AI 598 D3a the material parameter table's hash
+// stands for the per-material values), on the mask pages at the levels its texel can still resolve (with a margin covering the warp, the
+// reconstruction kernels and the availability bands), and on the tier keys of the materials of the soils those pages hold (the array tier a
+// material draws from) plus the exposed-rock soil, and on the geometry tiles the page is drawn from (a level change under a page changes its
+// heights and normals). Mask pages that are fading in or out, a material tier transition that changes a soil's key at this mip and geometry transitions
 // over the page make it unstable: a missing page generates from them at once as a provisional version, a resident one is not regenerated until
 // they settle (its current version keeps rendering). Invalidation is monotonic (landscapeSurfaceCacheInputChange): inputs that only coarsened
 // (mask pages evicted, a material tier downgraded) never invalidate a page generated from finer ones. Camera, light and time never enter the identity.
@@ -87,7 +88,7 @@ export function landscapeSurfaceCachePageInputs({ geometry, global, byLevel, lev
     for (const index of [...present].sort((a, b) => a - b)) {
         const soil = soils[index];
         if (!soil) throw new Error(`[LandscapeSurfaceCache] page inputs name soil ${index} without a material state`);
-        const [tier, micro] = landscapeSurfaceCacheSoilTiers(soil, texelMeters);
+        const [tier, micro] = landscapeSurfaceCacheMaterialTiers(soil, texelMeters);
         soilKeys.push(`${index}:${tier}:${micro}`);
         soilTiers.push([index, tier, micro]);
         if (soil.transitionResolution !== null && landscapeSurfaceCacheTierKey({ tileMeters: soil.tileMeters, resolution: soil.transitionResolution, texelMeters }) !== tier) stable = false;
@@ -98,13 +99,14 @@ export function landscapeSurfaceCachePageInputs({ geometry, global, byLevel, lev
 }
 
 /**
- * Tier keys (base, micro) of a soil's bound material at a page texel: 'resolved', the tier resolution, or 'none' without a micro layer.
- * @param {{tileMeters:number,resolution:number,microTileMeters:number,microResolution:number}} soil @param {number} texelMeters
+ * Tier keys (base, micro) of a material's bound array tier at a page texel: 'resolved', the tier resolution, or 'none' without a micro layer
+ * (AI 598 D3a: the tier is the resolution of the array holding the material, 128 for the floor; the page keeps the materials of the soils it holds).
+ * @param {{tileMeters:number,resolution:number,microTileMeters:number,microResolution:number}} material @param {number} texelMeters
  * @returns {[string, string]}
  */
-export function landscapeSurfaceCacheSoilTiers(soil, texelMeters) {
-    return [landscapeSurfaceCacheTierKey({ tileMeters: soil.tileMeters, resolution: soil.resolution, texelMeters }),
-        soil.microTileMeters > 0 ? landscapeSurfaceCacheTierKey({ tileMeters: soil.microTileMeters, resolution: soil.microResolution, texelMeters }) : 'none'];
+export function landscapeSurfaceCacheMaterialTiers(material, texelMeters) {
+    return [landscapeSurfaceCacheTierKey({ tileMeters: material.tileMeters, resolution: material.resolution, texelMeters }),
+        material.microTileMeters > 0 ? landscapeSurfaceCacheTierKey({ tileMeters: material.microTileMeters, resolution: material.microResolution, texelMeters }) : 'none'];
 }
 
 /** Rank of a tier key: 'resolved' outranks every resolution, a resolution ranks by its size, 'none' (no micro layer) ranks lowest. @param {string} key */

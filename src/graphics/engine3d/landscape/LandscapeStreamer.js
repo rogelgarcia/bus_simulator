@@ -2,7 +2,7 @@
 // @ts-check
 import * as THREE from 'three';
 import { createLandscapeViewPlanner } from '../../../app/landscape/LandscapeStreaming.js';
-import { estimateLandscapeMeshBuffers } from './LandscapeMeshBuffers.js';
+import { estimateLandscapeMeshBuffers, estimateLandscapeMeshExclusionBytes, landscapeMeshBoundsExcluded, landscapeMeshExclusion } from './LandscapeMeshBuffers.js';
 import { createLandscapeMesh } from './LandscapeMesh.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { computeLandscapeTileEdges } from './LandscapeTileEdges.js';
@@ -12,6 +12,7 @@ import { assertLandscapeCoverageSlots } from './LandscapeCoverageSlots.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingMode } from './LandscapeMaterialSampling.js';
 import { LANDSCAPE_LIGHTING, landscapeLightingTier } from './LandscapeLightingModel.js';
 import { LANDSCAPE_TERRAIN_PROGRAM_VARIANT, landscapeProgramVariant, sameLandscapeProgramVariant } from './LandscapeTerrainProgramVariant.js';
+import { createLandscapeSoilPalette } from './LandscapeSoilPalette.js';
 
 const UPLOAD_BYTES_PER_FRAME = 8 * 1024 * 1024;
 const MORPH_SECONDS = .3;
@@ -39,13 +40,18 @@ export function landscapeCameraSnapshot(camera, viewportHeight) {
 export class LandscapeStreamer {
     /**
      * @param {{loaded:any,budget:any,renderer:any,scene:any,coverageSlots:number,materialSampling?:string,lightingTier?:string,lighting?:any,mode?:string,lodColors?:boolean,boundaries?:boolean,
-     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview',diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean}} options naturalInference is the view's
+     *   targetErrorPixels?:number,naturalInference?:'terrain'|'overview',diagnostics?:boolean,terrainAppearance?:boolean,surfaceCache?:boolean,exclusion?:any,depthBehind?:boolean,workers?:number}} options naturalInference is the view's
      *   natural display policy of planning-only cover, shared with the appearance stream of the same load; diagnostics, terrainAppearance and surfaceCache (AI577 D6)
-     *   select the compiled terrain program variant the tiles start with (see setProgramVariant)
+     *   select the compiled terrain program variant the tiles start with (see setProgramVariant). AI 596 D5 (the render-only surround): exclusion
+     *   (landscapeMeshExclusion) keeps every tile inside its bounds unbuilt and unfetched and lowers the straddling tiles' inside vertices to the reference
+     *   surface less the skirt; depthBehind draws the tiles behind coincident authoritative ones; workers sizes the stream's own worker pool; soilPalette
+     *   builds the tiles with display soil indices instead of catalog colours and colours them through the stream's shared palette cells
+     *   (LandscapeSoilPalette: the catalog until setSoilPalette gives the loaded appearance's palette)
      */
     constructor({ loaded, budget, renderer, scene, coverageSlots, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, lightingTier = LANDSCAPE_LIGHTING.defaultTier, lighting = null, mode = 'shaded', lodColors = false, boundaries = false, targetErrorPixels = 1.5,
         naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, diagnostics = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.diagnostics,
-        terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance, surfaceCache = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.surfaceCache }) {
+        terrainAppearance = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.terrainAppearance, surfaceCache = LANDSCAPE_TERRAIN_PROGRAM_VARIANT.defaults.surfaceCache,
+        exclusion = null, depthBehind = false, workers = 2, soilPalette = false }) {
         this.coverageSlots = assertLandscapeCoverageSlots(coverageSlots);
         landscapeMaterialSamplingMode(materialSampling);
         this.materialSampling = materialSampling;
@@ -60,6 +66,14 @@ export class LandscapeStreamer {
         this.lodColors = lodColors;
         this.boundaries = boundaries;
         this.targetErrorPixels = targetErrorPixels;
+        if (typeof depthBehind !== 'boolean') throw new Error('[Landscape] depthBehind must be boolean');
+        if (typeof soilPalette !== 'boolean') throw new Error('[Landscape] soilPalette must be boolean');
+        if (!Number.isSafeInteger(workers) || workers < 1 || workers > 4) throw new Error(`[Landscape] A terrain stream runs 1 to 4 workers; received ${workers}`);
+        this.depthBehind = depthBehind;
+        this.soilPalette = soilPalette ? createLandscapeSoilPalette(this.manifest) : null;
+        this.exclusion = exclusion ? landscapeMeshExclusion(exclusion) : null;
+        this.excluded = new Set(this.exclusion ? this.manifest.chunks.filter(descriptor => landscapeMeshBoundsExcluded(descriptor.bounds, this.exclusion.bounds)).map(descriptor => descriptor.id) : []);
+        if (this.excluded.has(this.manifest.overviewId)) throw new Error('[Landscape] The mesh exclusion covers the whole landscape; nothing would be rendered');
         this.planner = createLandscapeViewPlanner(this.manifest);
         this.descriptors = new Map(this.manifest.chunks.map(descriptor => [descriptor.id, descriptor]));
         this.children = new Map();
@@ -91,7 +105,8 @@ export class LandscapeStreamer {
         this.poolKey = `${this.instance}/worker-context`;
         const contextReservation = budget.reserve(this.poolKey, { cpuBytes: (loaded.decodedBytes + landscapeNaturalPresentationBytes(loaded.chunk.descriptor).workingBytes) * 2, gpuBytes: 0, kind: 'worker-overview-copies-and-natural-infill', pinned: true });
         if (!contextReservation.admitted) throw new Error(`Minimum terrain worker coverage cannot fit: ${contextReservation.reason}`);
-        this.pool = new LandscapeWorkerPool({ manifest: this.manifest, manifestUrl: loaded.manifestUrl, root: loaded.chunk });
+        this.uploadAllowance = UPLOAD_BYTES_PER_FRAME;
+        this.pool = new LandscapeWorkerPool({ size: workers, context: { type: 'initialize', manifest: this.manifest, manifestUrl: loaded.manifestUrl, root: loaded.chunk, ...(this.exclusion ? { exclusion: this.exclusion } : {}), ...(this.soilPalette ? { soilPalette: true } : {}) } });
         // fallback colors show the same natural display soil as the appearance masks; the policy is decided before the root is built
         this.naturalHandle = acquireLandscapeNaturalInference(loaded, { ledger: budget, mode: landscapeNaturalInferenceMode(naturalInference) });
         this.natural = this.naturalHandle.source;
@@ -106,9 +121,12 @@ export class LandscapeStreamer {
         const boundaryGpu = this.boundaries ? estimate.boundaryBytes : 0;
         // a build also reads the chunk's natural-soil page (and its fetch buffer) in the worker for its fallback colors
         const natural = peak && !sourceOnly && this.natural ? this.natural.transientBytes([descriptor.id]) : 0;
+        // a stream with a mesh exclusion may add the boundary wall to a straddling tile (AI 596 D5); the displayed heights it keeps for picking are a
+        // further copy of the vertex heights
+        const exclusion = this.exclusion && !sourceOnly ? estimateLandscapeMeshExclusionBytes(descriptor) : 0, exclusionCpu = this.exclusion && !sourceOnly ? exclusion + (estimate.vertices + exclusion / 79) * 4 : 0;
         return {
-            cpuBytes: source * (peak ? 4 : 1) + (sourceOnly ? 0 : estimate.geometryBytes + estimate.wireIndexBytes + estimate.boundaryBytes + wireCpu + (peak ? source : 0)) + natural,
-            gpuBytes: sourceOnly ? 0 : estimate.geometryBytes + wireGpu + boundaryGpu,
+            cpuBytes: source * (peak ? 4 : 1) + (sourceOnly ? 0 : estimate.geometryBytes + estimate.wireIndexBytes + estimate.boundaryBytes + wireCpu + (peak ? source : 0)) + natural + exclusionCpu,
+            gpuBytes: sourceOnly ? 0 : estimate.geometryBytes + wireGpu + boundaryGpu + exclusion,
             kind: sourceOnly ? 'source-acquisition' : peak ? 'terrain-build-reservation' : 'terrain-resident'
         };
     }
@@ -116,6 +134,7 @@ export class LandscapeStreamer {
     reserveRecord(id, sourceOnly = false) {
         const descriptor = this.descriptors.get(id);
         if (!descriptor) throw new Error(`Unknown terrain chunk ${id}`);
+        if (this.excluded.has(id)) throw new Error(`[Landscape] Terrain chunk ${id} lies inside the mesh exclusion and is never built or fetched`);
         const existing = this.records.get(id);
         if (existing && (sourceOnly || existing.buffers || existing.building)) return existing;
         if (existing && !existing.chunk) { this.degradationReason = 'acquiring-source'; return null; }
@@ -168,10 +187,11 @@ export class LandscapeStreamer {
     }
 
     createModel(record, { variant = this.programVariant, attach = true } = {}) {
-        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling, lightingTier: this.lightingTier, ...variant });
+        const model = createLandscapeMesh(record.buffers, record.chunk.heights, { coverageSlots: this.coverageSlots, materialSampling: this.materialSampling, lightingTier: this.lightingTier, depthBehind: this.depthBehind, ...variant });
         if (this.lighting) model.setLighting(this.lighting.uniforms);
         if (this.appearance) model.setAppearance(this.appearance.uniforms);
         if (this.planning) model.setPlanning(this.planning.uniforms);
+        if (this.soilPalette) model.setPalette(this.soilPalette.uniforms);
         model.setMode(this.mode);
         model.setBoundaries(this.boundaries);
         model.setLodColors(this.lodColors);
@@ -195,17 +215,21 @@ export class LandscapeStreamer {
     async linkProgram(model, camera) {
         const started = performance.now(), parallel = this.renderer.extensions.has('KHR_parallel_shader_compile');
         this.renderer.compile(model.mesh, camera, this.scene);
-        const program = this.renderer.properties.get(model.mesh.material).currentProgram;
+        const current = () => this.renderer.properties.get(model.mesh.material).currentProgram;
+        let program = current();
         if (typeof program?.isReady !== 'function') throw new Error('[Landscape] The renderer did not create a terrain program to compile');
         const gl = this.renderer.getContext();
         gl.flush(); // submits the queued compile and link so the driver progresses while nothing else is drawn
-        while (!this.disposed && !program.isReady()) {
+        // a tier or variant switch while this waits replaces the material's program and deletes the old one (AI 597 D7: the lighting suite's
+        // runtime tier switches polled a deleted program, GL_INVALID_VALUE on every poll): follow the current program, never a deleted one
+        const linked = () => { const latest = current(); if (latest && latest !== program) program = latest; return typeof program?.isReady === 'function' && program.program !== undefined && program.isReady(); };
+        while (!this.disposed && !linked()) {
             if (gl.isContextLost()) throw new Error('[Landscape] The WebGL context was lost while the terrain program compiled');
             if (performance.now() - started > PROGRAM_COMPILE_WAIT_MS) break;
             await new Promise(resolve => setTimeout(resolve, 16));
         }
         if (this.disposed) throw new DOMException('Landscape stream disposed while its terrain program compiled', 'AbortError');
-        return { parallel, milliseconds: performance.now() - started, timedOut: !program.isReady() };
+        return { parallel, milliseconds: performance.now() - started, timedOut: !linked() };
     }
 
     /**
@@ -301,6 +325,15 @@ export class LandscapeStreamer {
         for (const record of this.records.values()) record.model?.setLightingTier(this.lightingTier);
     }
 
+    /**
+     * AI 596 D5: replaces the soil palette cells of a stream built in soil-palette mode (every tile, present and later, draws with them at once); null
+     * restores the catalog colours. Returns whether the cells changed. @param {{version?:number|string|null,soils:Record<string, number[]>}|null} palette
+     */
+    setSoilPalette(palette) {
+        if (!this.soilPalette) throw new Error('[Landscape] This terrain stream carries catalog vertex colours; only a stream in soil-palette mode takes a palette');
+        return this.soilPalette.set(palette);
+    }
+
     /** Recompiles every terrain material for a material sampling mode; tiles uploaded later use it too. @param {string} materialSampling */
     setMaterialSampling(materialSampling) {
         landscapeMaterialSamplingMode(materialSampling);
@@ -360,8 +393,11 @@ export class LandscapeStreamer {
 
     splitNeeded(id) { return this.desiredAncestors?.has(id) ?? false; }
 
+    // the ids a task builds: excluded siblings are left out (nothing of theirs is rendered, fetched or reserved)
+    taskNeeds(kind, parentId, ids) { return (kind === 'refine' ? ids : [parentId]).filter(id => !this.excluded.has(id)); }
+
     startTask(kind, parentId, ids) {
-        const needed = kind === 'refine' ? ids : [parentId];
+        const needed = this.taskNeeds(kind, parentId, ids);
         const reserved = [];
         const previous = new Map();
         for (const id of needed) {
@@ -416,9 +452,11 @@ export class LandscapeStreamer {
         for (const id of this.prefetchIds) {
             if (!desired.has(id) || !this.records.has(id)) { this.evict(this.records.get(id)); this.prefetchIds.delete(id); }
         }
-        if (this.task || this.pool.snapshot().active || this.pool.snapshot().queued) return;
+        // prefetch uses spare admitted capacity only: while the scheduler is budget-denied there is none, and a prefetch issued now would be force-pruned by
+        // the next denied refinement and re-requested here, so the stream would never settle (AI 596 D5, found by the surround's bounded share)
+        if (this.task || this.pool.snapshot().active || this.pool.snapshot().queued || this.degradationReason === 'cpu-budget' || this.degradationReason === 'gpu-budget') return;
         for (const id of desired) {
-            if (this.records.has(id) || !this.retryAllowed(id)) continue;
+            if (this.excluded.has(id) || this.records.has(id) || !this.retryAllowed(id)) continue;
             const previousReason = this.degradationReason;
             const record = this.reserveRecord(id, true);
             this.degradationReason = previousReason;
@@ -449,7 +487,7 @@ export class LandscapeStreamer {
 
     chooseTask() {
         this.schedulerIdle = false;
-        const coarsen = [...this.children].filter(([parentId, ids]) => ids.length === 4 && ids.every(id => this.leaves.has(id)) && !this.splitNeeded(parentId) && this.balancedAfterCoarsen(parentId)).sort((a, b) => this.descriptors.get(b[0]).level - this.descriptors.get(a[0]).level);
+        const coarsen = [...this.children].filter(([parentId, ids]) => ids.length === 4 && !this.excluded.has(parentId) && ids.every(id => this.leaves.has(id) || this.excluded.has(id)) && !this.splitNeeded(parentId) && this.balancedAfterCoarsen(parentId)).sort((a, b) => this.descriptors.get(b[0]).level - this.descriptors.get(a[0]).level);
         for (const [parentId, ids] of coarsen) if (this.startTask('coarsen', parentId, ids)) return;
         const refine = [...this.leaves].filter(id => this.splitNeeded(id) && this.children.get(id)?.length === 4 && this.children.get(id).every(child => this.retryAllowed(child)) && this.balancedAfterRefine(id)).sort((a, b) => (this.lastPlan.errorsById[b] ?? 0) - (this.lastPlan.errorsById[a] ?? 0));
         for (const id of refine) if (this.startTask('refine', id, this.children.get(id))) return;
@@ -476,13 +514,13 @@ export class LandscapeStreamer {
     advanceTask(dt, camera) {
         const task = this.task;
         if (!task) return;
-        const needed = task.kind === 'refine' ? task.ids : [task.parentId];
+        const needed = this.taskNeeds(task.kind, task.parentId, task.ids), built = task.ids.filter(id => !this.excluded.has(id));
         if (task.phase === 'loading') {
             for (const id of needed) {
                 const record = this.records.get(id);
                 if (!record?.buffers || record.uploaded) continue;
                 const bytes = this.resourceCost(record.descriptor, false, false).gpuBytes;
-                if (this.uploadedBytes + bytes > UPLOAD_BYTES_PER_FRAME) break;
+                if (this.uploadedBytes + bytes > this.uploadAllowance) break;
                 this.uploadedBytes += this.uploadRecord(record, camera);
                 break;
             }
@@ -490,17 +528,17 @@ export class LandscapeStreamer {
             if (task.kind === 'refine') {
                 this.records.get(task.parentId).model.mesh.visible = false;
                 this.leaves.delete(task.parentId);
-                for (const id of task.ids) { const record = this.records.get(id); record.model.setMorph(0); record.model.mesh.visible = true; this.leaves.add(id); }
+                for (const id of built) { const record = this.records.get(id); record.model.setMorph(0); record.model.mesh.visible = true; this.leaves.add(id); }
                 this.updateEdges();
             }
             task.phase = 'morph';
         }
         task.progress = Math.min(1, task.progress + dt / MORPH_SECONDS);
-        for (const id of task.ids) this.records.get(id).model.setMorph(task.kind === 'refine' ? task.progress : 1 - task.progress);
+        for (const id of built) this.records.get(id).model.setMorph(task.kind === 'refine' ? task.progress : 1 - task.progress);
         this.updateEdges();
         if (task.progress < 1) return;
         if (task.kind === 'coarsen') {
-            for (const id of task.ids) { this.records.get(id).model.mesh.visible = false; this.leaves.delete(id); }
+            for (const id of built) { this.records.get(id).model.mesh.visible = false; this.leaves.delete(id); }
             const parent = this.records.get(task.parentId);
             parent.model.setMorph(1);
             parent.model.mesh.visible = true;
@@ -512,9 +550,14 @@ export class LandscapeStreamer {
         this.updateEdges();
     }
 
-    /** @param {number} dt seconds @param {any} camera @param {number} viewportHeight */
-    update(dt, camera, viewportHeight) {
+    /**
+     * @param {number} dt seconds @param {any} camera @param {number} viewportHeight
+     * @param {number} [uploadAllowance] bytes this frame may upload (at most the per-frame cap); a second stream of the same view passes what the first left
+     */
+    update(dt, camera, viewportHeight, uploadAllowance = UPLOAD_BYTES_PER_FRAME) {
         if (this.disposed || !this.leaves.size) return;
+        if (!Number.isFinite(uploadAllowance) || uploadAllowance < 0) throw new Error('[Landscape] The upload allowance must be a nonnegative byte count');
+        this.uploadAllowance = Math.min(UPLOAD_BYTES_PER_FRAME, uploadAllowance);
         const started = performance.now();
         this.uploadedBytes = 0;
         if (this.inspectionUpload) {
@@ -580,6 +623,7 @@ export class LandscapeStreamer {
     /** @param {string[]} ids @param {{consumer:string,priority?:number,accuracy?:string,signal?:AbortSignal}} options */
     async acquireChunks(ids, { consumer, priority = 100, accuracy = 'authoritative', signal } = {}) {
         if (!Array.isArray(ids) || !ids.length || ids.length > 4 || new Set(ids).size !== ids.length) throw new Error('Consumer requests require one to four distinct chunks');
+        if (ids.some(id => this.excluded.has(id))) throw new Error('Excluded chunks are never resident');
         if (accuracy === 'authoritative' && ids.some(id => this.descriptors.get(id)?.level !== this.manifest.grid.maxLevel)) throw new Error('Authoritative leases require native chunks');
         signal?.throwIfAborted();
         const held = [], byId = new Map();
@@ -646,7 +690,10 @@ export class LandscapeStreamer {
             estimatedGpuBytes: this.budget.snapshot().gpuBytes, estimatedPeakBytes: this.budget.snapshot().peakCpuBytes, memoryCapBytes: this.budget.snapshot().limits.cpuBytes,
             transition: this.task ? { kind: this.task.kind, parentId: this.task.parentId, phase: this.task.phase, progress: this.task.progress } : null,
             lods: rendered.map(record => ({ id: record.id, level: record.descriptor.level, errorPixels: this.lastPlan?.errorsById[record.id] ?? null, geometricError: record.descriptor.geometricError, morph: record.model.morph, resident: true })),
-            naturalSoil: { status: this.natural.status, policy: this.natural.active ? 'natural-terrain-inference-v1' : 'natural-overview-infill-v1', fallbackColorBuilds: { ...this.naturalBuilds } }
+            naturalSoil: { status: this.natural.status, policy: this.natural.active ? 'natural-terrain-inference-v1' : 'natural-overview-infill-v1', fallbackColorBuilds: { ...this.naturalBuilds } },
+            exclusion: this.exclusion ? { bounds: { ...this.exclusion.bounds }, skirtDepth: this.exclusion.skirtDepth, reference: this.exclusion.reference ? this.exclusion.reference.descriptor.id : null, excludedIds: [...this.excluded],
+                straddlingIds: rendered.filter(record => record.model.diagnostics().exclusion).map(record => record.id) } : null,
+            depthBehind: this.depthBehind, workers: this.pool.slots.length, soilPalette: this.soilPalette?.snapshot() ?? null
         };
     }
 

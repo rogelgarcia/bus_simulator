@@ -112,7 +112,10 @@ dirties intersecting dependencies; a source/grid/schema change invalidates the
 product wholesale. Existing flat-only city caches reject a landscape binding
 until supported. No terrain edit invokes a whole-city rebuild for this viewer.
 
-## Future content-layer residency
+## Content-layer residency
+
+Implemented by AI 599 D3 for the ecosystem layers (`LANDSCAPE_ECOSYSTEM.md` §5, `LANDSCAPE_STREAMING.md` "Content layers"); the
+paragraph below is the reserved contract it follows, which roads, buildings and props reuse.
 
 Terrain is authoritative independently of any renderer. A future layer descriptor
 must own a stable layer ID, schema/capabilities, source revision/content key,

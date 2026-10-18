@@ -117,6 +117,7 @@ test('Landscape D5 terrain appearance: viewer options select the switch, terrain
 // one uniform material in every soil slot on a synthetic hierarchy (the D5c parity probe), rendered by the production terrain program at tier standard
 async function renderProbes(page, cases, shared) {
     await page.route('**/tests/headless/e2e/fixtures/landscape_surface_probe.html', async route => route.fulfill({ contentType: 'text/html', body: await readFile('tests/headless/e2e/fixtures/landscape_surface_probe.html', 'utf8') }));
+    await page.route('**/tests/headless/e2e/fixtures/landscape_material_probe.js', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile('tests/headless/e2e/fixtures/landscape_material_probe.js', 'utf8') }));
     await page.goto('/tests/headless/e2e/fixtures/landscape_surface_probe.html');
     return page.evaluate(async ({ cases, shared }) => {
         const T = await import('three');
@@ -128,17 +129,20 @@ async function renderProbes(page, cases, shared) {
         renderer.setPixelRatio(1); renderer.setSize(63, 63, false);
         const target = new T.WebGLRenderTarget(63, 63, { type: T.FloatType }), coverageSlots = chooseLandscapeCoverageSlots(renderer).total;
         const appearance = createLandscapeAppearanceUniforms(coverageSlots), columns = 17, width = 21, capacity = 17, resources = [target];
-        const base = new T.DataTexture(new Uint8Array([...shared.baseBytes, 255]), 1, 1, T.RGBAFormat), surface = new T.DataArrayTexture(new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]), 1, 1, 2);
-        for (const texture of [base, surface]) { texture.colorSpace = T.NoColorSpace; texture.needsUpdate = true; resources.push(texture); }
-        appearance.uSoilMacro.value.set(shared.soilMacro); appearance.uMacroSettings.value.set(shared.macroSettings);
-        appearance.uBlendBase.value = base; appearance.uBlendSurface.value = surface; appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
+        // AI 598 D3a: the probe's linear base bytes in a linear coarse material array (the former NoColorSpace texture, the former 32 px state), the macro rows per soil
+        const { createLandscapeMaterialBinder } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
+        const binder = createLandscapeMaterialBinder({ renderer, uniforms: appearance, fineSlots: 1, midSlots: 1, linearBaseColor: true }), surface = new Uint8Array([128, 128, 255, 255, 255, 255, 0, 128]);
+        resources.push(binder);
+        for (let soil = 0; soil < 6; soil++) { binder.bindMaterial(soil, { baseColor: new Uint8Array([...shared.baseBytes, 255]), surface, size: 1, resolution: 32 }); binder.setParameters(soil, { macro: shared.soilMacro.slice(soil * 4, soil * 4 + 4) }); }
+        appearance.uMacroSettings.value.set(shared.macroSettings);
+        appearance.uAppearanceReady.value = 1; appearance.uMaskDimensions.value.set(columns, columns);
         const descriptor = { id: 'l0/c0/r0', level: 0, column: 0, row: 0, parentId: null, bounds: { minX: -20000, maxX: 20000, minZ: -20000, maxZ: 20000 } };
         const results = [];
         try {
             for (const probe of cases) {
                 for (let soil = 0; soil < 6; soil++) {
-                    appearance[`uSoilBase${soil}`].value = base; appearance[`uSoilSurface${soil}`].value = surface; appearance.uSoilScale.value[soil].set(probe.roles[soil], 0, 1, 0);
-                    appearance.uSoilResponse.value[soil].set(shared.response[0], shared.response[1], 0, 0); appearance.uSoilState.value[soil].w = shared.response[2];
+                    binder.setParameters(soil, { scale: [probe.roles[soil], 0, 1, 0], response: [shared.response[0], shared.response[1], 0, 0] });
+                    binder.setComponent(soil, 'state', 3, shared.response[2]);
                 }
                 const pixels = new Uint8Array(width * width * 4 * capacity);
                 for (let index = 0; index < width * width * capacity; index++) pixels.set([probe.soil * 17, probe.cover, 1, 240], index * 4);

@@ -2,11 +2,32 @@
 // @ts-check
 // Level tints are linear albedo colors so the tinted surface keeps its lighting and tone mapping. Soil review
 // colors are display sRGB written without tone mapping, so pure regions reproduce the review image bytes. AI577 D5 adds the terrain-driven
-// appearance inputs and the natural dressing inputs (composite and one gray-value view per output), unlit like the coverage weights.
+// appearance inputs and the natural dressing inputs (composite and one gray-value view per output), unlit like the coverage weights. AI 598 D1 adds
+// the surface model views: substrate and cover classes mixed by their weights from fixed per-class palettes (compile-time constants of the diagnostics
+// variant), and the cover fraction, wetness and disturbance as gray values; planning cover is tinted slate like the dressing views.
+import { LANDSCAPE_SURFACE_COVERS, LANDSCAPE_SURFACE_SUBSTRATES } from '../../../app/landscape/index.js';
 import { landscapeDressingClass } from './LandscapeTerrainAppearance.js';
 
 export const LANDSCAPE_DIAGNOSTICS = Object.freeze(['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage', 'terrain-appearance',
-    'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris']);
+    'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris', 'surface-substrate', 'surface-cover', 'surface-fraction', 'surface-wetness', 'surface-disturbance']);
+
+/** Diagnostics of the AI 598 surface model (uDiagnostic 13-17), evaluated per fragment from the resident fields, geology and appearance layer. */
+export const LANDSCAPE_SURFACE_DIAGNOSTICS = Object.freeze(LANDSCAPE_DIAGNOSTICS.filter(name => /^surface-(substrate|cover|fraction|wetness|disturbance)$/.test(name)));
+
+/** Review colour of every substrate class (display sRGB, written raw): distinct hues so a mixed pixel still reads. */
+export const LANDSCAPE_SURFACE_SUBSTRATE_COLORS = Object.freeze({
+    sandstone: Object.freeze({ name: 'orange-tan', hex: '#d99a5b' }), caprock: Object.freeze({ name: 'saddle brown', hex: '#9c5a2a' }), scree: Object.freeze({ name: 'gray', hex: '#a9a9a9' }),
+    dirt: Object.freeze({ name: 'brown', hex: '#6b4a2b' }), mud: Object.freeze({ name: 'dark brown', hex: '#3f2f29' }), sand: Object.freeze({ name: 'pale yellow', hex: '#f2e3a8' }),
+    'wet-sand': Object.freeze({ name: 'blue', hex: '#4a7fb5' }), 'compacted-sand': Object.freeze({ name: 'khaki', hex: '#c4a26e' }), 'dune-sand': Object.freeze({ name: 'gold', hex: '#e8c984' }),
+    cobble: Object.freeze({ name: 'slate', hex: '#6d7f8c' }), 'shell-grit': Object.freeze({ name: 'white', hex: '#f0f0f0' })
+});
+
+/** Review colour of every cover class (display sRGB, written raw); `none` is near black. */
+export const LANDSCAPE_SURFACE_COVER_COLORS = Object.freeze({
+    none: Object.freeze({ name: 'near black', hex: '#202020' }), turf: Object.freeze({ name: 'green', hex: '#5cb85c' }), 'dry-grass': Object.freeze({ name: 'yellow', hex: '#d2c04a' }),
+    moss: Object.freeze({ name: 'sea green', hex: '#2e8b57' }), 'broadleaf-litter': Object.freeze({ name: 'red-brown', hex: '#c0392b' }), 'needle-litter': Object.freeze({ name: 'orange', hex: '#e67e22' }),
+    lichen: Object.freeze({ name: 'pale gray-green', hex: '#b0c4a0' }), algae: Object.freeze({ name: 'dark teal', hex: '#1f6f5f' }), wrack: Object.freeze({ name: 'purple', hex: '#6a3d9a' })
+});
 
 /** Diagnostics whose shader branch reads each soil's dressing host class from uSurfaceSoilColors[soil].x. */
 export const LANDSCAPE_DRESSING_DIAGNOSTICS = Object.freeze(LANDSCAPE_DIAGNOSTICS.filter(name => name.startsWith('dressing')));
@@ -75,6 +96,19 @@ export function landscapeSurfaceLevelColorValues() {
 export function landscapeSurfaceLevelColorDefine() {
     const values = landscapeSurfaceLevelColorValues();
     return LANDSCAPE_SURFACE_LEVEL_COLORS.map((_, index) => `vec3(${[0, 1, 2].map(channel => values[index * 3 + channel].toFixed(8)).join(', ')})`).join(', ');
+}
+
+/**
+ * The surface model palettes as the compile-time vec3 lists of surface_model.glsl (display sRGB in 0..1, written raw by the inspection views).
+ * @returns {{LANDSCAPE_SURFACE_SUBSTRATE_COLOR_LIST:string,LANDSCAPE_SURFACE_COVER_COLOR_LIST:string}}
+ */
+export function landscapeSurfaceClassColorDefines() {
+    const list = (catalog, colors) => catalog.map(entry => {
+        const color = colors[entry.id];
+        if (!color) throw new Error(`[Landscape] Surface review has no color for class ${entry.id}`);
+        return `vec3(${landscapeColorBytes(color.hex).map(byte => (byte / 255).toFixed(8)).join(', ')})`;
+    }).join(', ');
+    return { LANDSCAPE_SURFACE_SUBSTRATE_COLOR_LIST: list(LANDSCAPE_SURFACE_SUBSTRATES, LANDSCAPE_SURFACE_SUBSTRATE_COLORS), LANDSCAPE_SURFACE_COVER_COLOR_LIST: list(LANDSCAPE_SURFACE_COVERS, LANDSCAPE_SURFACE_COVER_COLORS) };
 }
 
 /** @returns {{uSurfaceSoilColors:{value:Float32Array}}} the catalog-ordered coverage review colors, set when the diagnostic is selected */

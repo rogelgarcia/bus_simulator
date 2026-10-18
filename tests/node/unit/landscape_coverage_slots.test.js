@@ -11,17 +11,20 @@ import { LANDSCAPE_SOIL_CATALOG } from '../../../src/app/landscape/LandscapeCata
 const shader = await readFile(new URL('../../../src/graphics/shaders/materials/landscape/terrain.frag.glsl', import.meta.url), 'utf8');
 const warpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_warp.glsl', import.meta.url), 'utf8');
 const clumpChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/material_clumps.glsl', import.meta.url), 'utf8');
+const parametersChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/material_parameters.glsl', import.meta.url), 'utf8');
 const samplingChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/stochastic_tiling.glsl', import.meta.url), 'utf8');
 const macroChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/macro_variation.glsl', import.meta.url), 'utf8');
 const layerChunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/surface_layers.glsl', import.meta.url), 'utf8');
 const lightingChunks = Object.fromEntries(await Promise.all(['terrain_fields', 'lighting_visibility', 'lighting', 'atmosphere', 'water_optics', 'terrain_appearance', 'dressing_inputs'].map(async name => [name,
     await readFile(new URL(`../../../src/graphics/shaders/chunks/landscape/${name}.glsl`, import.meta.url), 'utf8')])));
-const expandedShader = shader.replace('#include <shaderlib:landscape/surface_warp>', warpChunk).replace('#include <shaderlib:landscape/material_clumps>', clumpChunk)
+const expandedShader = shader.replace('#include <shaderlib:landscape/surface_warp>', warpChunk).replace('#include <shaderlib:landscape/material_parameters>', parametersChunk).replace('#include <shaderlib:landscape/material_clumps>', clumpChunk)
     .replace('#include <shaderlib:landscape/stochastic_tiling>', samplingChunk).replace('#include <shaderlib:landscape/macro_variation>', macroChunk)
     .replace('#include <shaderlib:landscape/surface_layers>', layerChunk)
     .replace(/#include <shaderlib:landscape\/(terrain_fields|lighting_visibility|lighting|atmosphere|water_optics|terrain_appearance|dressing_inputs)>/g, (_, name) => lightingChunks[name]);
 const warpSizes = { LANDSCAPE_SURFACE_WARP_OCTAVES: 4 };
 const count = (pattern) => (shader.match(pattern) ?? []).length;
+// the first AI 598 surface model view: those views are evaluated by one branch of terrainInputDiagnostic
+const surfaceViews = LANDSCAPE_DIAGNOSTICS.indexOf('surface-substrate');
 
 /**
  * Resolves only the AI577 D6 diagnostics conditionals (#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS ... #endif) of a shader source; every other preprocessor
@@ -72,25 +75,27 @@ test('Coverage slots: every slot array and slot loop in the terrain shader uses 
 });
 
 test('Coverage slots: conservative uniform accounting sizes the arrays from device fragment-uniform capacity', () => {
-    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>\s+#include <shaderlib:landscape\/macro_variation>\s+#include <shaderlib:landscape\/surface_layers>\s+#include <shaderlib:landscape\/terrain_fields>\s+#include <shaderlib:landscape\/lighting_visibility>\s+#include <shaderlib:landscape\/lighting>\s+#include <shaderlib:landscape\/atmosphere>\s+#include <shaderlib:landscape\/water_optics>\s+#include <shaderlib:landscape\/terrain_appearance>\s+#include <shaderlib:landscape\/dressing_inputs>/,
-        'the terrain shader compiles the shared recipe warp chunk, the clump, stochastic tiling, macro variation and surface layer chunks that reuse its hashing, the AI577 D5 terrain fields, '
+    assert.match(shader, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_parameters>\s+#include <shaderlib:landscape\/material_clumps>\s+#include <shaderlib:landscape\/stochastic_tiling>\s+#include <shaderlib:landscape\/macro_variation>\s+#include <shaderlib:landscape\/surface_layers>\s+#include <shaderlib:landscape\/terrain_fields>\s+#include <shaderlib:landscape\/lighting_visibility>\s+#include <shaderlib:landscape\/lighting>\s+#include <shaderlib:landscape\/atmosphere>\s+#include <shaderlib:landscape\/water_optics>\s+#include <shaderlib:landscape\/terrain_appearance>\s+#include <shaderlib:landscape\/dressing_inputs>/,
+        'the terrain shader compiles the shared recipe warp chunk, the AI 598 D3a material parameter chunk, the clump, stochastic tiling, macro variation and surface layer chunks that reuse its hashing, the AI577 D5 terrain fields, '
         + 'the lighting chunks, the terrain-driven appearance and the dressing-input diagnostics');
     assert.throws(() => landscapeFragmentUniformVectors(expandedShader), /unsupported array size LANDSCAPE_SURFACE_WARP_OCTAVES/, 'the warp octave arrays need their compile-time size');
     const vectors = landscapeFragmentUniformVectors(expandedShader, warpSizes);
-    assert.deepEqual(vectors, { fixedVectors: 155, slotVectors: 4 },
-        '81 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, 18 clump relief vectors, 9 stochastic tiling vectors, '
-        + '6 packed soil state vectors (replacing the 12 scalar height/resolution vectors), 12 macro variation vectors, 2 surface layer vectors, '
-        + 'the 11 AI577 D5 lighting vectors (9 sky harmonic, 1 sun direction, 1 sun irradiance), the D5 terrain-field sampler and state vector, the D5c '
-        + 'response (6 soil response vectors, 1 switch vector) and the D5 planning cover bitmask of the terrain-driven appearance (its parameters are '
-        + 'compile-time constants and its switch and soil roles reuse spare components), less the 8 surface-level tints that became compile-time constants');
+    // AI 598 D3a: the 156 vectors of AI 577/597 less the 85 per-soil vectors that moved to the parameter texture (6 x uSoilScale/Tiling/Albedo/Roughness/Range/State/Response = 42,
+    // the six sampler pairs, the blend pair, the blend index, blend progress and blend resolution = 17, uSoilClumps and uSoilClumpSalts = 12, uSoilStochastic and
+    // uSoilStochasticSalts = 8, uSoilMacro = 6), plus the parameter sampler, the six array samplers and the transition vector = 8
+    assert.deepEqual(vectors, { fixedVectors: 79, slotVectors: 4 },
+        '81 historical vectors, the slot ranges, the warp enable flag, three four-octave warp arrays, the shared clump, stochastic and macro vectors, 2 surface layer vectors, '
+        + 'the 11 AI577 D5 lighting vectors (9 sky harmonic, 1 sun direction, 1 sun irradiance), the D5 terrain-field sampler and state vector, the D5c response switch vector, '
+        + 'the D5 planning cover bitmask, the AI 597 ocean switch vector and the AI 598 D3a material parameter sampler, six material array samplers and transition vector, '
+        + 'less the 8 surface-level tints that became compile-time constants and the 85 per-soil vectors that became parameter texels');
     assert.equal(LANDSCAPE_THREE_FRAGMENT_UNIFORM_VECTORS, 7);
     assert.ok(vectors.fixedVectors <= 156, 'the AI577 D5 hard cap keeps 17 native slots plus one spare vector at the WebGL2 minimum');
     assert.deepEqual(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024, ...vectors }),
-        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 155, slotUniformVectors: 4 });
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 17, 'the WebGL2 minimum still fits the 17 native slots (no fine detail slot)');
-    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 228, ...vectors }).detail, 1);
+        { total: 81, native: 17, detail: 64, detailMax: 64, maxFragmentUniforms: 1024, fixedUniformVectors: 79, slotUniformVectors: 4 });
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 224, ...vectors }).total, 36, 'the WebGL2 minimum fits the 17 native slots and 19 fine detail slots since the per-soil vectors left (AI 598 D3a)');
+    assert.equal(resolveLandscapeCoverageSlots({ maxFragmentUniforms: 228, ...vectors }).detail, 20);
     assert.ok(vectors.fixedVectors <= 224 - 17 * vectors.slotVectors, 'fixed vectors stay within the WebGL2 minimum budget for 17 native slots');
-    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 220, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 220 fits 16 terrain coverage slots/);
+    assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 144, ...vectors }), /\[Landscape\] Device MAX_FRAGMENT_UNIFORM_VECTORS 144 fits 16 terrain coverage slots/);
     assert.throws(() => resolveLandscapeCoverageSlots({ maxFragmentUniforms: 1024.5, ...vectors }), /positive integer maxFragmentUniforms/);
 });
 
@@ -118,7 +123,8 @@ test('Terrain diagnostics: the default program carries no inspection code and LA
     assert.match(main, /vec3 color = vec3\(0\.0\);\s+\{\s+\/\/ the vertex-color fallback/, 'the default program enters the shaded path directly');
     assert.match(main, /\{\s+terrainVisibility\(world, dx, dy, normal\);\s+color = terrainRadiance\(/, 'and lights every fragment');
     assert.match(main, /#include <colorspace_fragment>\s+\}\s*$/, 'and writes the tone-mapped output');
-    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(inspected, new RegExp(`uDiagnostic == ${index}\\b`), `${name} is a branch of the diagnostics program`);
+    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index && index < surfaceViews) assert.match(inspected, new RegExp(`uDiagnostic == ${index}\\b`), `${name} is a branch of the diagnostics program`);
+    assert.match(inspected, /else if \(uDiagnostic >= 13\) \{/, 'the AI 598 surface model views are a branch of the diagnostics program');
     assert.ok(inspected.replace(/\s+/g, ' ').includes('if (uAppearanceReady < 0.5 || uDiagnostic < 5) { terrainVisibility(world, dx, dy, normal);'), 'unlit diagnostics skip the lighting');
     assert.equal(count(/#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS/g), 8,
         'the level tints, the two diagnostic helper groups and five points of main (unlit views, unlit coverage and inputs, level tint, lighting condition, unlit output)');
@@ -126,12 +132,15 @@ test('Terrain diagnostics: the default program carries no inspection code and LA
 
 test('Terrain diagnostics: shader branches, palettes and soil review colors match the selector catalog', () => {
     assert.deepEqual(LANDSCAPE_DIAGNOSTICS, ['none', 'elevation', 'slope', 'water', 'surface-level', 'surface-coverage', 'terrain-appearance',
-        'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris']);
-    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
+        'dressing', 'dressing-grass', 'dressing-shrub', 'dressing-tree', 'dressing-rock', 'dressing-debris', 'surface-substrate', 'surface-cover', 'surface-fraction', 'surface-wetness', 'surface-disturbance']);
+    for (const [index, name] of LANDSCAPE_DIAGNOSTICS.entries()) if (index && index < surfaceViews) assert.match(shader, new RegExp(`uDiagnostic == ${index}\\b`), `${name} has a shader branch`);
+    // AI 598 D1: the surface model views share one branch (uDiagnostic >= 13) whose last view is the else of the gray values, so no slot-count-like literal appears
+    assert.match(shader, /if \(uDiagnostic == 13\) color = landscapeSurfaceSubstrateColor\(model\);\s+else if \(uDiagnostic == 14\) color = landscapeSurfaceCoverColor\(model\);\s+else color = vec3\(uDiagnostic == 15 \? model\.coverFraction : uDiagnostic == 16 \? model\.wetness : model\.disturbance\);/);
     assert.match(shader, /if \(uDiagnostic == 5\) color = surfaceCoverageColor\(coverage\);/, 'surface coverage shows unlit weights');
     assert.match(shader, /else if \(uDiagnostic >= 6\) color = terrainInputDiagnostic\(coverage, world, dx, dy, normal, positionDx, positionDy\);/, 'the AI577 D5 inspection views are unlit');
-    assert.match(shader, /#include <colorspace_fragment>\s+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 1\.0\);\s+#endif/,
-        'unlit diagnostics bypass tone mapping');
+    // AI 597 D7: under the frame pipeline the raw colour carries alpha 0, the final pass's pass-through sentinel (the near pass keeps its weight)
+    assert.match(shader, /#include <colorspace_fragment>\s+#ifdef LANDSCAPE_TERRAIN_DIAGNOSTICS\s+(?:\/\/[^\n]*\s+)*#ifdef LANDSCAPE_SURFACE_CACHE_NEAR\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, nearWeight\);\s+#else\s+if \(uDiagnostic >= 5 && uAppearanceReady > 0\.5\) gl_FragColor = vec4\(color, 0\.0\);\s+#endif\s+#endif/,
+        'unlit diagnostics bypass tone mapping and carry the frame pipeline sentinel');
     assert.equal(count(/hierarchyCoverage\(world, dx, dy, warped, warpedDx, warpedDy\)/g), 1, 'the inlined hierarchy reconstruction is evaluated once, keeping FXC compile time unchanged');
     assert.match(shader, /vec2 warped = uSurfaceWarpEnabled > 0\.5 \? world \+ landscapeSurfaceWarp\(world\) : world;\s+vec2 warpedDx = dFdx\(warped\), warpedDy = dFdy\(warped\);/,
         'warped coordinates and their footprint derivatives are taken in uniform control flow at the top of main');

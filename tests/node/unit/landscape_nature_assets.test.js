@@ -7,14 +7,14 @@ import path from 'node:path';
 import sandConfig from '../../../assets/public/pbr/aerial_beach_01/pbr.material.config.js';
 import { PBR_MATERIAL_CATALOG } from '../../../assets/public/pbr/_catalog_index.js';
 import { validateLandscapeManifest, validateLandscapeAppearanceManifest } from '../../../src/app/landscape/index.js';
-import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
-import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+import { COASTAL_V2, landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
-const directory = path.resolve('assets/public/landscape/coastal-city');
+// the beach publication is coastal v2 history: the AI 576 pin it changed, not the city's current (v3) pin
+const directory = path.resolve(COASTAL_V2.directory);
 const materialSnapshotHash = '12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b';
 const appearanceSnapshotHash = 'aec36e5b53837b67b6316803460980d4b805ce17bc8db7a1919f954bc4781b0b';
-const cacheSkip = landscapeCacheSkip([path.basename(createCoastalLandscapeCitySpec().landscape.manifestUrl), `manifest.${materialSnapshotHash}.json`,
-    `appearance/manifest.${appearanceSnapshotHash}.json`]);
+const cacheSkip = landscapeCacheSkip([path.basename(COASTAL_V2.manifestUrl), `manifest.${materialSnapshotHash}.json`,
+    `appearance/manifest.${appearanceSnapshotHash}.json`], COASTAL_V2.directory);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function snapshot(folder, sha256) {
@@ -24,7 +24,7 @@ async function snapshot(folder, sha256) {
 }
 
 test('Landscape nature assets: beach publication changes only the material binding and revision', { skip: cacheSkip }, async () => {
-    const original = JSON.parse(await readFile(path.resolve(createCoastalLandscapeCitySpec().landscape.manifestUrl)));
+    const original = JSON.parse(await readFile(path.resolve(COASTAL_V2.manifestUrl)));
     const published = validateLandscapeManifest(await snapshot(directory, materialSnapshotHash));
     assert.notEqual(published.revision, original.revision);
     assert.equal(published.soil.catalog.find(soil => soil.id === 'sand').materialId, sandConfig.materialId);

@@ -238,15 +238,16 @@ test('Multiscale demand: paired micro maps and 1024 tiers are charged explicitly
     assert.deepEqual(landscapeMaterialTierBytes(512), { rawBytes: 512 * 512 * 12, gpuBytes: landscapeTextureBytes(512) * 3 });
     const materials = [{ soilId: 'sand', index: 2, density: 5, desiredResolution: 1024, resolutions: [32, 128, 512, 1024], maps: 4 },
         { soilId: 'loam', index: 3, density: 4, desiredResolution: 1024, resolutions: [32, 128, 512, 1024], maps: 3 }];
-    const roomy = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, materials });
+    // AI 598 D3a: materials fit the streamed slots of the arrays (LandscapeAppearanceDemand v2); the arrays' standing charge stands in for the coarse fallbacks
+    const slots = (fine, mid, gpuBytes = 0) => ({ fine, mid, gpuBytes });
+    const roomy = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 96 * MIB }, slots: slots(2, 2), materials });
     assert.deepEqual(roomy.fittedTiers, { sand: '1024', loam: '1024' });
     // the micro-paired 512 sand may still be resident while its 1024 arrives: one transition allowance of that tier is protected as well
-    assert.equal(roomy.gpuBytes, landscapeMaterialTierBytes(32, 4).gpuBytes + landscapeMaterialTierBytes(32, 3).gpuBytes + landscapeMaterialTierBytes(1024, 4).gpuBytes + landscapeMaterialTierBytes(1024, 3).gpuBytes
-        + landscapeMaterialTierBytes(512, 4).gpuBytes);
-    assert.equal(roomy.cpuBytes, landscapeMaterialTierBytes(32, 4).rawBytes + landscapeMaterialTierBytes(32, 3).rawBytes + 1024 * 1024 * 16 + 1024 * 1024 * 12 + 1024 * 1024 * 16 + 512 * 512 * 16,
-        'one peak decode allowance of the largest tier and one transition source');
-    const tight = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 32 * MIB }, materials });
-    assert.deepEqual(tight.fittedTiers, { sand: '1024', loam: '512' }, 'the closer material rises to 1024 first');
-    const tighter = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 30 * MIB }, materials });
-    assert.deepEqual(tighter.fittedTiers, { sand: '512', loam: '1024' }, 'a level the closer micro-paired material cannot fit still goes to the next material');
+    assert.equal(roomy.gpuBytes, landscapeMaterialTierBytes(1024, 4).gpuBytes + landscapeMaterialTierBytes(1024, 3).gpuBytes + landscapeMaterialTierBytes(512, 4).gpuBytes);
+    assert.equal(roomy.cpuBytes, 1024 * 1024 * 16 + landscapeMaterialTierBytes(1024, 4).gpuBytes, 'one peak decode allowance of the largest tier: its source bytes and the chains the worker returns');
+    const tight = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 32 * MIB }, slots: slots(1, 2), materials });
+    assert.deepEqual(tight.fittedTiers, { sand: '1024', loam: '512' }, 'the closer material takes the one fine slot, the other settles in the mid array');
+    assert.equal(tight.reason, 'appearance-material-slots');
+    const tighter = planLandscapeAppearanceDemand({ fixedCpuBytes: 0, fixedGpuBytes: 0, decodeBytes: 0, limits: { cpuBytes: 192 * MIB, gpuBytes: 30 * MIB }, slots: slots(0, 1), materials });
+    assert.deepEqual(tighter.fittedTiers, { sand: '512', loam: '128' }, 'without fine slots the closer material takes the one mid slot and the other keeps the floor');
 });

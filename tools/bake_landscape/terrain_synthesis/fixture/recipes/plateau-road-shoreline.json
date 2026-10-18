@@ -1,0 +1,674 @@
+{
+  "format": "landscape-synthesis-recipe",
+  "schemaVersion": 1,
+  "id": "ai596-d2-fixture-plateau-road-shoreline",
+  "seed": 596200,
+  "seaLevel": 0,
+  "grid": {
+    "columns": 513,
+    "rows": 513,
+    "spacingX": 1.953125,
+    "spacingZ": 1.953125,
+    "bounds": {
+      "minX": 0,
+      "maxX": 1000,
+      "minZ": 0,
+      "maxZ": 1000
+    },
+    "chunkIntervals": 256,
+    "maxLevel": 1
+  },
+  "working": null,
+  "inputs": {
+    "landscape": null,
+    "plan": {
+      "districts": "tools/bake_landscape/terrain_synthesis/fixture/plan/districts.json",
+      "roads": "tools/bake_landscape/terrain_synthesis/fixture/plan/roads.json",
+      "shoreline": "tools/bake_landscape/terrain_synthesis/fixture/plan/shoreline.json",
+      "beachPoints": "tools/bake_landscape/terrain_synthesis/fixture/plan/beach_points.json",
+      "landCover": null
+    },
+    "imports": []
+  },
+  "operators": [
+    {
+      "id": "import",
+      "op": "import-heights",
+      "params": {
+        "source": "raw-float32",
+        "file": "fixture-base.raw",
+        "columns": 513,
+        "rows": 513,
+        "coverFile": "fixture-base-cover.u8"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "plan",
+      "op": "plan-inputs",
+      "params": {
+        "landSide": "east",
+        "runwayPolygon": null,
+        "apronPolygon": null
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "plateau",
+      "op": "landform-plateau",
+      "params": {
+        "districtId": 1,
+        "profile": "escarpment",
+        "rimWidthMeters": 10,
+        "faceSlopeDegrees": 55,
+        "faceDropMeters": 18,
+        "talusSlopeDegrees": 33,
+        "baseMode": "daylight",
+        "daylightReachMeters": 300,
+        "combine": "replace",
+        "blendMeters": 15
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "hills",
+      "op": "landform-hills",
+      "params": {
+        "amplitudeMeters": 48,
+        "wavelengthsMeters": [
+          500,
+          250,
+          120,
+          60
+        ],
+        "amplitudes": [
+          1,
+          0.5,
+          0.25,
+          0.12
+        ],
+        "ridgedMix": 0.5,
+        "offset": "signed",
+        "warpMeters": 60,
+        "warpWavelengthMeters": 400,
+        "combine": "add"
+      },
+      "mask": {
+        "type": "multiply",
+        "selectors": [
+          {
+            "type": "distance",
+            "feature": "shoreline",
+            "edge": {
+              "from": 40,
+              "to": 160
+            }
+          },
+          {
+            "type": "district",
+            "ids": [
+              1,
+              2
+            ],
+            "edge": {
+              "from": -30,
+              "to": -140
+            }
+          }
+        ]
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "strata",
+      "op": "strata",
+      "params": {
+        "source": "height",
+        "dipEastMetersPerKm": 15,
+        "thicknessMeters": 5,
+        "hardnessPattern": [
+          0.9,
+          0.3,
+          0.6,
+          0.2
+        ],
+        "warpMeters": 2,
+        "warpWavelengthMeters": 300
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "fluvial",
+      "op": "fluvial-erosion",
+      "params": {
+        "iterations": 150,
+        "routingEveryIterations": 2,
+        "erodibility": 0.008,
+        "uplift": "retain-target",
+        "retainRate": 0.003,
+        "diffusivity": 0.1,
+        "useHardness": true
+      },
+      "mask": {
+        "type": "multiply",
+        "selectors": [
+          {
+            "type": "distance",
+            "feature": "shoreline",
+            "edge": {
+              "from": 40,
+              "to": 120
+            }
+          },
+          {
+            "type": "district",
+            "ids": [
+              1,
+              2
+            ],
+            "edge": {
+              "from": -20,
+              "to": -80
+            }
+          }
+        ]
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "hydraulic",
+      "op": "hydraulic-erosion",
+      "params": {
+        "droplets": 30000,
+        "maxSteps": 64,
+        "erosionRate": 0.05,
+        "maxErosionPerStepMeters": 0.006,
+        "radius": 5
+      },
+      "mask": {
+        "type": "multiply",
+        "selectors": [
+          {
+            "type": "distance",
+            "feature": "shoreline",
+            "edge": {
+              "from": 40,
+              "to": 120
+            }
+          },
+          {
+            "type": "district",
+            "ids": [
+              1,
+              2
+            ],
+            "edge": {
+              "from": -20,
+              "to": -80
+            }
+          }
+        ]
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "thermal",
+      "op": "thermal-weathering",
+      "params": {
+        "iterations": 30,
+        "weatheringRateMetersPerIteration": 0.02,
+        "weatheringSlopeDegrees": 30
+      },
+      "mask": {
+        "type": "district",
+        "ids": [
+          1,
+          2
+        ],
+        "edge": {
+          "from": -20,
+          "to": -80
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "sediment",
+      "op": "sediment-deposit",
+      "params": {
+        "iterations": 1,
+        "supplyLayer": "wear",
+        "supplyFraction": 0.1,
+        "depositionFraction": 0.2
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "terraces",
+      "op": "terraces",
+      "params": {
+        "dipEastMetersPerKm": 15,
+        "thicknessMeters": 5,
+        "hardnessPattern": [
+          0.9,
+          0.3,
+          0.6,
+          0.2
+        ],
+        "warpMeters": 2,
+        "warpWavelengthMeters": 300,
+        "hardThreshold": 0.6,
+        "minSlopeDegrees": 15,
+        "benchWidthMeters": 10,
+        "strength": 0.5,
+        "depositTalus": true
+      },
+      "mask": {
+        "type": "district",
+        "ids": [
+          1,
+          2
+        ],
+        "edge": {
+          "from": -20,
+          "to": -80
+        }
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "headland",
+      "op": "landform-headland",
+      "params": {
+        "center": [
+          202,
+          820
+        ],
+        "bearingDegrees": 270,
+        "lengthMeters": 120,
+        "widthMeters": 100,
+        "heightMeters": 7,
+        "noiseMeters": 1,
+        "protectPlan": true,
+        "swimZone": null
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "exposure",
+      "op": "coastal-exposure",
+      "params": {
+        "fetchDirections": 16,
+        "fetchMeters": 800,
+        "inlandReachMeters": 60,
+        "offshoreReachMeters": 200
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "bluff",
+      "op": "coastal-bluff",
+      "params": {
+        "source": "detect",
+        "maxDistanceFromShoreMeters": 160,
+        "minCliffHeightMeters": 6,
+        "retreatMeters": 8,
+        "faceSlopeDegrees": 65,
+        "platformHeightMeters": 0.8,
+        "platformSlopeDegrees": 1,
+        "platformWidthMeters": 25,
+        "talusVolumeFraction": 0.1,
+        "talusSlopeDegrees": 33,
+        "protectPlan": true,
+        "swimZone": null
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            60,
+            740
+          ],
+          [
+            330,
+            740
+          ],
+          [
+            330,
+            920
+          ],
+          [
+            60,
+            920
+          ]
+        ],
+        "invert": true
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "beach",
+      "op": "coastal-beach",
+      "params": {
+        "deanA": 0.1,
+        "foreshoreSlopeRatio": 20,
+        "bermHeightMeters": 1.8,
+        "bermDistanceMeters": 30,
+        "beachBandMeters": 60,
+        "protectPlan": true,
+        "blendMeters": 10,
+        "swimZone": null
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            60,
+            740
+          ],
+          [
+            330,
+            740
+          ],
+          [
+            330,
+            920
+          ],
+          [
+            60,
+            920
+          ]
+        ],
+        "invert": true
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "foredune",
+      "op": "coastal-foredune",
+      "params": {
+        "heightMeters": 4,
+        "minSpaceMeters": 40,
+        "protectPlan": true,
+        "swimZone": null
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            60,
+            740
+          ],
+          [
+            330,
+            740
+          ],
+          [
+            330,
+            920
+          ],
+          [
+            60,
+            920
+          ]
+        ],
+        "invert": true
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "nearshore",
+      "op": "coastal-nearshore",
+      "params": {
+        "barDepthMeters": -2.5,
+        "barHeightMeters": 0.8,
+        "barWidthMeters": 80,
+        "troughDepthMeters": 0.3,
+        "troughWidthMeters": 60
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            60,
+            740
+          ],
+          [
+            330,
+            740
+          ],
+          [
+            330,
+            920
+          ],
+          [
+            60,
+            920
+          ]
+        ],
+        "invert": true
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "reef",
+      "op": "coastal-reef",
+      "params": {
+        "minDepthMeters": -4,
+        "maxDepthMeters": -1,
+        "coverageFraction": 0.5,
+        "protectPlan": true,
+        "swimZone": null
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            90,
+            880
+          ],
+          [
+            220,
+            880
+          ],
+          [
+            220,
+            980
+          ],
+          [
+            90,
+            980
+          ]
+        ]
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "districts-plateau",
+      "op": "constrain-districts",
+      "params": {
+        "districtIds": [
+          1
+        ],
+        "inside": "band",
+        "bandMeters": 1.5,
+        "maxSlopeDegrees": 8,
+        "profile": "escarpment",
+        "rimWidthMeters": 10,
+        "faceSlopeDegrees": 55,
+        "faceDropMeters": 18,
+        "talusSlopeDegrees": 33,
+        "baseMode": "daylight",
+        "daylightReachMeters": 300,
+        "combine": "max",
+        "blendMeters": 10
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "points",
+      "op": "constrain-points",
+      "params": {
+        "source": "plan",
+        "corridor": "descent",
+        "corridorOrigin": [
+          250,
+          607
+        ],
+        "corridorBearingDegrees": 90,
+        "corridorRunMeters": 130,
+        "corridorSeaHeightMeters": 2.6,
+        "corridorInlandHeightMeters": 10,
+        "corridorBlendMeters": 40,
+        "corridorShoreFadeMeters": 40
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "districts-plaza",
+      "op": "constrain-districts",
+      "params": {
+        "districtIds": [
+          2
+        ],
+        "inside": "replace",
+        "profile": "feather",
+        "featherMeters": 40,
+        "baseMode": "sample-ground",
+        "combine": "replace"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "roads",
+      "op": "constrain-roads",
+      "params": {
+        "profileSource": "terrain",
+        "maxGradePercent": 5.8,
+        "profileSmoothingMeters": 30,
+        "marginMeters": 1,
+        "shoulderWidthMeters": 15,
+        "cutSlopeDegrees": 45,
+        "fillSlopeDegrees": 32
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "shoreline",
+      "op": "constrain-shoreline",
+      "params": {
+        "toleranceMeters": 10,
+        "minLandHeightMeters": 0.3,
+        "maxSeaHeightMeters": -0.3,
+        "bandSlopeDegrees": 12,
+        "blendMeters": 30
+      },
+      "mask": {
+        "type": "polygon",
+        "polygon": [
+          [
+            60,
+            740
+          ],
+          [
+            330,
+            740
+          ],
+          [
+            330,
+            920
+          ],
+          [
+            60,
+            920
+          ]
+        ],
+        "invert": true
+      },
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "cap",
+      "op": "height-cap",
+      "params": {
+        "capMeters": 50,
+        "shoulderMeters": 0
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "export",
+      "op": "export-map",
+      "params": {
+        "layer": "height",
+        "kind": "heights",
+        "file": "fixture-height.exr",
+        "encoding": "exr-float32"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "geology",
+      "op": "geology-channels",
+      "params": {},
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    },
+    {
+      "id": "output",
+      "op": "resample",
+      "params": {
+        "filter": "bicubic"
+      },
+      "mask": null,
+      "seed": null,
+      "enabled": true
+    }
+  ],
+  "outputs": {
+    "heightCap": 50,
+    "coverPolicy": "keep-source",
+    "channels": [
+      "height"
+    ]
+  },
+  "overrides": []
+}

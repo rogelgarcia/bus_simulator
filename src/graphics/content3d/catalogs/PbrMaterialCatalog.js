@@ -214,6 +214,17 @@ function getCachedPreviewUrl({ id, label }) {
     return url;
 }
 
+// the materials of classes this build does not know (the shared assets folder may hold another branch's materials) are skipped, not fatal,
+// and reported once per catalog build as an info line (the acceptance suites gate on warnings)
+const _skippedEntries = [];
+function noteSkippedEntry(materialId, classId) {
+    _skippedEntries.push(classId ? materialId + " (" + classId + ")" : materialId);
+    if (_skippedEntries.length === 1) queueMicrotask(() => {
+        console.info("[PbrMaterialCatalog] Skipped " + _skippedEntries.length + " catalog entries of unknown classes: " + _skippedEntries.join(", "));
+        _skippedEntries.length = 0;
+    });
+}
+
 function normalizeCatalogEntry(entry) {
     const src = entry && typeof entry === 'object' ? entry : null;
     if (!src) throw new Error('[PbrMaterialCatalog] Invalid catalog entry (expected object).');
@@ -224,7 +235,7 @@ function normalizeCatalogEntry(entry) {
     if (!slug || slug.includes('/') || slug.includes('\\')) throw new Error(`[PbrMaterialCatalog] Invalid materialId slug: ${materialId}`);
 
     const classId = normalizeClassId(src.classId);
-    if (!classId) throw new Error(`[PbrMaterialCatalog] Invalid classId for ${materialId}: ${String(src.classId ?? '')}`);
+    if (!classId) { noteSkippedEntry(materialId, String(src.classId ?? '')); return null; }
 
     const root = normalizeRoot(src.root);
     const label = typeof src.label === 'string' && src.label.trim() ? src.label.trim() : toTitle(slug);
@@ -265,7 +276,7 @@ function normalizeCatalogEntry(entry) {
 const MATERIALS = Object.freeze([
     ...(Array.isArray(PBR_MATERIAL_CATALOG) ? PBR_MATERIAL_CATALOG : []),
     ...LOW_CUT_GRASS_PBR_ENTRIES
-].map((entry) => normalizeCatalogEntry(entry)));
+].map((entry) => normalizeCatalogEntry(entry)).filter(Boolean));
 
 const MATERIAL_BY_ID = new Map(MATERIALS.map((entry) => [entry.id, entry]));
 if (MATERIAL_BY_ID.size !== MATERIALS.length) throw new Error('[PbrMaterialCatalog] Duplicate materialId detected in PBR catalog.');

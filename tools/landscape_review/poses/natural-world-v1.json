@@ -1,0 +1,183 @@
+{
+  "format": "landscape-review-poses",
+  "schemaVersion": 1,
+  "id": "natural-world-v1",
+  "conventions": {
+    "coordinates": "world X east, Y up, Z north, meters",
+    "headingDegrees": "clockwise from north: 0 = north (+Z), 90 = east (+X)",
+    "pitchDegrees": "above the horizon: negative looks down",
+    "eyeHeightMeters": "above the authoritative native ground at (x, z), re-resolved on every terrain revision",
+    "altitudeMeters": "above sea level, independent of the ground (the ground is still recorded, null outside the landscape)",
+    "lookDistanceMeters": "the look target lies this far along the view direction",
+    "camera": "an explicit viewer camera {position, target} in world meters, passed through unchanged"
+  },
+  "poses": [
+    {
+      "id": "NW-01",
+      "intent": "Swim beach at eye height, along the shore",
+      "x": 1090,
+      "z": 490,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 340,
+      "pitchDegrees": -3,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R08", "R09"],
+      "notes": "The plan's level beach arrival point (beach_points.json: 1090, 2.6, 490), kept as pinned. On coastal-city v2 (revision materials-bfcf20f7e27aa79db4d9983b) the ground is 2.60 m on the arrival plaza (planning cover 5) with the swim-beach sand 80 m west (x 950-1010 on this row) and the waterline at x 900. Heading 340 looks NNW along the shore; pitch -3 keeps the sand and the waterline in the lower half at standing eye level."
+    },
+    {
+      "id": "NW-02",
+      "intent": "Beach arrival towards the sea across the open-view corridor",
+      "x": 1260,
+      "z": 700,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 270,
+      "pitchDegrees": -3,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R08"],
+      "notes": "Roadmap placement kept: inside the open-view corridor polygon of beach_points.json, on grass (cover 2) at 5.15 m on v2. Heading 270 looks west across the corridor to the sea 360 m away; pitch -3 for a standing view with the horizon just above center."
+    },
+    {
+      "id": "NW-03",
+      "intent": "Bluff toe on the sand, along the bluff (R10 composition)",
+      "x": 1228,
+      "z": 2600,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 20,
+      "pitchDegrees": -4,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R10"],
+      "notes": "Measured on v2 row Z 2600: waterline x 1189, sand x 1188-1267, exposed-rock band (cover 4) x 1268-1305. Going east from the sand the slope first exceeds 8 degrees at x 1243.4 (2.3 m), the bluff toe; the pose stands 15 m seaward of it on the sand (x 1228, 1.1 m). Heading 20 looks NNE along the bluff with the face to the east and the sea to the west (R10); pitch -4 holds the platform and the sand in the foreground."
+    },
+    {
+      "id": "NW-04",
+      "intent": "Bluff top looking out to sea",
+      "x": 1322,
+      "z": 2400,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 250,
+      "pitchDegrees": -8,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R10", "R08"],
+      "notes": "Moved 78 m west of the roadmap's (1400, 2400), which lies on the second rise (forest soil at 14.7 m, 9 degrees) 90 m inland of the rock band. On v2 row Z 2400 the exposed-rock band ends at x 1310.5 and the rise flattens below 3 degrees from x 1314 onto a 12 m bench (x 1325-1343), so the bluff crest is x 1314-1325; the pose stands on that bench at x 1322 (11.9 m, slope 1.6 degrees). Heading 250 looks WSW out to sea over the beach; pitch -8 keeps the beach at the bluff foot and the horizon in frame."
+    },
+    {
+      "id": "NW-05",
+      "intent": "Forest interior",
+      "x": 2600,
+      "z": 450,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 45,
+      "pitchDegrees": -3,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R02", "R03"],
+      "notes": "Roadmap placement kept: forest soil (cover 3) at 18.3 m on v2 with no cover change within 80 m in any direction (interior). Pitch -3 so the forest floor fills the lower frame once trees exist."
+    },
+    {
+      "id": "NW-06",
+      "intent": "Forest edge and clearing",
+      "x": 2074,
+      "z": 3316,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 180,
+      "pitchDegrees": -3,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R03", "R07"],
+      "notes": "Moved 574 m south-west of the roadmap's (2450, 3750): on v2 the north forest is unbroken forest soil for more than 500 m around that point (the plan's land cover has no clearing there). The nearest forest-to-grass edge is the north-west corner of the airport district's grass apron: the pose stands on the last forest sample (21.8 m) within 2 m of grass, and heading 180 looks across 120 m of continuous grass (60 of 60 ray samples). Re-pin when a later revision adds clearings near the roadmap point."
+    },
+    {
+      "id": "NW-07",
+      "intent": "Steep natural slope with outcrops below the high city",
+      "x": 3300,
+      "z": 2740,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 30,
+      "pitchDegrees": -2,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R03", "R04"],
+      "notes": "40 m north of the roadmap's (3300, 2700) onto the steeper part of the flank: at X 3300 the slope below the 48.6 m high-city plateau is 3.4 degrees at Z 2700 and 4.8-5.0 degrees between Z 2710 and 2770 (v2 ground 44.1 m at the pose). The uphill direction of the gradient averaged over a 10 m radius is 30 degrees (NNE); pitch -2 keeps the slope face and the plateau rim 80 m ahead in the upper half of the frame."
+    },
+    {
+      "id": "NW-08",
+      "intent": "High city seen from the low city",
+      "x": 2600,
+      "z": 2200,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 45,
+      "pitchDegrees": 0,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R03"],
+      "notes": "Roadmap placement kept: low-city ground (planning cover 5) at 18.5 m on v2; heading 45 points at the high-city plateau (48.6 m, 900-1100 m away at bearings 41-48 degrees). Pitch 0 keeps the horizon at center so the plateau's rise (about 2 degrees today) is measured against it."
+    },
+    {
+      "id": "NW-09",
+      "intent": "Beach-to-centre rise from the water",
+      "x": 1000,
+      "z": 1500,
+      "altitudeMeters": 1.5,
+      "headingDegrees": 90,
+      "pitchDegrees": 0,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R08"],
+      "notes": "Roadmap placement kept: over water (v2 seabed -3.9 m, cover 0), 100 m off the waterline (x 1099 at Z 1500). Altitude form because the eye floats 1.5 m above the water surface, not above the seabed. Heading 90 looks east up the beach-to-centre rise (rock band x 1181-1216, low-city plateau 14.6 m); pitch 0 keeps the horizon centered."
+    },
+    {
+      "id": "NW-10",
+      "intent": "Low oblique flyover of the coast",
+      "x": 900,
+      "z": 1200,
+      "altitudeMeters": 25,
+      "headingDegrees": 45,
+      "pitchDegrees": -10,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R01", "R08"],
+      "notes": "Roadmap placement kept, its 25 m above ground read as 25 m above the water surface: the point is over water (v2 seabed -5.2 m), so the altitude form keeps the flyover height stable whatever later bathymetry does. Heading 45 looks NE along the coast towards the bluff sector; pitch -10 per the roadmap."
+    },
+    {
+      "id": "NW-11",
+      "intent": "Aerial overview from the sea",
+      "x": -400,
+      "z": 2000,
+      "altitudeMeters": 800,
+      "headingDegrees": 90,
+      "pitchDegrees": -30,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R01", "R07"],
+      "notes": "Roadmap placement kept: 400 m outside the western landscape edge, so there is no native ground (recorded as null). From 800 m the -30 degree center ray meets sea level at x 986, the waterline, so the whole 4 km coast fills the frame with the high city on the far side."
+    },
+    {
+      "id": "NW-12",
+      "intent": "Shore break at water level (R09 composition)",
+      "x": 1152,
+      "z": 1800,
+      "altitudeMeters": 1.0,
+      "headingDegrees": 0,
+      "pitchDegrees": -6,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": ["R09"],
+      "notes": "Moved 18 m west of the roadmap's (1170, 1800) to the waterline: on v2 row Z 1800 the sea-level crossing is at x 1148 and the sand at the roadmap point is already 0.55 m high (a 1.0 m camera would sit 0.45 m above it). At x 1152 the sand is at 0.02 m, so the 1.0 m altitude camera stands 1.0 m above the swash. Heading 0 looks north along the break; pitch -6 keeps the foam line low in the frame (R09)."
+    },
+    {
+      "id": "NW-13",
+      "intent": "4 km overview of the whole landscape",
+      "camera": {
+        "position": [4400, 3000, -2300],
+        "target": [2000, 0, 2000]
+      },
+      "fovDegrees": 55,
+      "references": [],
+      "notes": "The viewer's existing 'home' overview preset (LandscapeView.preset) written as an absolute camera so it never moves with the terrain; perspective 55 degrees like the viewer default."
+    }
+  ]
+}

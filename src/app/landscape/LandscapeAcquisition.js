@@ -8,6 +8,23 @@ import { clonePlainData, freezeData, requireCondition, requireFinite, requireId,
 export const LANDSCAPE_MAX_NATIVE_CHUNKS = 4;
 export const LANDSCAPE_QUERY_BYTE_LIMIT = 2 * 1024 * 1024;
 
+/**
+ * Half the native chunk span (chunkIntervals × spacing): 250 m at 1.953125 m, 125 m at 0.9765625 m, 62.5 m at 0.48828125 m (AI 596 D3). A circle
+ * whose diameter is below the span intersects at most a 2 × 2 block of natives wherever it lies, and four full natives (4 × 330,245 bytes at
+ * 257²) fit the 2 MiB decoded budget, so every radius below this value is admitted at every position; at exactly this radius the box spans
+ * one chunk width and the closed shared-boundary rule adds tangent neighbours from an interior chunk centre line (five or six chunks when
+ * the other coordinate is a centre line or a chunk boundary); a larger circle can cross three native columns or rows and needs more than
+ * four chunks somewhere.
+ * @param {import('./LandscapeManifest.js').LandscapeManifest} manifest @returns {number}
+ */
+export function landscapeQueryRadiusLimit(manifest) {
+    const grid = manifest.grid;
+    requireCondition(!!grid && Number.isFinite(grid.spacingX) && Number.isFinite(grid.spacingZ) && Number.isSafeInteger(grid.chunkIntervals), 'query radius limit needs a validated manifest grid');
+    const nativeBytes = (grid.chunkIntervals + 1) ** 2 * 5;
+    requireCondition(nativeBytes * LANDSCAPE_MAX_NATIVE_CHUNKS <= LANDSCAPE_QUERY_BYTE_LIMIT, 'four native chunks must fit the query decoded budget');
+    return Math.min(grid.spacingX, grid.spacingZ) * grid.chunkIntervals / 2;
+}
+
 /** @typedef {{readChunk:(id:string,options:{signal?:AbortSignal})=>Promise<import('./LandscapePayload.js').LandscapeChunk>,signal?:AbortSignal,maxNativeChunks?:number,maxDecodedBytes?:number}} LandscapeAcquisitionOptions */
 
 function pointChunkId(manifest, x, z) {

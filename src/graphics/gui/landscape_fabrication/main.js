@@ -1,12 +1,16 @@
 // Starts the standalone landscape tool and exposes deterministic verification hooks.
 import { LandscapeView, LANDSCAPE_MULTISCALE_MODES, LANDSCAPE_NATURAL_INFERENCE_MODES, LANDSCAPE_SURFACE_CACHE_DEFAULT_MODE, LANDSCAPE_SURFACE_CACHE_MODES, LANDSCAPE_SURFACE_DETAIL_MODES,
-    LANDSCAPE_TERRAIN_APPEARANCE_MODES, LANDSCAPE_TERRAIN_FIELD_MODES, landscapeSurfaceCacheShippedBudgets } from './LandscapeView.js';
+    LANDSCAPE_SURFACE_MODEL_MODES, LANDSCAPE_TERRAIN_APPEARANCE_MODES, LANDSCAPE_TERRAIN_FIELD_MODES, landscapeSurfaceCacheShippedBudgets } from './LandscapeView.js';
+import { LANDSCAPE_SURFACE_MODEL_RUNTIME } from '../../engine3d/landscape/LandscapeSurfaceModel.js';
 import { LANDSCAPE_SURFACE_CACHE, LANDSCAPE_SURFACE_CACHE_CAPACITY } from '../../engine3d/landscape/LandscapeSurfaceCacheLayout.js';
 import { LANDSCAPE_SURFACE_CACHE_NEAR } from '../../engine3d/landscape/LandscapeSurfaceCacheNearField.js';
 import { LANDSCAPE_STREAMING_BUDGETS } from '../../../app/landscape/LandscapeResidencyBudget.js';
 import { LANDSCAPE_MATERIAL_SAMPLING, LANDSCAPE_MATERIAL_SAMPLING_MODES } from '../../engine3d/landscape/LandscapeMaterialSampling.js';
 import { LANDSCAPE_LIGHTING, LANDSCAPE_LIGHTING_TIERS } from '../../engine3d/landscape/LandscapeLightingModel.js';
 import { LANDSCAPE_NATURAL_INFERENCE } from '../../engine3d/landscape/LandscapeNaturalInference.js';
+import { LANDSCAPE_SURROUND, landscapeSurroundOption } from '../../engine3d/landscape/LandscapeSurroundModel.js';
+import { landscapeOceanQuality, landscapeOceanSeaState, landscapeOceanSurface } from '../../engine3d/landscape/ocean/LandscapeOceanModel.js';
+import { LANDSCAPE_ECOSYSTEM, landscapeEcosystemOption } from '../../engine3d/landscape/ecosystem/LandscapeEcosystemModel.js';
 
 const canvas = document.getElementById('game-canvas');
 const parameters = new URL(location.href).searchParams;
@@ -50,14 +54,54 @@ const surfaceCacheAnisotropy = Number(parameters.get('landscapeSurfaceCacheAniso
 if (![1, 2, 4, 8, 16].includes(surfaceCacheAnisotropy)) throw new Error(`landscapeSurfaceCacheAnisotropy must be 1, 2, 4, 8 or 16; received ${parameters.get('landscapeSurfaceCacheAnisotropy')}`);
 // landscapeSurfaceCacheNear=on|off: per-pixel evaluation of the near field under the cache (on by default; off for A/B evidence)
 const surfaceCacheNear = mode('landscapeSurfaceCacheNear', LANDSCAPE_SURFACE_CACHE_NEAR.modes, 'on');
+// landscapeSurround=auto|off|<manifest url>: the AI 596 D5 render-only far-field surround (auto streams the sidecar published beside the landscape when it exists)
+const surround = landscapeSurroundOption(parameters.get('landscapeSurround') ?? LANDSCAPE_SURROUND.defaultMode);
+// landscapeOcean=animated|flat (AI 597): the animated spectral sea or the flat AI577 reference plane; landscapeSeaState=calm|moderate|rough and landscapeOceanQuality=low|medium|high
+// select its presets; landscapeOceanTime=<seconds> fixes the simulation clock at that time (captures), otherwise it runs with the frame interval
+const ocean = landscapeOceanSurface(parameters.get('landscapeOcean')), seaState = landscapeOceanSeaState(parameters.get('landscapeSeaState')), oceanQuality = landscapeOceanQuality(parameters.get('landscapeOceanQuality'));
+const oceanTime = parameters.has('landscapeOceanTime') ? Number(parameters.get('landscapeOceanTime')) : null;
+if (oceanTime !== null && !(Number.isFinite(oceanTime) && oceanTime >= 0)) throw new Error(`landscapeOceanTime must be a nonnegative number of seconds; received ${parameters.get('landscapeOceanTime')}`);
+// landscapeEcosystem=auto|off|<sidecar manifest url> (AI 599 D3): auto streams the ecosystem sidecar published beside the landscape into the instanced renderer (absent on
+// landscapes without one), off never creates it; landscapeEcosystemDiagnostic=none|lod|layer|rank|fade selects its inspection view
+const ecosystem = landscapeEcosystemOption(parameters.get('landscapeEcosystem') ?? LANDSCAPE_ECOSYSTEM.defaultMode);
+const ecosystemDiagnostic = mode('landscapeEcosystemDiagnostic', LANDSCAPE_ECOSYSTEM.diagnostics, 'none');
+// landscapeSurfaceModel=on|off (AI 598 D1): on (the default) streams the geology sidecar into the terrain-field array and evaluates the surface model (its
+// inspection views and surfaceSample), off streams no geology and keeps every surface output neutral; landscapeSurfaceOverrides=<url> binds a
+// landscape-surface-overrides document (its root-grid layer joins the field array)
+const surfaceModel = mode('landscapeSurfaceModel', LANDSCAPE_SURFACE_MODEL_MODES, LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode);
+const surfaceOverrides = parameters.get('landscapeSurfaceOverrides') || null;
 const view = new LandscapeView(canvas, { ...(source ? { source } : {}), budgets, surfaceDetail, materialSampling, multiscale, lightingTier, naturalInference, terrainFields, terrainAppearance,
-    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear });
+    surfaceCache, surfaceCacheSlots, surfaceCacheWindow, surfaceCacheAnisotropy, surfaceCacheNear, surround: surround.mode === 'url' ? surround.url : surround.mode, ocean, seaState, oceanQuality, oceanTime,
+    ecosystem: ecosystem.mode === 'url' ? ecosystem.url : ecosystem.mode, ecosystemDiagnostic, surfaceModel, surfaceOverrides });
 window.__landscapeTestHooks = Object.freeze({
     snapshot: () => view.snapshot(),
     setMode: mode => view.setMode(mode),
     setCamera: options => view.setCamera(options),
     setInspection: options => view.setInspection(options),
     setWater: visible => view.setWater(visible),
+    // AI 596 D5 render-only surround: 'auto', 'off' or a manifest URL; resolves with snapshot().surround once applied
+    setSurround: mode => view.setSurround(mode),
+    // AI 597 animated ocean: {surface: 'animated' | 'flat', seaState, quality, clock: {mode: 'free' | 'fixed', time, step}}; resolves with snapshot().ocean once applied
+    setOcean: options => view.setOcean(options),
+    // AI 597 verification: a cascade's displacement and derivative rasters with statistics (null without an active ocean)
+    setOceanDebug: mode => view.ocean?.setDebug?.(mode),
+    // AI 597 verification: the RGBA bytes of a region of the next rendered frame, read inside that frame (in-page use: hash or difference it there)
+    readFrame: region => view.readFrame(region),
+    oceanReadback: index => { const result = view.ocean?.readback?.(index) ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
+    oceanFoamReadback: () => { const result = view.ocean?.foamReadback?.() ?? null; return result ? { texels: result.texels, statistics: result.statistics } : null; },
+    // AI 599 ecosystem: controls {mode, density, overrides, layers, diagnostic, wind, contact, shadows, visible} (resolves with snapshot().ecosystem; a mode switch reloads
+    // the ecosystem alone), the renderer's standalone tile injection hook (rejects when the share denies the tile or no renderer exists), its removal, the drawn
+    // instance under a client position (synchronous), the same with its rule trace from the worker, a trace at a position, a cell's tile hash (the Node/browser
+    // determinism gate), a resident tile's summary with the SHA-256 of its records, and the resident instances of a layer per cell
+    setEcosystem: options => view.setEcosystem(options),
+    ecosystemInjectTile: tile => view.ecosystemInjectTile(tile),
+    ecosystemRemoveTile: id => view.ecosystemRemoveTile(id),
+    ecosystemPick: (clientX, clientY) => view.ecosystemPick(clientX, clientY),
+    ecosystemPickTrace: (clientX, clientY) => view.ecosystemPickTrace(clientX, clientY),
+    ecosystemTrace: (layerId, x, z) => view.ecosystemTrace(layerId, x, z),
+    ecosystemHash: (layerId, cellX, cellZ) => view.ecosystemHash(layerId, cellX, cellZ),
+    ecosystemTile: tileId => view.ecosystemTile(tileId),
+    ecosystemHeatmap: layerId => view.ecosystemHeatmap(layerId),
     setPlanning: options => view.setPlanning(options),
     focusReference: id => view.focusReference(id),
     saveBookmark: name => view.saveBookmark(name),
@@ -71,6 +115,10 @@ window.__landscapeTestHooks = Object.freeze({
     terrainAppearanceSample: (x, z, options) => view.terrainAppearanceSample(x, z, options),
     dressingSample: (x, z, options) => view.dressingSample(x, z, options),
     setTerrainAppearance: enabled => view.setTerrainAppearance(enabled),
+    // AI 598 D1: the surface model mirror (substrate, cover, fraction, wetness at a world position, exactly as the inspection views evaluate it) and the
+    // switch {mode: 'on' | 'off', overrides: document URL | null} (reloads; resolves with snapshot().surface)
+    surfaceSample: (x, z, options) => view.surfaceSample(x, z, options),
+    setSurfaceModel: options => view.setSurfaceModel(options),
     // AI577 D6 runtime surface cache: switch ('off' | 'on', resolves once applied) and the CPU mirror of the cached frame's page lookup
     setSurfaceCache: mode => view.setSurfaceCache(mode),
     setSurfaceCacheNear: (mode, band) => view.setSurfaceCacheNear(mode, band),

@@ -31,10 +31,11 @@ export function computeLandscapeTileEdges(tiles) {
 /** @param {any} buffers @param {Float32Array} heights @param {{morph:number,coarser:number[],edgeMorph:number[]}} state @param {()=>any} read @returns {any} */
 export function withLandscapeMorphedPositions(buffers, heights, state, read) {
     if (!(heights instanceof Float32Array) || heights.length !== buffers.descriptor.columns * buffers.descriptor.rows || typeof read !== 'function') throw new Error('Morphed terrain picking requires the authoritative tile heights and a synchronous reader');
-    const { positions, parentHeights, boundaryPositions, skirtDepth } = buffers;
+    const { positions, parentHeights, boundaryPositions, skirtDepth, exclusionHeights = null } = buffers;
     const { bounds } = buffers.descriptor;
     const minX = Math.fround(bounds.minX), maxX = Math.fround(bounds.maxX), minZ = Math.fround(bounds.minZ), maxZ = Math.fround(bounds.maxZ);
-    const originalHeight = index => index < heights.length ? heights[index] : boundaryPositions[(index - heights.length) * 3 + 1] - skirtDepth;
+    // a tile built with a mesh exclusion displays the reference surface inside it, so it restores to those heights rather than to its source samples
+    const originalHeight = index => exclusionHeights ? exclusionHeights[index] : index < heights.length ? heights[index] : boundaryPositions[(index - heights.length) * 3 + 1] - skirtDepth;
     try {
         for (let i = 0; i < parentHeights.length; i++) {
             let morph = state.morph;

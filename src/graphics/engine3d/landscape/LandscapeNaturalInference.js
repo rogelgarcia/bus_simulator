@@ -11,7 +11,7 @@
 // this source only holds the bounded page table and the per-native policy.
 import { LANDSCAPE_NATURAL_SOIL, createLandscapeNaturalSoilResolver, landscapeNaturalSoilTransientBytes } from '../../../app/landscape/LandscapeNaturalSoil.js';
 import { loadLandscapeTerrainFields } from '../../../app/landscape/LandscapeTerrainFieldsPayload.js';
-import { landscapeTerrainFieldsStaleness } from '../../../app/landscape/LandscapeTerrainFields.js';
+import { LANDSCAPE_TERRAIN_FIELDS_LIMIT, landscapeTerrainFieldsStaleness } from '../../../app/landscape/LandscapeTerrainFields.js';
 
 export const LANDSCAPE_NATURAL_INFERENCE = Object.freeze({
     id: 'landscape-natural-inference-runtime-v1',
@@ -19,7 +19,8 @@ export const LANDSCAPE_NATURAL_INFERENCE = Object.freeze({
     fallback: LANDSCAPE_NATURAL_SOIL.overview,
     modes: Object.freeze(['terrain', 'overview']),
     defaultMode: 'terrain',
-    manifestDecodeBytes: 768 * 1024,
+    // three times the sidecar byte limit (response bytes, parsed JSON, validated clone); follows the limit (1 MiB since AI 596 D3)
+    manifestDecodeBytes: LANDSCAPE_TERRAIN_FIELDS_LIMIT * 3,
     // the root is built only after the policy is decided; a sidecar that has not arrived by then leaves the overview infill for this load
     // (the terrain-field pages keep awaiting the same request)
     loadTimeoutMs: 10000,

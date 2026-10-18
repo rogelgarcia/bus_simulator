@@ -1,8 +1,9 @@
 // Exercises bounded multi-chunk authoring, real-source preparation, streaming revisit and whole-batch revert.
-// The editable copy starts at the immutable snapshot the city fixture pins, not at the canonical current revision: later material-only
-// publications (the nature pass, AI577 D1a) advance the canonical revision without a city review, and the strict pin must keep refusing them.
-// Starting from the pinned revision keeps the binding valid at the start, and the revert then restores the pinned content under a new revision,
-// which the strict pin must still refuse.
+// The editable copy starts at the immutable snapshot the city fixture pinned on coastal v2 (AI 576), not at the canonical current revision:
+// later material-only publications (the nature pass, AI577 D1a) advance the canonical revision without a city review, and the strict pin must
+// keep refusing them. Starting from the pinned revision keeps the binding valid at the start, and the revert then restores the pinned content
+// under a new revision, which the strict pin must still refuse. Since AI 596 D4 the city spec pins coastal-city-v3; this workflow keeps the
+// v2 pin (COASTAL_V2) because v2 stays the immutable viewer/server default whose history it exercises.
 import { test, expect } from '@playwright/test';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -10,7 +11,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { copyLandscapePlanningSources } from '../../shared/landscape_fixture_files.js';
-import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { COASTAL_V2, createCoastalV2CitySpec } from '../../shared/landscapeCacheTest.js';
 import { CityMap } from '../../../src/app/city/CityMap.js';
 import { createCityConfig } from '../../../src/app/city/CityConfig.js';
 import {
@@ -21,9 +22,12 @@ import {
 import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
 const run = promisify(execFile), root = path.resolve('.');
+// the flat sea: the suite pins the terrain stream's residency and timing through two viewer loads (the animated ocean of AI 597 loads the
+// extent field's level-2 chunks and the swash band's native beach chunks at boot through the same loaders, pre-rolls its foam state and
+// links its programs; the ocean suite covers those)
 const artifacts = path.join(root, `tests/artifacts/screens/landscape/ai576/${process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'd5'}/large-editing`);
-const source = path.join(root, 'assets/public/landscape/coastal-city');
-const boundCity = createCoastalLandscapeCitySpec();
+const source = path.join(root, COASTAL_V2.directory);
+const boundCity = createCoastalV2CitySpec();
 let server, origin, directory;
 const snapshot = page => page.evaluate(() => window.__landscapeTestHooks.snapshot());
 const manifest = async () => JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
@@ -50,12 +54,19 @@ test.afterAll(async () => {
 });
 
 async function settle(page) {
+    const started = Date.now();
     await page.waitForTimeout(180);
+    // the appearance regenerates its surface cache pages after an edit (about twenty seconds with the cache on); in a full regression the
+    // settle took longer than a minute once (AI 597 D7), so the poll leaves two
     await expect.poll(async () => {
         const state = await snapshot(page);
-        return state.streaming?.settled && state.appearance?.settled;
-    }, { timeout: 60000 }).toBe(true);
+        if (state.streaming?.settled && state.appearance?.settled) return true;
+        // the unsettled state is the poll's value, so a timeout names what never settled (streaming pending and denials, appearance pending)
+        const s = state.streaming ?? {}, a = state.appearance ?? {}, b = state.budget ?? {};
+        return `unsettled: streaming ${JSON.stringify({ settled: s.settled, pending: s.pending, queueDepth: s.queueDepth, loaded: s.loaded, evicted: s.evicted, resident: s.residentLeafIds?.length })}, appearance ${JSON.stringify({ settled: a.settled, pending: a.pending, status: a.status })}, budget ${JSON.stringify({ cpuBytes: b.cpuBytes, gpuBytes: b.gpuBytes, denied: b.denied, limits: b.limits })}, ocean ${JSON.stringify(state.ocean ? { status: state.ocean.status, settled: state.ocean.settled } : null)}`;
+    }, { timeout: 120000 }).toBe(true);
     const state = await snapshot(page);
+    console.log(`[large_editing] settled in ${Date.now() - started} ms`);
     expect(state.budget.cpuBytes).toBeLessThanOrEqual(state.budget.limits.cpuBytes);
     expect(state.budget.gpuBytes).toBeLessThanOrEqual(state.budget.limits.gpuBytes);
     expect(state.peakUploadedBytesPerFrame).toBeLessThanOrEqual(state.streaming.uploadLimitBytes);
@@ -70,10 +81,13 @@ async function query(page, revision, x, z) {
 }
 
 async function terrainReport(page, saved, shape, constraints) {
+    const started = Date.now();
     const response = await page.request.post(`${origin}/api/landscape/report`, { data: {
         expectedRevision: saved.revision, shape, sampleSpacingMeters: 50, maxSamples: 4096, constraints
     } });
     const bytes = await response.body();
+    // the report's latency is part of the test's budget: it is logged so a run that overruns names the slow call (AI 597 D7)
+    console.log(`[large_editing] report ${shape.type} revision ${saved.revision} in ${Date.now() - started} ms`);
     expect(response.ok(), bytes.toString()).toBe(true);
     const report = await readLandscapeTerrainReport(new Response(bytes), { landscapeId: saved.id, revision: saved.revision });
     expect(report.status).toBe('ready');
@@ -130,7 +144,7 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     const unrelatedDependency = createLandscapeDependency(original, { bounds: { minX: 400, maxX: 600, minZ: 400, maxZ: 600 }, channels: ['height', 'soil'], algorithm: 'city-pad-study-v1' });
     const coverDependency = createLandscapeDependency(original, { bounds: { minX: 1100, maxX: 2800, minZ: 1200, maxZ: 2800 }, channels: ['landCover'], algorithm: 'cover-inspection-v1' });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html?landscapeOcean=flat`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     const beforeCenter = await query(page, original.revision, 2000, 2000), beforeOutside = await query(page, original.revision, 500, 500);
     const beforeReport = await terrainReport(page, original, studyShape, reservations);
@@ -235,7 +249,7 @@ test('Landscape D7: coastal edit, reports, city binding and dependency freshness
     expect(checkLandscapeDependency(unrelatedDependency, prepared, { requireRevision: false })).toEqual({ status: 'current' });
     expect(() => validateLandscapeCityBinding(boundCity.landscape, { manifest: prepared })).toThrow(/revision is stale/);
     for (const chunk of saved.chunks.filter(value => value.level === saved.grid.maxLevel)) expect(prepared.chunks.find(value => value.id === chunk.id).channels).toEqual(chunk.channels);
-    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html`));
+    await page.goto(landscapeViewerUrl(`${origin}/screens/landscape_fabrication.html?landscapeOcean=flat`));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready);
     await page.evaluate(async pose => { window.__landscapeTestHooks.setCamera(pose); await window.__landscapeTestHooks.select(2000, 2000); }, closePose);
     const reopened = await settle(page);

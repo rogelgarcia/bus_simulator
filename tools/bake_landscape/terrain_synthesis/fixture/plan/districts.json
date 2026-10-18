@@ -1,0 +1,70 @@
+[
+ {
+  "id": 1,
+  "name": "Plateau town",
+  "target_elevation_m": 36,
+  "typical_design_band_m": "35–37 m",
+  "actual_terrain_p05_p95_m": [
+   36,
+   36
+  ],
+  "boundary_xz_m": [
+   [
+    640,
+    720
+   ],
+   [
+    820,
+    740
+   ],
+   [
+    880,
+    600
+   ],
+   [
+    850,
+    420
+   ],
+   [
+    700,
+    380
+   ],
+   [
+    610,
+    480
+   ]
+  ]
+ },
+ {
+  "id": 2,
+  "name": "Beach plaza",
+  "target_elevation_m": 2.6,
+  "typical_design_band_m": "2–3 m plaza",
+  "actual_terrain_p05_p95_m": [
+   2.6,
+   3.5
+  ],
+  "boundary_xz_m": [
+   [
+    250,
+    560
+   ],
+   [
+    330,
+    570
+   ],
+   [
+    350,
+    470
+   ],
+   [
+    300,
+    420
+   ],
+   [
+    245,
+    440
+   ]
+  ]
+ }
+]

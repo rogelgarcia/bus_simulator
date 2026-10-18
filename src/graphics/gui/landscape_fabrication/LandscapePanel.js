@@ -11,7 +11,7 @@ export class LandscapePanel {
                 <div><span class="landscape-eyebrow">FABRICATION / LANDSCAPE</span><h1>Coastal city <span>Terrain workspace</span></h1></div>
                 <div class="landscape-source"><span data-field="source">Loading landscape…</span><small data-field="revision">Validating prepared source</small></div>
             </header>
-            <div class="landscape-streaming"><span data-field="streaming" role="status">Preparing bounded terrain streaming…</span><small data-field="streaming-detail">CPU buffers and estimated GPU residency</small><small data-field="appearance">Preparing independent soil masks and PBR pages…</small><small data-field="surface-detail">Preparing generated surface detail…</small></div>
+            <div class="landscape-streaming"><span data-field="streaming" role="status">Preparing bounded terrain streaming…</span><small data-field="streaming-detail">CPU buffers and estimated GPU residency</small><small data-field="appearance">Preparing independent soil masks and PBR pages…</small><small data-field="surface-detail">Preparing generated surface detail…</small><small data-field="ecosystem">Ecosystem loading</small><small data-field="surface">Surface model loading</small></div>
             <nav class="landscape-toolbar" aria-label="Terrain inspection">
                 <div data-group="mode"></div><div data-group="camera"></div><div data-group="helpers"></div><div data-group="source"></div>
                 <div class="landscape-projection"><label>Projection<select data-field="projection" aria-label="Camera projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic</option></select></label><label>FOV °<input data-field="fov" type="number" min="5" max="110" value="55" aria-label="Perspective field of view" /></label><label>Ortho span m<input data-field="span" type="number" min="20" max="20000" value="5000" aria-label="Orthographic view span" /></label><label>Zoom<input data-field="zoom" type="number" min="0.1" max="100" step="0.1" value="1" aria-label="Projection zoom" /></label></div>
@@ -21,7 +21,7 @@ export class LandscapePanel {
                 <div class="landscape-planning-body">
                     <small data-field="planning-status">Preparing retained planning references…</small>
                     <div class="landscape-planning-actions" data-group="planning"></div>
-                    <label>Terrain diagnostic<select data-field="diagnostic" aria-label="Terrain diagnostic"><option value="none">Material surface</option><option value="elevation">Elevation + 5 m contours</option><option value="slope">Slope degrees</option><option value="water">Water depth</option><option value="surface-level">Surface detail level</option><option value="surface-coverage">Surface coverage weights</option><option value="terrain-appearance">Terrain-driven appearance inputs</option><option value="dressing">Natural dressing inputs</option><option value="dressing-grass">Dressing: grass density</option><option value="dressing-shrub">Dressing: shrub suitability</option><option value="dressing-tree">Dressing: tree suitability</option><option value="dressing-rock">Dressing: rock scatter</option><option value="dressing-debris">Dressing: beach debris</option></select></label>
+                    <label>Terrain diagnostic<select data-field="diagnostic" aria-label="Terrain diagnostic"><option value="none">Material surface</option><option value="elevation">Elevation + 5 m contours</option><option value="slope">Slope degrees</option><option value="water">Water depth</option><option value="surface-level">Surface detail level</option><option value="surface-coverage">Surface coverage weights</option><option value="terrain-appearance">Terrain-driven appearance inputs</option><option value="dressing">Natural dressing inputs</option><option value="dressing-grass">Dressing: grass density</option><option value="dressing-shrub">Dressing: shrub suitability</option><option value="dressing-tree">Dressing: tree suitability</option><option value="dressing-rock">Dressing: rock scatter</option><option value="dressing-debris">Dressing: beach debris</option><option value="surface-substrate">Surface model: substrate classes</option><option value="surface-cover">Surface model: cover classes</option><option value="surface-fraction">Surface model: cover fraction</option><option value="surface-wetness">Surface model: wetness</option><option value="surface-disturbance">Surface model: disturbance</option></select></label>
                     <small data-field="diagnostic-legend">Diagnostics use displayed terrain LOD; native reports are separate.</small>
                     <label>Named source reference<select data-field="reference-list" aria-label="Named planning reference"><option value="">No references loaded</option></select></label>
                     <div class="landscape-planning-actions" data-group="reference"></div>
@@ -38,7 +38,7 @@ export class LandscapePanel {
                 <h2 data-field="selection-title">Point to the terrain</h2>
                 <p data-field="selection">Click a surface to identify its world coordinates and cover type.</p>
                 <small data-field="chunk">Select a point to inspect its rendered chunk and LOD.</small>
-                <label class="landscape-radius">Selection radius (m)<input data-field="radius" type="number" value="25" min="0" max="1000" step="1" aria-label="Selection radius in meters" /><small>0 selects a point. Larger areas are checked against the native-data budget.</small></label>
+                <label class="landscape-radius">Selection radius (m)<input data-field="radius" type="number" value="25" min="0" max="1000" step="1" aria-label="Selection radius in meters" /><small data-field="radius-hint">0 selects a point. Larger areas are checked against the native-data budget.</small></label>
                 <div class="landscape-selection-actions" data-group="selection"></div>
                 <small data-field="handoff">Selections are view-only. Terrain is unchanged.</small>
                 <small class="landscape-report" data-field="report">Terrain report: select an area, then Inspect area.</small>
@@ -49,7 +49,7 @@ export class LandscapePanel {
         const groups = {
             mode: [['mode:shaded', 'Shaded'], ['mode:wireframe', 'Wireframe'], ['mode:combined', 'Shaded + wire']],
             camera: [['camera:home', 'Overview'], ['camera:top', 'Top'], ['camera:ground', 'Beach approach'], ['camera:pov', 'Game POV']],
-            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water']],
+            helpers: [['grid', 'Grid'], ['axes', 'Axes'], ['lod', 'LOD colors'], ['boundaries', 'Chunk edges'], ['water', 'Water'], ['ocean', 'Ocean'], ['surround', 'Surround'], ['ecosystem', 'Ecosystem']],
             source: [['reload', 'Reload source']],
             planning: [['planning:districts', 'Districts'], ['planning:roads', 'Roads'], ['planning:shoreline', 'Shoreline'], ['planning:points', 'Points'], ['planning:corridors', 'View corridor']],
             reference: [['reference:focus', 'Focus reference']],
@@ -79,6 +79,12 @@ export class LandscapePanel {
 
     /** @param {string} field @param {string} value */
     text(field, value) { this.root.querySelector(`[data-field="${field}"]`).textContent = value; }
+
+    /** The loaded landscape's admissible selection radius (half its native chunk span) bounds the field and is named in its hint. @param {number} limit @param {number} span */
+    selectionRadiusLimit(limit, span) {
+        this.root.querySelector('[data-field="radius"]').max = String(limit);
+        this.text('radius-hint', `0 selects a point. At most ${limit} m: an exact query covers at most four ${span} m native chunks.`);
+    }
 
     active(action, enabled) {
         const button = this.root.querySelector(`[data-action="${action}"]`);

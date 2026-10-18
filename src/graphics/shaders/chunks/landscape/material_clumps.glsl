@@ -1,15 +1,13 @@
 // World-anchored per-material clump relief, mirroring landscapeMaterialClumpValue (landscape-material-clumps-v1).
 // Include through the shaderlib directive for landscape/material_clumps after landscape/surface_warp, whose lattice
-// noise it reuses. Values come from landscapeMaterialClumpUniforms(seed, soils):
-//   uSoilClumps[soil]      vec4(1 / first wavelength, weight, texture relief gain, billow center or 0 for smooth)
-//   uSoilClumpSalts[soil]  ivec4 uint32 octave salts stored as two's-complement integers
+// noise it reuses, and landscape/material_parameters, whose per-material rows it reads. Values come from landscapeMaterialClumpUniforms(seed, soils):
+//   clumps row (landscapeMaterialClumps)    vec4(1 / first wavelength, weight, texture relief gain, billow center or 0 for smooth) per material
+//   clump salts (landscapeMaterialClumpSalt) the four uint32 octave salts per material
 //   uClumpOctaves[k]       vec4(frequency relative to the first octave, amplitude, cos, sin); zero amplitude ends the list
 //   uClumpSettings         vec4(gain, fade start, fade end in multiples of an octave wavelength, enabled)
 //   uClumpConfidence       vec4(coverage confidence start, end, relief floor, unused)
-// landscapeMaterialClump(soil, world, footprint, detail) returns the faded centered clump value and, in detail, the first
+// landscapeMaterialClump(material, world, footprint, detail) returns the faded centered clump value and, in detail, the first
 // octave's footprint fade (zero once it is unresolved).
-uniform vec4 uSoilClumps[6];
-uniform ivec4 uSoilClumpSalts[6];
 uniform vec4 uClumpOctaves[4];
 uniform vec4 uClumpSettings;
 uniform vec4 uClumpConfidence;
@@ -24,9 +22,8 @@ float landscapeClumpFade(float wavelength, float footprint) {
     return 1.0 - smoothstep(wavelength * uClumpSettings.y, wavelength * uClumpSettings.z, footprint);
 }
 
-float landscapeMaterialClump(int soil, vec2 world, float footprint, out float detail) {
-    vec4 clump = uSoilClumps[soil];
-    ivec4 salts = uSoilClumpSalts[soil];
+float landscapeMaterialClump(int material, vec2 world, float footprint, out float detail) {
+    vec4 clump = landscapeMaterialClumps(material);
     float wavelength = 1.0 / clump.x;
     float first = landscapeClumpFade(wavelength, footprint);
     detail = first;
@@ -36,7 +33,7 @@ float landscapeMaterialClump(int soil, vec2 world, float footprint, out float de
         vec4 octave = uClumpOctaves[k];
         float amplitude = octave.y * landscapeClumpFade(wavelength / max(octave.x, 1.0e-6), footprint);
         if (amplitude <= 0.0) break;
-        int salt = k == 0 ? salts.x : k == 1 ? salts.y : k == 2 ? salts.z : salts.w;
+        int salt = int(landscapeMaterialClumpSalt(material, k));
         sum += amplitude * landscapeClumpNoise(world, clump.x * octave.x, octave.zw, salt);
         power += amplitude * amplitude;
     }

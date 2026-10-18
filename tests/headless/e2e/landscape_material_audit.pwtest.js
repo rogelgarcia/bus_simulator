@@ -51,21 +51,18 @@ test('Landscape materials: matched old/new production PBR sheets expose homogene
         const result = await page.evaluate(async phases => {
             const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const { LandscapeMaterialPages } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialPages.js');
-            const probe = createLandscapeMaterialProbe({ toneMapping: true }), images = [];
+            const probe = createLandscapeMaterialProbe({ toneMapping: true, linearBaseColor: false }), images = [];
             try {
                 for (const phase of phases) {
-                    const owner = new LandscapeMaterialPages({ appearance: phase.appearance, renderer: probe.renderer, uniforms: probe.uniforms, prefix: 'audit' });
+                    const owner = new LandscapeMaterialPages({ appearance: phase.appearance, uniforms: probe.uniforms, prefix: 'audit' });
                     await owner.initialize();
                     for (let soil = 0; soil < phase.appearance.materials.length; soil++) {
                         const definition = phase.appearance.materials[soil], tier = definition.tiers.find(value => value.resolution === 512);
                         const loaded = await Promise.all(['baseColor', 'normal', 'orm'].map(async name => new Uint8Array(await (await fetch(`/__landscape-material-audit/${phase.id}/${definition.soilId}/${name}`)).arrayBuffer())));
                         const surface = new Uint8Array(512 * 512 * 8); surface.set(loaded[1]); surface.set(loaded[2], loaded[1].length);
-                        const baseTexture = probe.texture(loaded[0], 512, 1, true), surfaceTexture = probe.texture(surface, 512, 2);
-                        owner.configure(baseTexture, true); owner.configure(surfaceTexture, false);
-                        probe.uniforms[`uSoilBase${soil}`].value = baseTexture; probe.uniforms[`uSoilSurface${soil}`].value = surfaceTexture;
-                        probe.uniforms.uSoilState.value[soil].y = 512;
+                        probe.bindMaterial(soil, { baseColor: loaded[0], surface, size: 512, resolution: 512 });
                         probe.setCoverage(Array.from({ length: 6 }, (_, index) => index === soil ? 1 : 0));
-                        const period = probe.uniforms.uSoilTiling.value[soil].x;
+                        const period = probe.parameters(soil, 'tiling')[0];
                         for (const repeats of [1, 4]) {
                             const span = period * repeats; probe.setCenter([span / 2, span / 2]); probe.draw({ span });
                             images.push({ id: `${definition.soilId}-${phase.id}-${repeats}x`, phase: phase.id, soilId: definition.soilId, materialId: definition.materialId, repeats,

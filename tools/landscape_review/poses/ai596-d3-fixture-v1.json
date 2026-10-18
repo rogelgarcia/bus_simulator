@@ -1,0 +1,120 @@
+{
+  "format": "landscape-review-poses",
+  "schemaVersion": 1,
+  "id": "ai596-d3-fixture-v1",
+  "conventions": {
+    "coordinates": "world X east, Y up, Z north, meters",
+    "headingDegrees": "clockwise from north: 0 = north (+Z), 90 = east (+X)",
+    "pitchDegrees": "above the horizon: negative looks down",
+    "eyeHeightMeters": "above the authoritative native ground at (x, z), re-resolved on every terrain revision",
+    "altitudeMeters": "above sea level, independent of the ground (the ground is still recorded, null outside the landscape)",
+    "lookDistanceMeters": "the look target lies this far along the view direction",
+    "camera": "an explicit viewer camera {position, target} in world meters, passed through unchanged"
+  },
+  "poses": [
+    {
+      "id": "F-01",
+      "intent": "Bluff crest looking north along the coast",
+      "x": 363,
+      "z": 300,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 355,
+      "pitchDegrees": -8,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the AI 596 D2 synthesis fixture (recipe plateau-road-shoreline, revision synthesis-b1c6fa1615af19e03ad06b65, 513 samples at 1.953125 m). On row Z 300 the wave-cut platform (coastal-bluff platformHeight 0.8 m) lies at 0.40-0.67 m from x 329.7 to 345.3, the face climbs from 0.67 m at x 345.3 to 7.06 m at x 357.0 (sampled slopes 30-38 degrees; the 65 degree face is aliased by the 1.95 m grid) and the crest bench holds 7.6-8.1 m at x 361-365. The pose stands on that bench at x 363 (7.85 m, slope 7 degrees), 6 m back from the crest edge. The bluff runs north-south at x 345-360 from Z 190 to Z 424; heading 355 looks north along it with the face, the platform and the sea on the right of the frame (facing north in the viewer's right-handed X-east/Y-up/Z-north frame puts west on the right), pitch -8 keeps the platform and the face foot in the lower third. The same world-anchored landform exists at the three fixture spacings, so the pose compares how the face and the crest edge resolve. The terrain payloads of revision synthesis-e6539efab0e5743b28b2c675 are byte-identical to the pinned revision."
+    },
+    {
+      "id": "F-02",
+      "intent": "Bluff toe on the wave-cut platform looking at the face",
+      "x": 334,
+      "z": 300,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 90,
+      "pitchDegrees": 2,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). On row Z 300 the platform is 0.47 m at x 334 (slope 1 degree); going east the toe, where the slope first exceeds 20 degrees, is at x 347.2 (0.67 m), 13 m ahead, and the crest top (7.06 m) at x 357, 23 m ahead. From the 2.17 m eye the face spans -6.6 degrees (toe) to +12 degrees (top), so heading 90 looks straight at the face and pitch +2 centers it between the platform and the sky. At 1.953125 m the 65 degree face is three samples wide; the finer spacings add samples to the same face."
+    },
+    {
+      "id": "F-03",
+      "intent": "Beach berm looking north along the beach",
+      "x": 279,
+      "z": 300,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 0,
+      "pitchDegrees": -5,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). On row Z 300 the waterline is at x 243.7 and the berm crest (coastal-beach bermHeight 1.8 m, 30 m behind the waterline) is flat at 1.80 m from x 275.4 to 283.2; the pose stands on the crest at x 279 (1.80 m, slope 0 degrees), on sand (cover 1). Heading 0 looks north along the beach: the berm continues at x 273-277 on row Z 350 and x 263-271 on row Z 400 and meets the beach plaza (district 2, 2.6 m) at Z 440-560; pitch -5 keeps the swash line and the berm crest in the lower half. The berm crest sharpness is one of the resolution-study statistics, so this pose shows it at eye level."
+    },
+    {
+      "id": "F-04",
+      "intent": "Gully in the hills, looking up the gully from its north rim",
+      "x": 449,
+      "z": 164,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 95,
+      "pitchDegrees": -8,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01) from its drainage map (tests/artifacts/screens/landscape/ai596/d2/fixture/drainage.png): the class-2 gully that runs east-west from (400, 165) to (537, 160) and drains west to the shore. Cross-section at x 449 (north-south): north rim 8.4 m at Z 164, floor 6.0 m at Z 150, south rim 8.4 m at Z 139 (2.4 m deep, 25 m wide); at x 465 the floor is 7.5 m at Z 152.5 between rims at 10.4 and 10.2 m. The pose stands on the north rim at (449, 164) (8.44 m, slope 7.8 degrees, grass); heading 95 looks east-south-east along the gully, whose floor rises from 6.0 m at x 449 to 14.0 m at x 524, with the south wall opposite; pitch -8 holds the floor and the wall in the lower half. The hills are world-anchored noise, so the gully sits here at every spacing; its incision comes from the density-scaled erosion and is what the spacings differ in."
+    },
+    {
+      "id": "F-05",
+      "intent": "Ridge crest of the south hills, looking along the ridge",
+      "x": 556,
+      "z": 100,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 15,
+      "pitchDegrees": -4,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). The hilltop at (556.6, 91.8), 21.0 m, is the most prominent natural local maximum (60 m window) south of the plateau: the east-west cross-section drops 3.4 m west and 1.5 m east over 40 m, the north-south one 5.6 m north over 40 m, and the ridge continues north-north-east at 14-19 m between x 500 and 560 up to Z 300 (per-row crest trace). The pose stands 8 m north of the top at (556, 100) (20.46 m, slope 7.7 degrees, forest soil); heading 15 looks along the ridge toward (560, 290) with the gullied flanks falling away on both sides, pitch -4 keeps the crest line in the lower half and the plateau rim 300 m beyond in the upper half."
+    },
+    {
+      "id": "F-06",
+      "intent": "Plateau escarpment rim seen from below",
+      "x": 572,
+      "z": 557,
+      "eyeHeightMeters": 1.7,
+      "headingDegrees": 90,
+      "pitchDegrees": 8,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). District 1 polygon [[640,720],[820,740],[880,600],[850,420],[700,380],[610,480]] with the escarpment profile (top 36 m, faceDrop 18 m, faceSlope 55 degrees). Transect from the plateau centroid (750, 557) west: 36.00 m to x 613.9, the face drops to 25.6 m at x 602 (sampled slopes 40-49 degrees), a bench at 24.2-24.5 m from x 598 to 590, a second step to 21.8 m at x 583 (terraces and talus), then natural land at 20.5 m at x 572 falling gently west. The pose stands at (572, 557) (20.55 m, slope 3.5 degrees), 40 m west of the rim; heading 90 looks east at the face, whose rim is 15.5 m above the eye (21 degrees elevation), and pitch +8 centers the face between the bench and the sky."
+    },
+    {
+      "id": "F-07",
+      "intent": "Low oblique over the coast at 40 m",
+      "x": 160,
+      "z": 180,
+      "altitudeMeters": 40,
+      "headingDegrees": 15,
+      "pitchDegrees": -12,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). Over water 84 m off the waterline (row Z 180 waterline x 244; seabed -4.9 m under the pose), so the altitude form keeps the flyover height stable whatever the bathymetry does at another spacing. Heading 15 looks north-north-east along the coast across the beach berm (x 275-283) toward the bluff (x 345-360, Z 190-424) and the hills behind it; pitch -12 puts the horizon in the upper quarter so the foreshore, berm, platform and bluff face fill the frame."
+    },
+    {
+      "id": "F-08",
+      "intent": "1 km overview from the sea",
+      "x": -250,
+      "z": 500,
+      "altitudeMeters": 450,
+      "headingDegrees": 90,
+      "pitchDegrees": -30,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [],
+      "notes": "Pinned on the D2 fixture (see F-01). 250 m outside the western landscape edge (ground recorded as null); from 450 m the -30 degree center ray meets sea level at x = -250 + 450 / tan(30) = 529, mid-landscape just west of the plateau (x 610-880, Z 380-740), so at 55 degrees (85.6 degrees horizontal at 16:9) the whole 1 km coast, the beach, the bluff, the hills and the plateau fill the frame. The counterpart of NW-11 for the 1 km fixture."
+    }
+  ]
+}

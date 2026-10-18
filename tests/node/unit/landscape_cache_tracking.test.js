@@ -17,7 +17,7 @@ const CACHE_PUBLICATIONS = Object.freeze([
     ['cache root', new RegExp(`^${LANDSCAPE_CACHE_ROOT}/`)],
     ['terrain payload', /(?:^|\/)payloads\/[a-f0-9]{64}\.[a-z0-9]+$/],
     ['field or appearance page', /(?:^|\/)pages\/[a-f0-9]{64}\.[a-z0-9]+$/],
-    ['content-addressed manifest, sidecar or binding alias', /(?:^|\/)(?:manifest|multiscale|binding)\.[a-f0-9]{64}\.json$/],
+    ['content-addressed manifest, sidecar or binding alias', /(?:^|\/)(?:manifest|multiscale|layers|binding)\.[a-f0-9]{64}\.json$/],
     ['retained source archive', /(?:^|\/)source\/[a-f0-9]{64}\//],
     ['raw terrain raster', /(?:^|\/)height_m_float32_le\.raw$/],
     ['raw landscape channel', /\.(?:f32le|rgba8)$/],
@@ -30,9 +30,10 @@ test('Landscape cache tracking: the detector recognizes every cache publication 
     const hash = 'a'.repeat(64);
     for (const file of [`${LANDSCAPE_CACHE_ROOT}/coastal-city/manifest.json`, `${LANDSCAPE_CACHE_ROOT}/coastal-city/PROVENANCE.json`, `${LANDSCAPE_CACHE_ROOT}/other/fields/manifest.json`,
         `elsewhere/payloads/${hash}.f32le`, `elsewhere/payloads/${hash}.u8`, `x/appearance/pages/${hash}.rgba8`, `x/fields/pages/${hash}.rgba8`, `x/manifest.${hash}.json`,
-        `x/appearance/multiscale.${hash}.json`, `x/appearance/binding.${hash}.json`, `x/source/${hash}/material_masks/water.png`, 'x/height_m_float32_le.raw',
+        `x/appearance/multiscale.${hash}.json`, `x/appearance/layers.${hash}.json`, `x/appearance/binding.${hash}.json`, `x/source/${hash}/material_masks/water.png`, 'x/height_m_float32_le.raw',
         'tests/fixtures/terrain.f32le', 'downloads/coastal_city_terrain_v2.zip']) assert.ok(cachePublication(file), file);
-    for (const file of ['src/app/landscape/LandscapeCache.js', 'tools/bake_landscape/CacheBundle.mjs', 'tools/bake_landscape/appearance/multiscale-v1.json',
+    for (const file of ['src/app/landscape/LandscapeCache.js', 'tools/bake_landscape/CacheBundle.mjs', 'tools/bake_landscape/appearance/multiscale-v1.json', 'tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json',
+        'tools/bake_landscape/appearance/layers-v1-coastal-city-v3.json',
         'tools/bake_landscape/terrain_fields/recipe-v1.json', 'assets/public/pbr/landscape_grass_uniform_v1/pbr.landscape.config.json', 'specs/landscape/LANDSCAPE_MODEL.md',
         'tools/landscape_authoring/examples/grade_smooth_polygon.template.json']) assert.equal(cachePublication(file), null, file);
 });

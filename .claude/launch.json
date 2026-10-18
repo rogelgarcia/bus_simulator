@@ -4,8 +4,27 @@
     {
       "name": "bus-sim-static",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["tests/headless/e2e/static_server.mjs"],
+      "runtimeArgs": [
+        "tests/headless/e2e/static_server.mjs"
+      ],
       "port": 4173
+    },
+    {
+      "name": "landscape-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/landscape_server/run.mjs"
+      ],
+      "port": 8002
+    },
+    {
+      "name": "landscape-server-v3",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.LANDSCAPE_DIRECTORY = 'assets/public/landscape/coastal-city-v3'; import('./tools/landscape_server/run.mjs');"
+      ],
+      "port": 8002
     }
   ]
 }

@@ -153,3 +153,26 @@ Evidence remains under `tests/artifacts/screens/landscape/ai577/d1a/`.
 See [LANDSCAPE_APPEARANCE.md](LANDSCAPE_APPEARANCE.md) for retained material identity,
 [LANDSCAPE_SURFACE_COVERAGE.md](LANDSCAPE_SURFACE_COVERAGE.md) for terrain coverage,
 and [LANDSCAPE_APPEARANCE_RUNTIME.md](LANDSCAPE_APPEARANCE_RUNTIME.md) for streaming.
+
+## D2 source audit (AI 598)
+
+AI 598 D2 added one homogeneous CC0 material per substrate and cover class of the surface model ([LANDSCAPE_SURFACE_LAYERS.md](LANDSCAPE_SURFACE_LAYERS.md)
+§7). About 150 albedo previews per class were screened, 34 sets downloaded (`downloads/landscape/ai598_d2/`, a `source.json` beside each) and
+audited BEFORE installation against the base-tile rule with (1) albedo contact sheets at one tile and 4 × 4, (2) stationarity metrics on the 1K
+maps: the coefficient of variation of the linear luminance over 8 × 8 blocks (also after the `periodic-log-microdetail-v1` recipe when a source
+needs it), the same for the mean tangent slope, the largest max/min ratio of the row and column mean profiles, the broad-tone share of the log
+luminance below four cycles per tile and the capture lean, and (3) shaded renders through the production probe at one tile and 4 × 4 at the
+512 and 1024 tiers. Acceptance: luminance CoV ≤ 0.10 raw or ≤ 0.04 conditioned when the raw variation is broad drift rather than islands,
+slope CoV ≤ 0.30, directional ratio ≤ 1.4 (a slope-only ratio to 1.5 when the luminance profile is flat and the 4 × 4 sheet shows no band),
+no islands, landmarks or tile-scale tonal regions. Accepted (class, source, authored or stated tile): sandstone Poly Haven worn_rock_natural_01
+2 m, caprock rock_08 1.5 m, scree ambientCG Gravel040 2 m, mud dry_mud_field_001 3 m, dune sand Ground093A 2 m, cobble dry_river_pebbles 2 m
+(raw CoV 0.216 is stone-density drift that conditions to 0.033), shell grit Shells001 1.5 m, turf Grass001 1.4 m (inside the grass range
+without a gain, lean 0.8° against Grass008's 2.2°), dry grass withered_grass 2 m, moss Moss002 1.5 m, broadleaf litter dry_decay_leaves 2 m,
+needle litter forrest_ground_03 2 m, lichen rock Rock040 2 m, algae rock seaside_rock 2 m. Rejected with their numbers: sandstone_cracks
+(man-made, 6.7° lean, Y 0.41), tiger_rock (CoV 0.172, directional 1.57), Rock029 (slope CoV 0.46), gravel_stones (Y 0.079 below the scree range),
+brown_mud (directional 1.91), ganges_river_pebbles (CoV 0.19, multicoloured), Gravel016/041 (gravel-sized), Ground056 (razor shells in rows,
+1.74), grass_ground (Y 0.12), Moss003 (banding 1.50), Moss004 (broad tone 0.15), forest_leaves_03 (Y 0.05), Ground077 (orange, cones), lichen_rock
+(CoV 0.226, 2.52), Rock036 (1.68) and about 90 more at the preview stage. No CC0 wrack or seaweed source exists in either library. The complete
+audit with every candidate's metrics is `tests/artifacts/screens/landscape/ai598/d2/sources/AUDIT.md`; the calibration gains and effective
+albedos are in `LandscapeMaterialCalibration.js` (scree ×1.67, mud ×0.62, dune sand ×0.66, shell grit ×1.52, dry grass ×0.76, broadleaf litter
+×1.53, needle litter ×0.42, lichen rock ×0.51; the others 1) and the shaded sheets under `d2/audit/`.

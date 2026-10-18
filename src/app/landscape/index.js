@@ -1,7 +1,8 @@
 // Exposes renderer-independent landscape manifests, channels, coordinates, and sampling.
 // @ts-check
 export { LANDSCAPE_LAND_COVER_CATALOG, LANDSCAPE_SOIL_CATALOG } from './LandscapeCatalog.js';
-export { LANDSCAPE_SCHEMA_VERSION, LANDSCAPE_MAX_CHUNK_SAMPLES, LANDSCAPE_SUPPORTED_CAPABILITIES, createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest } from './LandscapeManifest.js';
+export { LANDSCAPE_SCHEMA_VERSION, LANDSCAPE_MAX_CHUNK_SAMPLES, LANDSCAPE_SUPPORTED_CAPABILITIES, LANDSCAPE_PROVENANCE_KINDS, LANDSCAPE_SYNTHESIS_PROVENANCE_KIND, LANDSCAPE_SYNTHESIS_PROVENANCE_STATEMENT,
+    createLandscapeChunkId, createLandscapeManifest, validateLandscapeManifest, LANDSCAPE_CONTENT_LAYERS_CAPABILITY, LANDSCAPE_ATTACHMENT_KINDS } from './LandscapeManifest.js';
 export { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_CHUNK_BYTE_LIMIT, encodeLandscapeChannel, decodeLandscapeChannel, loadLandscapeManifest, loadLandscapeChunk, loadLandscapeOverview } from './LandscapePayload.js';
 export { landscapeGridToWorld, landscapeWorldToGrid, landscapeCityTileToWorld, landscapeWorldToCityTile } from './LandscapeCoordinates.js';
 export { sampleLandscapeChunk, createLandscapeSelectionContext } from './LandscapeSampling.js';
@@ -9,8 +10,10 @@ export { resolveLandscapeSoil } from './LandscapeSoil.js';
 export { LANDSCAPE_MAX_POLYGON_VERTICES, validateLandscapeRegion, landscapeRegionBounds, landscapeRegionContains, landscapeRegionIntersectsBounds, landscapeRegionWeight, landscapeRegionsEqual, landscapeRegionSignedDistance, landscapeRegionNearestBoundaryPoint } from './LandscapeRegions.js';
 export { LANDSCAPE_SURFACE_DETAIL_FORMAT, LANDSCAPE_SURFACE_DETAIL_MAX_LEVELS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_METERS, LANDSCAPE_SURFACE_DETAIL_MAX_WARP_SLOPE, validateLandscapeSurfaceDetailRecipe, createLandscapeSurfaceDetailIndex,
     landscapeSurfaceDetailSupport, landscapeSurfaceDetailInputs, landscapeSurfaceDetailKey, landscapeSurfaceDetailRecipeHash, landscapeSurfaceDetailSeed, landscapeSurfaceDetailSearchRadius } from './LandscapeSurfaceDetail.js';
-export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
-export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams } from './LandscapeAcquisition.js';
+export { LANDSCAPE_EDIT_CAPABILITY, LANDSCAPE_ADVANCED_EDIT_CAPABILITY, LANDSCAPE_MAX_BATCH_OPERATIONS, LANDSCAPE_MAX_NAMED_REGIONS, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES, LANDSCAPE_MAX_SMOOTH_RADIUS_SAMPLES_FINE,
+    LANDSCAPE_SMOOTH_FINE_SPACING_METERS, landscapeSmoothRadiusSampleLimit, validateLandscapeEditBatch } from './LandscapeEditSchema.js';
+export { LANDSCAPE_MAX_NATIVE_CHUNKS, LANDSCAPE_QUERY_BYTE_LIMIT, planLandscapeRegion, acquireLandscapeRegion, queryLandscapeSelection, validateAcquiredLandscapeChunk, validateLandscapeNativeSeams,
+    landscapeQueryRadiusLimit } from './LandscapeAcquisition.js';
 export { LANDSCAPE_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatch } from './LandscapeEditing.js';
 export { LANDSCAPE_STREAMED_EDIT_WORKING_BYTE_LIMIT, applyLandscapeEditBatchStreamed } from './LandscapeStreamedEditing.js';
 export { createLandscapeViewPlanner, planLandscapeView, landscapeResourceKey } from './LandscapeStreaming.js';
@@ -20,6 +23,9 @@ export { loadLandscapeAppearanceManifest, loadLandscapeAppearancePage, loadLands
 export { LANDSCAPE_APPEARANCE_MULTISCALE_FORMAT, LANDSCAPE_APPEARANCE_MULTISCALE_ALGORITHM, LANDSCAPE_APPEARANCE_MULTISCALE_TIERS, LANDSCAPE_APPEARANCE_MULTISCALE_LIMIT, LANDSCAPE_APPEARANCE_MULTISCALE_PAGE_LIMIT,
     LANDSCAPE_APPEARANCE_MICRO_ENCODING, LandscapeAppearanceMultiscaleBindingError, validateLandscapeAppearanceMultiscale, validateLandscapeAppearanceMultiscalePage, decodeLandscapeAppearanceMicroTexel } from './LandscapeAppearanceMultiscale.js';
 export { loadLandscapeAppearanceMultiscale, loadLandscapeAppearanceMultiscalePage } from './LandscapeAppearanceMultiscalePayload.js';
+export { LANDSCAPE_APPEARANCE_LAYERS_FORMAT, LANDSCAPE_APPEARANCE_LAYERS_ALGORITHM, LANDSCAPE_APPEARANCE_LAYERS_LIMIT, LANDSCAPE_APPEARANCE_LAYERS_PAGE_LIMIT, LANDSCAPE_APPEARANCE_LAYERS_TIERS,
+    LANDSCAPE_APPEARANCE_LAYER_CLASSES, LandscapeAppearanceLayersBindingError, landscapeAppearanceLayerClass, landscapeSurfaceMaterialsKey, validateLandscapeAppearanceLayers } from './LandscapeAppearanceLayers.js';
+export { loadLandscapeAppearanceLayers, loadLandscapeAppearanceLayersPage } from './LandscapeAppearanceLayersPayload.js';
 export { createLandscapeAppearancePlanner } from './LandscapeAppearancePlanner.js';
 export { LANDSCAPE_CITY_BINDING_CAPABILITY, validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape, cityReservationsToLandscapeConstraints, loadCityLandscape, resolveCityLandscape, assertFlatCityCapability } from './LandscapeCityBinding.js';
 export { LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTORY, LANDSCAPE_CACHE_GUIDE, LANDSCAPE_CACHE_STATUS, landscapeCacheDirectory, probeLandscapeCache, describeLandscapeCacheAvailability } from './LandscapeCache.js';
@@ -33,7 +39,17 @@ export { LANDSCAPE_TERRAIN_FIELDS_FORMAT, LANDSCAPE_TERRAIN_FIELDS_ALGORITHM, LA
     landscapeTerrainFieldContentKey, validateLandscapeTerrainFields, landscapeTerrainFieldsStaleness, landscapeTerrainFieldStaleAt, sampleLandscapeTerrainFieldPage,
     sampleLandscapeTerrainFieldSlots, landscapeTerrainHorizonSine, landscapeSolarDiscVisibility, landscapeTerrainSunVisibility, landscapeTerrainSkyVisibility, sampleLandscapeTerrainNaturalSoil } from './LandscapeTerrainFields.js';
 export { loadLandscapeTerrainFields, loadLandscapeTerrainFieldPage } from './LandscapeTerrainFieldsPayload.js';
+export { LANDSCAPE_GEOLOGY_FORMAT, LANDSCAPE_GEOLOGY_ALGORITHM, LANDSCAPE_GEOLOGY_LIMIT, LANDSCAPE_GEOLOGY_PAGE_LIMIT, LANDSCAPE_GEOLOGY_LAYOUT, LANDSCAPE_GEOLOGY_CATEGORICAL_LAYOUT,
+    LANDSCAPE_GEOLOGY_CHANNELS, LANDSCAPE_GEOLOGY_CATEGORIES, LANDSCAPE_GEOLOGY_LAYERS, LandscapeGeologyBindingError, encodeLandscapeGeologyChannel, decodeLandscapeGeologyChannel,
+    decodeLandscapeGeologyCategory, decodeLandscapeGeology, landscapeGeologyLayout, landscapeGeologyContentInput, landscapeGeologyContentKey, validateLandscapeGeology, landscapeGeologyStaleness,
+    sampleLandscapeGeologyPageUnits, sampleLandscapeGeologyPage, sampleLandscapeGeologyCategory } from './LandscapeGeology.js';
+export { loadLandscapeGeology, loadLandscapeGeologyPage } from './LandscapeGeologyPayload.js';
 export { LANDSCAPE_DRESSING_INPUTS, sampleLandscapeDressingInputs } from './LandscapeDressingInputs.js';
 export { LANDSCAPE_NATURAL_SOIL, landscapeNaturalSoilIndices, landscapeNaturalSoilPageBytes, landscapeNaturalSoilTransientBytes, validateLandscapeNaturalSoilPage,
     createLandscapeNaturalSoilResolver, landscapeNaturalSoilIdentity } from './LandscapeNaturalSoil.js';
 export { landscapeSurfaceDetailUsesNaturalSoil } from './LandscapeSurfaceDetail.js';
+export { LANDSCAPE_SYNTHESIS_RECIPE_FORMAT, LANDSCAPE_SYNTHESIS_SCHEMA_VERSION, LANDSCAPE_SYNTHESIS_LIMITS, LANDSCAPE_SYNTHESIS_COVER_POLICIES, LANDSCAPE_SYNTHESIS_OUTPUT_CHANNELS,
+    LANDSCAPE_SYNTHESIS_FAMILIES, LANDSCAPE_SYNTHESIS_LAYERS, LANDSCAPE_SYNTHESIS_OPERATORS, LANDSCAPE_SYNTHESIS_OVERRIDES, LANDSCAPE_SYNTHESIS_SELECTORS, validateLandscapeSynthesisRecipe, resolveLandscapeSynthesisParameters,
+    canonicalLandscapeSynthesisJson, landscapeSynthesisRecipeIdentity, landscapeSynthesisOperatorSeed, landscapeSynthesisEffectiveSeed } from './LandscapeSynthesisRecipe.js';
+export * from './ecosystem/index.js';
+export * from './surface/index.js';

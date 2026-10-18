@@ -2,6 +2,8 @@
 
 Status: AI577 D5 data contract (landscape-terrain-fields v1), bake, runtime streaming and shader
 integration (`landscape-terrain-visibility-v1`, LANDSCAPE_APPEARANCE_RUNTIME.md) are complete and tested.
+Since AI 596 D4 the leaf also bakes coastal terrain v3 (4097² at 0.9765625 m, 341 pages) under the raised
+working limit of its own recipe ("Global analysis first" and "Bake validation and publication" below).
 
 Terrain fields are derived, unmeasured visual inputs computed offline from one exact terrain revision:
 wetness, flow, deposition, rock exposure, sky view, signed shore distance, convexity, slope, eight
@@ -14,6 +16,16 @@ The registered `landscape/terrain-fields` bake leaf (Node only, `configurationPa
 `all` and the import parent) assembles the complete authenticated native grid, runs every analysis on
 the whole grid, and only then slices pages. Parameters live in the tracked recipe
 `tools/bake_landscape/terrain_fields/recipe-v1.json`, embedded in provenance with its SHA-256.
+
+The full-grid assembly (`TerrainFieldsSource.mjs`) bounds the native grids the leaf can bake: the coast
+peaks at about 380 MiB of tracked arrays at 2049² under the v1 recipe's 768 MiB limit, so a 4097² grid
+(0.9765625 m over 4 km) needs about four times that and 8193² sixteen times. AI 596 D3 recorded a
+streamed, tiled assembly as the general answer; D4 instead raised the limit for the one production grid:
+`tools/bake_landscape/terrain_synthesis/recipes/terrain-fields-coastal-v3.json` is the v1 recipe with
+`workingLimitBytes` 1,879,048,192 (1,792 MiB, under the 2 GiB the recipe reader allows), and the geology
+preparation reads the same grid under a 1.5 GiB limit (`terrain_synthesis/coastal_v3/CoastalV3.mjs`;
+its 512 MiB default holds the 85-node coast and the 1 km fixtures). The streamed assembly stays the
+prerequisite for anything finer than 4097²; the 1 km D3 fixtures bake unchanged.
 
 | Field | Algorithm (recipe v1) | Normalization |
 | --- | --- | --- |
@@ -50,7 +62,10 @@ presentation and imported reference data (AI577 D5).
 
 ## Sidecar
 
-`<landscape>/fields/manifest.json`, at most 256 KiB, with an immutable `manifest.<sha256>.json`
+`<landscape>/fields/manifest.json`, at most 1 MiB (`LANDSCAPE_TERRAIN_FIELDS_LIMIT`; 256 KiB before AI 596 D3:
+the sidecar lists every node and every native, so a 341-node tree measures 246,836 bytes, 293,636 with a
+natural-soil entry on every page, and a 1365-node tree 899,938–1,126,866 bytes, which exceeds even 1 MiB in the
+worst case), with an immutable `manifest.<sha256>.json`
 snapshot and content-addressed `pages/<sha256>.rgba8` / `pages/<sha256>.u8`. Every object has an exact
 field set; unknown or missing fields are rejected; JSON key order is irrelevant.
 
@@ -140,11 +155,23 @@ Coastal publication `terrain-fields-5dbdfc766dca6cce908bd7b4` (sidecar 80,704 by
 26 s, with a 380 MiB tracked working-array peak under the 768 MiB declared limit. Rebuilds are byte
 identical.
 
+Coastal terrain v3 publication (AI 596 D4, baked inside the synthesis write of `landscape/synthesis/coastal-v3`
+and re-runnable through `landscape/terrain-fields` on the v3 directory; receipt
+`tests/artifacts/screens/landscape/ai596/d4/v3/coastal-v3.md`, statistics in the published sidecar):
+`terrain-fields-8ae5a126ff397de346c5aea3` binds terrain `synthesis-7045f619de9de74a367bc3a8` (sidecar 260,174
+bytes under the 1 MiB limit of D3): 341 field pages of 1,089,936 bytes (371,668,176 bytes, every page unique)
+and 172 natural-soil pages (161 unique, 10,633,889 bytes) for 2,991,592 planning samples (inferred sand
+17,132, loam 1,127,093, forest 1,624,678, rock 222,689; 64 speckle samples); depressions fill 1,911,391
+samples in 1,080 flats to at most 9.70 m (0 undrained); the sea-level polyline has 4,882 segments. The fields
+stage took 103.4 s (106.3 s with its write in the receipt's timing table), deterministic second run included,
+under the 1,792 MiB recipe limit. The v2 publication above is unchanged; the geology sidecar of the same
+revision is specified in `LANDSCAPE_TERRAIN_SYNTHESIS.md` and handed over in `LANDSCAPE_AI596_HANDOFF.md`.
+
 ## Runtime
 
 `LandscapeTerrainFieldPages` (engine3d) reuses the memoized sidecar load of the load's
-`LandscapeNaturalInference` (one request for both) after the appearance materials (768 KiB
-transient decode credit), computes staleness and allocates one RGBA8 `DataArrayTexture`
+`LandscapeNaturalInference` (one request for both) after the appearance materials (a transient decode
+credit of three times the sidecar limit: 3 MiB since AI 596 D3, 768 KiB before), computes staleness and allocates one RGBA8 `DataArrayTexture`
 (linear, no mipmaps) of `native mask capacity x 4` layers: the page of native mask slot s occupies layers
 `4s .. 4s + 3`. A page is requested (appearance worker job `field`: fetch and SHA-256) for every native
 mask record holding a slot, at most two in flight at priority 25, and is evicted with its mask record.
@@ -185,6 +212,18 @@ layer, bytes, statistics, latencyMs and derivedIn; `.appearanceLayerState` is
 `pending|deriving|derived|resident|failed|budget-denied`. See LANDSCAPE_APPEARANCE_RUNTIME.md,
 Terrain-driven natural appearance.
 
+**Geology layers and the surface model** (AI 598 D1): while the surface model is on (`landscapeSurfaceModel=on`, the
+default) the same owner loads `geology/manifest.json` beside the fields and the array holds seven layers per native slot:
+0–3 the field page, 4–5 the two geology field layers verbatim and 6 one packed categorical layer whose RGBA bytes are the
+depositType, lithology, drainage and coastalZone labels in the halo'd page layout (halo ring edge-clamped; read with
+`texelFetch` at the aligned samples, never filtered). The geology rides in the field page's record (one `geology` worker job,
+one fade, eviction with the mask record; a stale or missing geology page leaves the slot's neutral geology block).
+`uTerrainFieldsState.w` is 7 with the geology and `.z` adds bit 2 (geology bound), bit 3 (the root-grid surface override layer,
+placed before the appearance layer while an overrides document is bound) and bit 4 (model on). On coastal v3 the array grows
+from 18,801,396 to 32,698,080 bytes GPU (33,515,532 CPU) under the fields ceiling and a native page's upload from 1,089,936
+to 1,907,388 bytes. Statuses `active`, `active-partial`, `absent`, `invalid`, `binding-mismatch`, `stale`, `budget-denied`,
+`disabled` are reported under `snapshot().appearance.geology`. Contract and samplers: [LANDSCAPE_SURFACE_LAYERS.md](LANDSCAPE_SURFACE_LAYERS.md).
+
 ## Dressing inputs
 
 `landscape-dressing-inputs` v1 (`sampleLandscapeDressingInputs({soilWeights, planningShare, fields})`)
@@ -192,7 +231,9 @@ defines grassDensity, shrubSuitability, treeSuitability, rockScatter and beachDe
 display-soil coverage and smooth field terms. Sand, rock, seabed and unknown host no grass, shrubs or
 trees; trees need forest soil; debris needs sand within 0-25 m of the waterline; planning-only cover
 suppresses every output; missing fields use documented neutral values and report `fieldsAvailable:false`.
-Placement remains out of scope.
+Placement is the ecosystem engine's (AI 599, [LANDSCAPE_ECOSYSTEM.md](LANDSCAPE_ECOSYSTEM.md)): its rules read the five outputs as the
+`dressing.<output>` inputs, evaluated by `createEcosystemInputSampler` from the display soil, the planning share and the fields exactly as here, so
+their documented meaning is unchanged inside the new model.
 
 The viewer hook `dressingSample(x, z, {dx, dy})` evaluates v1 for the displayed soil (resident coverage,
 nearest native planning cover, fine fields) and adds `inferredGround` on planning cover; the diagnostics

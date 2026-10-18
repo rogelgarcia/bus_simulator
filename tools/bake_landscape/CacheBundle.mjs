@@ -5,12 +5,14 @@ import path from 'node:path';
 import { lstat, mkdir, readdir, readFile, unlink } from 'node:fs/promises';
 import { hashFile } from '../baking/Files.mjs';
 import { acquireAuthoringLock, atomicAuthoringWrite, authoringFile, authoringHash, readAuthoringFile, writeImmutableAuthoringFile } from '../landscape_authoring/AuthoringFiles.mjs';
-import { LANDSCAPE_MANIFEST_BYTE_LIMIT, validateLandscapeManifest } from '../../src/app/landscape/index.js';
+import { LANDSCAPE_MANIFEST_BYTE_LIMIT, landscapeCacheDirectory, validateLandscapeManifest } from '../../src/app/landscape/index.js';
 
-/** Current pointers switch after every immutable file, sidecars first and the terrain manifest last. */
-export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'fields/manifest.json', 'manifest.json']);
+/** Current pointers switch after every immutable file, sidecars first (the AI 596 geology sidecar, the D5 far-field surround and the AI 598 layers companion included) and the terrain manifest last. */
+export const LANDSCAPE_CACHE_POINTERS = Object.freeze(['appearance/manifest.json', 'appearance/multiscale.json', 'appearance/layers.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
+/** The far-field surround sidecar (AI 596 D5): its own saved landscape under `surround/`, bound to the terrain manifest it continues through `provenance.preparation.surround`. */
+export const LANDSCAPE_CACHE_SURROUND_POINTER = 'surround/manifest.json';
 const BINDING_ALIAS = /^appearance\/binding\.[a-f0-9]{64}\.json$/;
-const CONTENT_ADDRESSED = /^(?:(?:manifest|multiscale)\.([a-f0-9]{64})\.json|([a-f0-9]{64})\.[a-z0-9]+)$/;
+const CONTENT_ADDRESSED = /^(?:(?:manifest|multiscale|layers)\.([a-f0-9]{64})\.json|([a-f0-9]{64})\.[a-z0-9]+)$/;
 const TRANSIENT = /(?:^|\/)(?:authoring\.lock(?:\.recovering)?|authoring-interrupted-[^/]+\.json|[^/]+\.partial)$/;
 
 /** @param {string} root @param {string} [prefix] @returns {Promise<string[]>} sorted relative POSIX paths of regular files */
@@ -34,8 +36,25 @@ function visitRecords(node, visit) {
 }
 
 /**
+ * The binding of a surround sidecar manifest to the terrain manifest it continues: `provenance.preparation.surround` must name the terrain's
+ * id, revision and the SHA-256 of its current `manifest.json` bytes (a surround left behind by an earlier terrain revision is stale).
+ * @param {any} surround validated surround manifest @param {{id:string,revision:string}} terrain validated terrain manifest @param {string} terrainSha256
+ * @returns {string[]} problems
+ */
+export function surroundBindingProblems(surround, terrain, terrainSha256) {
+    const binding = surround?.provenance?.preparation?.surround, problems = [];
+    if (!binding || typeof binding !== 'object') return [`${LANDSCAPE_CACHE_SURROUND_POINTER} has no provenance.preparation.surround binding`];
+    if (binding.landscapeId !== terrain.id) problems.push(`${LANDSCAPE_CACHE_SURROUND_POINTER} continues landscape ${binding.landscapeId}, the cache holds ${terrain.id}`);
+    if (binding.revision !== terrain.revision) problems.push(`${LANDSCAPE_CACHE_SURROUND_POINTER} continues revision ${binding.revision}, the terrain manifest is ${terrain.revision}`);
+    if (binding.manifestSha256 !== terrainSha256) problems.push(`${LANDSCAPE_CACHE_SURROUND_POINTER} binds terrain manifest ${String(binding.manifestSha256).slice(0, 12)}, the current manifest.json hashes to ${terrainSha256.slice(0, 12)}`);
+    return problems;
+}
+
+/**
  * Authenticates every file of one landscape cache directory. Payloads, pages and source files must be verified by name or by a hashed record;
- * JSON outside `source/` must parse within the manifest limit and the terrain manifest must validate.
+ * JSON outside `source/` must parse within the manifest limit, the terrain manifest must validate, and a surround sidecar (its own landscape
+ * manifest under `surround/`, its payloads and immutable snapshot content addressed like the terrain's) must validate and bind to the terrain
+ * manifest's id, revision and current bytes.
  * @param {string} directory @param {{signal?:AbortSignal}} [options]
  */
 export async function verifyLandscapeCacheBundle(directory, { signal } = {}) {
@@ -55,7 +74,7 @@ export async function verifyLandscapeCacheBundle(directory, { signal } = {}) {
         if (file.sha256 === (match[1] ?? match[2])) file.verifiedBy = 'name';
         else problems.push(`${file.relative} does not match its content-addressed name`);
     }
-    let records = 0, manifest = null;
+    let records = 0, manifest = null, surround = null;
     for (const file of files.values()) {
         if (!file.relative.endsWith('.json') || file.relative.startsWith('source/')) continue;
         signal?.throwIfAborted();
@@ -66,6 +85,9 @@ export async function verifyLandscapeCacheBundle(directory, { signal } = {}) {
         if (file.relative === 'manifest.json') {
             try { manifest = validateLandscapeManifest(document); }
             catch (error) { problems.push(`manifest.json is invalid: ${error.message}`); }
+        } else if (file.relative === LANDSCAPE_CACHE_SURROUND_POINTER) {
+            try { surround = validateLandscapeManifest(document); }
+            catch (error) { problems.push(`${file.relative} is invalid: ${error.message}`); }
         }
         if (!file.verifiedBy && (LANDSCAPE_CACHE_POINTERS.includes(file.relative) || BINDING_ALIAS.test(file.relative) || file.relative === 'PROVENANCE.json')) file.verifiedBy = 'schema';
         visitRecords(document, record => {
@@ -78,17 +100,27 @@ export async function verifyLandscapeCacheBundle(directory, { signal } = {}) {
         });
     }
     for (const file of files.values()) if (!file.verifiedBy) problems.push(`${file.relative} is not authenticated by its name or any hashed record`);
+    if (surround && manifest) problems.push(...surroundBindingProblems(surround, manifest, files.get('manifest.json').sha256));
     const pointers = Object.fromEntries(LANDSCAPE_CACHE_POINTERS.filter(relative => files.has(relative)).map(relative => [relative, files.get(relative).sha256]));
     return Object.freeze({
         directory: root, passed: problems.length === 0, problems, files: [...files.values()], records, pointers,
-        landscapeId: manifest?.id ?? null, revision: manifest?.revision ?? null, bytes: [...files.values()].reduce((sum, file) => sum + file.bytes, 0)
+        landscapeId: manifest?.id ?? null, revision: manifest?.revision ?? null, bytes: [...files.values()].reduce((sum, file) => sum + file.bytes, 0),
+        surround: surround ? { id: surround.id, revision: surround.revision, binding: surround.provenance?.preparation?.surround ?? null } : null
     });
+}
+
+/** The cache directory a bundle installs into unless the caller names one: the bundle's own landscape id under the cache root (AI 596 D4). */
+export function landscapeCacheBundleDestination(bundle) {
+    if (typeof bundle?.landscapeId !== 'string') throw new Error('[LandscapeCache] The bundle has no landscape id; name the destination directory explicitly');
+    try { return landscapeCacheDirectory(bundle.landscapeId); }
+    catch { throw new Error(`[LandscapeCache] Landscape id ${bundle.landscapeId} does not name a cache directory; set the destination directory explicitly`); }
 }
 
 /**
  * Installs a verified bundle into a landscape cache directory under the authoring lock: immutable files first (an existing different file is
  * refused), binding aliases next, then the current pointers in LANDSCAPE_CACHE_POINTERS order. A current pointer the bundle does not retain
- * is never overwritten. A failed pointer switch restores every previous pointer.
+ * is never overwritten, and a directory that holds another landscape (a different manifest id) is refused before anything is written, so
+ * a bundle of one landscape id can never be installed over the cache of another. A failed pointer switch restores every previous pointer.
  * @param {Awaited<ReturnType<typeof verifyLandscapeCacheBundle>>} bundle @param {string} destination @param {{signal?:AbortSignal}} [options]
  */
 export async function installLandscapeCacheBundle(bundle, destination, { signal } = {}) {
@@ -107,6 +139,11 @@ export async function installLandscapeCacheBundle(bundle, destination, { signal 
         const previous = new Map();
         for (const relative of Object.keys(bundle.pointers)) {
             const bytes = await readAuthoringFile(path.join(target, relative), LANDSCAPE_MANIFEST_BYTE_LIMIT, { signal }).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+            if (bytes && relative === 'manifest.json') {
+                let installedId = null;
+                try { installedId = JSON.parse(bytes.toString('utf8')).id ?? null; } catch { /* an unreadable current manifest is reported by the revision check below */ }
+                if (installedId !== null && installedId !== bundle.landscapeId) throw new Error(`[LandscapeCache] ${target} holds landscape ${installedId}; the bundle is ${bundle.landscapeId}. Install it into its own directory (${landscapeCacheBundleDestination(bundle)})`);
+            }
             if (bytes && authoringHash(bytes) !== bundle.pointers[relative] && !retained.has(authoringHash(bytes))) {
                 throw new Error(`[LandscapeCache] ${relative} in ${target} is a local revision the bundle does not retain; preserve it before installing over it`);
             }

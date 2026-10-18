@@ -11,7 +11,11 @@ menu registers it as shortcut **8**. It renders the canonical prepared manifest 
 reports `Landscape cache missing|stale|incomplete|invalid` with the install/generate
 action (snapshot `cache`), and the landscape server still serves the page while
 answering cache requests with 404 guidance. The optional `landscape`
-query parameter selects a different compatible manifest for inspection/testing.
+query parameter selects a different compatible manifest for inspection/testing;
+coastal terrain v3 (AI 596 D4, the landscape the city spec pins) opens this way with
+`?landscape=/assets/public/landscape/coastal-city-v3/manifest.json`, or at the default
+address when the server runs with `LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3`,
+and its far-field surround loads with it (`landscapeSurround=auto`, below).
 Models, view planning and the residency ledger belong to `src/app/landscape/`.
 The reusable Three.js/worker adapter lives under
 `src/graphics/engine3d/landscape/`; the screen composes that adapter with its camera
@@ -21,8 +25,21 @@ It does not create a city, game simulation, or flat placeholder ground.
 ## Navigation
 
 The perspective camera defaults to **55°**, matching `src/app/core/GameEngine.js`.
-Its 0.1-meter near plane matches the game; the 25,000-meter far plane accommodates
-the coastal landscape. Initial overview coverage is preserved. Overview, Top and
+Its near plane starts at the game's 0.1 meters and follows the height above the
+authoritative ground under the camera (AI 596 D6, `LandscapeCameraDepth`):
+clamp(height × 0.002, 0.1 m, 8 m) — 0.1 m up to 50 m above ground, 2 m at 1 km, 8 m
+from 4 km — with the projection rebuilt only when the value moves by more than 10 %;
+the ground comes from the rendered or overview chunk under the camera (the last
+sample stands in while the camera is outside the landscape, sea level before the
+first). The reason is the 24-bit depth buffer: its smallest step at view distance d
+is ≈ d² / (near × 2²⁴), i.e. ≈ 15 m at 5 km and ≈ 60 m at 10 km with near 0.1 m,
+which let the sea-level reference plane z-fight the surround's coastal land 2–20 m
+above it during the flyover's final climb (D6 flyover edge checks: 195 of 2,101
+frames, up to 0.39 % of a frame); with near 2 m (1 km up) the step at 5 km is
+≈ 0.75 m, with 8 m ≈ 0.19 m (`landscapeDepthStep`). At eye height nothing changes
+(near stays 0.1 m below 50 m above ground; NW-01/NW-03 captures are pixel-identical).
+The 25,000-meter far plane accommodates the coastal landscape and its surround.
+Initial overview coverage is preserved. Overview, Top and
 Beach approach remain available, as do orthographic projection/span/zoom, saved
 bookmarks and source reload without moving the camera.
 
@@ -124,14 +141,52 @@ Diagnostics: `terrain-appearance` and the `dressing*` views. `snapshot()` report
 AI577 D6/D7: `landscapeSurfaceCache=off|on` (default on since D7), `landscapeSurfaceCacheSlots`,
 `landscapeSurfaceCacheWindow`, `landscapeSurfaceCacheAnisotropy` and `landscapeSurfaceCacheNear=on|off` select the
 runtime surface cache (LANDSCAPE_APPEARANCE_RUNTIME.md). With the cache on the shipped ledger is the cache profile
-of the display (`landscapeSurfaceCacheBudgets`: 512/448 MiB up to 1920×1080, 512/588 at 2560×1440, 512/950 at
-3840×2160) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
-512/256). A resize that changes the cache capacity rebuilds the cache 500 ms after the size settles; the hook
+of the display (`landscapeSurfaceCacheBudgets`: 640/544 MiB up to 1920×1080, 640/684 at 2560×1440, 640/1046 at
+3840×2160 since AI 596 D5, which added the render-only surround's 128/96 MiB share to every profile; 512/448, 588
+and 950 before) and `landscapeCpuMiB`/`landscapeGpuMiB` may not exceed it (cache off: `LANDSCAPE_STREAMING_BUDGETS`,
+640/352; 512/256 before AI 596 D5). A resize that changes the cache capacity rebuilds the cache 500 ms after the size settles; the hook
 `setSurfaceCacheCapacity` fixes the capacity for evidence. A view that cannot run the cache compiles the uncached program from the start and shows `Surface
 cache unavailable: <reason>`. Hooks: `setSurfaceCache`, `setSurfaceCacheNear`, `surfaceCacheLookup`. A reload
 of the same landscape at the same budget keeps the runtime and regenerates its pages. Inspection views are a
 separately compiled diagnostics variant that links in the background when first selected. Browser suites
 take `LANDSCAPE_TEST_SURFACE_CACHE=on|off`; every landscape suite passes in both modes.
+
+## AI 596 D5 far-field surround
+
+`landscapeSurround=auto|off|<manifest url>` (default `auto`) selects the render-only surround
+(LANDSCAPE_STREAMING.md "Far-field surround"): `auto` loads `surround/manifest.json` beside the loaded
+manifest when it exists (a pinned `manifest.<sha>.json` resolves to the same directory), `off` never loads
+one, and a URL loads that document (workstream R developed against a placeholder written into the cache
+root with `writeSynthesizedLandscape`; the placeholder and the candidate copy were deleted once the sidecar
+was published, `tests/artifacts/screens/landscape/ai596/d5/placeholder/write_placeholder_surround.mjs`
+regenerates one). The toolbar's **Surround**
+button toggles it (active while a surround is drawn) and the hook `setSurround('auto'|'off'|url)`
+resolves with `snapshot().surround` once applied. The surround loads last in `load()`, after the
+authoritative streams, and a load without one is unchanged. `snapshot().surround` reports `mode`,
+`status` (`loading`, `active`, `off`, `absent`, `stale`, `unbound`, `invalid`, `failed`), `present`,
+`reason`, `url`, `id`, `revision`, `binding` (the sidecar's landscape id, revision, manifest hash, extent
+and boundary hash), `bounds`, `grid`, `settled`, `pending`, `tiles`, `residentByLevel`, `excludedIds`,
+`straddlingIds` (the rendered tiles carrying the exclusion skirt), `targetErrorPixels` (3),
+`achievedErrorPixels`/`targetMet`/`degradationReason` (the stream's own planner metrics; the tile under
+the camera always projects an unmet error, so `targetMet` is informational), `triangles`, `share`
+(`kind: landscape-surround`, controlled CPU / estimated GPU bytes and lifetime peaks inside the shared
+ledger, its limits, denials), `programCompile`, `loadMs`, `skirtDepth`, `wallDepth` and `palette` (the
+soil palette the surround draws with, LANDSCAPE_STREAMING.md "Soil palette": `source` `catalog` or
+`appearance`, `version`, per soil `soils` (linear rgb), `srgb`, `response` and `surface` (roughness,
+occlusion)); `snapshot().water.extent` is `surround` while the sea plane spans the surround bounds and
+`landscape` otherwise. A surround that is stale, unbound, invalid or failed shows a notice with the
+reason; absent is silent. The surround follows the view's shaded/wire mode, LOD colours, chunk edges,
+lighting tier, material sampling and, through the palette, the loaded appearance's materials and
+calibration (`view.surroundPalette()`, fed each frame; the catalog colours until every coarse page is in
+or without an appearance), but not the inspection diagnostics or the appearance switches. Picking and selection
+never see it: `pickPoint` raycasts only the authoritative stream's rendered meshes and `select` beyond
+the landscape bounds is refused as before. The streaming strip appends `surround <tiles> tiles · CPU /
+GPU est.` with its state. Captures: `tools/landscape_review/capture.mjs --surround auto|off|<url>`
+(receipts carry `viewer.surround` and `snapshotSummary.surround`; settling waits for the surround);
+measurements: `LANDSCAPE_RESOLUTION_SURROUND=on|off|<url>` on the resolution harness (receipts carry the
+surround's residency per stop under `residency.surround`). Browser suite:
+`tests/headless/e2e/landscape_surround.pwtest.js` (served on 8002 by the suite itself,
+`LANDSCAPE_TEST_SURROUND=<url>` selects the sidecar, default the one beside the landscape).
 
 ## D4 appearance and sea-level reference
 
@@ -142,7 +197,7 @@ world scale/orientation. The appearance planner can refine flat root geometry's
 materials without requesting fine height meshes. Its raw source page tiers are
 32, 128 and 512 pixels; full-resolution PBR images are never startup resources.
 
-The same 512 MiB CPU / 256 MiB estimated GPU ledger (128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; with the AI577 D6/D7 surface cache on, the default since D7, the display's cache profile: 512/448 MiB up to 1920×1080) covers both adapters. A base
+The same 640 MiB CPU / 352 MiB estimated GPU ledger (512/256 MiB in AI577 D4 – AI 596 D4, 128/64 MiB before AI577 D2, 384/192 MiB in D2–D3; with the AI577 D6/D7 surface cache on, the default since D7, the display's cache profile: 640/544 MiB up to 1920×1080 since AI 596 D5, 512/448 before) covers both adapters and, since AI 596 D5, the render-only surround's share. A base
 appearance allowance and bounded view-demand credit protect planned material tiers
 before geometry admission. Delayed cover/halo work therefore cannot change their
 priority solely through completion order. Geometry and appearance share
@@ -154,6 +209,22 @@ test hooks are documented in `LANDSCAPE_APPEARANCE_RUNTIME.md`.
 Water toggles a separately owned translucent plane at the retained sea level.
 Terrain raycasts and native height/soil/submerged queries always use the actual
 heightfield. The water reference never converts seabed elevation into sea level.
+Since AI 597 D1 the drawn sea is the animated ocean ([LANDSCAPE_OCEAN.md](LANDSCAPE_OCEAN.md)):
+`landscapeOcean=animated|flat` (default animated; `flat` keeps the AI577 plane as the inspection
+surface), `landscapeSeaState=calm|moderate|rough`, `landscapeOceanQuality=low|medium|high` (low is the explicit low-cost path: two
+cascades, no LEAN roughness, no caustics or terrain reflection) and
+`landscapeOceanTime=<seconds>` (a fixed simulation clock for captures); the toolbar's *Ocean* button
+switches animated and flat, the test hook `setOcean({surface, seaState, quality, clock})` drives it and
+`snapshot().ocean` reports it (status, presets, clock, fields, simulation, surface, residency share; since D2 `shore`:
+the shore wave's inputs, statistics, breaking per coastal zone and coast classes, settled once a sea-state switch has
+marched it again; since D3 `foam`: the foam state's steps, pre-roll and resets, with the `oceanFoamReadback()` hook returning its
+per-zone statistics; since D4 `swash`: the swash sheet's band, native chunks, geometry bytes, run-up inputs, program compile and
+draws), `setOceanDebug(0..14)` selects a verification view (8 the shore wave, 9 the foam, 10 the swash sheet's wetness, film and
+front foam; since D5 11 the seabed read through the surface, 12 the water below it, 13 the caustics, 14 the crest scattering). Since
+D5 every frame renders through the linear frame pipeline (`snapshot().pipeline`: size, bytes, passes, copies; the final pass
+tone-maps for the canvas with an edge filter in place of the canvas multisampling).
+The water toggle hides both surfaces and the optical water body; the ocean is never pickable and the
+water reference keeps the optical body while its plane is hidden (`snapshot().water.surfaceDrawn`).
 Planning urban/road/runway classes display natural ground, inferred from terrain
 fields since AI577 D5 (the shared overview flood fill is the fallback). The legend labels those classes as imported surface
 references; semantic queries still report their original cover and unknown soil.
@@ -179,8 +250,8 @@ Two module workers acquire, hash-check, decode and build bounded tile buffers.
 Root source data remains pinned for overview coverage and common border normals.
 Each worker owns one accounted root copy. Other source arrays, mesh/index arrays,
 queued jobs, staging copies and optional inspection buffers use the shared
-`LandscapeResidencyBudget`. Defaults are now 512 MiB controlled CPU buffers and
-256 MiB estimated GPU buffers (128/64 MiB in D3, 384/192 MiB in AI577 D2–D3), with one tile upload and at most 8 MiB of uploads
+`LandscapeResidencyBudget`. Defaults are now 640 MiB controlled CPU buffers and
+352 MiB estimated GPU buffers (512/256 MiB in AI577 D4 – AI 596 D4, 128/64 MiB in D3, 384/192 MiB in AI577 D2–D3), with one tile upload and at most 8 MiB of uploads
 per frame. No PBR pages or full-resolution masks are loaded in D3. Terrain colors
 come from the original cover palette and ordered semantic soil overrides.
 
@@ -302,7 +373,12 @@ native context through `POST /api/landscape/query`, targeting the displayed
 revision. An explicit radius field (default 25 meters, zero for a point) defines
 the selected area; its circle is drawn on the displayed terrain. The native
 query admits at most four chunks and rejects areas outside the landscape or
-the acquisition budget. The panel distinguishes resolving, authoritative, and
+the acquisition budget. The field's maximum follows the loaded manifest (AI 596
+D3): half the native chunk span, `landscapeQueryRadiusLimit` — 250 m on the
+500 m coastal chunks, 125 m at 0.9765625 m, 62.5 m at 0.48828125 m — so a radius
+that could never be acquired exactly is refused with a notice before any query and
+the current selection is kept; a radius carried over a reload of a finer landscape
+is clamped and reported. The panel distinguishes resolving, authoritative, and
 unavailable states. Late/obsolete replies cannot replace a newer selection.
 
 Native context includes elevation, normal/slope, semantic soil, retained cover

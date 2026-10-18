@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { planBakes } from '../../../tools/baking/Graph.mjs';
 import { parseBakeOptions, resolveBakeOptions } from '../../../tools/baking/Options.mjs';
 import { bakeJobs } from '../../../tools/baking/registry.mjs';
-import { installLandscapeCacheBundle, verifyLandscapeCacheBundle, LANDSCAPE_CACHE_POINTERS } from '../../../tools/bake_landscape/CacheBundle.mjs';
-import { cacheInstallJob } from '../../../tools/bake_landscape/CacheInstallJob.mjs';
+import { installLandscapeCacheBundle, landscapeCacheBundleDestination, verifyLandscapeCacheBundle, LANDSCAPE_CACHE_POINTERS } from '../../../tools/bake_landscape/CacheBundle.mjs';
+import { cacheInstallJob, resolveCacheInstallDirectory } from '../../../tools/bake_landscape/CacheInstallJob.mjs';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -17,10 +17,10 @@ const work = path.join(root, 'tests/artifacts/landscape_cache_history/install_fi
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 /** Writes the synthetic landscape as a cache bundle: current manifest, its content-addressed snapshot and record-verified channels. */
-async function writeBundle(name, { revision = 'fixture-r1', extra = {} } = {}) {
+async function writeBundle(name, { revision = 'fixture-r1', id, extra = {} } = {}) {
     const fixture = createLandscapeModelFixture(), directory = path.join(work, name);
     await rm(directory, { recursive: true, force: true });
-    const manifest = new TextEncoder().encode(JSON.stringify({ ...fixture.manifest, revision }));
+    const manifest = new TextEncoder().encode(JSON.stringify({ ...fixture.manifest, ...(id ? { id } : {}), revision }));
     const files = new Map([...fixture.resources, ['manifest.json', manifest], [`manifest.${sha256(manifest)}.json`, manifest], ...Object.entries(extra)]);
     for (const [relative, bytes] of files) {
         await mkdir(path.dirname(path.join(directory, relative)), { recursive: true });
@@ -35,11 +35,73 @@ test('Cache install: an explicit Node-only leaf of the landscape domain, outside
     assert.deepEqual(plan[0].configurationPaths, []);
     assert.equal(plan[0].always, true);
     assert.deepEqual(plan[0].outputs, ['tests/artifacts/landscape_cache_history/cache-install-validation.json']);
-    assert.deepEqual(resolveBakeOptions(plan, parseBakeOptions([])).get('landscape/cache-install'), { directory: 'assets/public/landscape/coastal-city' });
+    assert.deepEqual(resolveBakeOptions(plan, parseBakeOptions([])).get('landscape/cache-install'), { directory: 'auto' });
     assert.equal(resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:bundle=downloads/coastal-city'])).get('landscape/cache-install').bundle, 'downloads/coastal-city');
+    assert.equal(resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:directory=assets/public/landscape/coastal-city-v3'])).get('landscape/cache-install').directory, 'assets/public/landscape/coastal-city-v3');
     assert.throws(() => resolveBakeOptions(plan, parseBakeOptions(['--set', 'landscape/cache-install:source=x.zip'])), /No selected job consumes/);
     assert.ok(planBakes(bakeJobs, 'all').every(job => !job.id.startsWith('landscape')));
     assert.ok(planBakes(bakeJobs, 'landscape').every(job => job.id !== 'landscape/cache-install'));
+});
+
+// AI 596 D4: the city pins coastal-city-v3 while the viewer default stays coastal-city, so a bundle installs into its own id's directory by default.
+test('Cache install: the destination follows the bundle landscape id unless a directory is named, and never another landscape\'s cache', async () => {
+    const v3 = { landscapeId: 'coastal-city-v3' }, v2 = { landscapeId: 'coastal-city' };
+    assert.equal(landscapeCacheBundleDestination(v3), 'assets/public/landscape/coastal-city-v3');
+    assert.equal(landscapeCacheBundleDestination(v2), 'assets/public/landscape/coastal-city');
+    assert.throws(() => landscapeCacheBundleDestination({ landscapeId: 'nested/id' }), /does not name a cache directory/);
+    assert.throws(() => landscapeCacheBundleDestination({ landscapeId: null }), /no landscape id/);
+    assert.equal(resolveCacheInstallDirectory(root, { directory: 'auto' }, v3), path.resolve(root, 'assets/public/landscape/coastal-city-v3'));
+    assert.equal(resolveCacheInstallDirectory(root, {}, v2), path.resolve(root, 'assets/public/landscape/coastal-city'));
+    assert.equal(resolveCacheInstallDirectory(root, { directory: 'tests/artifacts/elsewhere' }, v3), path.resolve(root, 'tests/artifacts/elsewhere'));
+    const hill = await writeBundle('identity-hill'), other = await writeBundle('identity-other', { id: 'synthetic-hill-v3' });
+    const target = path.join(work, 'identity-target');
+    await rm(target, { recursive: true, force: true });
+    await installLandscapeCacheBundle(await verifyLandscapeCacheBundle(hill.directory), target);
+    const verifiedOther = await verifyLandscapeCacheBundle(other.directory);
+    assert.equal(verifiedOther.landscapeId, 'synthetic-hill-v3');
+    await assert.rejects(installLandscapeCacheBundle(verifiedOther, target), /holds landscape synthetic-hill; the bundle is synthetic-hill-v3\. Install it into its own directory \(assets\/public\/landscape\/synthetic-hill-v3\)/);
+    assert.deepEqual(await readFile(path.join(target, 'manifest.json')), Buffer.from(hill.manifest), 'the refused install left the other landscape untouched');
+    // the AI 596 geology and AI 599 ecosystem sidecars are current pointers like the appearance and field sidecars: authenticated by schema and switched before the terrain manifest
+    assert.deepEqual([...LANDSCAPE_CACHE_POINTERS], ['appearance/manifest.json', 'appearance/multiscale.json', 'appearance/layers.json', 'fields/manifest.json', 'geology/manifest.json', 'surround/manifest.json', 'ecosystem/manifest.json', 'manifest.json']);
+    const page = new Uint8Array([1, 2, 3, 4]), geology = new TextEncoder().encode(JSON.stringify({ format: 'landscape-geology', pages: [{ url: `pages/${sha256(page)}.u8`, sha256: sha256(page), byteLength: page.length }] }));
+    const withGeology = await writeBundle('geology', { extra: { 'geology/manifest.json': geology, [`geology/manifest.${sha256(geology)}.json`]: geology, [`geology/pages/${sha256(page)}.u8`]: page } });
+    const verified = await verifyLandscapeCacheBundle(withGeology.directory);
+    assert.equal(verified.passed, true, verified.problems.join('\n'));
+    assert.deepEqual(Object.keys(verified.pointers), ['geology/manifest.json', 'manifest.json']);
+    assert.equal(verified.files.find(file => file.relative === 'geology/manifest.json').verifiedBy, 'schema');
+    const geologyTarget = path.join(work, 'geology-target');
+    await rm(geologyTarget, { recursive: true, force: true });
+    const installed = await installLandscapeCacheBundle(verified, geologyTarget);
+    assert.deepEqual(installed.slice(-2).map(file => path.relative(geologyTarget, file).split(path.sep).join('/')), ['geology/manifest.json', 'manifest.json']);
+    // the AI 596 D5 far-field surround is its own saved landscape under surround/: validated as a landscape manifest, its chunks record-verified
+    // relative to it, switched before the terrain manifest, and bound to the terrain's id, revision and current manifest bytes
+    const surroundOf = (terrainManifest, binding) => {
+        const document = createLandscapeModelFixture().manifest, bytes = new TextEncoder().encode(JSON.stringify({ ...document, id: 'synthetic-hill-surround', revision: 'surround-r1',
+            provenance: { ...document.provenance, preparation: { ...document.provenance.preparation, surround: { landscapeId: 'synthetic-hill', revision: 'fixture-r1', manifestSha256: sha256(terrainManifest), extent: { minX: 0, maxX: 8, minZ: 0, maxZ: 8 }, boundaryHash: 'ab'.repeat(32), ...binding } } } }));
+        const extra = { 'surround/manifest.json': bytes, [`surround/manifest.${sha256(bytes)}.json`]: bytes };
+        for (const [url, resource] of createLandscapeModelFixture().resources) if (url !== 'manifest.json') extra[`surround/${url}`] = resource;
+        return extra;
+    };
+    const terrain = await writeBundle('surround-terrain'), withSurround = await writeBundle('surround', { extra: surroundOf(terrain.manifest, {}) });
+    const surround = await verifyLandscapeCacheBundle(withSurround.directory);
+    assert.equal(surround.passed, true, surround.problems.join('\n'));
+    assert.deepEqual(Object.keys(surround.pointers), ['surround/manifest.json', 'manifest.json']);
+    assert.equal(surround.files.find(file => file.relative === 'surround/manifest.json').verifiedBy, 'schema');
+    assert.ok(surround.files.filter(file => file.relative.startsWith('surround/chunks/')).every(file => file.verifiedBy === 'record'), 'the surround chunks authenticate through the surround manifest');
+    assert.deepEqual(surround.surround, { id: 'synthetic-hill-surround', revision: 'surround-r1', binding: { landscapeId: 'synthetic-hill', revision: 'fixture-r1', manifestSha256: sha256(terrain.manifest), extent: { minX: 0, maxX: 8, minZ: 0, maxZ: 8 }, boundaryHash: 'ab'.repeat(32) } });
+    const surroundTarget = path.join(work, 'surround-target');
+    await rm(surroundTarget, { recursive: true, force: true });
+    const installedSurround = await installLandscapeCacheBundle(surround, surroundTarget);
+    assert.deepEqual(installedSurround.slice(-2).map(file => path.relative(surroundTarget, file).split(path.sep).join('/')), ['surround/manifest.json', 'manifest.json']);
+    assert.equal((await verifyLandscapeCacheBundle(surroundTarget)).passed, true);
+    const stale = await verifyLandscapeCacheBundle((await writeBundle('surround-stale', { extra: surroundOf(terrain.manifest, { revision: 'fixture-r0', manifestSha256: 'cd'.repeat(32) }) })).directory);
+    assert.equal(stale.passed, false);
+    assert.match(stale.problems.join('\n'), /surround\/manifest\.json continues revision fixture-r0, the terrain manifest is fixture-r1/);
+    assert.match(stale.problems.join('\n'), /surround\/manifest\.json binds terrain manifest cdcdcdcdcdcd/);
+    const foreign = await verifyLandscapeCacheBundle((await writeBundle('surround-foreign', { extra: surroundOf(terrain.manifest, { landscapeId: 'synthetic-hill-v3' }) })).directory);
+    assert.match(foreign.problems.join('\n'), /continues landscape synthetic-hill-v3, the cache holds synthetic-hill/);
+    const unbound = await verifyLandscapeCacheBundle((await writeBundle('surround-unbound', { extra: surroundOf(terrain.manifest, { landscapeId: undefined, revision: undefined, manifestSha256: undefined }) })).directory);
+    assert.equal(unbound.passed, false, 'a surround without the binding fields is refused');
 });
 
 test('Cache install: every bundle file authenticates by name, hashed record or schema; corruption and transient state are refused', async () => {

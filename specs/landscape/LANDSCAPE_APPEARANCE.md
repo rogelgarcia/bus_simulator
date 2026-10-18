@@ -295,3 +295,22 @@ A pinned older revision with other material bindings (the city pin, the nature-p
 through its binding alias, reports the companion `invalid` with reason `multiscale-binding-mismatch: …` and keeps schema-1 tiers;
 its terrain fields stay `active` with `bound:false` and no stale chunk, because material-only revisions share the native channel
 hashes the fields bind (`landscape_appearance_binding`).
+
+## Layers companion (AI 598 D2)
+
+`appearance/layers.json` is a second additive companion of one schema-1 sidecar (format `landscape-appearance-layers`, schema 1, at most
+512 KiB, immutable `layers.<sha256>.json` snapshot, content-addressed pages): the substrate and cover class materials of the surface model
+([LANDSCAPE_SURFACE_LAYERS.md](LANDSCAPE_SURFACE_LAYERS.md) §7), keyed by class id instead of soil id, each with the four tiers 32, 128, 512 and
+1024 of base colour, normals and ORM with relief alpha in the schema-1 page format and the same filters (the converter prepares them in the
+same pass as the soil materials and the multiscale tiers). It records the appearance revision and binding key it extends, the surface recipe's
+id and the SHA-256 of its class → material table (`recipe.materialsKey`), capabilities like the multiscale companion, and provenance with the
+SHA-256 of every config, map and the catalog index. `validateLandscapeAppearanceLayers(value, appearance, recipe)` throws
+`LandscapeAppearanceLayersBindingError` for another landscape, appearance revision, binding or material table, so a pinned older appearance
+reports the companion `invalid` and keeps its soil materials; `loadLandscapeAppearanceLayers` returns null only for HTTP 404 and
+`loadLandscapeAppearanceLayersPage` authenticates its pages (the schema-1 loader up to 512, the multiscale loader for 1024). Publication order
+is pages, snapshot, the schema-1 sidecar, `multiscale.json`, `layers.json`, terrain; publishing a new appearance revision without the layers
+input is refused while a current companion exists. Because the schema-1 provenance hashes the catalog index closure, registering the layer
+materials re-issued the v3 appearance and multiscale revisions with byte-identical pages (`appearance-befbfb0bb88d214ab3e00501`,
+`multiscale-d4f81ff3eb2129330fab380f`; the former snapshots stay retained). The v3 companion is `layers-37bceaa727eec12488968055`
+(14 materials, 168 unique pages, 223,125,504 bytes). Runtime selection and residency of the class materials are AI 598 D3's
+(LANDSCAPE_APPEARANCE_RUNTIME.md).

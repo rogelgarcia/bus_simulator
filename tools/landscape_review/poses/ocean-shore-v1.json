@@ -1,0 +1,123 @@
+{
+  "format": "landscape-review-poses",
+  "schemaVersion": 1,
+  "id": "ocean-shore-v1",
+  "conventions": {
+    "coordinates": "world X east, Y up, Z north, meters",
+    "headingDegrees": "clockwise from north: 0 = north (+Z), 90 = east (+X)",
+    "pitchDegrees": "above the horizon: negative looks down",
+    "eyeHeightMeters": "above the authoritative native ground at (x, z), re-resolved on every terrain revision",
+    "altitudeMeters": "above sea level, independent of the ground (the ground is still recorded, null outside the landscape)",
+    "lookDistanceMeters": "the look target lies this far along the view direction",
+    "camera": "an explicit viewer camera {position, target} in world meters, passed through unchanged"
+  },
+  "poses": [
+    {
+      "id": "OS-01",
+      "intent": "Surf zone oblique from above the beach (shoaling, refraction, the break over the bar)",
+      "x": 1310,
+      "z": 1800,
+      "altitudeMeters": 45,
+      "headingDegrees": 270,
+      "pitchDegrees": -20,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08",
+        "R09"
+      ],
+      "notes": "Over the backshore of the swim beach on coastal v3 (row Z 1800: bar x 1050-1075, surf 1075-1150, swash 1150-1200), 45 m above the sea looking west across the surf zone to the reef and the open sea. The AI 597 D2 review: crests turn parallel to the beach, the bore starts over the bar and the foreshore."
+    },
+    {
+      "id": "OS-02",
+      "intent": "Crest lines from above (refraction toward the shore normal)",
+      "x": 1060,
+      "z": 2000,
+      "altitudeMeters": 240,
+      "headingDegrees": 0,
+      "pitchDegrees": -72,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08"
+      ],
+      "notes": "Near-vertical view over the bar and surf of the swim beach (row Z 2000: bar x 1052-1072, surf 1076-1148, swash 1152-1200): the crest lines of the shore wave should run north-south, parallel to the waterline, while the open-sea swell (heading 95) crosses them obliquely offshore."
+    },
+    {
+      "id": "OS-03",
+      "intent": "Bluff sector shore from the water (the narrow beach under the raised platform)",
+      "x": 1000,
+      "z": 3400,
+      "headingDegrees": 90,
+      "pitchDegrees": -12,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R10"
+      ],
+      "notes": "Over the surf of row Z 3400 looking east onto the narrow beach of the bluff sector (swash x 1032-1080, berm, then the wave-cut platform x 1136-1156 and the bluff toe x 1160): on coastal v3 every platform and bluff-toe texel lies above sea level (0.4-10 m), so the sea never reaches rock here; the surf arrives on sand under the bluff. The rock surge of the train is verified on synthetic rasters (landscape_ocean_shore.test.js), not on this landscape.",
+      "altitudeMeters": 20
+    },
+    {
+      "id": "OS-04",
+      "intent": "Reef shadow from the sea (damping behind the reef, breaking over it)",
+      "x": 760,
+      "z": 2600,
+      "altitudeMeters": 160,
+      "headingDegrees": 90,
+      "pitchDegrees": -35,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08"
+      ],
+      "notes": "160 m over the reef field west of the swim beach (reef x 740-1030 on rows Z 2300-2700), looking east to the beach: the train breaks over the reef crests and arrives lower behind them, then reforms toward the bar."
+    },
+    {
+      "id": "OS-05",
+      "intent": "Open-sea handover (the swell cascade fades where the shore wave takes over)",
+      "x": 300,
+      "z": 1800,
+      "altitudeMeters": 30,
+      "headingDegrees": 90,
+      "pitchDegrees": -8,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R09"
+      ],
+      "notes": "30 m over the open sea 800 m west of the swim beach looking east over the 7-18 m handover band: no visible seam between the spectral swell and the shore train, no doubled amplitude."
+    },
+    {
+      "id": "OS-06",
+      "intent": "Swash close-up from the berm (run-up, backwash, wet line, front foam)",
+      "x": 1172,
+      "z": 1800,
+      "altitudeMeters": 3,
+      "headingDegrees": 270,
+      "pitchDegrees": -10,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08",
+        "R09"
+      ],
+      "notes": "Four metres over the berm of the swim beach on coastal v3 (row Z 1800: swash x 1096-1144), looking west down the foreshore: the AI 597 D4 review of the water sheet running up and back, the wet sand darkening behind it and drying with a lag, the foam at the front and the foam the backwash leaves."
+    },
+    {
+      "id": "OS-07",
+      "intent": "Wet line from above (the swash band along the beach)",
+      "x": 1125,
+      "z": 1800,
+      "altitudeMeters": 70,
+      "headingDegrees": 180,
+      "pitchDegrees": -80,
+      "fovDegrees": 55,
+      "lookDistanceMeters": 100,
+      "references": [
+        "R08"
+      ],
+      "notes": "Seventy metres over the swash zone of the swim beach looking almost straight down: the wet band, the sheet front and the wrack line along the beach, their variation along the shore with the train. Heading 180 keeps the sun's mirror point (azimuth 45, elevation 55: the view ray 35 degrees from nadir toward +x+z) out of the frame; heading 0 looks straight at the sun's reflection on the wet beach."
+    }
+  ]
+}

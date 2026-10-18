@@ -16,7 +16,9 @@ test('Landscape D1: real overview, wireframe, pointing, reload, and teardown', a
     page.on('request', request => { if (request.url().includes('/assets/public/landscape/')) payloads.push(request.url()); });
     await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html'));
+    // the flat sea: this test pins the terrain stream's own startup requests (the animated ocean of AI 597 loads the extent field's level-2
+    // chunks and the swash band's native beach chunks at boot; the ocean suite covers those)
+    await page.goto(landscapeViewerUrl('/screens/landscape_fabrication.html?landscapeOcean=flat'));
     await page.waitForFunction(() => window.__landscapeTestHooks?.snapshot().ready, null, { timeout: 60000 });
     await expect(page.locator('#ui-perf-bar')).toHaveCount(1);
     await expect(page.locator('.ui-perf-bar-fps')).not.toHaveText('FPS: -- (-- ms)');

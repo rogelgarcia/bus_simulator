@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createLandscapeAuthoringStore, LANDSCAPE_AUTHORING_BUDGETS } from './LandscapeAuthoringStore.mjs';
 import { atomicAuthoringWrite, readAuthoringFile } from './AuthoringFiles.mjs';
 import { bindLandscapeBatchTemplate, bindLandscapeStateBatchTemplate } from './BatchTemplate.mjs';
+import { replayAcceptedBatches } from './BatchReplay.mjs';
 import { LANDSCAPE_MANIFEST_BYTE_LIMIT, LANDSCAPE_DEFAULT_DIRECTORY } from '../../src/app/landscape/index.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -15,18 +16,21 @@ const HELP = `Landscape authoring
   node tools/landscape_authoring/run.mjs bind --template <template.json> --state <state.json> --batch-id <fresh-id> --output <batch.json>
   node tools/landscape_authoring/run.mjs apply --batch <batch.json>
   node tools/landscape_authoring/run.mjs revert --expected-revision <revision> [--batch-id <last-batch-id>]
+  node tools/landscape_authoring/run.mjs replay --previous <previous-landscape-directory> --directory <regenerated-landscape-directory>
 
 All commands accept --directory <landscape-directory> (default: ${LANDSCAPE_DEFAULT_DIRECTORY}, the local gitignored cache).
 Exact selection queries admit at most four native chunks. All regions must stay inside the source bounds.
 Edit batches stream large regions through an 8 MiB working set; named polygons, grading and smoothing are supported.
 Apply requires an explicit revision and validated data operations. Stale or duplicate batches fail without publishing.
 Revert publishes a new revision and retains accepted batch IDs, including the reverted ID.
+Replay re-applies the previous landscape's accepted batches to a regenerated landscape in acceptance order (AI 596 D4);
+a batch the new terrain invalidates is reported with its reason, not applied.
 Use --output to save command JSON. This is an authoring tool, not a source-import/bake command.
 `;
 
 const OPTIONS = Object.freeze({
     state: [], report: ['request'], query: ['x', 'z', 'selection-id', 'expected-revision', 'radius'],
-    bind: ['template', 'context', 'state', 'batch-id'], apply: ['batch'], revert: ['expected-revision', 'batch-id']
+    bind: ['template', 'context', 'state', 'batch-id'], apply: ['batch'], revert: ['expected-revision', 'batch-id'], replay: ['previous']
 });
 
 function parse(argv) {
@@ -71,6 +75,10 @@ async function run(signal) {
     }
     if (command === 'apply') result = await store.apply(await jsonFile(values.batch, signal), { signal });
     if (command === 'revert') result = await store.revert({ expectedRevision: values['expected-revision'], batchId: values['batch-id'], signal });
+    if (command === 'replay') {
+        if (!values.previous) throw new Error('Replay requires --previous <previous-landscape-directory>');
+        result = await replayAcceptedBatches({ previousDirectory: path.resolve(values.previous), directory, signal, log: message => process.stderr.write(`${message}\n`) });
+    }
     const output = JSON.stringify(result, null, 2) + '\n';
     if (values.output) await atomicAuthoringWrite(path.resolve(values.output), output);
     process.stdout.write(output);

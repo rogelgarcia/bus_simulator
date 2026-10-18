@@ -119,6 +119,10 @@ test('Appearance multiscale preparation: registered option, request and source i
     for (const file of ['basecolor.png', 'normal_gl.png', 'displacement.png', 'pbr.material.config.js', 'pbr.landscape.config.json']) assert.ok(inputs.includes(path.join(fixture.sourceRoot, 'fixture_micro', file)), file);
     const shipped = JSON.parse(await readFile(path.join(root, 'tools/bake_landscape/appearance/multiscale-v1.json'), 'utf8'));
     assert.deepEqual(shipped.micro, [{ materialId: 'pbr.landscape_sand_micro_v1', soilIds: ['seabed', 'sand'] }]);
+    // the request names its landscape: coastal terrain v3 (AI 596 D4) ships the same companion recipe under its own id
+    const v3 = JSON.parse(await readFile(path.join(root, 'tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json'), 'utf8'));
+    assert.deepEqual(v3, { ...shipped, landscapeId: 'coastal-city-v3' });
+    assert.equal(shipped.landscapeId, 'coastal-city');
     await release(fixture);
 });
 

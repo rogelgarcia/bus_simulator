@@ -197,3 +197,41 @@ The shipped micro layer is `pbr.landscape_sand_micro_v1` (CC0 ambientCG Ground05
 surface photogrammetry, stated capture ca. 3.5 x 3.5 m, so 3.42 mm per texel at
 1024) for sand and seabed, with a 9-pixel radius (half-power wavelength about
 17 cm). Its originals and download receipts are retained under `downloads/`.
+
+## Layers companion (AI598 D2)
+
+The optional `layers` input publishes the substrate and cover class materials of
+the surface model (`src/app/landscape/surface/SurfaceRecipe.js`, `materials`) as a
+second additive companion, `appearance/layers.json` (`landscape-appearance-layers`,
+schema 1, 512 KiB). The shipped request is `layers-v1-coastal-city-v3.json`; the v3
+publication names both companions:
+
+```sh
+node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:directory=assets/public/landscape/coastal-city-v3" --set "landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json" --set "landscape/appearance:layers=tools/bake_landscape/appearance/layers-v1-coastal-city-v3.json" --publish
+```
+
+The request (`landscape-appearance-layers-request`, schema 1) names the landscape,
+`extraTiers: [1024]`, the materials as `{classId, kind, materialId}` and optional
+micro layers as `{materialId, classIds}`. Every material id must equal the recipe's
+binding for its class, and every material must be a catalog entry under the source
+root (`_catalog_index.js` import present) with CC0 provenance in its config `source`,
+an `aces` correction config and base colour, normal, ORM or roughness (plus AO) and
+displacement maps; an optional `pbr.landscape.config.json` declares the broad-tone
+recipe like the uniform materials. The converter prepares each class material with
+the schema-1 filters at 32, 128, 512 and 1024 in one pass (`layers` list keyed by
+`classId`), so the same relief normalization and page format apply. The sidecar
+records the appearance revision and binding key it extends, the recipe id and the
+SHA-256 of the recipe's class-to-material table (`recipe.materialsKey`): recipe rule
+tuning never invalidates it, a rebinding does. Publication installs the pages and
+the immutable `layers.<sha256>.json`, switches the schema-1 sidecar, then
+`multiscale.json`, then `layers.json`, then terrain. Publishing another appearance
+revision without the layers input is refused while a current `layers.json` exists.
+Runtime loading is `loadLandscapeAppearanceLayers(url, {appearance, recipe})` and
+`loadLandscapeAppearanceLayersPage` in `src/app/landscape`. The receipt is
+`tests/artifacts/screens/landscape/ai598/d2/appearance-layers-validation.json`.
+
+Because the schema-1 appearance provenance hashes the whole `_catalog_index.js`
+import closure, registering the layer materials (or any other catalog entry)
+re-issues the appearance revision on the next bake with byte-identical pages; the
+multiscale companion follows it. The retained `manifest.<sha256>.json` and
+`multiscale.<sha256>.json` snapshots keep the previous revisions readable.

@@ -68,7 +68,104 @@ Validate an installed cache in place at any time with
 `node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city')).passed))"`
 or by running `landscape/cache-install` without `--publish` against it.
 
+### Two coastal landscapes since AI 596 D4
+
+The cache root holds one directory per landscape id, and two coastal landscapes
+coexist deliberately:
+
+- `assets/public/landscape/coastal-city` is **coastal v2** (the imported design
+  ZIP, 2049² at 1.953125 m). It stays immutable and remains the viewer/server
+  default (`LANDSCAPE_DEFAULT_DIRECTORY`) and the landscape the existing browser
+  suites pin (`tests/shared/landscapeCacheTest.js` `COASTAL_V2`).
+- `assets/public/landscape/coastal-city-v3` is **coastal terrain v3** (procedural
+  synthesis of the approved relief variant B at 0.9765625 m, 4097², 341 nodes). It
+  is the landscape `src/app/city/specs/CoastalLandscapeCitySpec.js` pins
+  (`landscapeId: 'coastal-city-v3'`, an immutable `manifest.<sha256>.json`
+  snapshot and its revision; see `specs/landscape/LANDSCAPE_CITY_BINDING.md`). A new
+  native grid changes the addressing frame, so v3 is a new id, not a revision of
+  v2. Only a cache that retains that snapshot makes the city's landscape
+  `available`; v2 alone leaves it `missing` (`probeLandscapeCache` only ever looks
+  in the pinned id's directory).
+
+A cache bundle installs into its own id's directory by default
+(`landscape/cache-install:directory=auto`, see
+[cache_install/README.md](cache_install/README.md)); a directory holding another
+landscape is refused. Verify v3 in place with
+`node -e "import('./tools/bake_landscape/CacheBundle.mjs').then(async m => console.log((await m.verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')).passed))"`
+(the geology sidecar's `geology/manifest.json` is a current pointer like the
+appearance and field sidecars). The AI 596 D5 far-field surround lives beside them
+as its own saved landscape `surround/` (`surround/manifest.json`, its immutable
+`surround/manifest.<sha256>.json` snapshot and `surround/payloads/`;
+`node tools/bake.mjs --target landscape/synthesis/surround --publish`, see
+[terrain_synthesis/README.md](terrain_synthesis/README.md)): render-only, never
+authoritative, its provenance `preparation.surround` names the v3 id, revision and
+manifest SHA-256 it continues. `surround/manifest.json` is a current pointer too
+(`LANDSCAPE_CACHE_POINTERS`, switched before the terrain manifest): the bundle
+verifier validates it as a landscape manifest, authenticates its payloads through
+its chunk records and refuses a surround whose binding names another terrain id,
+revision or manifest hash than the installed `manifest.json`.
+
+#### Publishing v3 (the sequence)
+
+1. **Synthesis leaf** → `node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish`
+   writes `assets/public/landscape/coastal-city-v3/` (terrain, hierarchy, the v2
+   references copied with their identities, the terrain-fields sidecar and the
+   geology sidecar, `appearance: 'none'`); see [terrain_synthesis/README.md](terrain_synthesis/README.md).
+2. **Edit replay** (when a previous v3 publication carried explicit edits) →
+   `node tools/landscape_authoring/run.mjs replay --previous <previous landscape> --directory assets/public/landscape/coastal-city-v3`
+   re-applies the accepted batches in acceptance order; the evaluation order is in
+   `specs/landscape/LANDSCAPE_EDITING.md` ("Regeneration and replay"). v2 carries
+   no batches, so the first v3 publication replays nothing.
+3. **Appearance leaf** →
+   `node tools/bake.mjs --target landscape/appearance --set "landscape/appearance:directory=assets/public/landscape/coastal-city-v3" --set landscape/appearance:multiscale=tools/bake_landscape/appearance/multiscale-v1-coastal-city-v3.json --publish`
+   (the shared `pythonExecutable`; the multiscale request names the landscape id, so
+   v3 has its own copy of the shipped request). The appearance cannot be copied
+   from v2: its binding key covers the grid.
+4. **Surround leaf** (AI 596 D5) → `node tools/bake.mjs --target landscape/synthesis/surround --publish`
+   writes the render-only far-field surround `surround/` bound to the v3 revision just
+   published (a changed v3 is refused; remove an older `surround/` first so no orphan
+   payloads stay in its content-addressed store).
+5. **Cache verification** → `verifyLandscapeCacheBundle('assets/public/landscape/coastal-city-v3')`
+   must pass (every payload, page and snapshot authenticated; pointers by schema; the
+   surround bound to the current terrain manifest).
+6. **Pin** → update `CoastalLandscapeCitySpec.js` to the id, the immutable snapshot
+   the leaf wrote (`manifest.<sha256>.json`) and its revision; transform and extent
+   stay (bounds remain 0..4000). `node --test tests/node/unit/landscape_cache_availability.test.js tests/node/unit/landscape_city_binding.test.js`
+   then checks the installed pin byte for byte.
+
 ## Preparation leaves
+
+AI 599 adds the [ecosystem scatter](ecosystem/README.md) leaves: `node tools/bake.mjs --target landscape/ecosystem --publish`
+generates the offline layers of the development recipe over coastal terrain v3 (scoped `directory`, `recipe`, `overrides`, `density`,
+`layers`, `receipt`) and publishes the additive `ecosystem/manifest.json` sidecar the viewer streams by default; it depends on
+`landscape/ecosystem/blue-noise`, which regenerates the committed lattice table and refuses a difference. Re-publish the sidecar after
+every new terrain revision (its tiles bind the native hashes and go stale otherwise).
+
+AI 596 adds the [terrain synthesis](terrain_synthesis/README.md) leaves under the
+explicit `landscape/synthesis` parent: `node tools/bake.mjs --target landscape/synthesis/relief-study`
+diagnoses the current coastal terrain, synthesizes the D1 relief variants from their committed recipes,
+measures the plan constraints and renders review maps; `--publish` also writes each variant as a saved
+landscape beside the cache (`assets/public/landscape/coastal-city-ai596-<variant>/`, gitignored) for the
+`tools/landscape_review` captures; `node tools/bake.mjs --target landscape/synthesis/fixture` runs the D2
+engine gate (the synthetic 1 × 1 km plateau/road/shoreline fixture through every operator family with
+determinism, constraint, relief, geology, seam and interchange checks; receipt and review maps under
+`tests/artifacts/screens/landscape/ai596/d2/fixture/`); `node tools/bake.mjs --target landscape/synthesis/resolution-study`
+runs the D3 resolution study (the fixture recipe at 1.953125, 0.9765625 and 0.48828125 m written as standalone
+saved landscapes and measured for size, cost, relief and feature sharpness, receipt and composites under
+`tests/artifacts/screens/landscape/ai596/d3/resolution/`; `--publish` writes the landscapes as
+`assets/public/landscape/ai596-d3-fixture-<tag>/`, gitignored, and `--set "landscape/synthesis/resolution-study:city-extent=true"`
+adds the 4 × 4 km pair `ai596-d3-fixture-4km-<tag>`); `node tools/bake.mjs --target landscape/synthesis/coastal-v3 --publish`
+synthesizes coastal terrain v3 from `terrain_synthesis/recipes/coastal-v3.json` (4097² at 0.9765625 m from the v2 base),
+evaluates the 44 declared targets and hard constraints and writes the landscape with its references, terrain fields and
+geology sidecar into `assets/public/landscape/coastal-city-v3/` (receipt `tests/artifacts/screens/landscape/ai596/d4/v3/`;
+options `working=1953` for a 1.953125 m working-grid iteration, `fields=none`, `geology=none|publish`,
+`replay-edits=<previous landscape>`); and `node tools/bake.mjs --target landscape/synthesis/surround --publish` writes the
+render-only far-field surround `surround/` bound to the installed v3 (receipt `.../d5/surround/`; option
+`landscape=<v3 directory>`). All are Node only, excluded from `all` and the `landscape` import parent. Captures of a
+published landscape at the versioned review poses: `node tools/landscape_review/capture.mjs --landscape assets/public/landscape/coastal-city-v3 --output <dir> [--select NW-10,NW-11] [--surround auto|off]`
+and `python tools/landscape_review/composite.py --output out.png reference=… before=… after=…`
+([tools/landscape_review/README.md](../landscape_review/README.md)); the server serves v3 at the canonical address with
+`LANDSCAPE_DIRECTORY=assets/public/landscape/coastal-city-v3 node tools/landscape_server/run.mjs`.
 
 AI577 D5 adds [global terrain fields](terrain_fields/README.md) through
 `node tools/bake.mjs --target landscape/terrain-fields`. It analyzes the current

@@ -197,8 +197,11 @@ test('Landscape material clumps: a straight coverage ramp interleaves with decre
 test('Landscape material clumps: the shader chunk and uniform payload mirror the JS model', async () => {
     const chunk = await readFile(new URL('../../../src/graphics/shaders/chunks/landscape/material_clumps.glsl', import.meta.url), 'utf8');
     const terrain = await readFile(new URL('../../../src/graphics/shaders/materials/landscape/terrain.frag.glsl', import.meta.url), 'utf8');
-    assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_clumps>/);
-    for (const declaration of ['uniform vec4 uSoilClumps[6];', 'uniform ivec4 uSoilClumpSalts[6];', `uniform vec4 uClumpOctaves[${LANDSCAPE_MATERIAL_CLUMP_OCTAVES}];`, 'uniform vec4 uClumpSettings;', 'uniform vec4 uClumpConfidence;']) assert.ok(chunk.includes(declaration), declaration);
+    assert.match(terrain, /#include <shaderlib:landscape\/surface_warp>\s+#include <shaderlib:landscape\/material_parameters>\s+#include <shaderlib:landscape\/material_clumps>/);
+    // AI 598 D3a: the per-soil clump row and octave salts are parameter texels (material_parameters.glsl); the shared octaves and settings stay uniforms
+    for (const declaration of [`uniform vec4 uClumpOctaves[${LANDSCAPE_MATERIAL_CLUMP_OCTAVES}];`, 'uniform vec4 uClumpSettings;', 'uniform vec4 uClumpConfidence;']) assert.ok(chunk.includes(declaration), declaration);
+    assert.ok(!chunk.includes('uSoilClumps') && !chunk.includes('uSoilClumpSalts'), 'no per-soil clump uniforms');
+    for (const expression of ['vec4 clump = landscapeMaterialClumps(material);', 'int salt = int(landscapeMaterialClumpSalt(material, k));']) assert.ok(chunk.includes(expression), expression);
     assert.ok(!/#include/.test(chunk), 'the chunk documents its include without a directive the loader would expand');
     for (const expression of ['return landscapeWarpLattice(lattice + vec2(float(bits & 0xffffu), float(bits >> 16u)) / 65536.0, bits);',
         'vec2 lattice = vec2(rotation.x * world.x - rotation.y * world.y, rotation.y * world.x + rotation.x * world.y) * inverseWavelength;',

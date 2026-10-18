@@ -9,9 +9,9 @@ D6 adds an optional city-owned landscape reference. It does not make flat-city r
 ```js
 {
     format: 'city-landscape-binding', schemaVersion: 1,
-    landscapeId: 'coastal-city',
-    manifestUrl: 'assets/public/landscape/coastal-city/manifest.<sha256>.json',
-    revision: 'hierarchy-afaf934f8eb8fe074a0affb0',
+    landscapeId: 'coastal-city-v3',
+    manifestUrl: 'assets/public/landscape/coastal-city-v3/manifest.<sha256>.json',
+    revision: 'synthesis-7045f619de9de74a367bc3a8',
     transform: { translation: { x: -2000, y: 0, z: -2000 }, yawDegrees: 0, scale: 1 },
     extent: { minX: 1000, maxX: 1500, minZ: 1800, maxZ: 2200 },
     capabilities: ['landscape-reference-v1']
@@ -42,13 +42,39 @@ cityY = landscapeY + translation.y
 
 ## Actual authoring path
 
-`src/app/city/specs/CoastalLandscapeCitySpec.js`, registry ID `coastal-landscape`, pins an immutable content-addressed coastal manifest (`manifest.58fc7471….json`, revision `hierarchy-afaf934f8eb8fe074a0affb0`) with negative city origin. It uses the existing `burban` catalog/parcel model and a fixed-size `bus_start` reservation. Source roads, districts and reference markers remain separate planning data, not automatically placed objects.
+`src/app/city/specs/CoastalLandscapeCitySpec.js`, registry ID `coastal-landscape`, pins an immutable content-addressed coastal manifest with negative city origin: since AI 596 D4 the coastal terrain v3 snapshot `assets/public/landscape/coastal-city-v3/manifest.3846aed4c17a7125df21eab7f3b486eff82daa2e5e0f3fc0ab084dc02689e9ef.json`, revision `synthesis-7045f619de9de74a367bc3a8` (see [Coastal terrain v3 pin](#coastal-terrain-v3-pin-ai-596-d4)); until then the coastal v2 import snapshot `manifest.58fc7471….json`, revision `hierarchy-afaf934f8eb8fe074a0affb0`. It uses the existing `burban` catalog/parcel model and a fixed-size `bus_start` reservation. Source roads, districts and reference markers remain separate planning data, not automatically placed objects.
+
+## Coastal terrain v3 pin (AI 596 D4)
+
+Coastal terrain v3 is the procedural synthesis of the approved relief (variant B, the 80 m high city) at 0.9765625 m: 4097² samples, 341
+hierarchy nodes, the v2 references copied with their identities, terrain-field and geology sidecars, and an appearance baked for its own
+grid. It is published as the **new landscape id `coastal-city-v3`** in `assets/public/landscape/coastal-city-v3/`, not as a revision of
+`coastal-city`, because a landscape id names one native grid: the native chunk ids, the chunk spans (250 m instead of 500 m), the
+content-addressed channels, the appearance binding key and every sidecar binding derive from that grid, so a 4097² terrain under the v2
+id would break every consumer that addresses v2 natives. The city re-pin therefore changes the identity deliberately:
+
+- `landscapeId: 'coastal-city-v3'`, `manifestUrl` the immutable snapshot the synthesis leaf wrote (`manifest.3846aed4….json`,
+  content addressed and authenticated byte for byte), `revision: 'synthesis-7045f619de9de74a367bc3a8'`;
+- `transform` and `extent` are unchanged: v3 keeps the 0..4000 m bounds, the same world frame and the same planning references, so the
+  parcel, reservation and tile coverage of the fixture are the same squares over the new relief;
+- the cache directory of a binding follows its landscape id (`landscapeCacheDirectory(binding.landscapeId)`), never the viewer default:
+  `probeLandscapeCache` only looks in the pinned id's directory, so a machine with only v2 installed reports the city's landscape
+  `missing` (with the install guidance), not v2's state.
+
+**Where v2 remains.** `assets/public/landscape/coastal-city` stays immutable and is still the viewer/server default
+(`LANDSCAPE_DEFAULT_DIRECTORY`, `tools/landscape_server/README.md`), the subject of the retained-source audit, the nature-pass and
+AI577 D1a material-only revisions and the browser editing/appearance workflows. Those suites keep the v2 pin as `COASTAL_V2` /
+`createCoastalV2CitySpec()` in `tests/shared/landscapeCacheTest.js` instead of reading the city spec; the current pin refuses every v2
+manifest as another landscape (`identity mismatch`), not as a stale revision. A clean checkout installs both bundles
+(`landscape/cache-install` resolves each bundle's own id directory) or regenerates v3 through the publication sequence in
+[tools/bake_landscape/README.md](../../tools/bake_landscape/README.md#publishing-v3-the-sequence). Explicit edits made on a v3
+publication survive the next regeneration through the replay order in [LANDSCAPE_EDITING.md](LANDSCAPE_EDITING.md#regeneration-and-replay).
 
 ## Cache availability (AI 595)
 
 The pinned manifest lives in the local, gitignored landscape cache, which a clean checkout does not have. `resolveCityLandscape(binding, options)` is the boot-time, non-throwing counterpart of the strict `loadCityLandscape`: it validates the binding (an invalid binding still throws) and returns `probeLandscapeCache`'s availability with the binding. `available` carries the validated manifest; `missing` (no cache), `stale` (the installed cache does not retain the pinned snapshot, or another revision), `incomplete` (overview payload absent), `invalid` (hash/schema/identity mismatch) and `unreachable` carry a reason and the action to take. The Map Debugger reference plan boots without the landscape and appends `describeLandscapeCacheAvailability` to its status line.
 
-A cache regenerated from the source ZIP carries the current uniform material bindings and therefore never contains the pinned D3 hierarchy snapshot; the city reports `stale` until a canonical cache bundle is installed (`landscape/cache-install`) or the binding is explicitly reviewed and rebound. `tests/node/unit/landscape_cache_availability.test.js` covers every state, including that regeneration case, and checks the installed pin byte for byte when a cache is present.
+A cache regenerated from a recipe or source carries a new current revision and does not contain an older pinned snapshot unless the bundle retains it; the city reports `stale` until a canonical cache bundle is installed (`landscape/cache-install`) or the binding is explicitly reviewed and rebound. `tests/node/unit/landscape_cache_availability.test.js` covers every state, including that regeneration case, a pin on a non-default landscape id (only its own directory is probed), and checks the installed pin byte for byte when the pinned landscape's cache is present.
 
 `CitySpecAuthoring.normalizeCitySpec` is used by `MapDebuggerState._normalizeSpec` and bound `CityMap.fromSpec`. Bound inputs require explicit positive dimensions/tile size and finite tile-center origin. `CityMap.exportSpec`, existing editor JSON export and **Download JS** retain binding, authored parcel squares/limits, reservation records, stable IDs/catalog references and disabled `rendered:false` entries. Parcel data does not become solved footprints. `serializeCitySpecToModule` creates an executable factory; `importCitySpecModule` passes it through the same normalization boundary. JS modules remain authoritative; test exports remain ignored artifacts.
 
@@ -74,7 +100,8 @@ Future placement must explicitly select terrain-relative/absolute elevation, ver
 
 `tests/headless/e2e/landscape_city_binding.pwtest.js` exercises real Map Debugger load/apply/settings/rendered toggle/export/import/reload and City/PVS/illumination refusal. Its tiny routed test document reuses the canonical importmap without expanding server access. Evidence belongs under `tests/artifacts/screens/landscape/ai576/d6/city-binding/`.
 
-The fixture keeps its AI 576 pin. The nature pass (`materials-a7f93a9…`, `manifest.12fc8d5c….json`) and AI577 D1a
-(`materials-bfcf20f7…`, `manifest.496f91b9….json`) published material-only revisions: only the landscape revision and the soil
-material IDs differ from the pinned snapshot. The strict pin refuses both; `landscape_city_binding.test.js` proves the refusals,
-records that difference (the review basis a future explicit rebind would cite) and validates the explicit rebind path.
+The fixture kept its AI 576 pin on coastal v2 until AI 596 D4. The nature pass (`materials-a7f93a9…`, `manifest.12fc8d5c….json`) and
+AI577 D1a (`materials-bfcf20f7…`, `manifest.496f91b9….json`) published material-only revisions of v2: only the landscape revision and the
+soil material IDs differ from that pinned snapshot. The strict v2 pin refuses both; `landscape_city_binding.test.js` proves the refusals
+against `COASTAL_V2`, records that difference (the review basis an explicit rebind cites), validates the explicit rebind path, and checks
+that the current v3 pin names its own cache directory and refuses the v2 manifests as another landscape.

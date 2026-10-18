@@ -12,7 +12,7 @@ import { loadIBLBackgroundTexture } from '../../lighting/IBL.js';
 import { getResolvedAtmosphereSettings, loadSavedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { validateLandscapeCityBinding } from '../../../app/landscape/LandscapeCityBinding.js';
 import { LANDSCAPE_LIGHTING, LANDSCAPE_WATER_LEVEL_DISABLED, createLandscapeLightingUniforms, landscapeHazeCalibration, landscapeLightingConstants,
-    landscapeLightingTier, landscapeLightingUniformValues, landscapeResponseUniformValue, landscapeSunDirection, landscapeWaterSurfaceRoughness } from './LandscapeLightingModel.js';
+    landscapeLightingTier, landscapeLightingUniformValues, landscapeOceanUniformValue, landscapeResponseUniformValue, landscapeSunDirection, landscapeWaterSurfaceRoughness } from './LandscapeLightingModel.js';
 import { landscapeMaterialResponseSnapshot } from './LandscapeMaterialResponse.js';
 import { LANDSCAPE_SKY_REFLECTION, prefilterLandscapeSkyReflection } from './LandscapeSkyReflection.js';
 import { evaluateLandscapeSkyIrradiance, landscapeSkyHorizonRadiance, projectLandscapeSkyIrradiance, LANDSCAPE_SKY_IRRADIANCE } from './LandscapeSkyIrradiance.js';
@@ -57,6 +57,9 @@ export class LandscapeLighting {
         this.hemisphere = this.settings.hemiIntensity;
         this.seaLevel = 0;
         this.waterVisible = true;
+        // AI 597: true while the animated ocean draws the sea surface (its facets carry the sun glint the terrain's flat surface otherwise adds)
+        this.oceanSurface = false;
+        this.swashSheet = false;
         // AI577 D5c switches of the natural-ground response, terrain-reflected light and terrain-field visibility (all enabled when shipped)
         this.response = { ...LANDSCAPE_LIGHTING.response };
         this.sky = null;
@@ -88,7 +91,7 @@ export class LandscapeLighting {
     state() {
         const base = { seaLevel: this.seaLevel, sunDirection: this.sunDirection, sunIrradiance: this.sunIrradiance, skyCoefficients: this.skyCoefficients() };
         this.calibration = this.horizonRadiance ? landscapeHazeCalibration(base, this.horizonRadiance, this.tier) : null;
-        this.current = { ...base, calibration: this.calibration?.calibration ?? [1, 1, 1], waterLevel: this.waterVisible ? this.seaLevel : LANDSCAPE_WATER_LEVEL_DISABLED, response: { ...this.response } };
+        this.current = { ...base, calibration: this.calibration?.calibration ?? [1, 1, 1], waterLevel: this.waterVisible ? this.seaLevel : LANDSCAPE_WATER_LEVEL_DISABLED, response: { ...this.response }, ocean: { animated: this.oceanSurface, swash: this.swashSheet === true } };
         return this.current;
     }
 
@@ -98,6 +101,7 @@ export class LandscapeLighting {
         this.uniforms.uLandscapeSun.value.set(values.uLandscapeSun);
         this.uniforms.uLandscapeSunIrradiance.value.set(values.uLandscapeSunIrradiance);
         this.uniforms.uLandscapeResponse.value.set(values.uLandscapeResponse);
+        this.uniforms.uLandscapeOcean.value.set(values.uLandscapeOcean);
     }
 
     /**
@@ -134,7 +138,7 @@ export class LandscapeLighting {
             this.reflection = prefilterLandscapeSkyReflection(image, { roughness: landscapeWaterSurfaceRoughness().roughness, intensity: ibl.envMapIntensity });
             this.reflectionTexture = new THREE.DataTexture(Uint16Array.from(this.reflection.data, value => THREE.DataUtils.toHalfFloat(value)), this.reflection.width, this.reflection.height, THREE.RGBAFormat, THREE.HalfFloatType);
             Object.assign(this.reflectionTexture, { name: 'Landscape sky reflection', colorSpace: THREE.NoColorSpace, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping,
-                minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, flipY: false, needsUpdate: true });
+                minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: true, flipY: false, needsUpdate: true });
             this.reflectionMilliseconds = performance.now() - prefilter;
             // the game's background (applyIBLToScene with setBackground): the HDR itself, drawn unscaled; scene.environment stays unset because no
             // landscape material reads it. three.js samples a rotated background at the inverse rotation, so landscape direction d shows the
@@ -170,6 +174,17 @@ export class LandscapeLighting {
     setSeaLevel(seaLevel) {
         if (!Number.isFinite(seaLevel)) throw new Error('[Landscape] Sea level must be finite');
         this.seaLevel = seaLevel;
+        this.update();
+    }
+
+    /**
+     * @param {boolean} animated AI 597: whether the animated ocean draws the sea surface (the terrain then leaves the sun glint to it)
+     * @param {boolean} [swash] D4: whether the swash sheet draws the wet beach (the terrain then leaves its static coastal wetting to it)
+     */
+    setOceanSurface(animated, swash = false) {
+        landscapeOceanUniformValue({ animated, swash });
+        this.oceanSurface = animated;
+        this.swashSheet = swash;
         this.update();
     }
 
@@ -214,13 +229,13 @@ export class LandscapeLighting {
                 irradiance, horizonRadiance: this.horizonRadiance, solidAngle: this.sky?.solidAngle ?? null },
             haze: { ...landscapeLightingConstants().atmosphere, calibration: state.calibration, calibrationRaw: this.calibration?.raw ?? null, asymptote: this.calibration?.asymptote ?? null,
                 calibrationClamped: this.calibration?.clamped ?? false, enabled: this.tier !== 'low' },
-            water: { ...landscapeLightingConstants().water, seaLevel: this.seaLevel, opticalLevel: this.waterVisible ? this.seaLevel : null, column: this.tier === 'low' ? 'constant-deep-water-source' : 'depth-decaying-source' },
+            water: { ...landscapeLightingConstants().water, seaLevel: this.seaLevel, opticalLevel: this.waterVisible ? this.seaLevel : null, column: this.tier === 'low' ? 'constant-deep-water-source' : 'depth-decaying-source', animatedSurface: this.oceanSurface, terrainGlint: !this.oceanSurface },
             // terrain program binding: tiers standard and high read the terrain fields (stale or absent pages stay neutral); tier low and the water surface keep neutral hooks
             hooks: { sunVisibility: this.tier !== 'low' && this.response.terrainVisibility ? 'terrain-fields' : 'neutral', skyVisibility: this.tier !== 'low' && this.response.terrainVisibility ? 'terrain-fields' : 'neutral',
                 waterSurface: 'neutral', binding: LANDSCAPE_LIGHTING.visibility, names: LANDSCAPE_LIGHTING.hooks },
             response: { switches: { ...this.response }, ...landscapeMaterialResponseSnapshot(), occluderBounce: this.tier !== 'low' && this.response.bounce && this.response.terrainVisibility },
             uniforms: { vectors: LANDSCAPE_LIGHTING.uniformVectors, layout: LANDSCAPE_LIGHTING.uniforms, sun: Array.from(this.uniforms.uLandscapeSun.value), sunIrradiance: Array.from(this.uniforms.uLandscapeSunIrradiance.value),
-                response: Array.from(this.uniforms.uLandscapeResponse.value) },
+                response: Array.from(this.uniforms.uLandscapeResponse.value), ocean: Array.from(this.uniforms.uLandscapeOcean.value) },
             resources: { ledger: 'renderer-owned, outside the landscape residency ledger', hdrCpuBytes: image?.data?.byteLength ?? 0, hdrGpuBytes: image && background?.isTexture ? image.width * image.height * 8 : 0,
                 backgroundCubeGpuBytes: image && background?.isTexture ? 6 * image.height * image.height * 8 : 0, reflectionCpuBytes: reflection ? reflection.width * reflection.height * 8 : 0,
                 reflectionGpuBytes: reflection ? reflection.width * reflection.height * 8 : 0, halfFloatTableCpuBytes: this.sky ? 65536 * 4 : 0 }

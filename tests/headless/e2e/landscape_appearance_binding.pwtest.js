@@ -4,11 +4,12 @@
 import { test, expect } from '@playwright/test';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
+import { createCoastalV2CitySpec } from '../../shared/landscapeCacheTest.js';
 import { landscapeAppearanceBindingKey } from '../../../src/app/landscape/index.js';
 import { landscapeViewerUrl } from '../../shared/landscape_viewer_url.js';
 
-const binding = createCoastalLandscapeCitySpec().landscape;
+// the pinned revisions of coastal v2 (the AI 576 city pin and the nature pass); the city spec pins coastal-city-v3 since AI 596 D4
+const binding = createCoastalV2CitySpec().landscape;
 const directory = binding.manifestUrl.slice(0, binding.manifestUrl.lastIndexOf('/'));
 const artifacts = path.resolve('tests/artifacts/screens/landscape', process.env.LANDSCAPE_EVIDENCE_PHASE ?? 'nature', 'pinned-appearance');
 const multiscale = JSON.parse(await readFile(path.resolve(directory, 'appearance/multiscale.json'), 'utf8'));

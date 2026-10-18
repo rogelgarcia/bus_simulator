@@ -50,6 +50,8 @@ test('Landscape D2: rendering precision does not move soil queries outside fract
 });
 
 test('Landscape D2: native area, raise and sand, persistent reopen, stale refusal, and revert', async ({ page }) => {
+    // two viewer loads with the surface cache on settle their appearance in about eighteen seconds each (AI 597 D7: the default minute ran out in a full regression)
+    test.setTimeout(120000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -130,10 +132,13 @@ test('Landscape D2: native area, raise and sand, persistent reopen, stale refusa
     await page.screenshot({ path: path.join(artifacts, '03-reverted-patch.png') });
     const replay = await page.request.post(`${origin}/api/landscape/apply`, { data: { ...batch, expectedRevision: restored.revision } });
     expect(replay.ok()).toBe(false);
+    // AI 596 D3: the radius field is bounded by the manifest (half the 500 m native span); a larger radius is refused before any query and the
+    // current exact selection is kept
     await page.evaluate(() => window.__landscapeTestHooks.setSelectionRadius(1000));
-    await expect(page.locator('[data-field="notice"]')).toContainText('D2 limit is 4');
-    expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).selection.editingReady).toBe(false);
+    await expect(page.locator('[data-field="notice"]')).toContainText('between 0 and 250 meters');
+    expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).selection.editingReady).toBe(true);
     expect((await page.evaluate(() => window.__landscapeTestHooks.snapshot())).revision).toBe(restored.revision);
+    expect(await page.getByLabel('Selection radius in meters').getAttribute('max')).toBe('250');
     await page.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect.poll(async () => (await page.request.get(`${origin}/api/landscape/selection`)).status()).toBe(404);
     expect(errors).toEqual([]);

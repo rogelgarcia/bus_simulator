@@ -24,6 +24,8 @@ Circles require a positive radius; rectangles require finite bounds and positive
 
 Area acquisition includes every intersected native chunk, including shared-edge/corner duplicates. Circle and polygon intersection are geometric, not merely enclosing rectangles. Exact acquisition retains a maximum of four native chunks. `maxNativeChunks` may reduce that maximum, never raise it. Native decoded input has a separate default/hard ceiling of 2 MiB; callers can set a lower `maxDecodedBytes` and admission must honor it before I/O. One coastal native chunk is 330,245 bytes; a four-way selection is 1,320,980 bytes. A larger query fails rather than falling back to approximate data. D5 mutation uses the separate bounded streaming contract and can cover more than four chunks.
 
+The admissible radius follows the manifest (AI 596 D3): `landscapeQueryRadiusLimit(manifest)` is half the native chunk span (`grid.chunkIntervals × spacing / 2`): 250 m at 1.953125 m (500 m chunks), 125 m at 0.9765625 m (250 m chunks), 62.5 m at 0.48828125 m (125 m chunks). Every radius below it is admitted at every position, because a circle whose diameter is below the span intersects at most a 2 × 2 block of natives and four 257² natives always fit the 2 MiB budget. At exactly that radius the circle's box spans one chunk width, and the closed shared-boundary rule adds tangent neighbours from an interior chunk center line: a circle centered on such a line of one axis whose other coordinate is also a center line (five chunks) or a chunk boundary (six) is refused, every other center is admitted (`landscape_finer_spacing.test.js` enumerates both); above it the circle can cross three chunk columns or rows and is refused wherever it does. The viewer bounds its radius field by this value and refuses a larger radius before any query (`LANDSCAPE_VIEWER.md`), so its acceptance up to 250 m on the coast is unchanged.
+
 `planLandscapeRegion(manifest,region,{maxNativeChunks?,maxDecodedBytes?})` returns `{status,region,bounds,chunkIds,decodedBytes}` without loading samples. It expects a validated manifest. `outside` carries an empty chunk list; malformed input or budget conflicts throw actionable errors.
 
 `acquireLandscapeRegion(manifest,region,{readChunk,signal?,maxNativeChunks?,maxDecodedBytes?})` returns a Promise. While it is unresolved, the caller exposes `pending`; it must not present a previous/coarse value as an authoritative answer. The injected `readChunk(chunkId,{signal})` must read and authenticate the selected manifest's immutable channels. The runtime loader and authoring store verify channel hashes. Domain acquisition additionally validates native identity/revision, source windows/bounds, decoded lengths, height envelopes, known category IDs, and shared edges.
@@ -83,14 +85,14 @@ Point edits are rejected: every operation must contain an explicit circle, recta
 | `raise` | Finite nonzero `deltaMeters`, absolute value at most 10,000. Positive raises and negative lowers. Each affected native vertex becomes `float32(old + deltaMeters * weight)`. |
 | `set-height` | Finite `heightMeters` in ±100,000. Weight 1 assigns the exact float32 target; partial weight assigns `float32(old + (target-old)*weight)`. It explicitly flattens a hard region or blends into a target pad. |
 | `grade` | Explicit distinct `start` and `end` with world `x,z,heightMeters`. Heights are within ±100,000 and endpoints are inside the landscape. The target is linear elevation along the endpoint vector, clamped to its two end elevations, blended by region falloff. |
-| `smooth` | Explicit `radiusMeters` and `strength` in `(0,1]`. Radius spans 1–8 native samples on each axis after flooring by axis spacing. One box-average pass reads a frozen operation-input snapshot and blends its mean by strength and region falloff; source-edge samples clamp/repeat. |
+| `smooth` | Explicit `radiusMeters` and `strength` in `(0,1]`. Radius spans 1–`landscapeSmoothRadiusSampleLimit(spacing)` native samples on each axis after flooring by axis spacing: 8 samples at 1.5 m spacing and coarser, 16 below (AI 596 D3), so the metric reach is 15.625 m at 1.953125 m, 15.625 m at 0.9765625 m and 7.8125 m at 0.48828125 m (the coastal template's 8 m radius is 4 / 8 / 16 samples there). One box-average pass reads a frozen operation-input snapshot and blends its mean by strength and region falloff; source-edge samples clamp/repeat. |
 | `assign-soil` | `soilId` must be in the soil catalog. Only `falloff:{type:none}` is accepted. It adds a hard semantic region assignment and never overwrites land-cover bytes. |
 
 Every operation declares `falloff`. `none` gives weight 1 throughout its closed region, including the perimeter. `linear` declares a positive `distance` in meters, no greater than the circle radius or half the smaller rectangular/polygon bounding span. Weight is `clamp(distanceInsideBoundary / falloff.distance,0,1)`: inside distance is radius minus radial distance for a circle, minimum edge distance for a rectangle, or shortest distance to any polygon segment. The perimeter remains unchanged. Narrow/concave polygon sections may never reach full strength. No radius or falloff is inferred from a camera/screenshot.
 
 Operations are evaluated strictly in their array order. For height operations, each vertex is rounded to float32 after every operation; the next operation reads that result. Across batches, the next batch reads the previous published native channels. Chunk iteration order does not change values. Regions include shared boundary vertices in every owning payload, so adjacent chunks receive identical arithmetic and stored float32 results. The kernel rejects inconsistent input or output shared-edge heights/category IDs.
 
-Height effects are baked into the published native channels. The operation log is provenance/audit data; loading must not replay it on already-edited heights. Revert restores the prior immutable source channels and authoring metadata. A future source regeneration workflow must deliberately merge/reapply edits onto the intended base rather than resetting or double-applying this log.
+Height effects are baked into the published native channels. The operation log is provenance/audit data; loading must not replay it on already-edited heights. Revert restores the prior immutable source channels and authoring metadata. A source regeneration deliberately re-applies the accepted batches onto the regenerated base through the store rather than resetting or double-applying this log; see [Regeneration and replay](#regeneration-and-replay).
 
 ## Semantic soil
 
@@ -145,6 +147,47 @@ editHistory: {
 
 `lastBatchId` and `previousManifestUrl` must be present together. The snapshot is relative to the manifest and passes the same path restrictions as payload URLs. One-batch revert verifies the requested current revision and snapshot hash, authenticates every restored channel with the same bounded two-chunk validation pass, restores the saved pre-batch terrain/soil/named-region/operation state, retains batch-ID tombstones, and clears both last-batch fields. Revert has no four-chunk limit. Corrupt or missing old payloads and cancellation leave the edited current revision unchanged. This prevents a retried relative edit from being applied twice even after revert. Revert uses saved data, independent of Git.
 
+## Regeneration and replay
+
+A synthesized landscape (AI 596, `provenance.kind: procedural-synthesis`) is rebuilt from its recipe whenever the recipe, the engine or the
+grid changes; coastal terrain v3 (`coastal-city-v3`, D4) is the first regenerated publication. Explicit local edits are **never baked into
+the recipe**: a batch is an authored decision about a place, the recipe is a reproducible derivation, and mixing them would make the recipe
+non-reproducible and the edit invisible to review. Instead, regeneration evaluates in this fixed order:
+
+1. **Synthesis recipe** → the native grid (heights, land cover) at the recipe's spacing, deterministic for the recipe identity.
+2. **Saved landscape** → terrain chunks, the complete hierarchy and the copied references (`writeSynthesizedLandscape`), published as a
+   fresh current manifest with no authoring history.
+3. **Fields and geology sidecars** → baked from that native grid (`fields/`, `geology/`), bound to its channel hashes.
+4. **Replay of accepted batches** → `tools/landscape_authoring/BatchReplay.mjs` `replayAcceptedBatches({previousDirectory, directory})`
+   (CLI: `node tools/landscape_authoring/run.mjs replay --previous <previous landscape> --directory <regenerated landscape>`) reads the
+   previous landscape's current manifest history and re-applies every **accepted** batch (the `editHistory.batchIds` entries that still own
+   operation records; a reverted batch is a tombstone and is reported, not replayed) in acceptance order through the authoring store's
+   bounded `apply`. Each replayed batch keeps its batch and operation ids, world geometry, parameters, soil overrides, named regions and any
+   notes the records carry, is bound to the target's landscape id and current revision, and rebuilds its affected ancestors, validates and
+   publishes exactly as a first application does. Every replayed operation record carries `replayedFrom: {landscapeId, revision,
+   manifestSha256, batchId, sequence}` (nested when a record is replayed again), so the new history lists the edit as replayed. Named
+   regions carry no batch identity in the manifest; they are listed in batch order, so each is attributed to the latest batch consistent
+   with that order and with the first operation that references it.
+5. **Appearance bake** → `landscape/appearance` on the replayed current manifest, so the categorical soil masks include the replayed
+   overrides and the appearance binds the final revision.
+
+A batch the new terrain invalidates is **reported, never silently dropped**: the replay summary `{replayed, skipped: [{batchId, code,
+reason}], revisions}` names the batch and the invalidating change: `region-outside-bounds` (an operation or named region lies outside
+the target bounds), `grade-endpoint-outside-bounds`, `smooth-radius-invalid` (the radius spans fewer than 1 or more than
+`landscapeSmoothRadiusSampleLimit` native samples at the target spacing), `unknown-soil` (the target catalog lacks the soil), `region-unavailable`
+(a named region a skipped batch would have introduced), `already-recorded` (the target history already holds the batch id, which makes
+a repeated replay idempotent) or `invalid` (any other domain validation error). A skipped batch leaves the target unchanged, so a later
+run after the terrain is corrected can still replay it. Any other failure (I/O, staging, publication) aborts the replay after the last
+published revision. The replay changes native heights, so the terrain-field and geology pages of the changed natives are stale until their
+leaves are re-run, exactly as after any edit.
+
+On an unchanged grid the replay is bit-exact: `tests/node/unit/landscape_batch_replay.test.js` applies grade/smooth/soil, raise and smooth
+batches to a copy of the 1 km fixture `ai596-d3-fixture-0977`, reverts a fourth, replays onto an unedited copy and checks that every
+native and ancestor height channel hash equals the edited original, that the raise equals an independent recomputation, that the history
+lists the batches as replayed with their provenance, that a second replay is idempotent, that a re-replay nests the provenance chain, and
+that a coarser (1.953125 m) regenerated grid skips the 1.2 m smooth with its reason while a landscape with other bounds skips every batch
+as outside and stays unpublished.
+
 ## Ancestor rebuild, memory, and limitations
 
 D3 accepts the complete prepared hierarchy while retaining base root/native compatibility. For every changed native sample aligned with an affected ancestor's stride, that ancestor is updated to the exact float32 value. Shared duplicate writes are identical. Each affected ancestor's native min/max envelope is recomputed from descendant native descriptor envelopes, without reading unrelated native chunks. Its safe vertical error becomes:
@@ -155,6 +198,6 @@ newError = oldError + maxAbsoluteNativeHeightChange + maxAbsoluteAncestorHeightC
 
 The stored value is a conservative upper bound, not a new measured tight error. It follows from the triangle inequality and the unchanged nested triangulations. Source sample changes bound the change of each native triangle, and ancestor vertex changes bound the change of each coarse triangle. The registered `landscape/hierarchy` leaf tightens errors from current saved native channels. Even when an edited patch misses every coarse vertex, ancestor envelope/error metadata must change; those nodes remain dependencies of the edit. Identical channel bytes retain their previous channel hash, URL and content revision while descriptor/manifest revisions change.
 
-The legacy bounded kernel retains its native inputs and resulting ancestor arrays, with a 6,406,753-byte estimate for the central coastal four-chunk edit. The D5 store instead uses fixed work units: a native chunk/halo and smoothing scratch, or one ancestor rebuilt from sequential child reads, plus bounded decode/encode/hash/existing-file staging. It reserves at most 8 MiB before I/O without retaining the whole ancestor list as arrays. Full candidate validation uses two decoded chunks at a time; sequential phase peaks are combined by maximum. This is array/staging accounting, not process heap or filesystem-cache measurement. Metadata is separately capped by 1 MiB manifests, 64 KiB batches, 1,024 operation/history records, and 256 named regions. No full-resolution source grid is assembled. Runtime CPU/GPU budgets remain in `LANDSCAPE_STREAMING.md`.
+The legacy bounded kernel retains its native inputs and resulting ancestor arrays, with a 6,406,753-byte estimate for the central coastal four-chunk edit (its admission does not depend on the smoothing radius: it refuses smoothing altogether). The D5 store instead uses fixed work units: a native chunk/halo and smoothing scratch, or one ancestor rebuilt from sequential child reads, plus bounded decode/encode/hash/existing-file staging. It reserves at most 8 MiB before I/O without retaining the whole ancestor list as arrays; a 257² unit reserves 2,387,011 bytes with the eight-sample halo and 2,464,867 bytes with the sixteen-sample halo allowed below 1.5 m spacing (measured, `landscape_finer_spacing.test.js`), and a deeper tree adds ancestors sequentially (maxLevel per changed native), never to the reservation. Full candidate validation uses two decoded chunks at a time; sequential phase peaks are combined by maximum. This is array/staging accounting, not process heap or filesystem-cache measurement. Metadata is separately capped by 1 MiB manifests, 64 KiB batches, 1,024 operation/history records, and 256 named regions. No full-resolution source grid is assembled. Runtime CPU/GPU budgets remain in `LANDSCAPE_STREAMING.md`.
 
 Hierarchy preparation reads current saved native channels and preserves named regions, operations, soil, accepted IDs, and last-batch revert. It can upgrade a pre-D3 saved snapshot while retaining its original. Coastal re-import refuses to replace a changed/authored current source; an explicit migration is required instead of silently resetting edits. See `LANDSCAPE_HIERARCHY.md` for preservation details. Focused coverage is in `landscape_streamed_editing.test.js`, `landscape_authoring_streamed_store.test.js`, the legacy editing/store suites, and the real coastal `landscape_large_editing.pwtest.js` workflow.

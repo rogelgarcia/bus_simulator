@@ -11,7 +11,7 @@ import { LANDSCAPE_CACHE_GUIDE, LANDSCAPE_CACHE_ROOT, LANDSCAPE_DEFAULT_DIRECTOR
 import { createCoastalLandscapeCitySpec } from '../../../src/app/city/specs/CoastalLandscapeCitySpec.js';
 import { createLandscapeServer } from '../../../tools/landscape_server/Server.mjs';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
-import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+import { pinnedLandscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const ORIGIN = 'https://cache.test/';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -115,22 +115,35 @@ test('Landscape cache: an unreachable server is reported, while cancellation sti
     await assert.rejects(probeLandscapeCache(ORIGIN + cache.current, { fetchImpl: serve(cache.files).fetchImpl, signal: controller.signal }), { name: 'AbortError' });
 });
 
+// The city pin names its own landscape id; its cache directory follows that id (AI 596 D4: coastal-city-v3), never the viewer/server default (v2).
 test('Landscape cache: the coastal city boots without its cache and reports missing or stale instead of throwing', async () => {
-    const binding = createCoastalLandscapeCitySpec().landscape;
+    const binding = createCoastalLandscapeCitySpec().landscape, directory = landscapeCacheDirectory(binding.landscapeId);
+    assert.ok(binding.manifestUrl.startsWith(`${directory}/`), 'the pinned manifest lives in the directory of the binding landscape id');
     const missing = await resolveCityLandscape(binding, { baseUrl: ORIGIN, fetchImpl: serve(new Map()).fetchImpl });
     assert.equal(missing.available, false);
     assert.equal(missing.status, 'missing');
-    assert.equal(missing.binding.landscapeId, 'coastal-city');
+    assert.equal(missing.binding.landscapeId, binding.landscapeId);
     assert.equal(missing.manifestUrl, ORIGIN + binding.manifestUrl);
-    const pointerOnly = new Map([[`${LANDSCAPE_DEFAULT_DIRECTORY}/manifest.json`, new TextEncoder().encode(JSON.stringify({ revision: 'materials-regenerated' }))]]);
+    const pointerOnly = new Map([[`${directory}/manifest.json`, new TextEncoder().encode(JSON.stringify({ revision: 'materials-regenerated' }))]]);
     const stale = await resolveCityLandscape(binding, { baseUrl: ORIGIN, fetchImpl: serve(pointerOnly).fetchImpl });
     assert.equal(stale.status, 'stale');
     assert.equal(stale.currentRevision, 'materials-regenerated');
     await assert.rejects(resolveCityLandscape({ ...binding, transform: { ...binding.transform, scale: 2 } }, { baseUrl: ORIGIN, fetchImpl: serve(new Map()).fetchImpl }), /scale:1/);
 });
 
+test('Landscape cache: a pin on a non-default landscape id probes its own directory; another installed landscape does not stand in for it', async () => {
+    const installed = fixtureCache(), binding = { ...createCoastalLandscapeCitySpec().landscape, landscapeId: 'another-id', manifestUrl: `${landscapeCacheDirectory('another-id')}/manifest.${'a'.repeat(64)}.json`, revision: 'another-r1' };
+    const server = serve(installed.files);
+    assert.equal((await probeLandscapeCache(ORIGIN + installed.current, { fetchImpl: server.fetchImpl })).status, 'available', 'the installed landscape is available in its own directory');
+    const probed = server.requests.length;
+    const result = await resolveCityLandscape(binding, { baseUrl: ORIGIN, fetchImpl: server.fetchImpl });
+    assert.equal(result.status, 'missing', 'the pinned id has no cache, whatever other landscapes are installed');
+    const requests = server.requests.slice(probed);
+    assert.ok(requests.length > 0 && requests.every(relative => relative.startsWith(`${landscapeCacheDirectory('another-id')}/`)), `only the pinned directory is probed: ${requests.join(', ')}`);
+});
+
 // Runs against the developer's installed cache; a clean checkout has none, which is exactly the condition the tests above cover.
-test('Landscape cache: the installed coastal cache retains the city pin byte for byte', { skip: landscapeCacheSkip() }, async () => {
+test('Landscape cache: the installed pinned cache retains the city pin byte for byte', { skip: pinnedLandscapeCacheSkip() }, async () => {
     const fetchImpl = async url => {
         try { return new Response(await readFile(path.join(root, decodeURIComponent(new URL(url).pathname.slice(1))))); }
         catch (error) { if (error.code === 'ENOENT') return new Response('', { status: 404 }); throw error; }
@@ -139,6 +152,7 @@ test('Landscape cache: the installed coastal cache retains the city pin byte for
     const result = await resolveCityLandscape(binding, { baseUrl: ORIGIN, fetchImpl });
     assert.equal(result.status, 'available', result.reason);
     assert.equal(result.revision, binding.revision);
+    assert.equal(result.manifest.id, binding.landscapeId);
     const bytes = await readFile(path.join(root, binding.manifestUrl));
     assert.equal(sha256(bytes), binding.manifestUrl.match(/manifest\.([a-f0-9]{64})\.json$/)[1]);
 });

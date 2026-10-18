@@ -34,6 +34,31 @@ at 4 MiB; the coast uses 1,585,176 bytes. Repeated sequential native reads repla
 a full source raster allocation. Metadata, file caches and runtime overhead are
 outside this array estimate. Source reads and actual comparisons are recorded.
 
+A deeper tree (AI 596 D3: 4097² = maxLevel 4 with 341 nodes, 8193² = maxLevel 5
+with 1365 nodes) keeps that per-tile memory and grows only the sequential I/O:
+every derived node reads each descendant native twice (the aligned copy, then the
+exact error), `4^L + 2·L·4^L` reads over a depth-L tree — 448 at maxLevel 3,
+2,304 at 4 and 11,264 at 5 (measured on 4-interval fixtures,
+`tests/artifacts/screens/landscape/ai596/d3/limits/sidecar-limits.json`).
+
+Since AI 596 D4 the production tree is coastal terrain v3 (`coastal-city-v3`,
+4097² at 0.9765625 m, the landscape the city spec pins): maxLevel 4, 341 nodes
+(1 + 4 + 16 + 64 + 256), 250 m natives, prepared by the synthesis writer through
+the same `prepareLandscapeHierarchy` (`measured-native-vertices`; 6.2 s inside
+the landscape write of the receipt
+`tests/artifacts/screens/landscape/ai596/d4/v3/coastal-v3.md`). The registered
+`landscape/hierarchy` leaf re-measures it after edits exactly as it does the
+85-node v2 tree, which stays the default directory. The v3 edit gate
+(`d4/editing/edit-gate.md`) rebuilt 5 ancestors at depth 4 for 4 changed natives
+in 2.87 s with conservative errors and reverted them bit for bit in 2.44 s. The
+render-only surround beside v3 (`surround/manifest.json`, `LANDSCAPE_STREAMING.md`
+"Far-field surround") is a separate complete tree of the same contract: 2049² at
+15.625 m over 32 km, maxLevel 3, 85 nodes, 4 km natives, written by the same
+preparation with measured errors (L0 101.3 m, L1 102.4 m, L2 97.2 m: its massifs
+sampled at 125 / 62.5 / 31.25 m strides, `d5/surround/surround.md`); it is never
+edited, so its ancestors never carry the conservative policy, and it is never a
+source for picking or queries.
+
 ## Manifest-last publication
 
 Preparation shares the authoring mutation lock and framework input-stability

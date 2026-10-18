@@ -1,50 +1,56 @@
 // Exercises optional binding through real city registry, placement, normalization and JS serialization.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import {
     validateLandscapeCityBinding, landscapePointToCity, cityPointToLandscape, cityRegionToLandscape,
     cityReservationsToLandscapeConstraints, cityTileLandscapeCoverage, loadCityLandscape,
-    assertFlatCityCapability, queryLandscapeSelection, loadLandscapeChunk
+    assertFlatCityCapability, queryLandscapeSelection, loadLandscapeChunk, landscapeCacheDirectory
 } from '../../../src/app/landscape/index.js';
 import { CityMap } from '../../../src/app/city/CityMap.js';
 import { createCityConfig } from '../../../src/app/city/CityConfig.js';
 import { createCitySpecById } from '../../../src/app/city/specs/CitySpecRegistry.js';
 import { normalizeCitySpec, applyCitySpecSettings, serializeCitySpecToModule, importCitySpecModule } from '../../../src/app/city/specs/CitySpecAuthoring.js';
 import { createLandscapeModelFixture } from './landscape_model_fixture.js';
-import { landscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
+import { COASTAL_V2, createCoastalV2CitySpec, landscapeCacheSkip, pinnedLandscapeCacheSkip } from '../../shared/landscapeCacheTest.js';
 
 const city = () => createCitySpecById('coastal-landscape', createCityConfig());
-const cacheSkip = landscapeCacheSkip([city().landscape.manifestUrl.split('/').pop(), 'manifest.12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b.json',
-    'manifest.496f91b93facbbc9183d939d4da4e758852270fa71ed19e732ad1fa944127c20.json']);
+const cacheSkip = pinnedLandscapeCacheSkip();
+const v2CacheSkip = landscapeCacheSkip([path.posix.basename(COASTAL_V2.manifestUrl), COASTAL_V2.naturePassSnapshot, COASTAL_V2.materialsSnapshot], COASTAL_V2.directory);
 const mapFrom = spec => CityMap.fromSpec(spec, createCityConfig());
 const closePoint = (a, b) => { for (const axis of Object.keys(b)) assert.ok(Math.abs(a[axis] - b[axis]) < 1e-9, `${axis}: ${a[axis]} vs ${b[axis]}`); };
+const snapshot = async file => {
+    const bytes = await readFile(file), name = path.posix.basename(file);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), name.match(/^manifest\.([a-f0-9]{64})\.json$/)[1], `${name} is content addressed`);
+    return JSON.parse(bytes.toString('utf8'));
+};
 
 test('Landscape city binding: registered JS fixture pins a retained immutable manifest', { skip: cacheSkip }, async () => {
-    const spec = city(), manifest = JSON.parse(await readFile(spec.landscape.manifestUrl, 'utf8'));
+    const spec = city(), manifest = await snapshot(spec.landscape.manifestUrl);
     const binding = validateLandscapeCityBinding(spec.landscape, { manifest });
     assert.ok(Object.isFrozen(binding.transform.translation));
     assert.equal(binding.landscapeId, manifest.id);
     assert.equal(binding.revision, manifest.revision);
+    assert.equal(binding.manifestUrl.slice(0, binding.manifestUrl.lastIndexOf('/')), landscapeCacheDirectory(binding.landscapeId), 'the pin lives in the directory of its own landscape id');
     assert.notEqual(city(), spec);
     const altered = structuredClone(spec.landscape);
     altered.revision = 'stale';
     assert.throws(() => validateLandscapeCityBinding(altered, { manifest }), /revision is stale/);
 });
 
-// The nature pass and AI577 D1a published material-only revisions after AI 576 bound the fixture; the city has not reviewed them, so its strict
-// pin refuses both. The difference check is the review record an explicit rebind would cite.
-test('Landscape city binding: the fixture pin refuses retained material-only publications until an explicit rebind', { skip: cacheSkip }, async () => {
-    const binding = city().landscape, directory = binding.manifestUrl.slice(0, binding.manifestUrl.lastIndexOf('/'));
-    const snapshot = async name => {
-        const bytes = await readFile(`${directory}/${name}`);
-        assert.equal(createHash('sha256').update(bytes).digest('hex'), name.match(/^manifest\.([a-f0-9]{64})\.json$/)[1], `${name} is content addressed`);
-        return JSON.parse(bytes.toString('utf8'));
-    };
-    const pinned = await snapshot(binding.manifestUrl.slice(directory.length + 1));
-    for (const name of ['manifest.12fc8d5c72fa47bd41946c98a8acced91b70738a5c6da469a08843683dc0f95b.json', 'manifest.496f91b93facbbc9183d939d4da4e758852270fa71ed19e732ad1fa944127c20.json']) {
-        const later = await snapshot(name), restored = structuredClone(later);
+// The nature pass and AI577 D1a published material-only revisions of coastal v2 after AI 576 bound the fixture to it; the city never reviewed
+// them, so the v2 pin refuses both (the difference check is the review record an explicit rebind would cite). AI 596 D4 re-pinned the city to
+// coastal-city-v3, a new landscape id (a new native grid changes the addressing frame); v2 stays immutable in its directory for the viewer
+// default and the suites that exercise this history, and the current pin refuses every v2 manifest as another landscape, not as a stale revision.
+test('Landscape city binding: the v2 pin refuses retained material-only publications until an explicit rebind; the v3 pin refuses v2 as another landscape', { skip: v2CacheSkip }, async () => {
+    const binding = createCoastalV2CitySpec().landscape, directory = COASTAL_V2.directory;
+    assert.deepEqual([binding.landscapeId, binding.revision], [COASTAL_V2.landscapeId, COASTAL_V2.revision]);
+    const pinned = await snapshot(binding.manifestUrl);
+    assert.equal(pinned.id, COASTAL_V2.landscapeId);
+    for (const name of [COASTAL_V2.naturePassSnapshot, COASTAL_V2.materialsSnapshot]) {
+        const later = await snapshot(`${directory}/${name}`), restored = structuredClone(later);
         assert.match(later.revision, /^materials-/);
         restored.revision = pinned.revision;
         restored.soil.catalog.forEach((soil, index) => { soil.materialId = pinned.soil.catalog[index].materialId; });
@@ -53,6 +59,14 @@ test('Landscape city binding: the fixture pin refuses retained material-only pub
         const rebound = validateLandscapeCityBinding({ ...structuredClone(binding), manifestUrl: `${directory}/${name}`, revision: later.revision }, { manifest: later });
         assert.deepEqual([rebound.transform, rebound.extent], [binding.transform, binding.extent]);
         assert.throws(() => validateLandscapeCityBinding(rebound, { manifest: pinned }), /revision is stale/);
+    }
+    const current = city().landscape;
+    assert.deepEqual([current.transform, current.extent, current.capabilities], [binding.transform, binding.extent, binding.capabilities], 'the re-pin kept the transform and extent (bounds stay 0..4000)');
+    if (current.landscapeId !== COASTAL_V2.landscapeId) {
+        assert.notEqual(current.manifestUrl.slice(0, current.manifestUrl.lastIndexOf('/')), directory, 'the current pin names its own cache directory');
+        const v2Current = JSON.parse(await readFile(`${directory}/manifest.json`, 'utf8'));
+        assert.throws(() => validateLandscapeCityBinding(current, { manifest: pinned }), /identity mismatch/);
+        assert.throws(() => validateLandscapeCityBinding(current, { manifest: v2Current }), /identity mismatch/);
     }
 });
 

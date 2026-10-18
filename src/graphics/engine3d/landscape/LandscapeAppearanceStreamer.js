@@ -16,12 +16,16 @@
 // mask request) in native and generated pages alike, with its explicit per-native overview fallback reported as `presentation`. The terrain-driven
 // natural appearance (LandscapeTerrainAppearance) reads the resident root field and mask pages; this adapter mirrors it in JavaScript
 // (terrainAppearanceSample), evaluates the landscape-dressing-inputs v1 of the displayed soil (dressingSample) and lends the exposed-rock soil the
-// density of visible pages whose fields expose rock, so revealed rock streams at the tier its pages need.
+// density of visible pages whose fields expose rock, so revealed rock streams at the tier its pages need. AI 598 D1: with the surface model on
+// (the default) the geology sidecar streams into the field array beside the field pages and an overrides document rasterizes into the root-grid
+// override layer; surfaceSample mirrors the surface model (substrate, cover, fraction, wetness) exactly as the inspection views evaluate it. AI 598 D3a: the
+// materials live in resolution-grouped texture arrays with streamed slots (LandscapeMaterialSlots) and their parameters in one parameter texture, so demand fits
+// materials to slots (LandscapeAppearanceDemand v2) and the surface cache's global key carries the parameter table's hash instead of the per-soil uniforms.
 import { createLandscapeAppearancePlanner, loadLandscapeAppearanceManifest, loadLandscapeAppearanceMultiscale, createLandscapeSurfaceDetailIndex, landscapeSurfaceDetailRecipeHash } from '../../../app/landscape/index.js';
 import { LandscapeAppearanceBudget } from './LandscapeAppearanceBudget.js';
 import { LANDSCAPE_APPEARANCE_DEMAND, planLandscapeAppearanceDemand } from './LandscapeAppearanceDemand.js';
-import { createLandscapeAppearanceUniforms, setLandscapeMacroVariationUniforms, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms, setLandscapeSurfaceLayerUniforms,
-    setLandscapeSurfaceWarpUniforms, LANDSCAPE_MASK_SLOTS, LANDSCAPE_SOIL_SLOTS } from './LandscapeAppearanceUniforms.js';
+import { createLandscapeAppearanceUniforms, landscapeMaterialParameterTable, setLandscapeMacroVariationUniforms, setLandscapeMaterialClumpUniforms, setLandscapeMaterialSamplingUniforms,
+    setLandscapeSurfaceLayerUniforms, setLandscapeSurfaceWarpUniforms, LANDSCAPE_MASK_SLOTS, LANDSCAPE_SOIL_SLOTS } from './LandscapeAppearanceUniforms.js';
 import { LANDSCAPE_MACRO_VARIATION, landscapeMacroVariationUniforms } from './LandscapeMacroVariation.js';
 import { LANDSCAPE_MICRO_DETAIL } from './LandscapeMicroDetail.js';
 import { LANDSCAPE_NORMAL_FILTERING, LANDSCAPE_SURFACE_PROJECTION, landscapeProjectionActivationDegrees, landscapeSurfaceLayerUniforms } from './LandscapeSurfaceLayers.js';
@@ -30,6 +34,8 @@ import { LANDSCAPE_MATERIAL_SAMPLING, landscapeMaterialSamplingDefinition, lands
 import { LANDSCAPE_MATERIAL_CLUMPS, landscapeMaterialClumpDefinition, landscapeMaterialClumpUniforms } from './LandscapeMaterialBlend.js';
 import { LandscapeMaskPages } from './LandscapeMaskPages.js';
 import { LandscapeMaterialPages } from './LandscapeMaterialPages.js';
+import { LandscapeMaterialSlots, landscapeMaterialSlotCapacity } from './LandscapeMaterialSlots.js';
+import { LANDSCAPE_MATERIAL_PARAMETER_ROW } from './LandscapeMaterialParameters.js';
 import { LandscapeWorkerPool } from './LandscapeWorkerPool.js';
 import { LandscapeTerrainFieldPages, landscapeTerrainFieldProgress } from './LandscapeTerrainFieldPages.js';
 import { createLandscapeTerrainFieldTexture } from './LandscapeTerrainFieldTexture.js';
@@ -43,8 +49,9 @@ import { createLandscapeSurfaceWarp } from './LandscapeSurfaceNoise.js';
 import { LANDSCAPE_SURFACE_DETAIL_RUNTIME, landscapeSurfaceDetailCapacity, landscapeSurfaceDetailDisabledSnapshot, landscapeSurfaceDetailWorkerBytes } from './LandscapeSurfaceDetailPages.js';
 import { LANDSCAPE_TERRAIN_APPEARANCE, decodeLandscapeAppearanceLayer, landscapeAppearanceLayerUnits, landscapePlanningCover, landscapePlanningCoverMask, landscapeRockFactor,
     landscapeSoilCatenaShare, landscapeSoilTerrainRole, landscapeTerrainAppearanceInputs, landscapeTerrainFreshness } from './LandscapeTerrainAppearance.js';
-import { sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
+import { LANDSCAPE_SURFACE_MODEL, LANDSCAPE_SURFACE_RECIPE, landscapeSurfaceOverridesIdentity, landscapeSurfaceRecipeIdentity, sampleLandscapeDressingInputs } from '../../../app/landscape/index.js';
 import { LANDSCAPE_SURFACE_CACHE_OFF } from './LandscapeSurfaceCache.js';
+import { LANDSCAPE_SURFACE_MODEL_RUNTIME, createLandscapeSurfaceSampler, landscapeSurfaceModelMode } from './LandscapeSurfaceModel.js';
 
 export class LandscapeAppearanceStreamer {
     /**
@@ -52,11 +59,22 @@ export class LandscapeAppearanceStreamer {
      *   surfaceDetail?:{levels:number},detailCache?:any,materialSampling?:string,multiscale?:'auto'|'off',terrainFields?:'auto'|'off',naturalInference?:'terrain'|'overview'}} options
      *   detailCache is the view-owned LandscapeSurfaceDetailCache (or null); materialSampling is the compile-time mode of the view's terrain programs;
      *   multiscale 'off' keeps the schema-1 tiers without requesting the companion sidecar; terrainFields 'off' never streams terrain-field pages (the
-     *   natural inference of planning-only cover keeps its own policy); naturalInference is the view's natural display policy, shared with the geometry stream
+     *   natural inference of planning-only cover keeps its own policy); naturalInference is the view's natural display policy, shared with the geometry stream;
+     *   surfaceModel (AI 598 D1) is {mode: 'on' | 'off', overrides: validated landscape-surface-overrides document or null}: on streams the geology sidecar into the
+     *   field array and rasterizes the overrides into the override layer, off streams no geology and keeps every surface output neutral
      */
     constructor({ loaded, budget, renderer, coverageSlots, appearanceUrl, surfaceDetail = { levels: 0 }, detailCache = null, materialSampling = LANDSCAPE_MATERIAL_SAMPLING.defaultMode, multiscale = 'auto', terrainFields = 'auto',
-        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode }) {
+        naturalInference = LANDSCAPE_NATURAL_INFERENCE.defaultMode, surfaceModel = { mode: LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode, overrides: null } }) {
         Object.assign(this, { loaded, renderer });
+        this.surfaceModel = { mode: landscapeSurfaceModelMode(surfaceModel?.mode ?? LANDSCAPE_SURFACE_MODEL_RUNTIME.defaultMode), overrides: surfaceModel?.overrides ?? null, recipe: LANDSCAPE_SURFACE_RECIPE, reason: null };
+        // the recipe's soils are the catalog order the shader evaluates; another catalog keeps the model off explicitly
+        const soils = loaded.manifest.soil.catalog.map(soil => soil.id);
+        if (this.surfaceModel.mode === 'on' && soils.join(',') !== LANDSCAPE_SURFACE_MODEL.soils.join(',')) {
+            this.surfaceModel = { ...this.surfaceModel, mode: 'off', reason: `surface-model-soil-catalog: the landscape soils ${soils.join(', ')} are not the model's ${LANDSCAPE_SURFACE_MODEL.soils.join(', ')}` };
+            console.warn(`[LandscapeSurface] Surface model off: ${this.surfaceModel.reason}`);
+        }
+        this.geologyUrl = new URL('./geology/manifest.json', loaded.manifestUrl).href;
+        this.surfaceSampler = null;
         if (!['auto', 'off'].includes(multiscale)) throw new Error(`[Landscape] multiscale must be auto or off; received ${multiscale}`);
         this.multiscaleMode = multiscale;
         this.layers = { macro: true, micro: true, projection: true, normalFiltering: true };
@@ -124,18 +142,24 @@ export class LandscapeAppearanceStreamer {
             const companion = await this.loadMultiscale();
             if (this.disposed) return;
             this.pool = new LandscapeWorkerPool({ size: 1, workerUrl: new URL('./LandscapeAppearanceWorker.js', import.meta.url), context: { type: 'initialize', manifest: this.loaded.manifest, manifestUrl: this.loaded.manifestUrl,
-                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, fieldsUrl: this.fieldsUrl, root,
+                appearanceUrl: this.appearanceUrl, multiscaleUrl: companion.sidecar ? this.multiscaleUrl : null, multiscalePageBytes: LANDSCAPE_MULTISCALE_CAPABILITY.maxPageBytes, fieldsUrl: this.fieldsUrl, geologyUrl: this.geologyUrl, root,
                 naturalPages: this.naturalWorkerPages } });
             this.masks = new LandscapeMaskPages({ loaded: this.loaded, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix, capacity, detail, warp: this.warp,
                 natural: this.natural });
             if (detail && !this.masks.detail) this.releaseSurfaceDetail(this.masks.detailDegradation);
             this.multiscale = resolveLandscapeMultiscaleTiers({ appearance: this.appearance, sidecar: companion.sidecar, error: companion.error, enabled: this.multiscaleMode === 'auto',
                 maxTextureSize: this.renderer.capabilities.maxTextureSize, limits: this.budget.limits, fixedGpuBytes: this.masks.pixels.byteLength });
-            this.materials = new LandscapeMaterialPages({ appearance: this.appearance, multiscale: this.multiscale, budget: this.budget, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms, prefix: this.prefix });
+            // AI 598 D3a: the material arrays are sized once from the appearance GPU ceiling beside the mask and fine coverage arrays; the pages owner streams into them
+            this.slotCapacity = landscapeMaterialSlotCapacity({ limits: this.budget.limits, fixedGpuBytes: this.masks.pixels.byteLength, materialCapacity: this.appearance.materials.length });
+            this.slots = new LandscapeMaterialSlots({ renderer: this.renderer, budget: this.budget, uniforms: this.uniforms, prefix: this.prefix, capacity: this.slotCapacity });
+            this.materials = new LandscapeMaterialPages({ appearance: this.appearance, multiscale: this.multiscale, budget: this.budget, pool: this.pool, uniforms: this.uniforms, prefix: this.prefix, slots: this.slots });
             await this.materials.initialize();
             if (!this.disposed) {
+                // AI 598 D1: the recipe and override identities are content hashes (Web Crypto) computed once per load
+                this.surfaceIdentity = { recipe: await landscapeSurfaceRecipeIdentity(this.surfaceModel.recipe), overrides: this.surfaceModel.overrides ? await landscapeSurfaceOverridesIdentity(this.surfaceModel.overrides) : null };
                 this.fields = new LandscapeTerrainFieldPages({ loaded: this.loaded, shared: this.budget.shared, masks: this.masks, pool: this.pool, renderer: this.renderer, uniforms: this.uniforms,
                     prefix: this.prefix, url: this.fieldsUrl, mode: this.terrainFieldsMode, createTexture: createLandscapeTerrainFieldTexture,
+                    geology: this.surfaceModel.mode, geologyUrl: this.geologyUrl, overrides: this.surfaceModel.mode === 'on' ? this.surfaceModel.overrides : null, hardnessPattern: this.surfaceModel.recipe.strata.hardnessPattern,
                     ...(this.natural.url === this.fieldsUrl ? { loadSidecar: () => this.natural.sidecar() } : {}) });
                 await this.fields.initialize();
             }
@@ -255,7 +279,7 @@ export class LandscapeAppearanceStreamer {
         const composition = planLandscapeAppearanceDemand({
             fixedCpuBytes: this.masks.pixels.byteLength + this.loaded.chunk.landCover.byteLength + landscapeNaturalPresentationBytes(this.loaded.chunk.descriptor).workingBytes
                 + (this.naturalWorkerPages ?? 0) * landscapeNaturalSoilPageBytes(this.loaded.chunk.descriptor) + (detail ? detail.workerContextBytes + detail.demandCpuBytes() : 0),
-            fixedGpuBytes: this.masks.pixels.byteLength, decodeBytes: this.masks.decodeBytes ?? this.masks.layout.decodeBytes, limits: this.budget.limits,
+            fixedGpuBytes: this.masks.pixels.byteLength, decodeBytes: this.masks.decodeBytes ?? this.masks.layout.decodeBytes, limits: this.budget.limits, slots: this.slots.demandCapacity(),
             materials: this.materials.materials.map(material => {
                 const soilId = material.definition.soilId, interested = provisional ? this.provisionalSoils.has(material.index) : interests.has(material.index);
                 return { soilId, index: material.index, density: densityBySoil[soilId] ?? 0, pages: interests.get(material.index)?.size ?? 0,
@@ -303,8 +327,9 @@ export class LandscapeAppearanceStreamer {
 
     /**
      * Inputs of the AI577 D6 runtime surface cache (LandscapeSurfaceCacheInputs): every resident and uniform mask page with its identity, level,
-     * bounds, fade progress and soils; each soil's bound tier, paired micro period and arriving tier; and the generation-relevant shared values,
-     * without the per-slot arrays, the tier transition, the resident resolutions or the micro pairing, which pages carry themselves.
+     * bounds, fade progress and soils; each material's bound tier, paired micro period and arriving tier; and the generation-relevant shared values
+     * (AI 598 D3a: the parameter table's hash of every non-volatile material row), without the per-slot arrays, the tier transition, the resident
+     * resolutions or the micro pairing, which pages carry themselves.
      */
     surfaceCacheInputs() {
         if (!this.initialized || this.disposed) return null;
@@ -317,25 +342,26 @@ export class LandscapeAppearanceStreamer {
             slots.push({ id: record.id, key: record.kind === 'detail' ? `detail/${record.identity}` : record.key.slice(prefixLength), level: record.descriptor.level,
                 bounds: record.descriptor.bounds, progress: uniform ? 1 : record.progress, soils: uniform ? [record.soil] : [...record.soils] });
         }
-        const transition = this.materials.transition;
+        const transition = this.materials.transition, table = landscapeMaterialParameterTable(u), floor = LANDSCAPE_APPEARANCE_DEMAND.floorResolution;
         const soils = this.materials.materials.map(material => {
-            const tiling = u.uSoilTiling.value[material.index];
-            return { index: material.index, soilId: material.definition.soilId, tileMeters: tiling.x, resolution: material.current?.resolution ?? 32, microTileMeters: tiling.y,
-                microResolution: material.current?.resolution ?? 32, microLuminance: tiling.w, transitionResolution: transition?.material === material ? transition.target.resolution : null };
+            const tiling = table.row(material.index, LANDSCAPE_MATERIAL_PARAMETER_ROW.tiling), resolution = material.current?.resolution ?? floor;
+            return { index: material.index, soilId: material.definition.soilId, tileMeters: tiling[0], resolution, microTileMeters: tiling[1],
+                microResolution: resolution, microLuminance: tiling[3], transitionResolution: transition?.material === material ? transition.target.resolution : null };
         });
-        const vectors = list => list.flatMap(value => value.toArray()), rootField = landscapeTerrainFieldProgress(u.uMaskMeta.value[0].w);
+        const rootField = landscapeTerrainFieldProgress(u.uMaskMeta.value[0].w);
         const global = { revision: this.appearance.revision, landscape: `${manifest.id}/${this.seed}`, natural: this.natural.active ? this.natural.snapshot().policy : 'overview',
             bindings: this.appearance.materials.map(definition => `${definition.soilId}=${definition.materialId}`),
             coverage: [...u.uCoverageSettings.value.toArray(), ...u.uCoverageFilter.value.toArray(), u.uCoveragePositiveClamp.value, u.uContourDistanceRange.value, ...u.uMaskDimensions.value.toArray()],
-            soilScale: vectors(u.uSoilScale.value), soilTiling: u.uSoilTiling.value.map(value => value.x), soilAlbedo: vectors(u.uSoilAlbedo.value),
-            soilRoughness: vectors(u.uSoilRoughness.value), soilRange: vectors(u.uSoilRange.value), soilState: u.uSoilState.value.flatMap(value => [value.x, value.w]),
-            soilResponse: vectors(u.uSoilResponse.value), blend: [u.uSurfaceBlendEnabled.value, ...u.uSurfaceBlendSettings.value.toArray()],
-            clumps: [...u.uSoilClumps.value, ...u.uSoilClumpSalts.value, ...u.uClumpOctaves.value, ...u.uClumpSettings.value, ...u.uClumpConfidence.value],
-            sampling: [...u.uSoilStochastic.value, ...u.uSoilStochasticSalts.value, ...u.uStochasticSettings.value],
-            macro: [...u.uMacroOctaves.value, ...u.uMacroSalts.value, ...u.uMacroSettings.value, ...u.uSoilMacro.value],
+            // AI 598 D3a: every non-volatile material parameter row (scale, tiling period, albedo, roughness, range, relief and opposition, response, clumps, stochastic, macro, salts)
+            materials: table.hash(), blend: [u.uSurfaceBlendEnabled.value, ...u.uSurfaceBlendSettings.value.toArray()],
+            clumps: [...u.uClumpOctaves.value, ...u.uClumpSettings.value, ...u.uClumpConfidence.value],
+            sampling: [...u.uStochasticSettings.value],
+            macro: [...u.uMacroOctaves.value, ...u.uMacroSalts.value, ...u.uMacroSettings.value],
             layers: [...u.uSurfaceLayers.value, ...u.uMicroSampling.value, this.layers.micro ? 1 : 0],
             warp: [u.uSurfaceWarpEnabled.value, ...u.uLandscapeWarpWaves.value, ...u.uLandscapeWarpOffsets.value, ...u.uLandscapeWarpSalts.value],
-            fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value] };
+            fields: [...u.uTerrainFieldsState.value.slice(0, 3), rootField === 1 ? 1 : 0], planning: [...u.uPlanningCover.value],
+            // AI 598 D1 (cache contract): the model, its recipe identity, the bound geology revision and the override document identity
+            surface: [LANDSCAPE_SURFACE_MODEL.id, this.surfaceModel.mode, this.surfaceIdentity?.recipe ?? 'none', this.fields?.geology.revision ?? 'none', this.surfaceIdentity?.overrides ?? 'none'] };
         const rock = this.appearance.materials.findIndex(definition => landscapeSoilTerrainRole(definition.soilId) < 0);
         return { levelSpacings, slots, soils, rock, global, fieldsFading: rootField > 0 && rootField < 1, uniforms: u };
     }
@@ -388,6 +414,30 @@ export class LandscapeAppearanceStreamer {
             fields, inferredGround: planningShare ? Object.fromEntries(Object.entries(inferred).filter(([key]) => key !== 'recipe' && key !== 'fieldsAvailable')) : null };
     }
 
+    /**
+     * AI 598 D1: exact JavaScript mirror of landscapeSurfaceModel (chunks/landscape/surface_model.glsl) at a world position over the resident mask, field,
+     * geology and appearance data: the dominant substrate and cover with every class weight, the cover fraction, wetness, disturbance and availability, the
+     * input vector, the geology walk and the override applied. With the model off every output is neutral (the soil defaults), like the shader.
+     * @param {number} x @param {number} z @param {{height:number,slopeDegrees:number,enabled?:boolean,dx?:number[],dy?:number[]}} options the rendered terrain height (m) and
+     *   geometric slope (degrees) at the position and the terrain-appearance switch
+     */
+    surfaceSample(x, z, { height, slopeDegrees, enabled = true, dx = [0, 0], dy = [0, 0] }) {
+        if (!this.initialized || !this.masks || !this.fields) return null;
+        this.surfaceSampler ??= createLandscapeSurfaceSampler({ masks: this.masks, fields: this.fields, recipe: this.surfaceModel.recipe, planningCoverMask: this.planningCoverMask,
+            seaLevel: this.loaded.manifest.coordinates.seaLevel, terrainAppearance: (sampleX, sampleZ, options) => this.terrainAppearanceSample(sampleX, sampleZ, options), modelOn: this.surfaceModel.mode === 'on' });
+        const sample = this.surfaceSampler.sample(x, z, { height, slopeDegrees, enabled, dx, dy });
+        return sample ? { ...sample, mode: this.surfaceModel.mode, recipeIdentity: this.surfaceIdentity?.recipe ?? null, overridesIdentity: this.surfaceIdentity?.overrides ?? null } : null;
+    }
+
+    /** AI 598 D1: the surface model's binding: mode, recipe, geology status and the override document. */
+    surfaceSnapshot() {
+        const fields = this.fields?.snapshot(), overrides = this.surfaceModel.overrides;
+        return { model: LANDSCAPE_SURFACE_MODEL.id, runtime: LANDSCAPE_SURFACE_MODEL_RUNTIME.id, mode: this.surfaceModel.mode, reason: this.surfaceModel.reason, recipe: { id: this.surfaceModel.recipe.id, identity: this.surfaceIdentity?.recipe ?? null },
+            geology: fields?.geology ?? { mode: this.surfaceModel.mode, status: this.surfaceModel.mode === 'off' ? 'disabled' : 'pending', reason: this.surfaceModel.mode === 'off' ? 'surface-model-off' : 'appearance-not-initialized', url: this.geologyUrl, revision: null },
+            overrides: overrides ? { id: overrides.id, identity: this.surfaceIdentity?.overrides ?? null, regions: overrides.regions.length, layer: fields?.overrideLayer ?? null, layerState: fields?.overrideLayerState ?? null } : null,
+            layersPerPage: fields?.layersPerPage ?? LANDSCAPE_SURFACE_MODEL_RUNTIME.layers.fields, diagnostics: [...LANDSCAPE_SURFACE_MODEL_RUNTIME.diagnostics], chunk: LANDSCAPE_SURFACE_MODEL_RUNTIME.chunk };
+    }
+
     /** Generator-internal inspection through a detail worker. @param {number} x @param {number} z */
     detailSample(x, z) {
         if (!this.masks?.detail) throw new Error(`[Landscape] Generated surface detail is not active: ${this.detailReason ?? 'appearance not initialized'}`);
@@ -413,7 +463,8 @@ export class LandscapeAppearanceStreamer {
     }
 
     samplingSnapshot() {
-        const model = LANDSCAPE_MATERIAL_SAMPLING, enabled = !!this.samplingUniforms && this.uniforms.uSoilStochastic.value.some(value => value !== 0);
+        const table = landscapeMaterialParameterTable(this.uniforms), model = LANDSCAPE_MATERIAL_SAMPLING;
+        const enabled = !!this.samplingUniforms && (this.appearance?.materials ?? []).some((_, index) => table.component(index, LANDSCAPE_MATERIAL_PARAMETER_ROW.stochastic, 0) !== 0);
         return { mode: this.materialSampling, define: landscapeMaterialSamplingMode(this.materialSampling), enabled, recipe: model.id, seed: this.seed,
             contrastFalloff: model.contrastFalloff, weightCutoff: model.weightCutoff, varianceExponent: model.varianceExponent, samplesPerLattice: model.samplesPerLattice, slopeLimit: model.slopeLimit,
             materials: (this.appearance?.materials ?? []).map(definition => ({ soilId: definition.soilId, materialId: definition.materialId, contrastSignal: definition.height ? 'relief' : 'luminance',
@@ -433,16 +484,7 @@ export class LandscapeAppearanceStreamer {
         this.masks.wanted = new Set([this.loaded.manifest.overviewId]);
         this.masks.detail?.reset();
         this.masks.updateUniforms();
-        this.materials.transition = null;
-        this.uniforms.uMaterialBlendIndex.value = -1;
-        this.uniforms.uBlendBase.value = null;
-        this.uniforms.uBlendSurface.value = null;
-        for (const material of this.materials.materials) {
-            if (material.current) this.materials.syncLeases(material.current, new Set());
-            material.refs.clear();
-            if (material.coarse) this.materials.bind(material, material.coarse);
-        }
-        for (const record of [...this.materials.records.values()]) if (record.resolution !== 32) this.materials.remove(record);
+        this.materials.coarsen();
         this.budget.floor = { cpuBytes: 0, gpuBytes: 0 };
         this.budget.shared.update(this.budget.key, this.budget.credit(this.budget.totals()));
     }
@@ -499,24 +541,27 @@ export class LandscapeAppearanceStreamer {
             materialTiling: this.materials?.tiling ?? {},
             multiscale: this.multiscaleSnapshot(),
             surfaceLayers: this.surfaceLayerSnapshot(),
-            materialUploads: materials?.uploads ?? null, pendingMaterialTier: materials?.pendingTier ?? null,
+            materialUploads: materials?.uploads ?? null, pendingMaterialTier: materials?.pendingTier ?? null, materialSlots: materials?.slots ?? null, materialSlotCapacity: this.slotCapacity ?? null,
             terrainAppearance: { recipe: LANDSCAPE_TERRAIN_APPEARANCE.id, planningCover: Array.from(this.planningCoverMask), layer: this.fields?.appearanceLayer ?? null,
                 roles: Object.fromEntries((this.appearance?.materials ?? []).map(definition => [definition.soilId, landscapeSoilTerrainRole(definition.soilId)])),
                 switch: 'lighting.response.terrainAppearance (uLandscapeResponse.w)', model: LANDSCAPE_TERRAIN_APPEARANCE },
-            terrainFields: fields ?? { status: this.terrainFieldsMode === 'off' ? 'disabled' : 'pending', reason: this.terrainFieldsMode === 'off' ? 'terrain-fields-off' : 'appearance-not-initialized', mode: this.terrainFieldsMode, url: this.fieldsUrl } };
+            terrainFields: fields ?? { status: this.terrainFieldsMode === 'off' ? 'disabled' : 'pending', reason: this.terrainFieldsMode === 'off' ? 'terrain-fields-off' : 'appearance-not-initialized', mode: this.terrainFieldsMode, url: this.fieldsUrl },
+            surface: this.surfaceSnapshot(), geology: this.surfaceSnapshot().geology };
     }
 
     releaseResources() {
         this.uniforms.uAppearanceReady.value = 0;
         this.surfaceCache = null;
+        this.surfaceSampler = null;
         this.fields?.dispose();
         this.fields = null;
         this.materials?.dispose();
+        this.slots?.dispose();
         this.masks?.dispose();
         this.pool?.dispose();
         this.detailPool?.dispose();
-        this.materials = this.masks = this.pool = this.detailPool = null;
-        for (const [name, uniform] of Object.entries(this.uniforms)) if (/^(uSoilBase|uSoilSurface|uBlendBase|uBlendSurface|uMaskPages|uTerrainFields$)/.test(name)) uniform.value = null;
+        this.materials = this.slots = this.masks = this.pool = this.detailPool = null;
+        for (const [name, uniform] of Object.entries(this.uniforms)) if (/^(uMaterialBase|uMaterialSurface|uMaskPages|uTerrainFields$)/.test(name)) uniform.value = null;
         this.naturalHandle?.release();
         this.budget?.dispose();
         this.budget = null;

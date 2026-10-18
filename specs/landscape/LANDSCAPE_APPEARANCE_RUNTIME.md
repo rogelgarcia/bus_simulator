@@ -971,7 +971,7 @@ context reserves 990,735 bytes (396,294 in overview mode). Combined natural-pres
 1,651,225 CPU bytes (1,056,784 in overview mode); each generated-detail worker adds a six-page natural-soil cache
 (396,294 bytes) to its context. A job that reads natural-soil pages reserves one page plus its fetch buffer
 (132,098 bytes) inside its own reservation: a coastal mask decode reserves 1,077,696 bytes when it reads a page
-(945,598 otherwise) and a mesh build 132,098 more. The sidecar decode reserves 768 KiB
+(945,598 otherwise) and a mesh build 132,098 more. The sidecar decode reserves three times the sidecar limit (3 MiB since AI 596 D3, 768 KiB before)
 (`natural-inference-manifest-decode`) only while it loads. All context allowances are released only after their
 worker pool is disposed; natural-soil pages add no GPU memory (their labels live in the existing mask texels).
 

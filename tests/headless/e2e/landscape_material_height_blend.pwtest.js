@@ -224,37 +224,43 @@ test('Landscape materials: repeated material bindings retain separate allocation
             const { LandscapeResidencyBudget } = await import('/src/app/landscape/LandscapeResidencyBudget.js');
             const { LandscapeAppearanceBudget } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js');
             const { createLandscapeAppearanceUniforms, LANDSCAPE_MASK_SLOTS } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
+            const { landscapeMaterialMipOffsets } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialMips.js');
             const shared = new LandscapeResidencyBudget(), budget = new LandscapeAppearanceBudget(shared, 'duplicate-binding');
-            const tier = { resolution: 32, channels: { baseColor: { sha256: 'a'.repeat(64) }, normal: { sha256: 'b'.repeat(64) }, orm: { sha256: 'c'.repeat(64) } } };
-            const appearance = { materials: ['seabed', 'sand'].map(soilId => ({ soilId, materialId: 'pbr.aerial_beach_01', tiers: [tier] })) };
-            const pool = { request: async () => ({ baseColor: new Uint8Array(32 * 32 * 4), surface: new Uint8Array(32 * 32 * 8) }) };
-            const renderer = { capabilities: { getMaxAnisotropy: () => 4 }, initTexture() {} };
-            const pages = new LandscapeMaterialPages({ appearance, budget, pool, renderer, uniforms: createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS), prefix: 'duplicate-binding' });
+            const tier = { resolution: 128, channels: { baseColor: { sha256: 'a'.repeat(64) }, normal: { sha256: 'b'.repeat(64) }, orm: { sha256: 'c'.repeat(64) } } };
+            const appearance = { materials: ['seabed', 'sand'].map(soilId => ({ soilId, materialId: 'pbr.aerial_beach_01', tileMeters: 30, roughnessInputRange: { min: 0, max: 1 }, tiers: [tier] })) };
+            const pool = { request: async ({ resolution, pages }) => ({ maps: pages.map(() => new Uint8Array(landscapeMaterialMipOffsets(resolution).bytes)) }) };
+            // the arrays without a GPU: a floor needs no slot allocation, so only the uploads are recorded
+            const layout = landscapeMaterialMipOffsets(128), uploads = [];
+            const slots = { tiers: [{ layout }, { layout: landscapeMaterialMipOffsets(512) }, { layout: landscapeMaterialMipOffsets(1024) }], acquire: (tier, material) => material, release() {}, setResidency() {}, setTransition() {},
+                upload(tier, slot, map, chain) { uploads.push([tier, slot, map, chain.length]); return layout.bytes; }, demandCapacity: () => ({ fine: 0, mid: 0, gpuBytes: 0 }), snapshot: () => null };
+            const pages = new LandscapeMaterialPages({ appearance, budget, pool, uniforms: createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS), prefix: 'duplicate-binding', slots });
             const upload = async material => {
                 material.refs.add(`mask-${material.index}`);
-                if (!pages.request(material, 32)) throw new Error('Fixture material reservation unexpectedly denied');
+                if (!pages.request(material, 128)) throw new Error('Fixture material reservation unexpectedly denied');
                 await Promise.resolve(); await Promise.resolve();
                 pages.update(0, 1024 * 1024);
             };
             let result;
             try {
-                pages.initialized = true;
+                await pages.initialize();
                 await upload(pages.materials[0]); await upload(pages.materials[1]);
                 const records = [...pages.records.values()], keys = records.map(record => record.key);
-                result = { keys, before: budget.snapshot(), sharedBefore: shared.snapshot(), recordsBefore: records.map(({ id, key, status }) => ({ id, key, status })) };
+                result = { keys, uploads, before: budget.snapshot(), sharedBefore: shared.snapshot(), recordsBefore: records.map(({ id, key, status }) => ({ id, key, status })) };
                 pages.remove(records[0]);
                 result.afterFirstRelease = { budget: budget.snapshot(), shared: shared.snapshot(), firstPresent: shared.has(keys[0]), secondPresent: shared.has(keys[1]),
-                    secondRecordPresent: pages.records.has(records[1].id), secondPixelsRetained: records[1].baseColor?.length };
+                    secondRecordPresent: pages.records.has(records[1].id), secondBound: pages.materials[1].current === records[1] };
             } finally { pages.dispose(); budget.dispose(); }
             result.disposed = shared.snapshot(); return result;
         });
         expect(new Set(result.keys).size).toBe(2);
         expect(result.recordsBefore.map(value => value.status)).toEqual(['resident', 'resident']);
-        expect(result.before.cpuBytes).toBe(2 * 32 * 32 * 12); expect(result.before.gpuBytes).toBe(2 * 5460 * 3);
+        // AI 598 D3a: a resident floor holds no CPU bytes and its GPU bytes are the coarse arrays', charged by their owner; each floor uploaded its three maps into its own layer
+        expect(result.before.cpuBytes).toBe(0); expect(result.before.gpuBytes).toBe(0);
+        expect(result.uploads).toEqual([[0, 0, 0, 87380], [0, 0, 1, 87380], [0, 0, 2, 87380], [0, 1, 0, 87380], [0, 1, 1, 87380], [0, 1, 2, 87380]]);
         expect(result.sharedBefore.leaseCount).toBe(2);
         expect(result.afterFirstRelease.firstPresent).toBe(false); expect(result.afterFirstRelease.secondPresent).toBe(true);
-        expect(result.afterFirstRelease.secondRecordPresent).toBe(true); expect(result.afterFirstRelease.secondPixelsRetained).toBe(32 * 32 * 4);
-        expect(result.afterFirstRelease.budget.cpuBytes).toBe(32 * 32 * 12); expect(result.afterFirstRelease.budget.gpuBytes).toBe(5460 * 3);
+        expect(result.afterFirstRelease.secondRecordPresent).toBe(true); expect(result.afterFirstRelease.secondBound).toBe(true);
+        expect(result.afterFirstRelease.budget.cpuBytes).toBe(0); expect(result.afterFirstRelease.budget.gpuBytes).toBe(0);
         expect(result.afterFirstRelease.shared.leaseCount).toBe(1);
         expect(result.disposed.cpuBytes).toBe(0); expect(result.disposed.gpuBytes).toBe(0); expect(result.disposed.leaseCount).toBe(0);
         await mkdir(artifacts, { recursive: true });
@@ -286,14 +292,15 @@ test('Landscape materials: production stochastic tiling follows the JS lattice, 
         const sample = dominantSample(soilId, ...pixelWorld(center, span, size, row, column), period);
         if (!sample) continue;
         const fu = frac(sample.uv[0]) * texels, fv = frac(sample.uv[1]) * texels;
-        if (Math.min(frac(fu), 1 - frac(fu), frac(fv), 1 - frac(fv)) < .06) continue;
+        // AI 598 D3a: the 16x16 page is block-replicated into the trilinear 128 px coarse array, so pixels within half a texel (1/16 of a block) of a block edge blend neighbours
+        if (Math.min(frac(fu), 1 - frac(fu), frac(fv), 1 - frac(fv)) < .08) continue;
         parityPixels.push({ row, column, expected: [Math.floor(fu), Math.floor(fv)] });
         const key = sample.vertex.join(',');
         if (!vertices.has(key) && Math.abs(sample.angle) > .2 && normalPixels.length < 8) { vertices.add(key); normalPixels.push({ row, column, angle: sample.angle, vertex: key }); }
     }
     const report = { format: 'landscape-material-sampling-gpu-probe', schemaVersion: 1, complete: false, createdAt: new Date().toISOString(), seed: samplingSeed, soilId, period, span, center,
         conditions: { size, shader: 'production terrain programs compiled per material sampling mode', framebuffer: 'linear RGB8, no tone mapping or antialiasing',
-            parity: 'Nearest-filtered 16x16 coordinate page; decoded texel indices at pixels where one hex sample carries the weight, against the JavaScript lattice mirror',
+            parity: 'Block-replicated 16x16 coordinate page in the trilinear coarse array; decoded texel indices at pixels where one hex sample carries the weight, at least 0.64 texels from a block edge, against the JavaScript lattice mirror',
             normals: 'Constant tilted normal page: a dominant hex sample of angle a must light exactly like the single-sample path with catalog UV rotation a',
             seams: 'Smooth periodic page: the largest adjacent-pixel step must shrink when zooming 8x into it (continuous blend), and a one-pixel camera shift must reproduce the image' },
         errors: [], warnings: [] };
@@ -336,37 +343,35 @@ test('Landscape materials: production stochastic tiling follows the JS lattice, 
                 probe.setColors(Array.from({ length: 6 }, () => [80, 80, 80])); const white = probe.draw({ span }).slice();
                 const coordinates = new Uint8Array(texels * texels * 4);
                 for (let ty = 0; ty < texels; ty++) for (let tx = 0; tx < texels; tx++) coordinates.set([tx * 5, ty * 5, 0, 255], (ty * texels + tx) * 4);
-                const base = probe.uniforms[`uSoilBase${soil}`].value;
-                probe.uniforms[`uSoilBase${soil}`].value = probe.texture(coordinates, texels, 1, false, true);
+                probe.setBaseMap(soil, coordinates, texels, { srgb: false });
                 const decoded = probe.draw({ span }).slice(); snapshots.push({ id: '05-stochastic-coordinates', dataUrl: probe.snapshot() });
                 result.parity = parityPixels.map(({ row, column, expected }) => {
                     const value = pixel(decoded, row, column), low = pixel(black, row, column), high = pixel(white, row, column);
                     const bytes = [0, 1].map(channel => (value[channel] - low[channel]) / (high[channel] - low[channel]) * 80);
                     return { row, column, expected, decoded: bytes.map(byte => Math.round(byte / 5)), bytes };
                 });
-                probe.uniforms[`uSoilBase${soil}`].value = base;
+                probe.setBaseMap(soil, null);
                 // inverse-rotated slopes light like the established catalog rotation path
                 probe.setColors(Array.from({ length: 6 }, () => [80, 80, 80]));
                 const tilted = new Uint8Array(8); tilted.set([204, 128, 230, 255, 255, 255, 0, 128]);
-                const surface = probe.uniforms[`uSoilSurface${soil}`].value;
-                probe.uniforms[`uSoilSurface${soil}`].value = probe.texture(tilted, 1, 2);
-                probe.uniforms.uSoilScale.value[soil].set(period, 1, 1, 0);
+                probe.setSurface(soil, tilted);
+                probe.setParameters(soil, { scale: [period, 1, 1, 0] });
                 const stochasticLit = probe.draw({ span }).slice();
                 probe.setMaterialSampling('single'); probe.setStochastic(null);
                 result.normals = normalPixels.map(({ row, column, angle }) => {
-                    probe.uniforms.uSoilRange.value[soil].w = angle;
+                    probe.setParameter(soil, 'range', 3, angle);
                     const reference = probe.draw({ span }).slice();
                     return { row, column, angle, stochastic: pixel(stochasticLit, row, column), single: pixel(reference, row, column) };
                 });
-                probe.uniforms.uSoilRange.value[soil].w = 0;
-                probe.uniforms[`uSoilSurface${soil}`].value = surface;
-                probe.uniforms.uSoilScale.value[soil].set(period, 0, 1, 0);
+                probe.setParameter(soil, 'range', 3, 0);
+                probe.setSurface(soil, null);
+                probe.setParameters(soil, { scale: [period, 0, 1, 0] });
                 // continuity: a smooth page has no seam, so its largest step shrinks with an 8x zoom; a camera shift reproduces the image
                 const smooth = new Uint8Array(64 * 64 * 4);
                 for (let ty = 0; ty < 64; ty++) for (let tx = 0; tx < 64; tx++) {
                     smooth.set([Math.round(40 + 30 * Math.sin(2 * Math.PI * tx / 64) * Math.cos(2 * Math.PI * ty / 64)), Math.round(40 + 30 * Math.sin(2 * Math.PI * (tx + ty) / 64)), 40, 255], (ty * 64 + tx) * 4);
                 }
-                probe.uniforms[`uSoilBase${soil}`].value = probe.texture(smooth, 64);
+                probe.setBaseMap(soil, smooth, 64, { srgb: false });
                 const singleSmooth = probe.draw({ span: 16 }).slice(); snapshots.push({ id: '06-single-smooth', dataUrl: probe.snapshot() });
                 result.singleStep = stepStatistics(singleSmooth);
                 probe.setMaterialSampling('hex-contrast'); probe.setStochastic(seed);
@@ -388,7 +393,7 @@ test('Landscape materials: production stochastic tiling follows the JS lattice, 
                 shifts.sort((a, b) => a - b);
                 result.shift = { p99: shifts[Math.floor(shifts.length * .99)], maximum: shifts.at(-1) };
                 // every compiled mode keeps a uniform page exactly
-                probe.uniforms[`uSoilBase${soil}`].value = base;
+                probe.setBaseMap(soil, null);
                 probe.setColors(Array.from({ length: 6 }, () => [60, 50, 40]));
                 result.modes = {};
                 for (const mode of ['single', 'hex-linear', 'hex-contrast', 'hex-variance']) {
@@ -471,11 +476,11 @@ test('Landscape materials: AI577 D4 micro detail and macro variation follow thei
                 probe.setMicro(2); const farNeutral = probe.draw({ span: 400 }).slice();
                 result.farFadeDifference = maxDifference(farMicro, farNeutral);
                 // micro slopes add to base slopes: a tilted micro normal lights like the same base normal
-                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setParameter(2, 'scale', 1, 1);
                 probe.setMicro(2, { normal: [204, 128, 230, 255] }); const baseTilt = center(probe.draw());
-                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setParameter(2, 'scale', 1, 1);
                 probe.setMicro(2, { data: new Uint8Array([204, 128, 128, 128]) }); const microTilt = center(probe.draw());
-                probe.uniforms.uSoilScale.value[2].y = 1;
+                probe.setParameter(2, 'scale', 1, 1);
                 probe.setMicro(2); const untilted = center(probe.draw());
                 result.normal = { baseTilt, microTilt, untilted };
                 // micro relief joins the height competition of a two-material transition
@@ -571,12 +576,13 @@ test('Landscape materials: slope-adaptive projection removes stretching on steep
         const result = await page.evaluate(async () => {
             const { createLandscapeMaterialProbe } = await import('/tests/headless/e2e/fixtures/landscape_material_probe.js');
             const probe = createLandscapeMaterialProbe(), size = probe.size, span = 8, snapshots = [];
+            // AI 598 D3a: the trilinear material arrays spread a checker edge over the magnified pixels, so edges are crossings of the line's mid level rather than one-pixel steps
             const transitions = (buffer, along) => {
-                let count = 0;
-                for (let i = 1; i < size; i++) {
-                    const a = along ? ((i - 1) * size + size / 2) * 4 : (size / 2 * size + i - 1) * 4, b = along ? (i * size + size / 2) * 4 : (size / 2 * size + i) * 4;
-                    if (Math.abs(buffer[a + 1] - buffer[b + 1]) > 30) count++;
-                }
+                const values = Array.from({ length: size }, (_, i) => buffer[(along ? i * size + size / 2 : size / 2 * size + i) * 4 + 1]);
+                const low = Math.min(...values), high = Math.max(...values), mid = (low + high) / 2;
+                if (high - low <= 30) return 0;
+                let count = 0, above = values[0] > mid;
+                for (const value of values) { if ((value > mid) !== above) { count++; above = !above; } }
                 return count / span;
             };
             const maxDifference = (a, b) => { let largest = 0; for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 3; c++) largest = Math.max(largest, Math.abs(a[i + c] - b[i + c])); return largest; };
@@ -585,14 +591,13 @@ test('Landscape materials: slope-adaptive projection removes stretching on steep
                 probe.setCoverage([0, 0, 0, 1, 0, 0]); probe.setSynthetic({ resolution: 512 }); probe.setCenter([1024, 1024]);
                 const checker = new Uint8Array(16 * 16 * 4);
                 for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) checker.set((x + y) % 2 ? [90, 90, 90, 255] : [5, 5, 5, 255], (y * 16 + x) * 4);
-                const flat = probe.uniforms.uSoilBase3.value;
                 for (const tiltDegrees of [0, 15, 30, 45, 60, 80]) {
                     probe.setPlane({ tiltDegrees, azimuthDegrees: 0 });
-                    probe.uniforms.uSoilBase3.value = probe.texture(checker, 16, 1, false, true);
+                    probe.setBaseMap(3, checker, 16, { srgb: false });
                     probe.setLayers({ projection: false }); const off = probe.draw({ span }).slice();
                     probe.setLayers({ projection: true }); const on = probe.draw({ span }).slice();
                     if (tiltDegrees === 60) { snapshots.push({ id: '10-d4-projection-60-on', dataUrl: probe.snapshot() }); probe.setLayers({ projection: false }); probe.draw({ span }); snapshots.push({ id: '11-d4-projection-60-off', dataUrl: probe.snapshot() }); }
-                    probe.uniforms.uSoilBase3.value = flat;
+                    probe.setBaseMap(3, null);
                     probe.setLayers({ projection: false }); const flatOff = probe.draw({ span }).slice();
                     probe.setLayers({ projection: true }); const flatOn = probe.draw({ span }).slice();
                     result.planes.push({ tiltDegrees, offAlong: transitions(off, true), offAcross: transitions(off, false), onAlong: transitions(on, true), onAcross: transitions(on, false),
@@ -602,7 +607,7 @@ test('Landscape materials: slope-adaptive projection removes stretching on steep
                 probe.setPlane({ tiltDegrees: 0 });
                 const smooth = new Uint8Array(64 * 64 * 4);
                 for (let ty = 0; ty < 64; ty++) for (let tx = 0; tx < 64; tx++) smooth.set([Math.round(40 + 30 * Math.sin(2 * Math.PI * tx / 64) * Math.cos(2 * Math.PI * ty / 64)), Math.round(40 + 30 * Math.sin(2 * Math.PI * (tx + ty) / 64)), 40, 255], (ty * 64 + tx) * 4);
-                probe.uniforms.uSoilBase3.value = probe.texture(smooth, 64);
+                probe.setBaseMap(3, smooth, 64, { srgb: false });
                 probe.setLayers({ projection: true });
                 const steps = [];
                 for (const tiltDegrees of [20, 22, 24, 24.6, 25, 26, 28, 32, 36, 40, 44, 45, 46, 50, 60, 70]) {
@@ -654,6 +659,9 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
             const { LandscapeResidencyBudget } = await import('/src/app/landscape/LandscapeResidencyBudget.js');
             const { LandscapeAppearanceBudget, landscapeTextureBytes } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceBudget.js');
             const { createLandscapeAppearanceUniforms, LANDSCAPE_MASK_SLOTS } = await import('/src/graphics/engine3d/landscape/LandscapeAppearanceUniforms.js');
+            const { LandscapeMaterialSlots } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialSlots.js');
+            const { landscapeMaterialMipOffsets } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialMips.js');
+            const { LANDSCAPE_MATERIAL_PARAMETER_ROW } = await import('/src/graphics/engine3d/landscape/LandscapeMaterialParameters.js');
             const probe = createLandscapeMaterialProbe(), shared = new LandscapeResidencyBudget(), budget = new LandscapeAppearanceBudget(shared, 'multiscale-probe');
             const page = (resolution, name) => ({ url: `pages/${name}-${resolution}.rgba8`, width: resolution, height: resolution, sha256: `${name}${resolution}`.padEnd(64, '0') });
             const schemaTier = resolution => ({ id: String(resolution), resolution, channels: { baseColor: page(resolution, 'base'), normal: page(resolution, 'normal'), orm: page(resolution, 'orm') } });
@@ -667,10 +675,11 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
             const pool = { request: async ({ resolution, pages }) => {
                 requests.push({ resolution, roles: pages.map(value => value.role), sources: pages.map(value => value.source) });
                 if (failNext && pages.some(value => value.source === 'multiscale')) { failNext = false; throw new Error('synthetic multiscale page hash mismatch'); }
-                return { baseColor: new Uint8Array(resolution * resolution * 4).fill(120), surface: new Uint8Array(resolution * resolution * 4 * (pages.length - 1)).fill(128) };
+                return { maps: pages.map((value, index) => new Uint8Array(landscapeMaterialMipOffsets(resolution).bytes).fill(index === 0 ? 120 : 128)) };
             } };
-            const uniforms = createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS);
-            const pages = new LandscapeMaterialPages({ appearance, multiscale, budget, pool, renderer: probe.renderer, uniforms, prefix: 'multiscale-probe' });
+            const uniforms = createLandscapeAppearanceUniforms(LANDSCAPE_MASK_SLOTS), row = name => Array.from(uniforms.uMaterialParameters.table.row(0, LANDSCAPE_MATERIAL_PARAMETER_ROW[name]));
+            const slots = new LandscapeMaterialSlots({ renderer: probe.renderer, budget: null, uniforms, prefix: 'multiscale-probe', capacity: { fineSlots: 2, midSlots: 2, materialCapacity: 1 } });
+            const pages = new LandscapeMaterialPages({ appearance, multiscale, budget, pool, uniforms, prefix: 'multiscale-probe', slots });
             const settle = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 0)); };
             const allowance = 8 * 1024 * 1024, frames = [];
             const run = async (count, dt = .05) => { for (let i = 0; i < count; i++) { await settle(); const bytes = pages.update(dt, allowance); const snapshot = pages.snapshot(); frames.push({ bytes, pending: snapshot.pendingTier, transition: snapshot.transition, bound: snapshot.materials[0].resolution }); } };
@@ -679,8 +688,8 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
                 await pages.initialize();
                 const sand = pages.materials[0];
                 pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '32' });
-                await run(3);
-                result.coarse = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: uniforms.uSoilTiling.value[0].y, surfaceLayers: uniforms.uSoilSurface0.value?.image.depth };
+                await run(4);
+                result.coarse = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: row('tiling')[1], tier: sand.current?.tier, slot: sand.current?.slot, palette: !!sand.palette, coarseLayers: slots.snapshot().tiers[0].used };
                 pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '1024' });
                 frames.length = 0;
                 await settle();
@@ -688,7 +697,7 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
                 result.decodeReservation = budget.snapshot();
                 await run(12);
                 result.upgradeFrames = frames.map(frame => ({ ...frame }));
-                result.after1024 = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: [...uniforms.uSoilTiling.value[0].toArray()], heightStrength: uniforms.uSoilState.value[0].z, budget: budget.snapshot(), uploads: pages.snapshot().uploads };
+                result.after1024 = { bound: sand.current?.resolution, maps: sand.current?.maps, micro: row('tiling'), heightStrength: row('state')[2], slots: slots.snapshot().tiers.map(tier => tier.used), budget: budget.snapshot(), uploads: pages.snapshot().uploads };
                 // coarsening to 512 loads 512 and blends directly from 1024
                 frames.length = 0;
                 pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '512' });
@@ -699,14 +708,14 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
                 failNext = true;
                 pages.interest(new Map([[0, new Set(['mask'])]]), { sand: '1024' });
                 await run(6);
-                result.failure = { failures: pages.snapshot().multiscaleFailures, tiers: sand.tiers.map(value => value.resolution), maps: sand.maps, micro: uniforms.uSoilTiling.value[0].y, bound: sand.current?.resolution };
+                result.failure = { failures: pages.snapshot().multiscaleFailures, tiers: sand.tiers.map(value => value.resolution), maps: sand.maps, micro: row('tiling')[1], bound: sand.current?.resolution };
                 result.requests = requests;
-            } finally { pages.dispose(); budget.dispose(); probe.dispose(); }
+            } finally { pages.dispose(); budget.dispose(); slots.dispose(); probe.dispose(); }
             result.disposed = shared.snapshot();
             return result;
         });
         Object.assign(report, result);
-        expect(result.coarse).toEqual({ bound: 32, maps: 4, micro: 1.5, surfaceLayers: 3 });
+        expect(result.coarse).toEqual({ bound: 128, maps: 4, micro: 1.5, tier: 0, slot: 0, palette: true, coarseLayers: 1 });
         expect(result.decodeReservation.cpuBytes).toBeGreaterThanOrEqual(2 * 1024 * 1024 * 16);
         const uploads = result.upgradeFrames.map(frame => frame.bytes).filter(bytes => bytes > 0);
         expect(uploads, 'one 1024 map per frame under the 8 MiB allowance').toEqual([result.mapBytes1024, result.mapBytes1024, result.mapBytes1024, result.mapBytes1024]);
@@ -714,14 +723,15 @@ test('Landscape materials: synthetic 1024 micro tiers upload in steps within the
         const firstTransition = result.upgradeFrames.findIndex(frame => frame.transition);
         const lastUpload = result.upgradeFrames.findLastIndex(frame => frame.bytes > 0);
         expect(firstTransition, 'the transition starts only after the last map').toBeGreaterThanOrEqual(lastUpload);
-        expect(result.upgradeFrames.filter(frame => frame.pending?.status === 'uploading').every(frame => frame.bound === 32), 'the coarse tier stays bound while maps upload').toBe(true);
+        expect(result.upgradeFrames.filter(frame => frame.pending?.status === 'uploading').every(frame => frame.bound === 128), 'the floor stays bound while maps upload').toBe(true);
         expect(result.after1024.bound).toBe(1024); expect(result.after1024.maps).toBe(4);
-        expect(result.after1024.micro).toEqual([30, 1.5, 1, .4]); expect(result.after1024.heightStrength).toBeCloseTo(.3, 6);
+        result.after1024.micro.forEach((value, index) => expect(value, `micro tiling row ${index}`).toBeCloseTo([30, 1.5, 1, .4][index], 6)); expect(result.after1024.heightStrength).toBeCloseTo(.3, 6);
         expect(result.after1024.uploads.splitTiers).toBeGreaterThanOrEqual(1); expect(result.after1024.uploads.maxFramesPerTier).toBe(4);
-        expect(result.after1024.budget.gpuBytes).toBe(landscapeTextureBytesNode(32) * 4 + landscapeTextureBytesNode(1024) * 4);
+        expect(result.after1024.budget.gpuBytes, 'the slot charges its tier bytes; the floor is charged by the arrays').toBe(landscapeTextureBytesNode(1024) * 4);
+        expect(result.after1024.slots).toEqual([1, 0, 1]);
         expect(result.downFrames.some(frame => frame.transition?.from === 1024 && frame.transition?.to === 512), 'coarsening blends 1024 directly to 512').toBe(true);
-        expect(result.downFrames.some(frame => frame.bound === 32), 'coarsening never falls back to the 32 fallback').toBe(false);
-        expect(result.after512.bound).toBe(512); expect(result.after512.records).toEqual([32, 512]);
+        expect(result.downFrames.some(frame => frame.bound === 128), 'coarsening never falls to the 128 floor').toBe(false);
+        expect(result.after512.bound).toBe(512); expect(result.after512.records).toEqual([128, 512]);
         expect(result.failure.failures.length).toBe(1); expect(result.failure.failures[0].message).toMatch(/hash mismatch/);
         expect(result.failure.tiers).toEqual([32, 128, 512]); expect(result.failure.maps).toBe(3); expect(result.failure.micro).toBe(0);
         expect(result.requests.find(request => request.resolution === 1024).roles).toEqual(['baseColor', 'normal', 'orm', 'micro']);

@@ -43,8 +43,10 @@ const PRE_D5_WATER_PASSES = 2;
 function renderOverhead(state) {
     if (!lightingChanges || !state.lighting) return { drawCalls: 0, triangles: 0 };
     const water = state.water?.drawnLastFrame ? state.water.drawPasses - PRE_D5_WATER_PASSES : 0;
-    return { drawCalls: (state.lighting.environment.backgroundDrawCalls ?? 0) + (state.lighting.backdrop?.drawCalls ?? 0) + water,
-        triangles: (state.lighting.environment.backgroundTriangles ?? 0) + (state.lighting.backdrop?.triangles ?? 0) + water * (state.water?.trianglesPerPass ?? 0) };
+    // AI 597: the animated ocean's clipmap rings draw instead of the flat plane (which then draws no pass at all: -PRE_D5_WATER_PASSES)
+    const ocean = state.ocean?.drawnLastFrame ? { drawCalls: state.ocean.surface.drawCalls - PRE_D5_WATER_PASSES, triangles: state.ocean.surface.triangles - PRE_D5_WATER_PASSES * (state.water?.trianglesPerPass ?? 0) } : { drawCalls: 0, triangles: 0 };
+    return { drawCalls: (state.lighting.environment.backgroundDrawCalls ?? 0) + (state.lighting.backdrop?.drawCalls ?? 0) + water + ocean.drawCalls,
+        triangles: (state.lighting.environment.backgroundTriangles ?? 0) + (state.lighting.backdrop?.triangles ?? 0) + water * (state.water?.trianglesPerPass ?? 0) + ocean.triangles };
 }
 const anchor = { x: 1071.2890625, z: 914.0625, height: 6.4459381103515625, chunkId: 'l3/c2/r6', row: 44, column: 36 };
 const { x, z, height: y } = anchor;

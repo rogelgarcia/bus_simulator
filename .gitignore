@@ -48,6 +48,7 @@ tests/artifacts/
 
 # Local-only test selection (used by tools/run_selected_test)
 tests/.selected_test
+/test-results/
 
 # Python bytecode cache directories (any depth)
 __pycache__/

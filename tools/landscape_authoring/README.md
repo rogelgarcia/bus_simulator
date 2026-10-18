@@ -47,7 +47,9 @@ JSON without changing terrain; a stale batch still fails at apply time.
 
 Exact queries retain a four-native-chunk and 2 MiB decoded-input limit. A coastal
 four-way query acquires 1,320,980 decoded bytes. A larger query fails before I/O;
-it never substitutes an approximate sample. Point ownership is deterministic
+it never substitutes an approximate sample. A circle is admitted everywhere only
+up to half the native chunk span (`landscapeQueryRadiusLimit`: 250 m on the coast,
+125 m at 0.9765625 m, 62.5 m at 0.48828125 m). Point ownership is deterministic
 at shared borders. The resolved context releases arrays before returning.
 
 ## Large named-region workflow
@@ -97,6 +99,28 @@ Previously exported selections become stale; the reverted batch ID cannot be
 replayed. Another revert is unavailable until a new batch is applied. Revert
 uses saved landscape data, independent of Git.
 
+## Regeneration replay (AI 596 D4)
+
+A synthesized landscape is rebuilt from its recipe without its edits. Explicit edits
+are never baked into the recipe; they are re-applied afterwards:
+
+```sh
+node tools/landscape_authoring/run.mjs replay --previous assets/public/landscape/coastal-city --directory assets/public/landscape/coastal-city-v3
+```
+
+`replay` reads the previous landscape's current manifest history and re-applies
+every accepted batch (reverted batches are tombstones and are only reported) in
+acceptance order through the same bounded `apply`, bound to the target landscape
+id and current revision, with the same batch/operation ids, geometry, parameters,
+soil overrides and named regions; each replayed operation record carries a
+`replayedFrom` provenance. A batch the new terrain invalidates (region outside the
+target bounds, smoothing radius invalid at the target spacing, unknown soil, ...)
+is skipped and reported with its reason; the JSON summary lists `replayed`,
+`skipped` and the published `revisions`. The module is
+`BatchReplay.mjs` (`replayAcceptedBatches`), the evaluation order is in
+`specs/landscape/LANDSCAPE_EDITING.md` ("Regeneration and replay") and the test is
+`tests/node/unit/landscape_batch_replay.test.js`.
+
 ## Store API and admission
 
 `createLandscapeAuthoringStore({directory,maxWorkingBytes?})` returns a frozen
@@ -109,6 +133,7 @@ interface. The optional edit working limit can reduce the default 8 MiB ceiling.
 | `select(options)` | Alias of `query`. |
 | `apply(batch,{signal?,onProgress?}?)` | Applied revision identity, impact `summary`, and `canRevert:true` after publication. |
 | `revert({expectedRevision,batchId?,signal?,onProgress?})` | Restored revision identity, bounded validation summary, and `canRevert:false`. |
+| `replayAcceptedBatches({previousDirectory,directory,signal?,log?})` (`BatchReplay.mjs`) | Re-applies the previous landscape's accepted batches through `apply`; `{previous,target,replayed,skipped,revisions}`. |
 
 The store admits one query/edit/revert working set at a time. Overlap receives
 `Working-set budget busy`, without an unbounded request queue. Separate
