@@ -5,7 +5,6 @@ import numpy as np
 from common import activate,array
 from wood import mesh_paths
 from mesh_adapter import coordinates,fuse
-from bark_projection import transfer
 from surface_volume import signed_volume,is_remesh_sliver
 
 
@@ -21,14 +20,15 @@ def root_paths(graph):
             if np.linalg.norm(direction[:2])<radius*.1:continue
             flares.append({'angle':math.atan2(direction[1],direction[0]),'width':.45,'strength':graph['settings']['rootFlare']*.85})
             end_index=min(len(root['points'])-2,max(2,int(np.argmin(abs(np.linalg.norm(root['points']-origin,axis=1)-radius*2.8)))) )
-            end=root['points'][end_index];start=points[min(len(points)-1,16)];t=np.linspace(0,1,17)[:,None]
-            controls=np.array([start,start*.45+(origin+direction/np.linalg.norm(direction)*radius)*.55,end+[0,0,radius*.35],end])
+            end=root['points'][end_index];start=points[-1];t=np.linspace(0,1,25)[:,None]
+            tangent=root['points'][end_index+1]-root['points'][end_index-1];tangent/=np.linalg.norm(tangent)
+            controls=np.array([start,start-[0,0,radius*.9],end-tangent*radius*.9,end])
             shoulder=(1-t)**3*controls[0]+3*(1-t)**2*t*controls[1]+3*(1-t)*t*t*controls[2]+t**3*controls[3]
-            additions.append({'points':shoulder,'radii':np.linspace(radius*.48,root['radii'][end_index]*1.08,len(t)),'phase':0.,'basal':False})
+            additions.append({'points':shoulder,'radii':np.linspace(radius*.42,root['radii'][end_index],len(t)),'phase':0.,'basal':False})
         trunk=graph['paths'][anchor['shoot']];u=np.linspace(0,collar['span']/trunk['span'],len(points));radii=np.interp(u,np.linspace(0,1,len(trunk['radii'])),trunk['radii'])
         radii*=1-.18*np.clip((np.linspace(0,1,len(points))-.5)/.5,0,1)**2
         additions.append({'points':np.vstack([origin+[0,0,-radius*.7],points]),'radii':np.r_[radii[0],radii],'phase':0.,'basal':False,'uvOffset':-radius*.7,
-                          'rootFlares':flares,'rootFlareHeight':radius*.85*graph['settings']['rootFlareHeight']})
+                          'rootFlares':flares,'rootFlareHeight':radius*1.5*graph['settings']['rootFlareHeight']})
     if graph['roots']['crown']:
         anchors=graph['base']['anchors'];center=np.mean(coordinates([a['point'] for a in anchors]),axis=0);base=max(a['radius'] for a in anchors);center[2]=-base*1.8
         for a in anchors:
@@ -76,15 +76,28 @@ def build_roots(graph,material,tile):
     root=source.copy();root.data=source.data.copy();root.name='Roots / continuous collars and full fine graph';root.data.name=root.name;bpy.context.scene.collection.objects.link(root)
     filled=[];slivers=[];minimum_source_diameter=float(min(np.min(p['radii'])*2 for p in major))
     fuse(root,major,voxel,lambda obj:filled.extend(fill_voxel_pockets(obj,voxel,slivers,minimum_source_diameter)))
+    collar_blend=blend_collars(root,graph)
     filled.extend(fill_voxel_pockets(root,voxel,slivers,minimum_source_diameter))
     if not root.data.uv_layers:root.data.uv_layers.new(name='UVMap')
-    transfer(root,source,voxel);bpy.data.objects.remove(source,do_unlink=True)
+    bpy.data.objects.remove(source,do_unlink=True)
     major_vertices=len(root.data.vertices);major_faces=len(root.data.polygons)
     tips=mesh_paths('Temporary / retained root tips',fine,material,tile,rng,False)
     fine_vertices=len(tips.data.vertices)
     activate(root);tips.select_set(True);bpy.ops.object.join()
     return root,{'voxelMetres':voxel,'majorVertices':major_vertices,'majorFaces':major_faces,'fineVertices':fine_vertices,'graphPaths':len(roots),'collars':len(graph['base']['anchors']),'sealedVoxelPockets':filled,
-                 'removedRemeshSlivers':slivers,'minimumCoarseSourceDiameter':minimum_source_diameter,'buttresses':len(additions)-len(graph['base']['anchors'])*(2 if graph['roots']['crown'] else 1),'splits':splits,'crownBelowGrade':bool(graph['roots']['crown']),'crownMaximumSurfaceHeight':crown_top}
+                 'removedRemeshSlivers':slivers,'minimumCoarseSourceDiameter':minimum_source_diameter,'collarBlend':collar_blend,'buttresses':len(additions)-len(graph['base']['anchors'])*(2 if graph['roots']['crown'] else 1),'splits':splits,'crownBelowGrade':bool(graph['roots']['crown']),'crownMaximumSurfaceHeight':crown_top}
+
+
+def blend_collars(root,graph):
+    points=array(root.data.vertices,'co',3);distance=np.min(np.column_stack([np.linalg.norm(points-coordinates([a['point']])[0],axis=1)/a['radius'] for a in graph['base']['anchors']]),axis=1)
+    t=np.clip(1-distance/3.5,0,1);weights=t*t*(3-2*t);group=root.vertex_groups.new(name='Root collar continuity')
+    bins=np.rint(weights*32).astype(int)
+    for index in range(1,33):
+        vertices=np.flatnonzero(bins==index)
+        if len(vertices):group.add(vertices.tolist(),index/32,'REPLACE')
+    activate(root);smooth=root.modifiers.new('Organic trunk-to-root transition','SMOOTH');smooth.factor=.8;smooth.iterations=45;smooth.vertex_group=group.name
+    bpy.ops.object.modifier_apply(modifier=smooth.name);root.vertex_groups.remove(root.vertex_groups['Root collar continuity'])
+    return {'iterations':45,'extentInRadii':3.5,'weightedVertices':int(np.count_nonzero(bins))}
 
 
 def audit_roots(graph,root,receipt):

@@ -175,7 +175,13 @@ under prompt 650's ignored revision directory. See
 
 The registered `phase=finish` adds continuous root collars and species PBR to
 authenticated neutral specimens, preserves shoot geometry, embeds maps in both
-model formats, and produces twenty-one EEVEE views per new specimen including
-root/bark details and three neutral trunk close-ups. Spatial stems use continuous
+model formats, and produces twenty-six EEVEE views per new specimen including
+root/bark details, three neutral trunk close-ups and matched PBR/neutral collars.
+Root shoulders blend into the saved trunk surface with shared bark coordinates.
+Spatial stems use continuous
 support taper and seeded curvature; the planar study retains its prior geometry.
 It remains stage-only and uses the same shared configuration.
+
+The same leaf's `phase=export` repairs tangent frames in a fresh copy of a complete
+finished review. It authenticates all unchanged Blender, render and material
+files and every non-tangent GLB byte; it does not rerender or publish assets.

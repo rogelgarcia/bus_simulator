@@ -27,6 +27,21 @@ PBR textures/tangents gate completion. Export triangulation is applied only to
 temporary evaluated geometry. Existing neutral outputs and installed assets
 remain untouched; this phase cannot publish.
 
+Root-integration finishes set `rootIntegrationReview` and require 26 views,
+including matched PBR and neutral front/side/oblique collars. Historical finishes
+retain their previous view contracts. Root geometry blends and the shared basal
+bark field preserve shoot geometry, complete fine-root paths and original PBR
+map bytes. The saved receipt records collar fitting and UV coverage.
+
+`phase=export` authenticates a complete finished source and copies it into a fresh
+revision, repairing only GLB tangent directions. It checks all final tangent
+frames and independently compares every unrelated GLB byte, including handedness,
+with the source. Blender files, render pixels, graphs, material files and other
+receipts retain their identities. Only tangent receipts and manifest provenance
+are updated. No Blender process or repeated render is required. Both finishing
+and export repair now record and validate complete tangent-frame audits; earlier
+receipts remain readable with their historical contract.
+
 The explicit `vegetation/branching-study` leaf stages a standalone 2D architecture
 experiment under `tests/artifacts/screens/vegetation_branching_study/`. It uses
 Node and Chromium through the shared `browserExecutable`, validates three seeds

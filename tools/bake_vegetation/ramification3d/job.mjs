@@ -9,13 +9,15 @@ import {generate3D,planarFixture,presets} from '../branching_study/model3d.mjs';
 import {species} from '../branching_study/species.mjs';
 import {createReview} from './review.mjs';
 import {preview} from './preview.mjs';
-import {orthogonalizeTangents} from './export_pbr.mjs';
+import {orthogonalizeTangents,auditTangentFrames} from './export_pbr.mjs';
+import {refreshExports,verifyExportPreservation} from './export_review.mjs';
 const TOOL='tools/bake_vegetation/ramification3d',CORE='tools/bake_vegetation/branching_study';
 const ARTIFACT='tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification';
 const VIEWS=['front','side','oblique','rear_oblique','levels','tier_0','tier_1','tier_3','subtree','subtree_side','major_fork','isolated_fork','roots_full','soil_surface'];
 const SURFACE_VIEWS=[...VIEWS,'roots_side','roots_top','root_collar','bark_detail'];
 const STEM_VIEWS=['trunk_front','trunk_side','trunk_oblique'];
-const expectedViews=(model,finished)=>[...(finished?SURFACE_VIEWS:VIEWS),...(model.metadata.stemReview?STEM_VIEWS:[])];
+const COLLAR_VIEWS=['collar_front','collar_side','collar_neutral_front','collar_neutral_side','collar_neutral_oblique'];
+const expectedViews=(model,finished)=>[...(finished?SURFACE_VIEWS:VIEWS),...(model.metadata.stemReview?STEM_VIEWS:[]),...(finished&&model.metadata.rootIntegrationReview?COLLAR_VIEWS:[])];
 const MATERIAL_FILES=['material.json','basecolor.png','normal_opengl.png','normal_directx.png','roughness.png','ao.png','metallic.png','orm.png','height_16bit.png'];
 const json=async file=>JSON.parse(await readFile(file,'utf8'));
 export const ramification3DJob={
@@ -30,14 +32,14 @@ export const ramification3DJob={
         const code=[];
         code.push(...['Accessors.mjs','Validate.mjs'].map(file=>path.join(ctx.root,'tools/bake_vegetation',file)));
         for(const folder of [TOOL,CORE,'tools/bake_vegetation/enhanced_reference','tools/bake_vegetation/authoring','tools/bake_vegetation/lod0'])code.push(...(await listFiles(path.join(ctx.root,folder))).filter(f=>/\.(py|mjs|json|css)$/.test(f)));
-        const source=['review','finish'].includes(ctx.options.phase)?path.resolve(ctx.root,ctx.options.source):null;
+        const source=['review','finish','export'].includes(ctx.options.phase)?path.resolve(ctx.root,ctx.options.source):null;
         if(source&&!within(path.join(ctx.root,ARTIFACT),source))throw Error('Review source must be a prompt-650 revision');
-        const materials=ctx.options.phase==='finish'?Object.keys(species).flatMap(id=>MATERIAL_FILES.map(file=>path.join(ctx.root,'assets/public/pbr/tree_ai_'+id+'_bark',file))):[];
+        const materials=['finish','export'].includes(ctx.options.phase)?Object.keys(species).flatMap(id=>MATERIAL_FILES.map(file=>path.join(ctx.root,'assets/public/pbr/tree_ai_'+id+'_bark',file))):[];
         return [...code,...materials,...refs.map(r=>r.file),...['studies','complete-studies'].map(k=>path.resolve(ctx.root,ctx.options[k])),...source?await listFiles(source):[]];
     },
     async run(ctx){
         if(ctx.publish)throw Error('Ramification review cannot publish assets');
-        if(!['full','preview','review','finish'].includes(ctx.options.phase))throw Error('Use full, preview, review or finish phase');
+        if(!['full','preview','review','finish','export'].includes(ctx.options.phase))throw Error('Use full, preview, review, finish or export phase');
         const finished=ctx.options.phase==='finish';
         const output=path.resolve(ctx.root,ctx.options.output);
         if(!within(path.join(ctx.root,ARTIFACT),output))throw Error('Use a new prompt-650 revision directory');
@@ -46,13 +48,17 @@ export const ramification3DJob={
         if(!ids.length||new Set(ids).size!==ids.length||ids.some(id=>!species[id])||!seeds.length||new Set(seeds).size!==seeds.length||seeds.some(s=>![1,31,92].includes(s)))throw Error('Use known species and validation seeds 1,31,92');
         if(!Number.isInteger(ctx.options.width)||ctx.options.width<640||ctx.options.width>2400||!Number.isInteger(ctx.options.samples)||ctx.options.samples<8||ctx.options.samples>64)throw Error('Review width 640–2400 and samples 8–64 required');
         let sourceReview=null;
-        if(['review','finish'].includes(ctx.options.phase)){
+        if(['review','finish','export'].includes(ctx.options.phase)){
             const source=path.resolve(ctx.root,ctx.options.source);
             await ramification3DJob.validate({directory:source});
             const manifest=await json(path.join(source,'manifest.json'));
             if(manifest.format!=='shared-ramification-3d-review')throw Error('Review requires saved 3D models');
             if(finished&&manifest.surfaceFinish)throw Error('Finish requires an original neutral review');
             sourceReview={directory:source,manifestSha256:(await hashFile(path.join(source,'manifest.json'))).sha256};
+            if(ctx.options.phase==='export'){
+                if(ctx.options.species!=='all'||ctx.options.seeds!=='1,31,92')throw Error('Export repair preserves the whole collection; use default species/seeds');
+                return refreshExports(ctx,output,source);
+            }
         }
         await mkdir(path.join(output,'references'),{recursive:true});
         const references=[];
@@ -90,6 +96,7 @@ export const ramification3DJob={
                 const model=await json(path.join(folder,'model.json'));
                 if(finished){
                     const file=path.join(folder,'tree.glb'),bytes=await readFile(file);model.surfaceFinish.exportTangents=orthogonalizeTangents(bytes);
+                    model.surfaceFinish.exportTangents.frames=auditTangentFrames(bytes);
                     await writeFile(file,bytes);await writeJson(path.join(folder,'model.json'),model);
                 }
                 if(!model.meshAudit.passed||JSON.stringify(model.views.map(v=>v.view))!==JSON.stringify(expectedViews(model,finished)))throw Error('Incomplete saved geometry review');
@@ -108,6 +115,7 @@ export const ramification3DJob={
                 await article.locator(':scope > .views').first().screenshot({path:path.join(folder,'views.png')});
                 if(finished)await article.locator(':scope > .surfaces').screenshot({path:path.join(folder,'surfaces.png')});
                 if(models.find(m=>m.species===id&&m.seed===seeds[i]).metadata.stemReview)await article.locator(':scope > .stems').screenshot({path:path.join(folder,'stems.png')});
+                if(models.find(m=>m.species===id&&m.seed===seeds[i]).metadata.rootIntegrationReview)await article.locator(':scope > .collars').screenshot({path:path.join(folder,'collars.png')});
                 await article.locator('details').evaluate(element=>element.open=true);
                 await article.locator('details').screenshot({path:path.join(folder,'diagnostics.png')});
                 await article.locator('details').evaluate(element=>element.open=false);
@@ -125,6 +133,7 @@ export const ramification3DJob={
             if(manifest.format==='shared-ramification-3d-preview'){if(!model.audit.passed||model.stopped.budget)throw Error('Invalid spatial preview');continue;}
             if(!model.graphAudit.passed||!model.meshAudit.passed||JSON.stringify(model.views.map(v=>v.view))!==JSON.stringify(expectedViews(model,manifest.surfaceFinish)))throw Error('Invalid specimen review');
             if(model.metadata.stemReview&&model.views.filter(v=>STEM_VIEWS.includes(v.view)).some(v=>!v.neutralStem))throw Error('Stem inspection must use neutral material');
+            if(model.metadata.rootIntegrationReview&&model.views.filter(v=>v.view.startsWith('collar_neutral_')).some(v=>!v.neutralCollar))throw Error('Collar inspection must use neutral material');
             if(manifest.sourceReview&&!manifest.surfaceFinish){
                 if(!model.diagnosticRefresh?.visibleGeometryUnchanged||JSON.stringify(model.diagnosticRefresh.rerenderedViews)!==JSON.stringify(['major_fork','isolated_fork']))throw Error('Invalid diagnostic refresh');
                 for(const file of ['tree.glb',...expectedViews(model,false).filter(v=>!['major_fork','isolated_fork'].includes(v)).map(v=>v+'.png')]){
@@ -145,6 +154,7 @@ export const ramification3DJob={
                 if(!model.surfaceFinish?.shootGeometryUnchanged||!model.meshAudit.materials?.passed||!model.meshAudit.roots?.passed)throw Error('Invalid root/PBR finish');
                 if((await hashFile(path.join(manifest.sourceReview.directory,model.directory,'graph.json'))).sha256!==(await hashFile(path.join(result.directory,model.directory,'graph.json'))).sha256)throw Error('Finish changed shared graph');
                 if(scene.meshes.some(mesh=>mesh.primitives.some(p=>p.attributes.TEXCOORD_0===undefined||p.attributes.TANGENT===undefined)))throw Error('GLB lacks UVs or tangents');
+                if(model.surfaceFinish.exportTangents?.frames)auditTangentFrames(glb);
                 if(!scene.images?.length||scene.images.some(i=>i.bufferView===undefined||i.uri))throw Error('GLB textures must be embedded');
                 for(const material of scene.materials){
                     const pbr=material.pbrMetallicRoughness;
@@ -152,6 +162,7 @@ export const ramification3DJob={
                 }
             }
         }
+        if(manifest.exportSourceReview)await verifyExportPreservation(result.directory,manifest);
         for(const row of manifest.files)if((await hashFile(path.join(result.directory,row.file))).sha256!==row.sha256)throw Error('Review output changed: '+row.file);
     }
 };

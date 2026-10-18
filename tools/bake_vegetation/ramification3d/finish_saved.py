@@ -11,6 +11,8 @@ from common import array
 from mesh_adapter import inspect_saved
 from pbr import bark,apply_wood,audit_materials
 from root_surfaces import build_roots,audit_roots
+from root_bark import apply_root_flow
+from root_neck import fit_necks
 from render import render_views,point_camera,bounds
 
 
@@ -32,8 +34,11 @@ material,material_metadata=bark(Path(o['materials']),graph['settings']['species'
 apply_wood(graph,meta,material,tile)
 old=meta['root'];bpy.data.objects.remove(bpy.data.objects[old],do_unlink=True)
 root,root_receipt=build_roots(graph,material,tile);meta['root']=root.name;meta['meshes']=[root.name if name==old else name for name in meta['meshes']]
+root_receipt['neckFit']=fit_necks(root,bpy.data.objects[meta['wood']],graph,root_receipt['majorVertices'])
 for key in ['generator','species','seed']:root[key]=graph[key] if key=='generator' else graph['settings'][key]
-meta['surfaceFinish']={'tileMetres':tile,'roots':root_receipt,'catalogMaterial':material['catalogMaterial']}
+flow=apply_root_flow(graph,bpy.data.objects[meta['wood']],root,tile)
+meta['surfaceFinish']={'tileMetres':tile,'roots':root_receipt,'catalogMaterial':material['catalogMaterial'],'basalBarkFlow':flow}
+meta['rootIntegrationReview']=True
 scene=bpy.context.scene;scene.render.resolution_x=o['width'];scene.render.resolution_y=o['width'];scene.eevee.taa_render_samples=o['samples']
 scene.render.threads_mode='FIXED';scene.render.threads=2
 scene.view_settings.view_transform='AgX';scene.view_settings.look='AgX - Medium High Contrast';scene.view_settings.exposure=.3

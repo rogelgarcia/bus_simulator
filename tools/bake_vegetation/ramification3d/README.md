@@ -198,7 +198,7 @@ remaining visual limitations. All outputs remain staged under the artifact root.
 
 ## Saved smooth-stem review
 
-The current finished collection is
+The preceding smooth-stem collection is
 `tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification/r27_smooth_stems_pbr/index.html`,
 built from `r21_smooth_stems_neutral`. It contains fifteen packed Blender/GLB
 pairs and 315 EEVEE renders, including neutral front, side and oblique trunk
@@ -209,3 +209,53 @@ with all neutral stem sheets and selected full-resolution details. The broad
 support shelves are removed and tree trunks have a gentle seeded bow. Bark
 repetition, some UV/junction seams and regular root layouts remain. These are
 staged review models, not runtime LODs; the species spec records the full result.
+
+## Root integration follow-up
+
+Root shoulders now enter from the top of the collar with a vertical tangent and
+meet the retained coarse root's tangent. The taller flare and localized surface
+smoothing remove abrupt appended shoulders. The upper collar is fitted to the
+actual saved trunk surface through a flat-ended blend, with a small inset at its
+hidden upper edge. Shoot positions/topology and every fine root path remain
+unchanged. Roots and shoots remain separate export meshes.
+
+`root_flow.py` defines a shared cylindrical-to-radial bark field. It uses the
+original stem chart frame, follows each curved cane when choosing ownership,
+and transitions to root-axis coordinates outward. Root ownership follows the
+hosted root graph; angular seams use the root's own circumference while retaining
+absolute texture phase across neighboring faces. The lower
+shoot UVs and root UVs share this field. Above three basal radii, existing shoot
+charts remain unchanged. Source PBR PNGs are retained verbatim.
+
+New finishes require 26 EEVEE views: the previous 21, two additional PBR collar
+angles and neutral front/side/oblique collar views. `collars.png` places matched
+PBR and neutral views together. Historical revisions keep their original view
+contracts. `tests/python/test_vegetation_root_flow.py` checks grain continuity,
+metric root scale, tilted cane frames, host ownership and angular seam handling.
+
+`phase=export` accepts a complete authenticated finished collection as `source`
+and a fresh `output` revision. It repairs only GLB tangent directions and records
+unit/orthogonal frame audits. It preserves every non-tangent GLB byte, all Blender
+files, renders, materials and graphs. No Blender rendering is repeated. This
+handles zero-length exporter tangents on degenerate root UV faces as well as the
+existing parallel-axis cap fallback. Normal finishing performs the same frame
+audit before accepting an export. Historical receipts retain their original
+validation contract.
+
+The latest collection is
+`tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification/r36_integrated_roots/index.html`.
+It contains fifteen packed Blender/GLB pairs and 390 EEVEE renders for all five
+species and seeds 1, 31 and 92. The registered finish validated the geometry and
+renders in `r35_integrated_roots`; the registered export phase retained those
+files byte for byte and repaired 116 zero-length GLB tangent directions in r36.
+All 49,166,902 exported tangent frames passed the final audit. Thirteen Python
+root-flow tests, four export regression tests and sixteen independent saved-model
+checks passed without skips.
+
+Visual inspection covered all fifteen collar sheets, all fifteen whole-tree
+sheets, five seed-31 surface sheets and eleven full-resolution details. The
+artifact-root `root-integration-comparison.html` shows the annotated elm baseline
+beside the result and links every model. The flare and bark direction are smoother;
+minor UV stretching/creases and regular radial root arrangements remain. Roots
+and shoots are fitted separate meshes, and these heavy review models are not
+runtime LODs. The species spec records the receipts and inspection scope.

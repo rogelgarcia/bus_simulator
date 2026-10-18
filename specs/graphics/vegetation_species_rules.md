@@ -876,3 +876,65 @@ normal maps rather than displacement. The meshes remain heavy review assets,
 not optimized runtime LODs or a claim of photographic realism. Existing outputs
 and installed assets were preserved; no assets were published. No required
 Blender step remains blocked.
+
+## Root-to-trunk integration follow-up
+
+The annotated elm root collar exposed abrupt shoulder contours and unrelated
+bark directions. The shared finishing adapter now begins each shoulder at the
+upper collar with a vertical tangent and joins the retained root tangent. A
+taller directional flare and localized coarse-surface smoothing soften the
+union. The neck is fitted to the actual saved trunk with a quintic transition;
+its hidden upper edge is inset by 0.2 percent of the basal radius. Fine root
+vertices and all shoot geometry retain their source identities. Roots and shoots
+remain separate meshes; this is not a claim of a globally watertight solid.
+
+The basal material uses one cylindrical-to-radial coordinate field, transitioning
+to root-axis coordinates outward. It preserves the original chart frame on
+slanted canes, evaluates cane ownership at the actual height, and follows hosted
+root paths when they pass other canes. Angular seams use each root's circumference
+instead of the larger trunk circumference. Unwrapping retains the chart's
+absolute texture phase: a geometric circumference is not an integer texture
+repeat, so per-face phase reduction would produce artificial bark bands.
+The lower shoot and root surfaces
+share the field; original shoot charts are retained above three basal radii.
+The original PBR images remain packed and embedded without pixel changes.
+
+The review contract adds matched front, side and oblique collar inspections in
+both PBR and neutral material: 26 EEVEE views per finished specimen. This exposes
+the shape independently of bark detail. All five species and seeds 1, 31 and 92
+remain the required full-collection validation scope.
+
+### Saved integration result
+
+The completed collection is staged at
+`tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification/r36_integrated_roots/`.
+It contains fifteen packed `.blend`/embedded-PBR `.glb` pairs and 390 EEVEE
+renders at 1400 by 1400 pixels and 32 samples. Its manifest authenticates 622
+files. The registered finish receipt is
+`tests/artifacts/screens/ai556_bake_framework/run-1792280905018-10600-8249c519/summary.json`;
+the export repair receipt is
+`tests/artifacts/screens/ai556_bake_framework/run-1792282351518-17040-3c0acccd/summary.json`.
+Both passed, and the review browser reported no errors. The export phase retained
+every Blender file, render, texture and graph byte for byte from r35, changing
+only GLB tangent XYZ and validation receipts. It repaired 116 zero-length frames;
+all 49,166,902 final exported tangent frames passed the unit/orthogonality audit.
+Thirteen Python root-flow tests, four Node export regression tests and sixteen
+independent saved-output checks passed with no skips.
+
+Visual review covered all fifteen six-view collar sheets (matched PBR and neutral
+front/side/oblique), all fifteen four-view whole-tree sheets, five seed-31 surface
+sheets and eleven selected full-resolution details. The inspection inventory is
+saved in the artifact-root `root-integration-review.json`; the before/after page
+is `root-integration-comparison.html`. Collar silhouettes turn gradually from
+trunk into root shoulders, and bark grain follows the same turn. The artificial
+horizontal texture-phase bands found during iteration are removed. Arrowwood's
+canes remain separate above grade; its shared crown remains below grade. Saved
+shoot geometry and fine-root paths retain their source identities.
+
+Minor UV stretching, creases and seams remain locally. Root layouts are still
+sparse radial approximations with similar arrangements among the four trees.
+Roots and shoots remain fitted separate meshes, not a globally watertight union.
+Bark relief uses normal maps, and the heavy review meshes are not runtime LODs.
+The earlier open/regular crown limitation remains outside this root integration
+pass. Existing assets and previous revisions were preserved, and nothing was
+published. No required Blender work remains blocked.

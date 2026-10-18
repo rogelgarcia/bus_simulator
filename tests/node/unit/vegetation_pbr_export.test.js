@@ -1,7 +1,7 @@
 // Exercises tangent fallback repair while preserving every unrelated GLB byte.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {orthogonalizeTangents} from '../../../tools/bake_vegetation/ramification3d/export_pbr.mjs';
+import {orthogonalizeTangents,auditTangentFrames,assertOnlyTangentDirectionsChanged} from '../../../tools/bake_vegetation/ramification3d/export_pbr.mjs';
 import {glbDocument} from '../../../tools/bake_vegetation/Validate.mjs';
 import {readAccessor} from '../../../tools/bake_vegetation/Accessors.mjs';
 function fixture(tangents){
@@ -23,4 +23,19 @@ test('tangent repair is byte-idempotent and leaves valid frames unchanged',()=>{
     assert.equal(orthogonalizeTangents(bytes).repaired,0);assert.deepEqual(bytes,before);
     const fallback=fixture([[1,0,0,-1],[.6,0,.8,1],[1,0,0,1]]);orthogonalizeTangents(fallback);const corrected=Buffer.from(fallback);
     assert.equal(orthogonalizeTangents(fallback).repaired,0);assert.deepEqual(fallback,corrected);
+});
+test('zero and non-unit orthogonal tangents are repaired rather than skipped',()=>{
+    const bytes=fixture([[0,0,0,1],[2,0,0,-1],[1,0,0,1]]),before=Buffer.from(bytes);
+    assert.throws(()=>auditTangentFrames(bytes),/Invalid exported tangent/);
+    const result=orthogonalizeTangents(bytes);
+    assert.equal(result.repaired,2);assert.equal(result.zero,1);assert.equal(result.parallel,1);
+    assert.equal(auditTangentFrames(bytes).vertices,3);assertOnlyTangentDirectionsChanged(before,bytes);
+    assert.equal(orthogonalizeTangents(bytes).repaired,0);
+});
+test('tangent-only identity check rejects changed normals and handedness',()=>{
+    const before=fixture([[0,1,0,1],[1,0,0,-1],[1,0,0,1]]);
+    for(const byte of [before.length-84,before.length-48+12]){
+        const after=Buffer.from(before);after[byte]^=1;
+        assert.throws(()=>assertOnlyTangentDirectionsChanged(before,after),/unrelated GLB bytes/);
+    }
 });

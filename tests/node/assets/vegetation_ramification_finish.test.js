@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {glbDocument} from '../../../tools/bake_vegetation/Validate.mjs';
 import {readAccessor} from '../../../tools/bake_vegetation/Accessors.mjs';
-const directory=process.env.VEGETATION_FINISH_REVIEW??'tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification/r27_smooth_stems_pbr';
+const directory=process.env.VEGETATION_FINISH_REVIEW??'tests/artifacts/screens/vegetation_enhanced_reference/650_3d_ramification/r36_integrated_roots';
 const file=path.join(directory,'manifest.json');
 const manifest=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):null;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -21,6 +21,11 @@ test('root/PBR finish preserves its source graphs and authentic material copies'
         assert.equal(hash(fs.readFileSync(path.join(folder,'graph.json'))),hash(fs.readFileSync(path.join(source,'graph.json'))));
         assert.equal(model.surfaceFinish.shootGeometryUnchanged,true);assert.equal(model.meshAudit.roots.passed,true);
         assert.equal(model.meshAudit.roots.coarseRootsConnected,true);
+        if(manifest.exportSourceReview){
+            assert.equal(model.exportRepair.onlyTangentDirectionsChanged,true);
+            assert.equal(model.surfaceFinish.exportTangents.frames.passed,true);
+            assert.ok(model.surfaceFinish.exportTangents.frames.vertices>0);
+        }
         if(model.species==='arrowwood_viburnum')assert.ok(model.surfaceFinish.rootSurfaces.crownMaximumSurfaceHeight<0);
         for(const pocket of model.surfaceFinish.rootSurfaces.sealedVoxelPockets){assert.ok(pocket.negativeVolume<0);assert.ok(pocket.maximumExtent<=model.surfaceFinish.rootSurfaces.voxelMetres*4);}
         for(const sliver of model.surfaceFinish.rootSurfaces.removedRemeshSlivers??[]){
@@ -34,6 +39,18 @@ test('root/PBR finish preserves its source graphs and authentic material copies'
             const views=model.views.filter(v=>v.view.startsWith('trunk_'));
             assert.deepEqual(views.map(v=>v.view),['trunk_front','trunk_side','trunk_oblique']);
             assert.ok(views.every(v=>v.neutralStem&&v.engine==='BLENDER_EEVEE'));
+        }
+        if(model.metadata.rootIntegrationReview){
+            const views=model.views.filter(v=>v.view.startsWith('collar_neutral_'));
+            assert.deepEqual(views.map(v=>v.view),['collar_neutral_front','collar_neutral_side','collar_neutral_oblique']);
+            assert.ok(views.every(v=>v.neutralCollar&&v.engine==='BLENDER_EEVEE'));
+            assert.ok(model.views.some(v=>v.view==='collar_front')&&model.views.some(v=>v.view==='collar_side'));
+            assert.equal(model.metadata.surfaceFinish.basalBarkFlow.method,'shared cylindrical-to-radial growth field');
+            assert.ok(model.metadata.surfaceFinish.basalBarkFlow.objects.every(o=>o.finite&&o.mappedLoops>0));
+            const roots=model.surfaceFinish.rootSurfaces;
+            assert.ok(roots.collarBlend.weightedVertices>0);
+            assert.equal(roots.neckFit.length,roots.collars);
+            assert.ok(roots.neckFit.every(row=>row.fittedVertices>0&&row.maximumHeightInRadii<=2.15));
         }
     }
 });
